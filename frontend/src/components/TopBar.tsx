@@ -1,21 +1,17 @@
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
-import { CATEGORIES, TRUCK_PROFILE_LABEL, categoryColor } from "../constants";
+import { TRUCK_PROFILE_LABEL } from "../constants";
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
-import type { Category } from "../types";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
 
 type Props = {
   topInset: number;
-  selected: Category | null;
-  loading: Category | null;
   isDemo: boolean;
-  onSelect: (c: Category) => void;
   onLayout: (h: number) => void;
 };
 
-export function TopBar({ topInset, selected, loading, isDemo, onSelect, onLayout }: Props) {
+export function TopBar({ topInset, isDemo, onLayout }: Props) {
   const { colors } = useTheme();
   const card = [styles.white, shadow(colors), { backgroundColor: colors.surface }];
 
@@ -41,41 +37,6 @@ export function TopBar({ topInset, selected, loading, isDemo, onSelect, onLayout
           <Icon name="layers-outline" size={24} color={colors.onSurface} />
         </PressableScale>
       </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.chipRow}
-        contentContainerStyle={styles.chipContent}
-      >
-        {CATEGORIES.map((c) => {
-          const active = selected === c.key;
-          const tint = categoryColor(colors, c.key);
-          return (
-            <PressableScale
-              key={c.key}
-              testID={c.testID}
-              accessibilityState={{ selected: active }}
-              onPress={() => onSelect(c.key)}
-              hitSlop={{ top: 10, bottom: 10 }}
-              style={[
-                card,
-                styles.chip,
-                { borderColor: active ? tint : colors.surface },
-              ]}
-            >
-              <View style={[styles.chipIcon, { backgroundColor: tint }]}>
-                {loading === c.key ? (
-                  <ActivityIndicator size="small" color={colors.onCategory} />
-                ) : (
-                  <Icon name={c.icon} size={14} color={colors.onCategory} />
-                )}
-              </View>
-              <Text style={[styles.chipText, { color: colors.onSurface }]}>{c.label}</Text>
-            </PressableScale>
-          );
-        })}
-      </ScrollView>
 
       {isDemo && (
         <View testID="demo-location-tag" style={[card, styles.demo]}>
@@ -103,24 +64,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   profileText: { fontFamily: fonts.semibold, fontSize: 15 },
-  chipRow: { height: 56, flexGrow: 0, marginTop: spacing.xs },
-  chipContent: { paddingHorizontal: spacing.lg, gap: spacing.sm, alignItems: "center" },
-  chip: {
-    flexShrink: 0,
-    height: 36,
-    borderRadius: radius.pill,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingLeft: 6,
-    paddingRight: 14,
-    gap: spacing.sm,
-    borderWidth: 1.5,
-  },
-  chipIcon: { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  chipText: { fontFamily: fonts.semibold, fontSize: 14 },
   demo: {
     alignSelf: "flex-start",
     marginLeft: spacing.lg,
+    marginTop: spacing.sm,
     height: 28,
     borderRadius: radius.pill,
     flexDirection: "row",

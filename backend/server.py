@@ -1,3 +1,5 @@
+import asyncio
+import json
 import logging
 import os
 from pathlib import Path
@@ -6,13 +8,16 @@ from dotenv import load_dotenv
 from typing import Optional
 
 from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-from models import AgentRequest, AgentResponse, Category, PlacesResponse, RouteRequest, RouteResponse  # noqa: E402
+from models import AgentRequest, AgentResponse, Category, ParkingCheck, ParkingRequest, Place, PlacesResponse, RouteRequest, RouteResponse  # noqa: E402
 from services.agent import get_agent_provider  # noqa: E402
+from services.google_places import PlacesUnavailable  # noqa: E402
+from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.routing import get_routing_provider  # noqa: E402
 from services import voice  # noqa: E402
@@ -54,11 +59,30 @@ async def search_places(
 
 @api.post("/route", response_model=RouteResponse)
 async def build_route(req: RouteRequest):
-    place = await get_places_provider().get(req.place_id, req.lat, req.lng)
+    place = req.place
+    if place is None and req.place_id:
+        place = await get_places_provider().get(req.place_id, req.lat, req.lng)
     if place is None:
         raise HTTPException(status_code=404, detail="Place not found")
-    route = await get_routing_provider().route(req.lat, req.lng, place.lat, place.lng)
-    return RouteResponse(place=place, route=route)
+    route, parking = await asyncio.gather(
+        get_routing_provider().route(req.lat, req.lng, place.lat, place.lng),
+        check_parking(place),
+    )
+    return RouteResponse(place=place, route=route, parking=parking)
+
+
+@api.post("/parking", response_model=ParkingCheck)
+async def parking_check(req: ParkingRequest):
+    return await check_parking(req.place)
+
+
+@api.get("/satellite")
+async def satellite(lat: float = Query(..., ge=-90, le=90), lng: float = Query(..., ge=-180, le=180)):
+    try:
+        img = await fetch_satellite(lat, lng)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Satellite image unavailable")
+    return Response(content=img, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
 
 
 async def _run_agent(req: AgentRequest, speak: bool) -> AgentResponse:
@@ -81,13 +105,19 @@ async def voice_turn(
     audio: UploadFile = File(...),
     lat: float = Form(..., ge=-90, le=90),
     lng: float = Form(..., ge=-180, le=180),
-    active_place_id: Optional[str] = Form(None),
+    active_place: Optional[str] = Form(None),  # JSON of the current destination Place
 ):
     data = await audio.read()
     if not data:
         raise HTTPException(status_code=400, detail="Empty audio")
     if len(data) > 25 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Audio too long")
+    current = None
+    if active_place:
+        try:
+            current = Place(**json.loads(active_place))
+        except Exception:
+            raise HTTPException(status_code=422, detail="Invalid active_place")
     name = audio.filename or "speech.m4a"
     if "." not in name:
         name += ".webm" if "webm" in (audio.content_type or "") else ".m4a"
@@ -97,7 +127,7 @@ async def voice_turn(
         logger.exception("transcription failed")
         text = ""
     logger.info("voice transcript=%r", text)
-    return await _run_agent(AgentRequest(text=text, lat=lat, lng=lng, active_place_id=active_place_id), speak=True)
+    return await _run_agent(AgentRequest(text=text, lat=lat, lng=lng, active_place=current), speak=True)
 
 
 @api.get("/voice/audio/{audio_id}")
@@ -109,6 +139,11 @@ async def voice_audio(audio_id: str):
 
 
 app.include_router(api)
+
+
+@app.exception_handler(PlacesUnavailable)
+async def places_unavailable(_request, _exc):
+    return JSONResponse(status_code=502, content={"detail": "Places unavailable right now"})
 
 app.add_middleware(
     CORSMiddleware,

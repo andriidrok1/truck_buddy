@@ -33,3 +33,10 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Captions "You said: …" + reply text; avatar Speaking state; mic permission card (Allow → Open Settings)
 - Places/routing still MOCK (Sacramento) — Phase 2: OSM Overpass + OSRM
 - Backlog P1: real places & routes; P2: truck profile editor, saved places, Mute/Speaker/layers, conversation memory, more languages
+
+## 2026-06 — Merge with branch Voice-for-agent (satellite parking)
+- Base: other agent's satellite parking check (/api/parking, /api/satellite, ParkingStatus, OptionsList, optional Google Places via GOOGLE_MAPS_API_KEY)
+- On top: real voice loop (/api/voice, Whisper, GPT-5.5 tools, TTS)
+- User decisions: agent auto-routes to best place, others under "See N other options"; satellite check of 3 nearest before choosing, reply says how to enter + where to park (entry_tip, park_tip, E/P spots with lat/lng); category chips removed
+- Map layer files untouched (owned by the other agent); spots[] lat/lng ready for map pins
+- Backlog: show E/P spots on the main map (map agent), real routes, Google key, truck profile editor

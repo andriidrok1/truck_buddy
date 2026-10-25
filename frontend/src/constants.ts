@@ -26,4 +26,5 @@ export const MESSAGES = {
   notUnderstood: "Sorry, I didn't catch that. Try again.",
   noPlaces: "No places found nearby",
   micNeeded: "Microphone access is needed to talk to your copilot",
+  placesUnavailable: "Places are unavailable right now. Try again.",
 };

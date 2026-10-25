@@ -46,7 +46,7 @@ export function CaptionBubble({ text, heard, bottom }: { text: string | null; he
             You said: “{heard}”
           </Text>
         ) : null}
-        <Text testID="agent-reply-text" style={[styles.captionText, { color: colors.onSurface }]}>{text}</Text>
+        <Text testID="agent-reply-text" numberOfLines={3} style={[styles.captionText, { color: colors.onSurface }]}>{text}</Text>
       </View>
       <View style={[styles.tail, { backgroundColor: colors.surface }]} />
     </Animated.View>

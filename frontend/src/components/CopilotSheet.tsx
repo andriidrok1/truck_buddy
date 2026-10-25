@@ -2,15 +2,23 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
-import type { ActiveRoute, Phase } from "../types";
+import type { ActiveRoute, ParkingState, Phase, Place } from "../types";
 import { Avatar } from "./Avatar";
 import { Icon } from "./Icon";
+import { OptionsList } from "./OptionsList";
+import { ParkingStatus } from "./ParkingStatus";
 import { haptic, PressableScale } from "./PressableScale";
 import { Waveform } from "./Waveform";
 
 type Props = {
   phase: Phase;
   speaking: boolean;
+  onShowOptions: () => void;
+  thinkingText?: string;
+  options: Place[];
+  parking: Record<string, ParkingState>;
+  onOptionParking: (p: Place) => void;
+  onOptionRoute: (p: Place) => void;
   active: ActiveRoute | null;
   bottomInset: number;
   onAvatarPress: () => void;
@@ -46,7 +54,7 @@ function SideButton({
 }
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, active, bottomInset, onAvatarPress, onClose, onEndRoute, onOpenGoogle, onOpenWaze, onLayout } = props;
+  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, bottomInset, onAvatarPress, onClose, onEndRoute, onOpenGoogle, onOpenWaze, onLayout } = props;
   const { colors } = useTheme();
   const navigating = phase === "navigating";
 
@@ -85,8 +93,11 @@ export function CopilotSheet(props: Props) {
         )}
         {phase === "thinking" && (
           <Text testID="sheet-title" style={[styles.title, { color: colors.onSurface }]}>
-            Finding the best spot…
+            {thinkingText ?? "Finding the best spot…"}
           </Text>
+        )}
+        {phase === "options" && (
+          <OptionsList options={options} parking={parking} onParking={onOptionParking} onRoute={onOptionRoute} />
         )}
         {navigating && active && (
           <View style={styles.navInfo}>
@@ -97,20 +108,26 @@ export function CopilotSheet(props: Props) {
               {active.place.name}
             </Text>
             <View style={styles.tagRow}>
-              <Icon name="truck" size={18} color={colors.onSurfaceSecondary} />
+              <Icon name={active.place.tags.length ? "truck" : "map-marker-outline"} size={18} color={colors.onSurfaceSecondary} />
               <Text testID="route-place-tags" numberOfLines={1} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
-                {active.place.tags.length ? active.place.tags.join(" · ") : "Truck info unknown"}
+                {active.place.tags.length ? active.place.tags.join(" · ") : active.place.address ?? "Address unknown"}
               </Text>
             </View>
-            <Text testID="parking-availability" style={[styles.unknown, { color: colors.muted }]}>
-              Parking availability unknown
-            </Text>
+            <ParkingStatus parking={active.parking} />
+            {options.length > 0 && (
+              <Pressable testID="other-options-button" onPress={onShowOptions} hitSlop={8} style={styles.otherBtn}>
+                <Text style={[styles.otherText, { color: colors.info }]}>
+                  See {options.length} other option{options.length > 1 ? "s" : ""}
+                </Text>
+                <Icon name="chevron-right" size={18} color={colors.info} />
+              </Pressable>
+            )}
           </View>
         )}
       </Animated.View>
 
       <View style={styles.actions}>
-        {phase === "ready" && <SideButton icon="bookmark-outline" label="Saved" testID="saved-button" />}
+        {(phase === "ready" || phase === "options") && <SideButton icon="bookmark-outline" label="Saved" testID="saved-button" />}
         {(phase === "listening" || phase === "thinking") && <SideButton icon="microphone-off" label="Mute" testID="mute-button" />}
         {navigating && <SideButton icon="volume-high" label="Speaker" testID="speaker-button" />}
 
@@ -126,7 +143,7 @@ export function CopilotSheet(props: Props) {
           style={styles.center}
         >
           <Avatar
-            size={navigating ? 92 : 112}
+            size={navigating || phase === "options" ? 80 : 112}
             mode={phase === "listening" ? "listening" : phase === "thinking" ? "thinking" : speaking ? "speaking" : "idle"}
             showMic={phase !== "thinking"}
           />
@@ -136,6 +153,7 @@ export function CopilotSheet(props: Props) {
         </Pressable>
 
         {phase === "ready" && <SideButton icon="arrow-right-top" label="Route" testID="route-button" />}
+        {phase === "options" && <SideButton icon="close" label="Close" testID="close-options-button" onPress={onClose} />}
         {(phase === "listening" || phase === "thinking") && (
           <SideButton icon="close" label="Close" testID="close-listening-button" onPress={onClose} />
         )}
@@ -188,7 +206,8 @@ const styles = StyleSheet.create({
   placeName: { fontFamily: fonts.semibold, fontSize: 17, marginTop: 2 },
   tagRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.xs },
   tags: { fontFamily: fonts.medium, fontSize: 14, flexShrink: 1 },
-  unknown: { fontFamily: fonts.regular, fontSize: 12, marginTop: 2 },
+  otherBtn: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", minHeight: 44, gap: 2 },
+  otherText: { fontFamily: fonts.bold, fontSize: 14 },
   actions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.sm },
   side: { width: 72, alignItems: "center", gap: 6 },
   sideCircle: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },

@@ -2,6 +2,7 @@
 
 Real implementation to plug in later: OpenStreetMap Overpass (same interface).
 """
+import os
 from typing import List, Optional, Protocol
 
 from models import Category, Place, PlacesResponse
@@ -82,8 +83,16 @@ class MockPlacesProvider:
         return next((p for p in self._all(lat, lng) if p.id == place_id), None)
 
 
-_provider: PlacesProvider = MockPlacesProvider()
+_mock: PlacesProvider = MockPlacesProvider()
+_google: Optional[PlacesProvider] = None
 
 
 def get_places_provider() -> PlacesProvider:
-    return _provider
+    """Real Google Places when GOOGLE_MAPS_API_KEY is set, otherwise demo places."""
+    global _google
+    if not os.environ.get("GOOGLE_MAPS_API_KEY"):
+        return _mock
+    if _google is None:
+        from services.google_places import GooglePlacesProvider
+        _google = GooglePlacesProvider()
+    return _google

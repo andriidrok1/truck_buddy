@@ -1,11 +1,13 @@
 import { TRUCK_PROFILE } from "./constants";
-import type { AgentResponse, Category, LatLng, PlacesResponse, Place, RouteInfo } from "./types";
 import { uploadForm } from "./utils/upload";
+import type { AgentResponse, Category, LatLng, ParkingCheck, PlacesResponse, Place, RouteInfo } from "./types";
 
 const ORIGIN = process.env.EXPO_PUBLIC_BACKEND_URL;
 const BASE = `${ORIGIN}/api`;
 
 export const absoluteUrl = (path: string) => `${ORIGIN}${path}`;
+
+export const apiUrl = (path: string) => `${BASE}${path}`;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -19,20 +21,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   places: (category: Category, at: LatLng) =>
     request<PlacesResponse>(`/places?category=${category}&lat=${at.lat}&lng=${at.lng}`),
-  route: (from: LatLng, placeId: string) =>
-    request<{ place: Place; route: RouteInfo }>(`/route`, {
+  route: (from: LatLng, place: Place) =>
+    request<{ place: Place; route: RouteInfo; parking?: ParkingCheck | null }>(`/route`, {
       method: "POST",
-      body: JSON.stringify({ lat: from.lat, lng: from.lng, place_id: placeId }),
+      body: JSON.stringify({ lat: from.lat, lng: from.lng, place }),
     }),
+  parking: (place: Place) =>
+    request<ParkingCheck>(`/parking`, { method: "POST", body: JSON.stringify({ place }) }),
   agent: (text: string, at: LatLng) =>
     request<AgentResponse>(`/agent`, {
       method: "POST",
       body: JSON.stringify({ text, lat: at.lat, lng: at.lng, truck_profile: TRUCK_PROFILE }),
     }),
-  voice: async (uri: string, at: LatLng, activePlaceId?: string, signal?: AbortSignal) => {
+  voice: async (uri: string, at: LatLng, activePlace?: Place, signal?: AbortSignal) => {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
     const fields: Record<string, string> = { lat: String(at.lat), lng: String(at.lng) };
-    if (activePlaceId) fields.active_place_id = activePlaceId;
+    if (activePlace) fields.active_place = JSON.stringify(activePlace);
     const res = await uploadForm(`${BASE}/voice`, {
       fields,
       files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
