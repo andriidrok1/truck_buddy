@@ -53,6 +53,8 @@ class Approach(BaseModel):
     bearing: int  # degrees, 0 = heading north
     compass: str  # side the driver comes FROM, e.g. "south"
     street: Optional[str] = None
+    lat: Optional[float] = None  # approach point: route point 100 m before the finish
+    lng: Optional[float] = None
 
 
 class RouteInfo(BaseModel):

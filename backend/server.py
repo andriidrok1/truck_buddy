@@ -18,7 +18,7 @@ load_dotenv(ROOT_DIR / ".env")
 from models import AgentRequest, AgentResponse, Category, ParkingCheck, ParkingRequest, Place, PlacesResponse, RouteRequest, RouteResponse, TruckProfile  # noqa: E402
 from services.agent import get_agent_provider  # noqa: E402
 from services.google_places import PlacesUnavailable  # noqa: E402
-from services.parking import check_parking, fetch_satellite  # noqa: E402
+from services.parking import cached_parking, check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.routing import get_routing_provider  # noqa: E402
 from services import approach, approach_api, onboarding, timing, voice  # noqa: E402
@@ -67,9 +67,9 @@ async def build_route(req: RouteRequest):
         place = await get_places_provider().get(req.place_id, req.lat, req.lng)
     if place is None:
         raise HTTPException(status_code=404, detail="Place not found")
-    route_task = get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile)
-    route, parking = await asyncio.gather(route_task, check_parking(place))
-    return RouteResponse(place=place, route=route, parking=parking)
+    route = await get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile)
+    approach.background(check_parking(place, route.approach))  # don't wait for the satellite; app re-asks /parking
+    return RouteResponse(place=place, route=route, parking=cached_parking(place))
 
 
 @api.post("/parking", response_model=ParkingCheck)
