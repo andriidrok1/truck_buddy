@@ -161,7 +161,7 @@ export default function MapScreen() {
   const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
   /** After an answer: keep talking unless the conversation is over. */
-  const continueDialog = async (myTurn: number, res: AgentResponse | null, spoken: Promise<void>, extra?: Promise<void>) => {
+  const continueDialog = async (myTurn: number, res: AgentResponse | null, spoken: Promise<void>) => {
     if (!dialog.current) return;
     misses.current = res && res.status !== "not_understood" ? 0 : misses.current + 1;
     if (res?.end_conversation || misses.current >= 2) {
@@ -169,7 +169,6 @@ export default function MapScreen() {
       return;
     }
     await spoken;
-    if (extra) await Promise.race([extra, wait(3500)]); // parking directions, if they come quickly
     if (myTurn !== turn.current || !dialog.current) return;
     beginListening();
   };
@@ -220,8 +219,8 @@ export default function MapScreen() {
         setPlaces([res.place, ...others]);
         startRoute({ place: res.place, route: res.route, parking: res.parking });
         const replyDone = sayReply(res);
-        const tips = res.place.category !== "destination" ? followParking(res.place, replyDone, myTurn) : undefined;
-        continueDialog(myTurn, res, replyDone, tips);
+        if (res.place.category !== "destination") followParking(res.place, replyDone, myTurn);
+        endDialog(); // route is set: stop listening until the driver taps the mic again
       } else {
         if (res.status !== "chat" && res.status !== "not_understood") showToast(res.message ?? MESSAGES.notUnderstood);
         backToIdle();
