@@ -33,7 +33,8 @@
         "ACCESS_COARSE_LOCATION",
         "RECORD_AUDIO",
         "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_MICROPHONE"
+        "FOREGROUND_SERVICE_MICROPHONE",
+        "POST_NOTIFICATIONS"
       ]
     },
     "web": {

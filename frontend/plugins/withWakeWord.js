@@ -14,9 +14,20 @@ const source = (root, file) => path.join(root, "assets", "wakeword", file);
 
 const withMicService = (config) =>
   withAndroidManifest(config, (c) => {
+    // The library manifest already declares the service; here we only add the type.
+    // If the app manifest has an entry, set the attribute on it; otherwise add a stub
+    // with tools:node="merge" so the merger combines it with the library's <service>.
     const app = AndroidConfig.Manifest.getMainApplicationOrThrow(c.modResults);
-    app.service = (app.service || []).filter((s) => s.$["android:name"] !== SERVICE);
-    app.service.push({ $: { "android:name": SERVICE, "android:foregroundServiceType": "microphone", "android:exported": "false" } });
+    const existing = (app.service || []).find((s) => s.$["android:name"] === SERVICE);
+    if (existing) {
+      existing.$["android:foregroundServiceType"] = "microphone";
+    } else {
+      c.modResults.manifest.$["xmlns:tools"] = "http://schemas.android.com/tools";
+      app.service = [
+        ...(app.service || []),
+        { $: { "android:name": SERVICE, "android:foregroundServiceType": "microphone", "tools:node": "merge" } },
+      ];
+    }
     return c;
   });
 

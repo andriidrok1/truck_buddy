@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
   tip: { fontFamily: fonts.medium, fontSize: 13, lineHeight: 18, flexShrink: 1 },
   thumbWrap: { width: 72, height: 72, borderRadius: radius.md, overflow: "hidden" },
   thumb: { width: 72, height: 72 },
-  thumbIcon: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
+  thumbIcon: { ...StyleSheet.absoluteFill, alignItems: "center", justifyContent: "center" },
   marker: { position: "absolute", borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
   markerText: { fontFamily: fonts.extrabold },
   backdrop: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm, paddingHorizontal: spacing.lg },

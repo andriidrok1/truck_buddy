@@ -15,6 +15,12 @@ on the phone (Picovoice Porcupine); nothing is recorded or sent before the wake 
   (or build through the Emergent Publish button). `plugins/withWakeWord.js` adds the Android
   microphone foreground service and bundles the `.ppn` files.
 - Toggle: Truck profile → "Hands-free" (on by default).
+- Android 13+: the app asks for notifications before starting the listening service. If denied,
+  the wake word works only while the app is on screen.
+- Wake word heard while the app is in the background: the chime plays and the copilot starts
+  listening as soon as the driver opens the app (within 60 s). Recording never starts from the background.
+- **Dialog after a route is set:** once the copilot answers "Route is set", the conversation ends and
+  the mic turns off. Follow-ups like "not that one" or "something closer" need a new tap or wake word.
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
