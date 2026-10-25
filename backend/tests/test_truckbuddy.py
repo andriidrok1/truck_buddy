@@ -20,7 +20,7 @@ def test_health(s):
     assert r.status_code == 200
     data = r.json()
     assert data.get("ok") is True
-    assert data["providers"]["places"] == "mock"
+    assert data["providers"]["places"] in ("google", "mock")  # google when GOOGLE_MAPS_API_KEY is set
     assert data["providers"]["agent"] == "gpt-5.4-mini"  # single mini model since iter7
 
 
@@ -81,7 +81,10 @@ def test_agent_empty(s):
 
 # Route
 def test_route_valid(s):
-    r = s.post(f"{API}/route", json={"lat": 38.5816, "lng": -121.4944, "place_id": "ts-49er"}, timeout=60)
+    # demo place ids only resolve with the mock provider; with Google the app sends the place itself
+    place = {"id": "ts-49er", "name": "Sacramento 49er Travel Plaza", "category": "truck_stop",
+             "lat": 38.61736, "lng": -121.53861}
+    r = s.post(f"{API}/route", json={"lat": 38.5816, "lng": -121.4944, "place": place}, timeout=60)
     assert r.status_code == 200
     d = r.json()
     assert d["place"]["id"] == "ts-49er"

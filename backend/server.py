@@ -252,14 +252,17 @@ async def speak(req: SpeakRequest):
     if not audio_id or voice.get_audio(audio_id) is None:
         task = _SPEAK_PENDING.get(key)
         if task is None:
-            task = asyncio.create_task(voice.synthesize(req.text, req.voice, req.model,
-                                                        eleven_voice_id=req.eleven_voice_id))
+            async def _gen() -> Optional[str]:
+                aid = await voice.synthesize(req.text, req.voice, req.model, eleven_voice_id=req.eleven_voice_id)
+                # pin inside the single flight: pin() moves the audio to a stable id, so a second waiter
+                # pinning the same temp id again would get back a dead id (404)
+                return voice.pin(aid, key) if aid else None  # fixed lines survive cache eviction and restarts
+            task = asyncio.create_task(_gen())
             _SPEAK_PENDING[key] = task
             task.add_done_callback(lambda _t: _SPEAK_PENDING.pop(key, None))
         audio_id = await asyncio.shield(task)
         if not audio_id:
             raise HTTPException(status_code=502, detail="Voice unavailable")
-        audio_id = voice.pin(audio_id, key)  # fixed lines survive cache eviction and restarts
         if voice.is_fallback(audio_id):
             return {"audio_url": f"/api/voice/audio/{audio_id}"}  # don't cache fallback audio as ElevenLabs
         if len(_SPEAK_CACHE) >= 200:

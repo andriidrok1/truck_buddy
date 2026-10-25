@@ -21,8 +21,9 @@ def _git(*args):
 
 # Git state
 class TestGitState:
-    def test_head(self):
-        assert _git("log", "--oneline", "-1").startswith("58e33e7")
+    def test_head_contains_main_merge(self):
+        # was a pinned HEAD hash; now: emergency must contain the merged main 4c145cc
+        assert subprocess.run(["git", "merge-base", "--is-ancestor", "4c145cc", "HEAD"], cwd="/app").returncode == 0
 
     def test_branch(self):
         assert _git("branch", "--show-current") == "emergency"
@@ -48,8 +49,8 @@ def test_health():
     assert d["ok"] is True
     assert d["providers"]["places"] == "google"
     assert d["providers"]["agent"] == "gpt-5.4-mini"
-    assert d["providers"]["tts"] == "openai"
-    assert d["providers"]["routing"] == "mock"
+    assert d["providers"]["tts"] == "elevenlabs"  # ELEVENLABS_API_KEY set
+    assert d["providers"]["routing"] == "here"  # HERE_API_KEY set
 
 
 # Agent (text) - one Google search

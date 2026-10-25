@@ -42,7 +42,8 @@ def test_reno_fast_templated(s):
     print(f"RENO {dt:.1f}s:", d["reply"])
     assert r.status_code == 200 and d["status"] == "route_set"
     assert DEST_RE.match(d["reply"]), d["reply"]
-    assert d["parking"] is None
+    # iter17+: destinations get a satellite check too; only a cached verdict comes back here
+    assert d["parking"] is None or d["parking"]["verdict"] in ("listed", "likely", "unlikely", "unclear")
     assert dt < 10
 
 

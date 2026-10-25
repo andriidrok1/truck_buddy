@@ -131,7 +131,9 @@ class TestStopSearch:
 class TestFallbacks:
     def _env(self):
         from dotenv import load_dotenv
+        from services import http
         load_dotenv("/app/backend/.env")
+        http._client = None  # each asyncio.run() has its own loop; the shared client is bound to the old one
 
     def test_ors_direct(self):
         self._env()
@@ -160,7 +162,9 @@ class TestFallbacks:
     def test_geocoders(self):
         self._env()
         from services import geocode
+        from services import http
         h = asyncio.run(geocode._here("Reno, NV", 38.58, -121.49))
+        http._client = None
         o = asyncio.run(geocode._ors("Reno, NV", 38.58, -121.49))
         print("GEO here:", h[0].address, h[0].lat, "ors:", o[0].address, o[0].lat)
         assert h and abs(h[0].lat - 39.53) < 0.2

@@ -17,6 +17,7 @@ from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 from models import AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
 from services import approach, breakdown, controls
+from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode
 from services.parking import cached_parking, check_parking, listed_in_data
 from services.places import get_places_provider
@@ -237,6 +238,9 @@ class LlmAgentProvider:
             context += f" Current route: {cur.name} ({cur.address or 'address unknown'})"
             if req.active_distance_mi is not None:
                 context += f", {req.active_distance_mi:.1f} miles"
+            else:  # no route numbers from the app: give a real figure so the model doesn't invent one
+                km = haversine_km(req.lat, req.lng, cur.lat, cur.lng)
+                context += f", about {km_to_mi(km):.1f} miles in a straight line (driving distance is longer)"
             if req.active_duration_min is not None:
                 context += f", about {req.active_duration_min} minutes"
             context += "."
