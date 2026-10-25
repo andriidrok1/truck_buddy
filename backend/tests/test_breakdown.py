@@ -208,6 +208,11 @@ def test_cheapest_needs_two_priced():
 # ---------------------------------------------------------------- live extraction (LLM)
 
 live = pytest.mark.skipif(not os.environ.get("EMERGENT_LLM_KEY"), reason="no LLM key")
+_LOOP = asyncio.new_event_loop()  # one loop for all live LLM calls (the LLM client is bound to its first loop)
+
+
+def run_live(coro):
+    return _LOOP.run_until_complete(asyncio.wait_for(coro, timeout=60))
 
 
 @live
@@ -217,7 +222,7 @@ def test_live_extraction_prices_time_flags():
          "rating": 5, "date": "2026-08-01"},
         {"text": "Called at 2am, they doubled the price at night. Never again.", "rating": 1, "date": "2026-07-01"}],
          "website": None}
-    f = asyncio.run(ps.extract_facts(c, SITE, ps.Budget(40)))
+    f = run_live(ps.extract_facts(c, SITE, ps.Budget(40)))
     amounts = {p["amount_usd_low"] for p in f["prices"]}
     assert 450 in amounts and 150 in amounts
     assert f["wait_time"] and f["wait_time"]["typical_min_high"] <= 60
@@ -229,6 +234,6 @@ def test_live_extraction_prices_time_flags():
 def test_live_extraction_no_facts_stays_unknown():
     c = {"name": "Fixture Shop", "reviews": [{"text": "Nice people.", "rating": 5, "date": "2026-08-01"}],
          "website": None}
-    f = asyncio.run(ps.extract_facts(c, "", ps.Budget(40)))
+    f = run_live(ps.extract_facts(c, "", ps.Budget(40)))
     assert f["prices"] == [] and f["wait_time"] is None
     assert f["mobile_service"] == "unknown" and f["hours_24_7"] == "unknown"
