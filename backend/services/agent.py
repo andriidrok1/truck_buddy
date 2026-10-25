@@ -40,7 +40,7 @@ Truck: {truck}.
 Driver preferences: {prefs}.
 
 Classify the driver's LAST utterance and answer with JSON only, no other text:
-{{"intent": "find"|"go"|"pick"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "query": string|null, "place_index": integer|null, "reply": string|null}}
+{{"intent": "find"|"go"|"pick"|"voice"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "query": string|null, "place_index": integer|null, "voice_on": boolean|null, "reply": string|null}}
 
 - find: the driver needs a place. Pick the category yourself, never ask:
   truck_stop = fuel, diesel, DEF, food, showers, truck stop;
@@ -48,6 +48,7 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
   rest_area = quick break, stretch, restroom, short nap, rest area.
 - go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV".
 - pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something closer"). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. If no earlier place fits, use find with the same category instead.
+- voice: the driver wants spoken turn-by-turn directions on or off ("mute directions", "stop telling me the turns", "turn voice guidance back on"). voice_on = true to turn on, false to turn off.
 - chat: a question or remark that is not a place request ("how far is it?", "where do I park?", "thanks"). reply = a brief answer using the context. For parking/entry questions use only the satellite parking check; if there is none, say you haven't checked parking there yet. Never invent parking details.
 - bye: goodbye or done ("bye", "that's all", "no, I'm good", "that's it"). reply = one short friendly line.
 - unclear: only a sound or noise label (siren, beeping, music) or unintelligible.
@@ -318,6 +319,10 @@ class LlmAgentProvider:
         except Exception:
             logger.exception("agent action failed")
             return _not_understood(text, self.source)
+        if intent == "voice" and isinstance(d.get("voice_on"), bool):
+            on = d["voice_on"]
+            say = "Okay, I'll call out the turns." if on else "Okay, turn directions are muted. Just ask if you want them back."
+            return AgentResponse(status="chat", transcript=text, reply=say, voice_guidance=on, source=self.source)
         if intent in ("chat", "bye") and reply:
             return AgentResponse(status="chat", transcript=text, reply=reply, end_conversation=intent == "bye",
                                  source=self.source)

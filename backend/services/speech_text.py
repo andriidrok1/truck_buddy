@@ -60,7 +60,7 @@ def _hours(m: re.Match) -> str:
         h, m = h + 1, 0
         out = "one hour" if h == 1 else f"{words(h)} hours"
     if m:
-        out += f" {words(m)}"
+        out += f" and {words(m)} minutes"
     return out
 
 

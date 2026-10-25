@@ -22,6 +22,10 @@ type Props = {
   onOptionParking: (p: Place) => void;
   onOptionRoute: (p: Place) => void;
   active: ActiveRoute | null;
+  /** Driving mode started with "Go": compact arrival info instead of the route card. */
+  driving: boolean;
+  remaining: { m: number; s: number } | null;
+  onGo: () => void;
   bottomInset: number;
   onAvatarPress: () => void;
   onSubmitText: (text: string) => void;
@@ -56,8 +60,21 @@ function SideButton({
   );
 }
 
+function arrivalClock(seconds: number) {
+  const d = new Date(Date.now() + seconds * 1000);
+  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function durationLabel(seconds: number) {
+  const min = Math.max(1, Math.round(seconds / 60));
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, bottomInset, onAvatarPress, onSubmitText, onClose, onEndRoute, onLayout, wakePhrase } = props;
+  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, onClose, onEndRoute, onLayout, wakePhrase } = props;
   const { colors } = useTheme();
   const navigating = phase === "navigating";
   const canType = phase === "ready" || phase === "navigating" || phase === "options";
@@ -116,7 +133,17 @@ export function CopilotSheet(props: Props) {
         {phase === "options" && (
           <OptionsList options={options} parking={parking} onParking={onOptionParking} onRoute={onOptionRoute} />
         )}
-        {navigating && active && (
+        {navigating && active && driving && remaining && (
+          <View testID="driving-info" style={styles.driveInfo}>
+            <Text testID="arrival-time" style={[styles.eta, { color: colors.success }]}>
+              {arrivalClock(remaining.s)}
+            </Text>
+            <Text testID="remaining-info" numberOfLines={1} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
+              {durationLabel(remaining.s)} · {(remaining.m / 1609.34).toFixed(remaining.m < 16093 ? 1 : 0)} mi · {active.place.name}
+            </Text>
+          </View>
+        )}
+        {navigating && active && !driving && (
           <View style={styles.navInfo}>
             <Text testID="route-summary" style={[styles.eta, { color: colors.onSurface }]}>
               {active.route.summary}
@@ -149,6 +176,16 @@ export function CopilotSheet(props: Props) {
                 <Icon name="chevron-right" size={18} color={colors.info} />
               </Pressable>
             )}
+            <PressableScale
+              testID="go-button"
+              accessibilityLabel="Go"
+              onPress={onGo}
+              haptic="heavy"
+              style={[styles.goBtn, { backgroundColor: colors.info }]}
+            >
+              <Icon name="navigation-variant" size={22} color={colors.onInfo} />
+              <Text style={[styles.goText, { color: colors.onInfo }]}>Go</Text>
+            </PressableScale>
           </View>
         )}
       </Animated.View>
@@ -233,6 +270,9 @@ export function CopilotSheet(props: Props) {
 
 const styles = StyleSheet.create({
   wrap: { position: "absolute", left: 0, right: 0, bottom: 0 },
+  driveInfo: { alignItems: "center", gap: 2 },
+  goBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, height: 52, borderRadius: 26, marginTop: spacing.sm },
+  goText: { fontFamily: fonts.bold, fontSize: 18 },
   inputRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.md },
   input: { flex: 1, minWidth: 0, width: 0, minHeight: 52, borderRadius: 26, paddingHorizontal: spacing.lg, fontFamily: fonts.medium, fontSize: 16 },
   roundBtn: { flexShrink: 0, width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center" },

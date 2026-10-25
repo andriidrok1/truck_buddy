@@ -12,6 +12,7 @@ import { DestinationLabel, Pin, PIN_H, PIN_W, USER_SIZE, UserArrow } from "./Pin
 
 const TILE = 256;
 const DEFAULT_ZOOM = 15;
+const FOLLOW_ZOOM = 17;
 
 function project(p: LatLng, z: number) {
   const s = TILE * 2 ** z;
@@ -26,12 +27,17 @@ function unproject(x: number, y: number, z: number): LatLng {
 }
 
 const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(props, ref) {
-  const { driver, heading, places, active, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress } = props;
+  const { driver, heading, places, active, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow } = props;
   const { colors } = useTheme();
   const [size, setSize] = useState({ w: 390, h: 844 });
   const [view, setView] = useState({ center: driver, zoom: DEFAULT_ZOOM });
   const viewRef = useRef(view);
   viewRef.current = view;
+
+  // Driving mode: zoom in on the truck and keep following it.
+  useEffect(() => {
+    if (follow) setView({ center: driver, zoom: FOLLOW_ZOOM });
+  }, [follow, driver]);
 
   // Focus point = middle of the area not covered by the overlays.
   const fx = size.w / 2;

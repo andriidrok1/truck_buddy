@@ -9,16 +9,21 @@ import { Icon } from "@/src/components/Icon";
 import MapLayer from "@/src/components/MapLayer";
 import type { MapLayerHandle } from "@/src/components/mapTypes";
 import { MicPermissionCard } from "@/src/components/MicPermissionCard";
+import { NavBanner } from "@/src/components/NavBanner";
 import { PressableScale } from "@/src/components/PressableScale";
 import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
+import { useGuidance } from "@/src/hooks/useGuidance";
 import { isOnboarded, truckLabel, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { useWakeWord } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
 import type { ActiveRoute, AgentResponse, LatLng, ParkingState, Phase, Place } from "@/src/types";
+import { storage } from "@/src/utils/storage";
+
+const VOICE_GUIDANCE_KEY = "voice_guidance_v1";
 
 const REQUEST_TIMEOUT_MS = 60000;
 const STAGES = ["Searching nearby…", "Setting route…"];
@@ -57,6 +62,16 @@ export default function MapScreen() {
   const [thinkingText, setThinkingText] = useState<string | undefined>(undefined);
   const [options, setOptions] = useState<Place[]>([]);
   const [parking, setParking] = useState<Record<string, ParkingState>>({});
+  const [driving, setDriving] = useState(false);
+  const [voiceOn, setVoiceOnState] = useState(true);
+
+  useEffect(() => {
+    storage.getItem(VOICE_GUIDANCE_KEY, true as boolean).then((v) => setVoiceOnState(v !== false));
+  }, []);
+  const setVoiceOn = (v: boolean) => {
+    setVoiceOnState(v);
+    storage.setItem(VOICE_GUIDANCE_KEY, v);
+  };
 
   const turn = useRef(0);
   const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -254,6 +269,23 @@ export default function MapScreen() {
   const backToIdle = () =>
     setPhase(activeRef.current ? "navigating" : optionsRef.current.length ? "options" : "ready");
 
+  // Turn-by-turn while driving; prompts stay quiet while the driver is talking to the copilot.
+  const guidance = useGuidance(active, loc.coords, driving, voiceOn, (text) => {
+    if (phase === "listening" || phase === "thinking") return;
+    setCaption({ reply: text });
+    api
+      .speak(text)
+      .then((r) => voice.play(absoluteUrl(r.audio_url)))
+      .catch(() => {});
+  });
+
+  const onGo = () => {
+    endDialog();
+    voice.stopSpeaking();
+    setCaption(null);
+    setDriving(true);
+  };
+
   /** Typed request: same pipeline as voice, without recording or reopening the mic. */
   const onSubmitText = (text: string) => {
     if (phase === "thinking") return;
@@ -296,6 +328,7 @@ export default function MapScreen() {
         if (res.place.category !== "destination") followParking(res.place, replyDone, myTurn);
         endDialog(); // route is set: stop listening until the driver taps the mic again
       } else {
+        if (typeof res.voice_guidance === "boolean") setVoiceOn(res.voice_guidance);
         if (res.status !== "chat" && res.status !== "not_understood") showToast(res.message ?? MESSAGES.notUnderstood);
         backToIdle();
         continueDialog(myTurn, res, sayReply(res));
@@ -472,6 +505,7 @@ export default function MapScreen() {
     voice.cancelRecording().catch(() => {});
     voice.stopSpeaking();
     routeStart.current = null;
+    setDriving(false);
     setActive(null);
     setCaption(null);
     setOptions([]);
@@ -518,8 +552,19 @@ export default function MapScreen() {
         fitPoints={fit.points}
         onCenterChange={(c) => (center.current = c)}
         onPlacePress={onPlacePress}
+        follow={driving}
       />
 
+      {driving && active ? (
+        <NavBanner
+          topInset={insets.top}
+          next={guidance.next}
+          toNextM={guidance.toNextM}
+          voiceOn={voiceOn}
+          onToggleVoice={() => setVoiceOn(!voiceOn)}
+          onLayout={setTopH}
+        />
+      ) : (
       <TopBar
         topInset={insets.top}
         truckLabel={truckLabel(truck)}
@@ -529,6 +574,7 @@ export default function MapScreen() {
         isDemo={loc.resolved && loc.isDemo}
         onLayout={setTopH}
       />
+      )}
 
       <PressableScale
         testID="recenter-button"
@@ -551,6 +597,9 @@ export default function MapScreen() {
         onOptionParking={onOptionParking}
         onOptionRoute={onPlacePress}
         active={active}
+        driving={driving}
+        remaining={driving ? { m: guidance.remainingM, s: guidance.remainingS } : null}
+        onGo={onGo}
         bottomInset={insets.bottom}
         onAvatarPress={onAvatarPress}
         onSubmitText={onSubmitText}

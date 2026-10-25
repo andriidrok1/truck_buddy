@@ -24,10 +24,22 @@ function ViewMarker({ children, ...rest }: React.ComponentProps<typeof Marker> &
 }
 
 const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(props, ref) {
-  const { driver, heading, places, active, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress } = props;
+  const { driver, heading, places, active, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow } = props;
   const { colors } = useTheme();
   const mapRef = useRef<MapView>(null);
   const padding = { top: topInset, bottom: bottomInset, left: 0, right: 0 };
+
+  // Driving mode: close, tilted camera that follows the truck and turns with it.
+  useEffect(() => {
+    if (!follow) return;
+    mapRef.current?.animateCamera(
+      { center: toCoord(driver), zoom: 17, pitch: 45, heading: heading ?? 0 },
+      { duration: 600 },
+    );
+  }, [follow, driver, heading]);
+  useEffect(() => {
+    if (!follow) mapRef.current?.animateCamera({ pitch: 0, heading: 0 }, { duration: 400 });
+  }, [follow]);
 
   const recenter = () =>
     mapRef.current?.animateToRegion({ ...toCoord(driver), latitudeDelta: 0.015, longitudeDelta: 0.015 }, 450);
@@ -96,7 +108,7 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
       )}
 
       <ViewMarker key="driver" coordinate={toCoord(driver)} anchor={{ x: 0.5, y: 0.5 }} zIndex={10}>
-        <UserArrow heading={heading} />
+        <UserArrow heading={follow ? 0 : heading} />
       </ViewMarker>
     </MapView>
   );

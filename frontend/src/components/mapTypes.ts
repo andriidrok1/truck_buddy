@@ -15,4 +15,6 @@ export type MapLayerProps = {
   fitPoints: LatLng[];
   onCenterChange: (c: LatLng) => void;
   onPlacePress: (p: Place) => void;
+  /** Driving mode: keep the camera close behind the driver. */
+  follow?: boolean;
 };

@@ -17,6 +17,15 @@ export type Place = {
   distance_mi?: number | null;
 };
 
+export type Maneuver = {
+  action: string;
+  direction?: string | null;
+  instruction: string;
+  lat: number;
+  lng: number;
+  index: number;
+};
+
 export type RouteInfo = {
   geometry: [number, number][];
   distance_m: number;
@@ -28,6 +37,7 @@ export type RouteInfo = {
   notices?: string[];
   truck_aware?: boolean;
   traffic?: { level: "slow" | "jam"; points: [number, number][] }[];
+  maneuvers?: Maneuver[];
 };
 
 export type PlacesResponse = {
@@ -65,6 +75,7 @@ export type AgentResponse = {
   audio_url_2?: string | null;
   timings?: Record<string, number>;
   end_conversation?: boolean;
+  voice_guidance?: boolean | null;
   source: string;
 };
 

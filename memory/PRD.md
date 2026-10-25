@@ -75,3 +75,7 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - New AI-redrawn 3D copilot avatar (Gemini Nano Banana from user screenshot) → frontend/assets/images/avatar.png
 - Manual text input: "Type" button in CopilotSheet → same agent pipeline as voice (no transcription, mic not reopened)
 - speech_text.spoken(): "Main St. Exit 12" → "Main Street", "Oak Dr." → "Drive"; "near St. Louis" stays "Saint"
+- Spoken time fix: "1 h 50 min" → "one hour and fifty minutes"
+- Driving mode: "Go" button on route card → map zooms/follows truck (native: tilted camera), top NavBanner (next turn arrow, distance, instruction, mute toggle), bottom arrival time + remaining time/miles
+- Turn-by-turn from HERE actions (RouteInfo.maneuvers, imperial). Spoken prompts ~1 mi / ~0.5 mi-500 ft / at turn when voice on
+- Voice guidance on/off: banner button (persisted) + agent intent "voice" (AgentResponse.voice_guidance)

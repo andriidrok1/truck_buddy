@@ -24,7 +24,7 @@ from models import Place, RouteInfo  # noqa: E402
     ("Fair Oaks Pkwy", "Fair Oaks Parkway"),
     ("Sunrise Dr", "Sunrise Drive"),
     ("Hwy 50", "Highway 50"),
-    ("2 h 49 min", "two hours fifty"),
+    ("2 h 49 min", "two hours and fifty minutes"),
     ("12.4 miles", "about twelve miles"),
     ("13 minutes", "about fifteen minutes"),
     ("DEF at the pump", "D-E-F at the pump"),
@@ -50,7 +50,7 @@ def test_spoken_removes_symbols():
 
 
 def test_spoken_route_summary():
-    assert spoken("5 h 20 min · 312 mi") == "five hours twenty, three hundred twelve miles"
+    assert spoken("5 h 20 min · 312 mi") == "five hours and twenty minutes, three hundred twelve miles"
 
 
 # Edge cases likely in real addresses / place names (known issues reported in iteration 11)

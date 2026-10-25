@@ -39,6 +39,15 @@ class TrafficSegment(BaseModel):
     points: List[List[float]]  # [[lat, lng], ...]
 
 
+class Maneuver(BaseModel):
+    action: str  # depart | turn | arrive | continue | roundaboutExit | ...
+    direction: Optional[str] = None  # left | right | middle
+    instruction: str  # "Turn left onto J St"
+    lat: float
+    lng: float
+    index: int  # point index in RouteInfo.geometry where the maneuver happens
+
+
 class RouteInfo(BaseModel):
     geometry: List[List[float]]  # [[lat, lng], ...]
     distance_m: float
@@ -50,6 +59,7 @@ class RouteInfo(BaseModel):
     notices: List[str] = Field(default_factory=list)  # restriction warnings from the router
     truck_aware: bool = False  # True when height/length/weight/hazmat were applied
     traffic: List[TrafficSegment] = Field(default_factory=list)  # live slowdowns (HERE only)
+    maneuvers: List[Maneuver] = Field(default_factory=list)  # turn-by-turn (HERE only)
 
 
 ParkingVerdict = Literal["listed", "likely", "unlikely", "unclear"]
@@ -159,6 +169,7 @@ class AgentResponse(BaseModel):
     parking: Optional[ParkingCheck] = None
     options: List[Place] = Field(default_factory=list)  # other candidates, closest first
     end_conversation: bool = False  # the dialog reached its end (goodbye / done)
+    voice_guidance: Optional[bool] = None  # driver asked to turn spoken directions on/off
     audio_url: Optional[str] = None  # relative path to the spoken reply (mp3)
     audio_url_2: Optional[str] = None  # rest of a 2-sentence reply, generated in parallel
     timings: dict[str, int] = Field(default_factory=dict)  # ms per pipeline stage (voice turns)

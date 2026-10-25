@@ -8,12 +8,13 @@ the route avoids low bridges and weight/length/hazmat restrictions.
 import logging
 import math
 import os
+import re
 from typing import List, Optional
 
 import flexpolyline
 from services.http import client
 
-from models import RouteInfo, TrafficSegment, TruckProfile
+from models import Maneuver, RouteInfo, TrafficSegment, TruckProfile
 from services.geo import haversine_km, km_to_mi
 
 logger = logging.getLogger("truckbuddy.routing")
@@ -88,7 +89,9 @@ async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile) -> 
         "transportMode": "truck",
         "origin": f"{fl},{fg}",
         "destination": f"{tl},{tg}",
-        "return": "polyline,summary",
+        "return": "polyline,summary,actions,instructions",
+        "lang": "en-US",
+        "units": "imperial",
         "spans": "dynamicSpeedInfo",
         "vehicle[height]": round(t.height_in * 2.54),  # cm
         "vehicle[length]": round(t.total_length_ft * 30.48),  # cm
@@ -106,15 +109,40 @@ async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile) -> 
     routes = r.json().get("routes") or []
     if not routes or not routes[0].get("sections"):
         raise RuntimeError("HERE returned no truck route")
-    geometry, meters, seconds, raw, traffic = [], 0.0, 0.0, [], []
+    geometry, meters, seconds, raw, traffic, actions = [], 0.0, 0.0, [], [], []
     for s in routes[0]["sections"]:
         pts = [[round(p[0], 6), round(p[1], 6)] for p in flexpolyline.decode(s["polyline"])]
+        for a in s.get("actions") or []:
+            actions.append((len(geometry) + int(a.get("offset", 0)), a))
         geometry += pts
         traffic += _traffic(pts, s.get("spans") or [])
         meters += s["summary"]["length"]
         seconds += s["summary"]["duration"]
         raw += [str(n.get("code") or n.get("title") or "") for n in s.get("notices", [])]
-    return _info(geometry, meters, seconds, "here", _friendly(raw), True, traffic)
+    info = _info(geometry, meters, seconds, "here", _friendly(raw), True, traffic)
+    info.maneuvers = _maneuvers(geometry, actions)
+    return info
+
+
+_GO_FOR = re.compile(r"\s+Go for .*$")
+
+
+def _maneuvers(geometry: List[List[float]], actions: list) -> List[Maneuver]:
+    """HERE actions -> maneuvers whose index points into the thinned geometry."""
+    step = math.ceil(len(geometry) / MAX_POINTS) if len(geometry) > MAX_POINTS else 1
+    last = (len(geometry) - 1) // step + (1 if step > 1 else 0)
+    out = []
+    for off, a in actions:
+        if a.get("action") == "depart":
+            continue
+        off = min(off, len(geometry) - 1)
+        text = _GO_FOR.sub("", str(a.get("instruction") or "")).rstrip(".").strip()
+        if not text:
+            continue
+        idx = last if off == len(geometry) - 1 else min(off // step, last)
+        out.append(Maneuver(action=str(a.get("action")), direction=a.get("direction"), instruction=text,
+                            lat=geometry[off][0], lng=geometry[off][1], index=idx))
+    return out
 
 
 def _friendly(codes: List[str]) -> List[str]:
