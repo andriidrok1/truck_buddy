@@ -1,4 +1,6 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardStickyView } from "react-native-keyboard-controller";
 import Animated, { FadeIn } from "react-native-reanimated";
 
 import { fonts, shadow, spacing, useTheme } from "../theme";
@@ -22,6 +24,7 @@ type Props = {
   active: ActiveRoute | null;
   bottomInset: number;
   onAvatarPress: () => void;
+  onSubmitText: (text: string) => void;
   onClose: () => void;
   onEndRoute: () => void;
   onLayout: (h: number) => void;
@@ -54,9 +57,20 @@ function SideButton({
 }
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, bottomInset, onAvatarPress, onClose, onEndRoute, onLayout, wakePhrase } = props;
+  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, bottomInset, onAvatarPress, onSubmitText, onClose, onEndRoute, onLayout, wakePhrase } = props;
   const { colors } = useTheme();
   const navigating = phase === "navigating";
+  const canType = phase === "ready" || phase === "navigating" || phase === "options";
+  const [typing, setTyping] = useState(false);
+  const [draft, setDraft] = useState("");
+  const send = () => {
+    const text = draft.trim();
+    if (!text) return;
+    haptic("medium");
+    setDraft("");
+    setTyping(false);
+    onSubmitText(text);
+  };
 
   const caption =
     phase === "listening"
@@ -72,6 +86,7 @@ export function CopilotSheet(props: Props) {
               : "Tap to talk";
 
   return (
+    <KeyboardStickyView offset={{ closed: 0, opened: bottomInset }} style={styles.wrap}>
     <View
       testID="copilot-sheet"
       onLayout={(e) => onLayout(e.nativeEvent.layout.height)}
@@ -138,8 +153,44 @@ export function CopilotSheet(props: Props) {
         )}
       </Animated.View>
 
+      {typing && canType ? (
+        <Animated.View entering={FadeIn.duration(180)} style={styles.inputRow}>
+          <TextInput
+            testID="copilot-text-input"
+            value={draft}
+            onChangeText={setDraft}
+            onSubmitEditing={send}
+            placeholder="Type a request…"
+            placeholderTextColor={colors.onSurfaceSecondary}
+            returnKeyType="send"
+            autoFocus
+            style={[styles.input, { backgroundColor: colors.surfaceSecondary, color: colors.onSurface }]}
+          />
+          <PressableScale
+            testID="copilot-send-button"
+            accessibilityLabel="Send"
+            onPress={send}
+            disabled={!draft.trim()}
+            style={[styles.roundBtn, { backgroundColor: draft.trim() ? colors.info : colors.surfaceTertiary }]}
+          >
+            <Icon name="send" size={22} color={draft.trim() ? colors.onInfo : colors.onSurfaceSecondary} />
+          </PressableScale>
+          <PressableScale
+            testID="copilot-text-cancel"
+            accessibilityLabel="Cancel typing"
+            onPress={() => setTyping(false)}
+            style={[styles.roundBtn, { backgroundColor: colors.surfaceSecondary }]}
+          >
+            <Icon name="microphone" size={22} color={colors.onSurface} />
+          </PressableScale>
+        </Animated.View>
+      ) : (
       <View style={styles.actions}>
-        <View style={styles.side} />
+        {canType ? (
+          <SideButton icon="keyboard-outline" label="Type" testID="type-button" onPress={() => setTyping(true)} />
+        ) : (
+          <View style={styles.side} />
+        )}
 
         <Pressable
           testID="copilot-avatar-button"
@@ -174,17 +225,18 @@ export function CopilotSheet(props: Props) {
         )}
         {navigating && <SideButton icon="close" label="End route" testID="end-route-button" onPress={onEndRoute} danger />}
       </View>
-
+      )}
     </View>
+    </KeyboardStickyView>
   );
 }
 
 const styles = StyleSheet.create({
+  wrap: { position: "absolute", left: 0, right: 0, bottom: 0 },
+  inputRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.md },
+  input: { flex: 1, minWidth: 0, width: 0, minHeight: 52, borderRadius: 26, paddingHorizontal: spacing.lg, fontFamily: fonts.medium, fontSize: 16 },
+  roundBtn: { flexShrink: 0, width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center" },
   sheet: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingTop: spacing.sm,

@@ -254,7 +254,17 @@ export default function MapScreen() {
   const backToIdle = () =>
     setPhase(activeRef.current ? "navigating" : optionsRef.current.length ? "options" : "ready");
 
-  const submitTurn = async (recorded?: string) => {
+  /** Typed request: same pipeline as voice, without recording or reopening the mic. */
+  const onSubmitText = (text: string) => {
+    if (phase === "thinking") return;
+    voice.stopSpeaking();
+    voice.cancelRecording().catch(() => {});
+    endDialog();
+    setCaption(null);
+    submitTurn(undefined, text);
+  };
+
+  const submitTurn = async (recorded?: string, typed?: string) => {
     clearTimers();
     const myTurn = ++turn.current;
     setPhase("thinking");
@@ -263,12 +273,15 @@ export default function MapScreen() {
     inflight.current = ctrl;
     const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const uri = recorded ?? (await voice.stopRecording());
-      if (!uri) throw new Error("no recording");
-      const { transcript } = await api.transcribe(uri, ctrl.signal);
+      let transcript = typed ?? "";
+      if (typed === undefined) {
+        const uri = recorded ?? (await voice.stopRecording());
+        if (!uri) throw new Error("no recording");
+        transcript = (await api.transcribe(uri, ctrl.signal)).transcript;
+      }
       if (myTurn !== turn.current) return;
       if (transcript) {
-        playFiller(); // only when the driver actually said something
+        if (typed === undefined) playFiller(); // only when the driver actually said something
         setCaption({ reply: "…", heard: transcript });
       }
       const res = await api.agentSpeak(transcript, loc.coords, activeRef.current, ctrl.signal, dialog.current ?? undefined);
@@ -540,6 +553,7 @@ export default function MapScreen() {
         active={active}
         bottomInset={insets.bottom}
         onAvatarPress={onAvatarPress}
+        onSubmitText={onSubmitText}
         onClose={onClose}
         onEndRoute={onEndRoute}
         onLayout={setSheetH}

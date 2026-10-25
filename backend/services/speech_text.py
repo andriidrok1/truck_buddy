@@ -73,7 +73,10 @@ _RULES = [
     (re.compile(r"(?<![.\w])N\.(?=\s)"), "North"),
     (re.compile(r"(?<![.\w])S\.(?=\s)"), "South"),
     (re.compile(r"(?<![.\w])E\.(?=\s)"), "East"),
-    # Before a name: "St. Louis" = Saint, "Dr. Martin..." = Doctor; otherwise street suffixes.
+    # After a street name ("Main St. Exit 12", "3rd St") it's a suffix; before a name
+    # ("near St. Louis", "Dr. Martin...") it's Saint / Doctor; otherwise street suffixes.
+    (re.compile(r"(\b[A-Z0-9][\w']*\s+)St\b"), r"\1Street"),
+    (re.compile(r"(\b[A-Z0-9][\w']*\s+)Dr\b"), r"\1Drive"),
     (re.compile(r"\bSt\.?\s+(?=[A-Z][a-z])(?!Next\b|Then\b|Turn\b|The\b)"), "Saint "),
     (re.compile(r"\bDr\.?\s+(?=[A-Z][a-z])(?!Next\b|Then\b|Turn\b|The\b)"), "Doctor "),
     (re.compile(r"\bAve\b"), "Avenue"),

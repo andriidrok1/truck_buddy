@@ -70,3 +70,8 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - App flow: /api/voice/transcribe -> caption "You said" -> /api/agent?speak=true (active_distance_mi/duration_min, no re-route). Filler line ("On it." etc., cached /api/speak) plays meanwhile. 2-sentence replies: audio_url + audio_url_2 (parallel TTS).
 - /api/warm (3 categories + top-2 parking checks), shared httpx client (services/http.py), 16 kHz mono recording, silence 700 ms, timings in response + log (services/timing.py).
 - Server time to reply ready: find 6.3 s -> 3.6 s, Reno 4.4 s -> 3.2 s (TTS is the largest remaining stage).
+
+## Update (Jun 2026)
+- New AI-redrawn 3D copilot avatar (Gemini Nano Banana from user screenshot) → frontend/assets/images/avatar.png
+- Manual text input: "Type" button in CopilotSheet → same agent pipeline as voice (no transcription, mic not reopened)
+- speech_text.spoken(): "Main St. Exit 12" → "Main Street", "Oak Dr." → "Drive"; "near St. Louis" stays "Saint"
