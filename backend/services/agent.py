@@ -19,6 +19,7 @@ from models import AgentRequest, AgentResponse, AppAction, Place, RouteInfo, Tru
 from services import approach, breakdown, controls, memory
 from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode
+from services.google_places import TRUCK_STOP_NAME
 from services.parking import cached_parking, check_parking, listed_in_data
 from services.places import get_places_provider
 from services.routing import get_routing_provider
@@ -57,9 +58,6 @@ MAX_OPTIONS = 4
 PRECHECK = 3  # nearest candidates satellite-checked in the background
 FAVORITE_EXTRA_MI = 5.0
 TRUCK_TAGS = ("truck parking", "53 ft", "truck lot", "hgv")
-# Names that mark a real truck stop (vs. an ordinary gas station Google tags as truck_stop).
-TRUCK_STOP_NAME = re.compile(
-    r"\b(?:love'?s|pilot|flying j|ta|petro|sapp bros|roady'?s|truck ?stop|travel (?:center|centre|plaza))\b", re.I)
 
 
 def is_fuel_stop(p: Place) -> bool:

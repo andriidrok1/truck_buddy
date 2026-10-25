@@ -4,6 +4,7 @@ Used when GOOGLE_MAPS_API_KEY is set (see services/places.py).
 """
 import logging
 import os
+import re
 import time
 from typing import Optional
 
@@ -17,8 +18,17 @@ logger = logging.getLogger("truckbuddy.google")
 URL = "https://places.googleapis.com/v1/places:searchText"
 FIELD_MASK = (
     "places.id,places.displayName,places.rating,places.userRatingCount,"
-    "places.editorialSummary,places.formattedAddress,places.location"
+    "places.editorialSummary,places.formattedAddress,places.location,places.types,places.primaryType"
 )
+# Names that mark a real truck stop (vs. an ordinary gas station Google tags as truck_stop).
+TRUCK_STOP_NAME = re.compile(
+    r"\b(?:love'?s|pilot|flying j|ta|petro|sapp bros|roady'?s|truck ?stop|travel (?:center|centre|plaza))\b", re.I)
+# truck_stop results that are something else: washes, scales, diners, offices.
+NOT_TRUCK_STOP_NAME = re.compile(r"truck ?wash|\bscales?\b|restaurant|taqueria|\btacos?\b|\btech\b|office", re.I)
+NOT_TRUCK_STOP_TYPES = re.compile(r"restaurant|^cafe$|^car_wash$|office|^meal_", re.I)  # checked on primaryType only
+FUEL_TYPES = {"gas_station", "fuel_station", "truck_stop_fuel"}
+SAME_PLACE_M = 60  # results closer than this are one place
+SAME_NAME_M = 500  # same name this close: one place (Google pin vs curated entrance)
 TEXT_QUERY = {
     "hotel": "hotel motel with truck parking",
     "truck_stop": "truck stop",
@@ -35,6 +45,33 @@ CACHE_MAX = 200
 
 class PlacesUnavailable(Exception):
     pass
+
+
+def truck_stop_reject(name: str, types: list[str], primary: str = "") -> Optional[str]:
+    """Why a Google truck_stop result isn't a real truck stop, or None to keep it."""
+    chain = bool(TRUCK_STOP_NAME.search(name))
+    if not chain and NOT_TRUCK_STOP_NAME.search(name):
+        return "name"
+    if not chain and primary and NOT_TRUCK_STOP_TYPES.search(primary):
+        return "type"
+    if not chain and not ("truck_stop" in types and FUEL_TYPES & set(types)):
+        return "no fuel/chain"
+    return None
+
+
+def _same(p: Place, q: Place) -> bool:
+    m = haversine_km(p.lat, p.lng, q.lat, q.lng) * 1000
+    return m <= SAME_PLACE_M or (m <= SAME_NAME_M and p.name.strip().lower() == q.name.strip().lower())
+
+
+def dedupe_nearby(places: list[Place]) -> list[Place]:
+    """One place per location (60 m, or 500 m with the same name): keep a curated one, then a truck-stop name."""
+    rank = lambda p: (not p.id.startswith(("ts-", "ht-", "ra-")), not TRUCK_STOP_NAME.search(p.name))  # noqa: E731
+    out: list[Place] = []
+    for p in sorted(places, key=rank):
+        if not any(_same(p, q) for q in out):
+            out.append(p)
+    return sorted(out, key=lambda x: x.distance_km or 0)
 
 
 class GooglePlacesProvider:
@@ -69,14 +106,20 @@ class GooglePlacesProvider:
 
         out = []
         dedupe = set()
+        raw = []
         for p in r.json().get("places", []):
             loc = p.get("location") or {}
             if "latitude" not in loc:
                 continue
             km = haversine_km(lat, lng, loc["latitude"], loc["longitude"])
-            if km > radius_km:  # bias can return far-away results
-                continue
             name = (p.get("displayName") or {}).get("text") or "Unnamed place"
+            types = p.get("types") or []
+            primary = p.get("primaryType") or ""
+            drop = "far" if km > radius_km else (
+                truck_stop_reject(name, types, primary) if category == "truck_stop" else None)
+            raw.append(f"{name} [{primary}: {','.join(types[:5])}] {km:.1f}km{' DROP ' + drop if drop else ''}")
+            if drop:  # bias can return far-away results
+                continue
             key = (name.lower(), (p.get("formattedAddress") or "").lower())
             if key in dedupe:
                 continue
@@ -96,8 +139,17 @@ class GooglePlacesProvider:
             )
             self._remember(place)
             out.append(place)
-        out.sort(key=lambda x: x.distance_km)
-        return out
+        logger.info("google %s @%.4f,%.4f r=%skm raw: %s", category, lat, lng, radius_km, " | ".join(raw) or "none")
+        return self._merge_curated(category, lat, lng, radius_km, out)
+
+    def _merge_curated(self, category: Category, lat: float, lng: float, radius_km: float,
+                       found: list[Place]) -> list[Place]:
+        """Curated places (checked verdict + entrance) join the results and win within 60 m."""
+        from services.places import curated
+        mine = [p for p in curated(category, lat, lng) if (p.distance_km or 0) <= radius_km]
+        for p in mine:
+            self._remember(p)
+        return dedupe_nearby(found + mine)
 
     async def search(self, category: Category, lat: float, lng: float) -> PlacesResponse:
         # ~1 km grid cache so repeated taps/turns don't trigger new billable searches.

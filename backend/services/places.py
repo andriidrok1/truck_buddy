@@ -73,6 +73,22 @@ MOCK_PLACES = [
 ]
 
 
+def _all(lat: float, lng: float) -> List[Place]:
+    out = []
+    for raw in MOCK_PLACES:
+        p = Place(**raw)  # never moved
+        km = haversine_km(lat, lng, p.lat, p.lng)
+        p.distance_km = round(km, 2)
+        p.distance_mi = round(km_to_mi(km), 1)
+        out.append(p)
+    return out
+
+
+def curated(category: Category, lat: float, lng: float) -> List[Place]:
+    """Curated places of a category with distances (merged into the Google results)."""
+    return [p for p in _all(lat, lng) if p.category == category]
+
+
 class PlacesProvider(Protocol):
     source: str
 
@@ -85,14 +101,7 @@ class MockPlacesProvider:
     source = "mock"
 
     def _all(self, lat: float, lng: float) -> List[Place]:
-        out = []
-        for raw in MOCK_PLACES:
-            p = Place(**raw)  # never moved
-            km = haversine_km(lat, lng, p.lat, p.lng)
-            p.distance_km = round(km, 2)
-            p.distance_mi = round(km_to_mi(km), 1)
-            out.append(p)
-        return out
+        return _all(lat, lng)
 
     async def search(self, category: Category, lat: float, lng: float) -> PlacesResponse:
         if min(haversine_km(lat, lng, *a) for a in ANCHORS) > COVERAGE_KM:
