@@ -11,7 +11,7 @@ import type { MapLayerHandle, MapLayerProps } from "./mapTypes";
 import { DestinationLabel, Pin, PIN_H, PIN_W, USER_SIZE, UserArrow } from "./Pin";
 
 const TILE = 256;
-const DEFAULT_ZOOM = 12;
+const DEFAULT_ZOOM = 15;
 
 function project(p: LatLng, z: number) {
   const s = TILE * 2 ** z;

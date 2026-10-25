@@ -30,7 +30,7 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
   const padding = { top: topInset, bottom: bottomInset, left: 0, right: 0 };
 
   const recenter = () =>
-    mapRef.current?.animateToRegion({ ...toCoord(driver), latitudeDelta: 0.09, longitudeDelta: 0.09 }, 450);
+    mapRef.current?.animateToRegion({ ...toCoord(driver), latitudeDelta: 0.015, longitudeDelta: 0.015 }, 450);
 
   useImperativeHandle(ref, () => ({ recenter }));
 
@@ -41,7 +41,7 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
         animated: true,
       });
     } else if (fitPoints.length === 1) {
-      mapRef.current?.animateToRegion({ ...toCoord(fitPoints[0]), latitudeDelta: 0.09, longitudeDelta: 0.09 }, 450);
+      mapRef.current?.animateToRegion({ ...toCoord(fitPoints[0]), latitudeDelta: 0.015, longitudeDelta: 0.015 }, 450);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitKey]);
@@ -51,7 +51,7 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
       ref={mapRef}
       testID="map-view"
       style={StyleSheet.absoluteFill}
-      initialRegion={{ ...toCoord(driver), latitudeDelta: 0.09, longitudeDelta: 0.09 }}
+      initialRegion={{ ...toCoord(driver), latitudeDelta: 0.015, longitudeDelta: 0.015 }}
       mapPadding={padding}
       showsUserLocation={false}
       showsCompass={false}
