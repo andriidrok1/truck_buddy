@@ -64,3 +64,9 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Removed Google Maps / Waze handoff buttons and no-op Saved/Route/Mute/Speaker buttons; calmer sheet typography
 - Continuous conversation: one tap starts a dialog; after each spoken answer the copilot listens again; session memory (session_id, last 8 turns + last places) for follow-ups ("not that one", "the next closest"); ends on silence, goodbye, [END] from the agent, 2 misses, Close or End route
 - Note: true voice-to-voice realtime (barge-in) needs WebRTC → native build only; current dialog works in Expo Go
+
+## Voice latency pass (Jun 2026)
+- One gpt-5.4-mini JSON classification per turn (find/go/pick/chat/bye/unclear); backend picks the place by rules (services/agent.py choose_place). gpt-5.5 only for satellite parking. Eval: tests/eval_intent_models.py (mini 20/20, 5.5 20/20).
+- App flow: /api/voice/transcribe -> caption "You said" -> /api/agent?speak=true (active_distance_mi/duration_min, no re-route). Filler line ("On it." etc., cached /api/speak) plays meanwhile. 2-sentence replies: audio_url + audio_url_2 (parallel TTS).
+- /api/warm (3 categories + top-2 parking checks), shared httpx client (services/http.py), 16 kHz mono recording, silence 700 ms, timings in response + log (services/timing.py).
+- Server time to reply ready: find 6.3 s -> 3.6 s, Reno 4.4 s -> 3.2 s (TTS is the largest remaining stage).
