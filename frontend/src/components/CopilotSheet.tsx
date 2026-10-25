@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
-import Animated, { FadeIn } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 
 import { fonts, shadow, spacing, useTheme } from "../theme";
 import type { ActiveRoute, ParkingState, Phase, Place } from "../types";
@@ -148,9 +148,9 @@ export function CopilotSheet(props: Props) {
         )}
         {navigating && active && !driving && (
           <View style={styles.navInfo}>
-            <Text testID="route-summary" style={[styles.eta, { color: colors.onSurface }]}>
+            <Animated.Text key={`sum-${active.route.summary}`} entering={FadeInDown.springify().damping(15)} testID="route-summary" style={[styles.eta, { color: colors.onSurface }]}>
               {active.route.summary}
-            </Text>
+            </Animated.Text>
             {active.route.truck_aware === false && (
               <Text testID="route-not-truck-checked" style={[styles.notice, { color: colors.warning }]}>
                 Estimated route · truck restrictions not checked
@@ -161,9 +161,9 @@ export function CopilotSheet(props: Props) {
                 {active.route.notices.slice(0, 2).join(" · ")}
               </Text>
             )}
-            <Text testID="route-place-name" numberOfLines={1} style={[styles.placeName, { color: colors.onSurface }]}>
+            <Animated.Text key={`name-${active.place.id}`} entering={FadeInDown.delay(70).springify().damping(15)} testID="route-place-name" numberOfLines={1} style={[styles.placeName, { color: colors.onSurface }]}>
               {active.place.name}
-            </Text>
+            </Animated.Text>
             <View style={styles.tagRow}>
               <Icon name={active.place.tags.length ? "truck" : "map-marker-outline"} size={18} color={colors.onSurfaceSecondary} />
               <Text testID="route-place-tags" numberOfLines={1} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>

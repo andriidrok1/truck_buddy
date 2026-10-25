@@ -134,3 +134,13 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 
 ## Jun 2026 — Loud OpenAI voice fallback
 - OpenAI tts-1 was ~-26 LUFS vs ElevenLabs ~-15 (12 dB quieter on phones). louder(): bundled ffmpeg (imageio-ffmpeg) +13 dB + limiter -> ~-15..-17 LUFS, ~20 ms extra. OpenAI cache tag has |g13 so old quiet cached clips are not reused
+
+## Jun 2026 — Errors, towns, sessions, controls, find-near, animations (NOT pushed, awaiting user OK)
+- Infra errors: status "error" + distinct lines (route down / place search down / LLM lost train of thought, classify 20 s timeout); NOT_UNDERSTOOD only for unintelligible / invalid control
+- Towns (here-town-*): town ParkingCheck from cached_parking/best/check_parking, context "Destination is a town; no parking check", old town cache entries dropped
+- Session survives route_set (dialog.current kept, live loop paused); fresh after end_route/bye/2 misses/10 min; typed turns share it
+- Control phrases (start/stop route, let's go, the stars are out, mute, recenter) never geocoded
+- Where to? keeps text + toast while thinking; bare place -> "Take me to X", requests/category words sent as typed
+- Truck editor save reroutes silently (requestTruckReroute/takeTruckReroute)
+- find near X: geocode X, search around it, route from driver, "N miles from your delivery, M miles from you"; "and a hotel there" reuses point; parking intent with near -> truck stop search; rest_area->truck_stop fallback (said)
+- Animations: TopBar slide-in, route summary/name fade-in, parking label zoom, NavBanner slide + maneuver change, avatar double ripple

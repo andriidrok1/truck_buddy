@@ -200,7 +200,7 @@ class AgentRequest(BaseModel):
     ui: UiState = Field(default_factory=UiState)
 
 
-AgentStatus = Literal["options", "route_set", "chat", "no_results", "not_understood", "researching", "providers"]
+AgentStatus = Literal["options", "route_set", "chat", "no_results", "not_understood", "researching", "providers", "error"]
 
 
 class ProviderFacts(BaseModel):

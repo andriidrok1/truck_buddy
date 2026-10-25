@@ -51,6 +51,16 @@ def needs_retry(key: str) -> bool:
     return bool(hit and not hit[1] and not has_entry(hit[0]))
 
 
+def drop(key: str) -> None:
+    """Forgets a saved verdict (e.g. one saved for a town center before towns were excluded)."""
+    if _mem.pop(key, None) is not None:
+        logger.info("parking cache: dropped %s", key)
+    try:
+        _file(key).unlink(missing_ok=True)
+    except OSError as e:
+        logger.warning("parking cache delete failed for %s: %s", key, e)
+
+
 def save(key: str, check: ParkingCheck, retried: bool) -> None:
     _mem[key] = (check, retried)
     try:

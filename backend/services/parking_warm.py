@@ -21,6 +21,8 @@ async def warm_demo_places() -> dict:
 
     async def one(raw: dict):
         p = Place(**raw)
+        if parking.is_town(p):  # towns never get a parking check
+            return
         async with sem:
             try:
                 if parking.cached_parking(p) is None:

@@ -18,7 +18,7 @@ import { MESSAGES } from "@/src/constants";
 import { isTester } from "@/src/auth";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance } from "@/src/hooks/useGuidance";
-import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, truckLabel, useHandsFree, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
+import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, takeTruckReroute, truckLabel, useHandsFree, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { useWakeWord } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
@@ -39,6 +39,7 @@ const REQUEST_TIMEOUT_MS = 60000;
 const STAGES = ["Searching nearby…", "Setting route…"];
 const STAGE_MS = 3500;
 const WAKE_SLEEP_MS = 10 * 60 * 1000; // background without a route: turn the wake word off
+const SESSION_IDLE_MS = 10 * 60 * 1000; // no turn for this long: the next one starts a fresh session
 /** " There's a lot with trailers to the southeast, looks like a private yard." (or "") */
 const nearbyLine = (pk: ParkingCheck) => {
   if (!pk.nearby) return "";
@@ -312,11 +313,27 @@ export default function MapScreen() {
   };
 
   // ---- Live dialog: one tap starts it, the copilot keeps listening after each answer. ----
+  // dialog.current = the backend session (found places, "the second one", rejected, reply rotation).
+  // live.current = the hands-free loop (mic reopens after each answer). A route stops the loop but keeps
+  // the session; a fresh session only after end_route, bye, 2 misses or 10 min without a turn.
   const dialog = useRef<string | null>(null);
+  const live = useRef(false);
+  const lastTurnAt = useRef(0);
   const misses = useRef(0);
   const endDialog = () => {
     dialog.current = null;
+    live.current = false;
     misses.current = 0;
+  };
+  const pauseDialog = () => {
+    live.current = false;
+  };
+  const ensureSession = () => {
+    if (!dialog.current || Date.now() - lastTurnAt.current > SESSION_IDLE_MS) {
+      dialog.current = `dlg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      misses.current = 0;
+    }
+    lastTurnAt.current = Date.now();
   };
   const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -328,8 +345,9 @@ export default function MapScreen() {
       endDialog();
       return;
     }
+    if (!live.current) return;
     await spoken;
-    if (myTurn !== turn.current || !dialog.current) return;
+    if (myTurn !== turn.current || !live.current) return;
     listenNow();
   };
 
@@ -370,20 +388,26 @@ export default function MapScreen() {
   });
 
   const onGo = () => {
-    endDialog();
+    pauseDialog();
     voice.stopSpeaking();
     setCaption(null);
     setDriving(true);
   };
 
-  /** Typed request: same pipeline as voice, without recording or reopening the mic. */
-  const onSubmitText = (text: string) => {
-    if (phase === "thinking") return;
+  /** Typed request: same pipeline and session as voice, without recording or reopening the mic.
+   *  Returns false (text kept by the caller) while the copilot is still on the last request. */
+  const onSubmitText = (text: string): boolean => {
+    if (phaseRef.current === "thinking") {
+      showToast("One second, finishing the last request", "info");
+      return false;
+    }
     voice.stopSpeaking();
     voice.cancelRecording().catch(() => {});
-    endDialog();
+    pauseDialog();
+    ensureSession();
     setCaption(null);
     submitTurn(undefined, text);
+    return true;
   };
 
   const submitTurn = async (recorded?: string, typed?: string) => {
@@ -432,7 +456,7 @@ export default function MapScreen() {
         startRoute({ place: res.place, route: res.route, parking: res.parking });
         const replyDone = speak();
         followParking(res.place, replyDone, myTurn, res.route.approach);
-        endDialog(); // route is set: stop listening until the driver taps the mic again
+        pauseDialog(); // route is set: stop listening until the driver taps the mic again (same session)
       } else {
         if (res.status !== "chat" && res.status !== "not_understood") showToast(res.message ?? MESSAGES.notUnderstood);
         backToIdle();
@@ -507,7 +531,8 @@ export default function MapScreen() {
 
   // Hands-free: listening stops by itself when the driver pauses (tap to stop early).
   const beginListening = async (fromWake = false) => {
-    if (!dialog.current) dialog.current = `dlg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    ensureSession();
+    live.current = true;
     setPhase("listening");
     clearTimers();
     const myTurn = ++turn.current;
@@ -515,16 +540,16 @@ export default function MapScreen() {
     try {
       res = await voice.listen({ silenceMs: 1100, chime: !fromWake }); // the wake word plays its own chime
     } catch {
-      endDialog();
+      pauseDialog();
       showToast(MESSAGES.notUnderstood);
       backToIdle();
       return;
     }
     if (res === "cancelled" || myTurn !== turn.current) return;
     if (res === "silent") {
-      // Silence ends the conversation; on the very first turn tell the driver we heard nothing.
+      // Silence stops listening; on the very first turn tell the driver we heard nothing.
       if (misses.current === 0 && !caption) setCaption({ reply: MESSAGES.notUnderstood });
-      endDialog();
+      pauseDialog();
       backToIdle();
       return;
     }
@@ -638,7 +663,7 @@ export default function MapScreen() {
   };
 
   const onClose = () => {
-    endDialog();
+    pauseDialog();
     voice.stopSpeaking();
     clearTimers();
     turn.current++; // discard any in-flight turn
@@ -691,7 +716,7 @@ export default function MapScreen() {
   };
 
   /** Re-plans the active route with the current truck profile (after a voice change). */
-  const reroute = async (myTurn: number) => {
+  const reroute = async (myTurn: number, failMsg = "Couldn't update the route. Try again.") => {
     const cur = activeRef.current;
     if (!cur) return;
     try {
@@ -701,9 +726,17 @@ export default function MapScreen() {
         setActive((a) => (a ? { ...a, route: res.route } : a));
       }
     } catch {
-      if (myTurn === turn.current) showToast("Couldn't update the route. Try again.");
+      if (myTurn === turn.current) showToast(failMsg);
     }
   };
+
+  // Back from the truck editor with new dimensions: same reroute as the voice change, nothing spoken.
+  useEffect(() => {
+    if (focused && takeTruckReroute() && activeRef.current) {
+      reroute(turn.current, "Couldn't update the route for the new truck size.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focused]);
 
   /** Executes app controls the copilot returned (trip, sound, map, truck data, preferences). */
   const runActions = (actions: AppAction[], myTurn: number) => {
@@ -712,7 +745,7 @@ export default function MapScreen() {
       switch (type) {
         case "start_navigation":
           if (activeRef.current) {
-            endDialog();
+            pauseDialog();
             setDriving(true);
           }
           break;
@@ -747,7 +780,7 @@ export default function MapScreen() {
           setHandsFree(value === true);
           break;
         case "stop_talking":
-          endDialog();
+          pauseDialog();
           break;
         case "set_height_in":
           truckPatch.height_in = Number(value);
@@ -854,7 +887,10 @@ export default function MapScreen() {
         truckLabel={truckLabel(truck)}
         hazmat={truck.hazmat}
         destination={active?.place.name ?? null}
-        onSearch={(q) => onSubmitText(`Take me to ${q}`)}
+        onSearch={(q) =>
+          // A bare place ("Reno") becomes "Take me to Reno"; a full request ("I need fuel") goes as typed.
+          onSubmitText(/\b(?:i|i'm|me|my|need|find|take|go|where|show|get|park|near|any|truck ?stops?|hotels?|motels?|rest ?areas?|fuel|diesel|gas|parking)\b/i.test(q) ? q : `Take me to ${q}`)
+        }
         onTruckPress={() => router.push("/truck-profile")}
         onHistoryPress={() => router.push("/history")}
         tester={isTester()}

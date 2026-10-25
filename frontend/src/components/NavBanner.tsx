@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import Animated, { FadeInRight, FadeInUp, ZoomIn } from "react-native-reanimated";
 
 import { formatDistance } from "../hooks/useGuidance";
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
@@ -48,18 +49,18 @@ export function NavBanner({ topInset, next, toNextM, voiceOn, onToggleVoice, onL
       pointerEvents="box-none"
       onLayout={(e) => onLayout(e.nativeEvent.layout.height)}
     >
-      <View testID="nav-banner" style={[styles.card, shadow(colors, 2), { backgroundColor: colors.surfaceInverse }]}>
-        <View style={[styles.arrow, { backgroundColor: colors.info }]}>
+      <Animated.View entering={FadeInUp.springify().damping(16)} testID="nav-banner" style={[styles.card, shadow(colors, 2), { backgroundColor: colors.surfaceInverse }]}>
+        <Animated.View key={`ic-${next?.instruction ?? "-"}`} entering={ZoomIn.springify().damping(14)} style={[styles.arrow, { backgroundColor: colors.info }]}>
           <Icon name={maneuverIcon(next)} size={36} color={colors.onInfo} />
-        </View>
-        <View style={styles.text}>
+        </Animated.View>
+        <Animated.View key={`tx-${next?.instruction ?? "-"}`} entering={FadeInRight.duration(260)} style={styles.text}>
           <Text testID="nav-distance" style={[styles.dist, { color: colors.onSurfaceInverse }]}>
             {formatDistance(toNextM)}
           </Text>
           <Text testID="nav-instruction" numberOfLines={2} style={[styles.instr, { color: colors.onSurfaceInverse }]}>
             {next?.instruction ?? "Follow the route"}
           </Text>
-        </View>
+        </Animated.View>
         <PressableScale
           testID="voice-guidance-toggle"
           accessibilityLabel={voiceOn ? "Mute directions" : "Unmute directions"}
@@ -68,7 +69,7 @@ export function NavBanner({ topInset, next, toNextM, voiceOn, onToggleVoice, onL
         >
           <Icon name={voiceOn ? "volume-high" : "volume-off"} size={24} color={voiceOn ? colors.onSurface : colors.onError} />
         </PressableScale>
-      </View>
+      </Animated.View>
     </View>
   );
 }

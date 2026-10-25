@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Platform, StyleSheet, Text, TextInput, View } from "react-native";
+import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import { Icon } from "./Icon";
@@ -11,7 +12,8 @@ type Props = {
   hazmat: boolean;
   /** Current destination name, shown in the search bar. */
   destination?: string | null;
-  onSearch: (text: string) => void;
+  /** Returns false when the query wasn't accepted yet (copilot busy): the text stays in the field. */
+  onSearch: (text: string) => boolean;
   onTruckPress: () => void;
   onHistoryPress: () => void;
   /** Tester login: shows the test-scenarios button. */
@@ -32,12 +34,11 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, on
   const submit = () => {
     const q = text.trim();
     if (!q) return;
-    setText("");
-    onSearch(q);
+    if (onSearch(q)) setText(""); // kept while the copilot is still busy (no silent drop)
   };
 
   return (
-    <View style={[styles.wrap, { paddingTop: topInset + spacing.sm }]} pointerEvents="box-none" onLayout={(e) => onLayout(e.nativeEvent.layout.height)}>
+    <Animated.View entering={FadeInDown.springify().damping(16)} style={[styles.wrap, { paddingTop: topInset + spacing.sm }]} pointerEvents="box-none" onLayout={(e) => onLayout(e.nativeEvent.layout.height)}>
       <View style={styles.row} pointerEvents="box-none">
         <View style={[card, styles.search]}>
           <Icon name="magnify" size={24} color={colors.muted} />
@@ -95,7 +96,7 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, on
           )}
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 

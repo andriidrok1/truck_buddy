@@ -126,7 +126,7 @@ export type ProvidersResult = {
 };
 
 export type AgentResponse = {
-  status: "options" | "route_set" | "chat" | "no_results" | "not_understood" | "researching" | "providers";
+  status: "options" | "route_set" | "chat" | "no_results" | "not_understood" | "researching" | "providers" | "error";
   research_id?: string | null;
   providers?: Provider[];
   call_card?: CallCard | null;

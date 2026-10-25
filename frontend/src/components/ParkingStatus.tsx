@@ -1,6 +1,7 @@
 import { Image } from "expo-image";
 import { useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import Animated, { ZoomIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { apiUrl } from "../api";
@@ -85,12 +86,12 @@ export function ParkingStatus({ parking, idSuffix = "" }: { parking?: ParkingChe
   return (
     <View testID={`parking-status${idSuffix}`} style={styles.row}>
       <View style={styles.textCol}>
-        <View style={styles.labelRow}>
+        <Animated.View key={`pk-${parking.verdict}-${parking.label}`} entering={ZoomIn.springify().damping(14)} style={styles.labelRow}>
           <Icon name={icon} size={18} color={color} />
           <Text testID={`parking-status-label${idSuffix}`} numberOfLines={2} style={[styles.label, { color: colors.onSurface }]}>
             {parking.label}
           </Text>
-        </View>
+        </Animated.View>
         {!!parking.entry_tip && <Tip icon="login-variant" text={parking.entry_tip} testID={`parking-entry-tip${idSuffix}`} />}
         {!!parking.park_tip && <Tip icon="parking" text={parking.park_tip} testID={`parking-park-tip${idSuffix}`} />}
         {!parking.entry_tip && !parking.park_tip && !!parking.reason && (

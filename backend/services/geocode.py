@@ -14,6 +14,7 @@ from services.http import client
 
 from models import Place
 from services.geo import haversine_km, km_to_mi
+from services.google_places import PlacesUnavailable
 
 logger = logging.getLogger("truckbuddy.geocode")
 
@@ -196,6 +197,7 @@ async def _nominatim(q: str, lat: float, lng: float) -> list[Place]:
 
 async def geocode(q: str, lat: float, lng: float) -> list[Place]:
     raw, q = q, words_to_digits(q)
+    errors = 0
     for key, fn in (("HERE_API_KEY", _here), ("ORS_API_KEY", _ors), (None, _nominatim)):
         if key and not os.environ.get(key):
             continue
@@ -206,4 +208,7 @@ async def geocode(q: str, lat: float, lng: float) -> list[Place]:
             return found
         except Exception as e:  # noqa: BLE001 - provider error: try the next geocoder
             logger.warning("%s geocode failed for %r: %s", fn.__name__, q, e)
+            errors += 1
+    if errors:  # every geocoder that was tried errored: a service problem, not "address not found"
+        raise PlacesUnavailable(f"all geocoders failed for {q!r}")
     return []

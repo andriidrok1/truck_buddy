@@ -13,14 +13,15 @@ import uuid
 from collections import OrderedDict
 from typing import Optional
 
+import httpx
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 from models import AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
 from services import approach, breakdown, controls, memory
 from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode
-from services.google_places import TRUCK_STOP_NAME
-from services.parking import cached_parking, check_parking, listed_in_data
+from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
+from services.parking import cached_parking, check_parking, is_town, listed_in_data
 from services.places import get_places_provider
 from services.routing import get_routing_provider
 from services.timing import stage
@@ -28,7 +29,50 @@ from services.timing import stage
 logger = logging.getLogger("truckbuddy.agent")
 
 NOT_UNDERSTOOD = "Sorry, I didn't catch that. Try again."
+ROUTE_DOWN = "I couldn't build a truck route there right now. Try again in a minute."
+PLACES_DOWN = "Place search is down right now. Give me an address instead."
+LLM_DOWN = "Give me a second, I lost my train of thought. Say that again."
+SOMETHING_BROKE = "Something went wrong on my end. Try again in a minute."
+CLASSIFY_TIMEOUT_S = 20
+
+
+class RouteFailed(Exception):
+    pass
+
+
+def _error(text: str, reply: str, source: str) -> "AgentResponse":
+    """Infrastructure trouble: a distinct spoken line + a toast, never "didn't catch that"."""
+    return AgentResponse(status="error", transcript=text, reply=reply, message=reply, source=source)
+
+
+# Control phrases the model sometimes returns as a destination (or only as a reply).
+_CONTROL_PHRASES: list[tuple[re.Pattern, dict]] = [
+    (re.compile(r"\b(?:start|begin)\s+(?:the\s+)?(?:route|ride|trip|navigation|driving)\b|\blet'?s\s+go\b|"
+                r"\bgo\s+ahead\b|\bthe\s+stars\s+are\s+out\b", re.I), {"type": "start_navigation"}),
+    (re.compile(r"\b(?:stop|end|cancel)\s+(?:the\s+)?(?:route|ride|trip|navigation)\b", re.I), {"type": "end_route"}),
+    (re.compile(r"\bturn\s+(?:the\s+)?directions\s+off\b|\bturn\s+off\s+(?:the\s+)?directions\b|\bmute\b", re.I),
+     {"type": "voice_guidance", "value": False}),
+    (re.compile(r"\bturn\s+(?:the\s+)?directions\s+on\b|\bturn\s+on\s+(?:the\s+)?directions\b", re.I),
+     {"type": "voice_guidance", "value": True}),
+    (re.compile(r"\bre-?center\b", re.I), {"type": "recenter"}),
+]
+
+
+def control_phrase(text: str) -> Optional[dict]:
+    """The control a phrase asks for, if it is only a control (no digits, no place-like proper nouns)."""
+    if not text or re.search(r"\d", text):
+        return None
+    for rx, action in _CONTROL_PHRASES:
+        m = rx.search(text)
+        if not m:
+            continue
+        rest = (text[:m.start()] + " " + text[m.end():]).strip(" .,!?")
+        words = rest.split()
+        if len(words) <= 3 and not any(w[0].isupper() for w in words[1:] if w[0].isalpha()):
+            return action
+    return None
 NO_PLACES = "I couldn't find one nearby"
+CATEGORY_WORD = {"truck_stop": "truck stop", "hotel": "hotel", "rest_area": "rest area"}
 ALL_REJECTED = "That's every one I found nearby. Want me to go back to one of them?"
 _STREET_ONLY = re.compile(r"^\s*\d+[a-z]?\s+[\w .'-]+$", re.I)  # "2828 El Centro Rd" (no town after a comma)
 _ZIP_COUNTRY = re.compile(r"^\s*(?:[A-Z]{2}(?:\s+\d{5}(?:-\d{4})?)?|\d{5}|United States|USA)\s*$")
@@ -75,12 +119,18 @@ makes sense for a trucker and act on the corrected meaning, e.g. "I need a few" 
 "these all". Only fix words that clearly don't fit; never invent a destination. If you can't tell, use "unclear".
 
 Classify the driver's LAST utterance and answer with JSON only, no other text:
-{{"intent": "find"|"go"|"pick"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "query": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
+{{"intent": "find"|"go"|"pick"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "near": string|null, "query": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
 
 - find: the driver needs a place. Pick the category yourself, never ask:
   truck_stop = fuel, diesel, DEF, food, showers, truck stop;
   hotel = sleep, tired, overnight, bed, motel, hotel, room;
   rest_area = quick break, stretch, restroom, short nap, rest area.
+  near = the address, town or landmark the driver wants it close to ("find a truck stop near 2828 El Centro Rd" ->
+  "2828 El Centro Rd"; "where can I park close to my delivery in Stockton" -> "Stockton, CA"; "staging near the
+  shipper on Maritime St" -> "Maritime St"); digits for numbers; null when they mean near themselves/on the way.
+  For a follow-up like "and a hotel there", repeat the near point used before.
+  "park near X" / "where can I park close to my delivery in X" / "staging near X" = find truck_stop with near X
+  (never rest_area or parking for these).
 - go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV". Write numbers as digits ("2828 El Centro Rd, Sacramento"). If the driver gives only a street address and named a town earlier in the conversation, add that town to query.
 - pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something closer"). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. If no earlier place fits, use find with the same category instead.
 {controls}
@@ -304,7 +354,9 @@ class LlmAgentProvider:
                 context += f", about {req.active_duration_min} minutes"
             context += "."
             pk = approach.best(cur)
-            if pk:
+            if is_town(cur):
+                context += " Destination is a town; no parking check."
+            elif pk:
                 context += f" Satellite parking check there: {pk.label}. {pk.reason}"
                 if pk.entry_tip:
                     context += f" Entry: {pk.entry_tip}."
@@ -323,7 +375,10 @@ class LlmAgentProvider:
 
     async def _route_to(self, req: AgentRequest, place: Place, found: list[Place], text: str) -> AgentResponse:
         with stage("tools"):
-            route = await get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile)
+            try:
+                route = await get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile)
+            except Exception as e:  # noqa: BLE001
+                raise RouteFailed(f"{type(e).__name__}: {e}") from e
         _background(check_parking(place, route.approach))  # destinations too; entry tip relative to the approach
         others = [p for p in found if p.id != place.id][:MAX_OPTIONS]
         counter = _SESSIONS[req.session_id] if req.session_id in _SESSIONS else _turns
@@ -340,12 +395,70 @@ class LlmAgentProvider:
         if not place:
             return AgentResponse(status="chat", transcript=text, reply="Which place? Find one or set a route first.",
                                  source=self.source)
+        if is_town(place):
+            return AgentResponse(status="chat", transcript=text, source=self.source,
+                                 reply="That's a whole town, so there's no parking check. Ask me for a truck stop "
+                                       "there or give me an address and I'll check it.")
         pk = approach.best(place)
         if pk and (pk.relative or not approach.has_approach(place) or not pk.entry_tip):
             return AgentResponse(status="chat", transcript=text, reply=approach.speech(pk), source=self.source)
         _background(check_parking(place))
         return AgentResponse(status="chat", transcript=text, reply=approach.LOOKING, source=self.source,
                              actions=[AppAction(type="parking_followup", value=place.id)])
+
+    @staticmethod
+    def _near_followup(d: dict, sess: dict, text: str, last: Optional[Place], category: str) -> Optional[str]:
+        """The point to search around: the model's "near", else the saved one for "there" / a new category."""
+        near = str(d.get("near") or "").strip()
+        if near:
+            return near
+        if sess.get("near") and re.search(r"\b(?:there|near (?:it|that)|same (?:place|area))\b|^\s*and\s+a\b",
+                                          text, re.I):
+            return sess["near"]["query"]  # "and a hotel there"
+        return None
+
+    async def _find_near(self, req: AgentRequest, category: str, near: str, text: str, exclude: set[str],
+                         sess: dict) -> AgentResponse:
+        """Places around a point the driver named (delivery, shipper, town); route from the driver."""
+        query = with_city(near, sess.get("city"))
+        with stage("tools"):
+            matches = await geocode(query, req.lat, req.lng)
+        logger.info("agent find near=%r (llm %r) -> %s", query, near, matches[0].name if matches else "no match")
+        if not matches:
+            return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query), source=self.source)
+        point = matches[0]
+        sess["city"] = city_of(query, point) or sess.get("city")
+        sess["near"] = {"query": query, "lat": point.lat, "lng": point.lng}
+        with stage("tools"):
+            res = await get_places_provider().search(category, point.lat, point.lng)
+        found = [p.model_copy() for p in sorted(res.places, key=lambda p: p.distance_mi or 0)[:MAX_OPTIONS + 2]]
+        swapped = False
+        if not found and category == "rest_area":  # "park near X" read as rest area: truck stops park trucks too
+            category = "truck_stop"
+            swapped = True
+            with stage("tools"):
+                res = await get_places_provider().search(category, point.lat, point.lng)
+            found = [p.model_copy() for p in sorted(res.places, key=lambda p: p.distance_mi or 0)[:MAX_OPTIONS + 2]]
+        if not found:
+            msg = f"I couldn't find a {CATEGORY_WORD[category]} near {query.split(',')[0]}"
+            return AgentResponse(status="no_results", transcript=text, category=category, reply=f"{msg}.",
+                                 message=msg, source=self.source)
+        for p in found[:PRECHECK]:
+            _background(check_parking(p))
+        chosen = choose_place(found, req.truck_profile, exclude)
+        from_point = chosen.distance_mi or 0.0
+        # The app's distances are from the driver: recompute them for the list on screen.
+        for p in found:
+            km = haversine_km(req.lat, req.lng, p.lat, p.lng)
+            p.distance_km, p.distance_mi = round(km, 2), round(km_to_mi(km), 1)
+        res = await self._route_to(req, chosen, found, text)
+        where = "your delivery" if re.search(r"\b(?:deliver|drop|consignee|receiver)", text, re.I) else (
+            "the shipper" if re.search(r"\bshipper\b", text, re.I) else query.split(",")[0])
+        away = "right at" if from_point < 0.3 else f"{_miles(from_point)} miles from"
+        res.reply = f"{chosen.name}, {away} {where}, {_miles(res.route.distance_mi)} miles from you."
+        if swapped:
+            res.reply = f"No rest area near {query.split(',')[0]}, so here's a truck stop. {res.reply}"
+        return res
 
     async def _find(self, req: AgentRequest, category: str, text: str, exclude: set[str]) -> AgentResponse:
         with stage("tools"):
@@ -373,15 +486,25 @@ class LlmAgentProvider:
         if bd:
             return bd
         try:
-            d = await classify(text, self._context(req, sess), req.truck_profile)
-        except Exception:
-            logger.exception("agent LLM failed")
-            return _not_understood(text, self.source)
+            d = await asyncio.wait_for(classify(text, self._context(req, sess), req.truck_profile),
+                                       timeout=CLASSIFY_TIMEOUT_S)
+        except Exception as e:  # noqa: BLE001 - incl. timeout
+            logger.warning("agent LLM failed: %s: %s", type(e).__name__, e)
+            return _error(text, LLM_DOWN, self.source)
 
         intent = d.get("intent")
         logger.info("agent intent=%s category=%s query=%r place_index=%s", intent, d.get("category"),
                     d.get("query"), d.get("place_index"))
         reply = str(d.get("reply") or "").strip()
+        # A control phrase dressed up as a destination (or echoed only as a reply): run the control.
+        ctl = (control_phrase(str(d.get("query") or "")) if intent == "go" else None) or \
+            (control_phrase(reply) or control_phrase(text) if intent == "chat" else None)
+        if ctl:
+            logger.info("agent control phrase %r -> %s", d.get("query") or reply, ctl)
+            intent, d = "control", {**d, "intent": "control", "actions": [ctl]}
+        # Parking question about a town destination answered as chat: give the town line, never a guess.
+        if intent == "chat" and req.active_place and is_town(req.active_place) and re.search(r"\bpark", text, re.I):
+            intent = "parking"
         # Current pick: the active route, or the last place chosen in this dialog.
         last = req.active_place or (sess["places"][0] if sess["places"] else None)
         current = last.id if last else None
@@ -400,9 +523,15 @@ class LlmAgentProvider:
                     return await self._route_to(req, place, sess["places"], text)
                 category = d.get("category") or (last.category if last else None)
                 if category in CATEGORIES:
+                    near = self._near_followup(d, sess, text, last, category)
+                    if near:
+                        return await self._find_near(req, category, near, text, exclude, sess)
                     return await self._find(req, category, text, exclude)
                 return _not_understood(text, self.source)
             if intent == "find" and d.get("category") in CATEGORIES:
+                near = self._near_followup(d, sess, text, last, d["category"])
+                if near:
+                    return await self._find_near(req, d["category"], near, text, exclude, sess)
                 return await self._find(req, d["category"], text, exclude)
             if intent == "go" and str(d.get("query") or "").strip():
                 query = with_city(str(d["query"]).strip(), sess.get("city"))
@@ -415,10 +544,25 @@ class LlmAgentProvider:
                                          source=self.source)
                 sess["city"] = city_of(query, matches[0]) or sess.get("city")
                 return await self._route_to(req, matches[0], [], text)
-        except Exception:
-            logger.exception("agent action failed")
-            return _not_understood(text, self.source)
+        except RouteFailed as e:
+            logger.warning("agent routing failed: %s", e)
+            return _error(text, ROUTE_DOWN, self.source)
+        except (PlacesUnavailable, httpx.HTTPError) as e:
+            logger.warning("agent places/geocode failed: %s: %s", type(e).__name__, e)
+            return _error(text, PLACES_DOWN, self.source)
+        except Exception as e:  # noqa: BLE001
+            logger.exception("agent action failed: %s: %s", type(e).__name__, e)
+            return _error(text, SOMETHING_BROKE, self.source)
         if intent == "parking":
+            if str(d.get("near") or "").strip():  # "where can I park close to my delivery in X": a search
+                try:
+                    return await self._find_near(req, "truck_stop", str(d["near"]).strip(), text, exclude, sess)
+                except RouteFailed as e:
+                    logger.warning("agent routing failed: %s", e)
+                    return _error(text, ROUTE_DOWN, self.source)
+                except (PlacesUnavailable, httpx.HTTPError) as e:
+                    logger.warning("agent places/geocode failed: %s: %s", type(e).__name__, e)
+                    return _error(text, PLACES_DOWN, self.source)
             return self._parking(req, d, sess, text)
         if intent == "control":
             acts, say, end = controls.apply_actions(d.get("actions"), req)
@@ -427,6 +571,8 @@ class LlmAgentProvider:
                                      end_conversation=end, source=self.source)
             return _not_understood(text, self.source)
         if intent in ("chat", "bye") and reply:
+            if intent == "bye":
+                sess.pop("rejected", None)
             return AgentResponse(status="chat", transcript=text, reply=reply, end_conversation=intent == "bye",
                                  source=self.source)
         return _not_understood(text, self.source)

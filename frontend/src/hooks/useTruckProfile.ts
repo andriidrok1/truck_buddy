@@ -50,6 +50,18 @@ async function load() {
   }
 }
 
+// The truck editor saved new dimensions: the map screen reroutes the active route once it is back in focus.
+let rerouteRequested = false;
+export const requestTruckReroute = () => {
+  rerouteRequested = true;
+};
+export const takeTruckReroute = () => {
+  const r = rerouteRequested;
+  rerouteRequested = false;
+  return r;
+};
+
+
 export async function saveTruckProfile(t: TruckProfile) {
   current = t;
   listeners.forEach((l) => l(t));

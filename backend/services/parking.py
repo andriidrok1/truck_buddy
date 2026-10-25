@@ -171,8 +171,20 @@ async def _ask_vision(img: bytes, place: Place) -> dict:
     return _parse(out, place)
 
 
+def is_town(place: Place) -> bool:
+    """A whole town (HERE locality/area): never gets a parking verdict."""
+    return place.id.startswith("here-town-")
+
+
+def town_check() -> ParkingCheck:
+    return ParkingCheck(verdict="unclear", label="No parking check for a town",
+                        reason="Ask for a truck stop or give an address to check the parking.", source="none")
+
+
 def cached_parking(place: Place) -> Optional[ParkingCheck]:
     """Satellite verdict if already computed (memory, then disk), without waiting."""
+    if is_town(place):
+        return town_check()
     k = _key(place.lat, place.lng) + (":listed" if listed_in_data(place) else "")
     return _from_cache(k)
 
@@ -229,9 +241,10 @@ NEGATIVE_TIP = re.compile(
 async def check_parking(place: Place, approach=None) -> ParkingCheck:
     """Single-flight wrapper: concurrent checks of the same place share one vision call.
     With an approach (route set), the entry tip is rewritten relative to the driver."""
-    if place.id.startswith("here-town-"):  # a satellite frame of a town center says nothing about truck parking
-        return ParkingCheck(verdict="unclear", label="No parking check for a town",
-                            reason="Ask for a truck stop or give an address to check the parking.", source="none")
+    if is_town(place):  # a satellite frame of a town center says nothing about truck parking
+        parking_store.drop(_key(place.lat, place.lng))  # an old verdict saved for the town center
+        _verdict_cache.pop(_key(place.lat, place.lng), None)
+        return town_check()
     k = _key(place.lat, place.lng) + (":listed" if listed_in_data(place) else "")
     if approach is not None:
         from services import approach as approach_mod  # lazy: approach imports this module

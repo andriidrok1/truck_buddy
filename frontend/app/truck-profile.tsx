@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { setToken } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
 import { PressableScale } from "@/src/components/PressableScale";
-import { DEFAULT_TRUCK, saveTruckProfile, setHandsFree, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { DEFAULT_TRUCK, requestTruckReroute, saveTruckProfile, setHandsFree, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { setSim } from "@/src/sim";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
 
@@ -92,6 +92,7 @@ export default function TruckProfileScreen() {
   const onSave = async () => {
     if (!valid) return;
     await saveTruckProfile({ ...truck, height_in: v.feet * 12 + v.inches, trailer_ft: v.trailer, weight_lb: v.weight, hazmat });
+    requestTruckReroute(); // the map reroutes an active route for the new size (silently)
     close();
   };
 

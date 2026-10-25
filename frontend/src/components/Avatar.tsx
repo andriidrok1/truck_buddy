@@ -46,6 +46,11 @@ export function Avatar({ size = 112, mode = "idle", showMic = true }: { size?: n
     opacity: mode === "idle" ? 0 : 0.55 * (1 - ring.value),
     transform: [{ scale: 1 + ring.value * 0.35 }],
   }));
+  // Second ripple, half a cycle behind: a continuous "I'm listening" wave instead of a single blink.
+  const ring2Style = useAnimatedStyle(() => {
+    const r = (ring.value + 0.5) % 1;
+    return { opacity: mode === "listening" || mode === "speaking" ? 0.4 * (1 - r) : 0, transform: [{ scale: 1 + r * 0.35 }] };
+  });
   const bodyStyle = useAnimatedStyle(() => ({ transform: [{ scale: body.value }] }));
 
   const glow = size + 20;
@@ -53,6 +58,9 @@ export function Avatar({ size = 112, mode = "idle", showMic = true }: { size?: n
     <View style={{ width: glow + 8, height: glow + 8, alignItems: "center", justifyContent: "center" }} pointerEvents="none">
       <Animated.View
         style={[styles.abs, { width: glow, height: glow, borderRadius: glow / 2, borderWidth: 3, borderColor: colors.avatarGlow }, ringStyle]}
+      />
+      <Animated.View
+        style={[styles.abs, { width: glow, height: glow, borderRadius: glow / 2, borderWidth: 2, borderColor: colors.avatarGlow }, ring2Style]}
       />
       <View style={[styles.abs, { width: glow, height: glow, borderRadius: glow / 2, backgroundColor: colors.avatarGlowSoft }]} />
       <Animated.View
