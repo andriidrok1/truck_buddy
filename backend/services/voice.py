@@ -12,6 +12,7 @@ from typing import Optional
 from emergentintegrations.llm.openai import OpenAISpeechToText, OpenAITextToSpeech
 
 from services.http import client
+from services.speech_text import spoken
 
 logger = logging.getLogger("truckbuddy.voice")
 
@@ -59,10 +60,14 @@ FALLBACK_MODEL = "tts-1"  # OpenAI fallback when ElevenLabs is off or fails
 
 ELEVEN_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 ELEVEN_DEFAULT_VOICE = "21m00Tcm4TlvDq8ikWAM"  # "Rachel", ElevenLabs premade voice
-ELEVEN_BODY = {"model_id": "eleven_flash_v2_5", "voice_settings": {"stability": 0.5, "similarity_boost": 0.75, "speed": 1.05}}
+ELEVEN_MODEL = os.environ.get("ELEVENLABS_MODEL_ID", "eleven_turbo_v2_5")
+ELEVEN_FORMAT = "mp3_44100_96"
+# Conversational delivery: a bit less stable, some style, speaker boost.
+ELEVEN_SETTINGS = {"stability": 0.35, "similarity_boost": 0.75, "style": 0.3, "use_speaker_boost": True, "speed": 1.0}
 ELEVEN_TIMEOUT_S = 8
 ELEVEN_COOLDOWN_S = 60  # after a failure, skip ElevenLabs for a while (no 8 s waits, no mixed voices)
 _eleven_down_until = 0.0
+_eleven_slots = asyncio.Semaphore(int(os.environ.get("ELEVENLABS_CONCURRENCY", "2")))
 _FALLBACK_IDS: "OrderedDict[str, None]" = OrderedDict()  # audio ids spoken by the fallback
 
 
@@ -77,10 +82,10 @@ def provider() -> str:
     return "elevenlabs" if eleven_voice() else "openai"
 
 
-def cache_tag(voice: Optional[str] = None, model: Optional[str] = None) -> str:
+def cache_tag(voice: Optional[str] = None, model: Optional[str] = None, eleven_voice_id: Optional[str] = None) -> str:
     """Identifies who speaks a cached line: provider + voice (changes invalidate /speak cache)."""
     if not voice and not model and eleven_voice():
-        return f"elevenlabs|{eleven_voice()}"
+        return f"elevenlabs|{ELEVEN_MODEL}|{eleven_voice_id or eleven_voice()}"
     return f"openai|{model or FALLBACK_MODEL}|{voice or DEFAULT_VOICE}"
 
 
@@ -93,38 +98,57 @@ def _eleven_failed() -> None:
     _eleven_down_until = time.monotonic() + ELEVEN_COOLDOWN_S
 
 
-async def _eleven(text: str, voice_id: str) -> Optional[bytes]:
+async def _eleven(text: str, voice_id: str, previous_text: Optional[str] = None,
+                  next_text: Optional[str] = None) -> Optional[bytes]:
     if time.monotonic() < _eleven_down_until:
         return None
+    body = {"text": text, "model_id": ELEVEN_MODEL, "voice_settings": ELEVEN_SETTINGS,
+            # Neighbouring sentences keep the intonation continuous across the two audio parts.
+            **({"previous_text": previous_text} if previous_text else {}),
+            **({"next_text": next_text} if next_text else {})}
     try:
-        r = await client().post(
-            ELEVEN_URL.format(voice_id=voice_id),
-            params={"output_format": "mp3_22050_32"},
-            headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"], "Accept": "audio/mpeg"},
-            json={"text": text, **ELEVEN_BODY},
-            timeout=ELEVEN_TIMEOUT_S,
-        )
+        for attempt in range(2):
+            async with _eleven_slots:  # stay under the plan's concurrent-request limit
+                r = await client().post(
+                    ELEVEN_URL.format(voice_id=voice_id),
+                    params={"output_format": ELEVEN_FORMAT},
+                    headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"], "Accept": "audio/mpeg"},
+                    json=body,
+                    timeout=ELEVEN_TIMEOUT_S,
+                )
+            if r.status_code != 429 or attempt:
+                break
+            await asyncio.sleep(0.4)  # busy, not broken: retry once
     except Exception as e:  # noqa: BLE001
         logger.warning("ElevenLabs TTS failed, falling back to OpenAI: %s", e)
         _eleven_failed()
         return None
+    if r.status_code == 429:
+        logger.warning("ElevenLabs busy (429), using OpenAI for this line")
+        return None  # no cooldown: the next line can use ElevenLabs again
     if r.status_code != 200 or not r.content:
         logger.warning("ElevenLabs TTS %s, falling back to OpenAI: %s", r.status_code, r.text[:200])
         _eleven_failed()
         return None
     return r.content
+
+
 # gpt-4o-mini-tts takes a speaking-style instruction (tts-1 ignores it).
 INSTRUCTIONS = "Calm, warm, confident co-pilot talking to a truck driver on the road. Natural pace, clear and friendly."
 
 
-async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str] = None) -> Optional[str]:
+async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str] = None,
+                     previous_text: Optional[str] = None, next_text: Optional[str] = None,
+                     eleven_voice_id: Optional[str] = None) -> Optional[str]:
     """Returns an id for GET /api/voice/audio/{id}, or None if TTS failed.
     ElevenLabs first (when configured and no explicit OpenAI voice/model is asked), then OpenAI."""
-    text = text[:4000]
+    text = spoken(text)[:4000]  # everything spoken goes through the text-for-speech layer
+    previous_text = spoken(previous_text) if previous_text else None
+    next_text = spoken(next_text) if next_text else None
     audio = None
     eleven = eleven_voice() if not voice and not model else None
     if eleven:
-        audio = await _eleven(text, eleven)
+        audio = await _eleven(text, eleven_voice_id or eleven, previous_text, next_text)
     fell_back = bool(eleven) and audio is None
     if audio is None:
         model = model or FALLBACK_MODEL
@@ -153,12 +177,12 @@ def get_audio(audio_id: str) -> Optional[bytes]:
 _PENDING: dict[str, "asyncio.Task[Optional[str]]"] = {}
 
 
-def synthesize_later(text: str) -> str:
+def synthesize_later(text: str, previous_text: Optional[str] = None) -> str:
     """Starts TTS in the background and returns the audio id right away (served once ready)."""
     audio_id = uuid.uuid4().hex
 
     async def run() -> Optional[str]:
-        tmp = await synthesize(text)
+        tmp = await synthesize(text, previous_text=previous_text)
         if tmp:
             _AUDIO_CACHE[audio_id] = _AUDIO_CACHE.pop(tmp)
         return tmp

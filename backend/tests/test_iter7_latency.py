@@ -8,8 +8,8 @@ import requests
 
 BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL").rstrip("/")
 SAC = {"lat": 38.5816, "lng": -121.4944}
-FOUND_RE = re.compile(r"^Route set to .+, [\d.,]+ miles away\.( .+\.)?$")
-DEST_RE = re.compile(r"^Route to .+ is set: .+, [\d.,]+ miles\.")
+FOUND_RE = re.compile(r"^[A-Z][^.]+\. .+[\d.,]+ miles( away| out| ahead)?[^.]*\.( Heads up, .+)?$")
+DEST_RE = re.compile(r"^[A-Z][^.]+\. .*[\d.,]+ miles\.")
 
 
 @pytest.fixture(scope="module")

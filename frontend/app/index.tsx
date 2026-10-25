@@ -24,7 +24,16 @@ const REQUEST_TIMEOUT_MS = 60000;
 const STAGES = ["Searching nearby…", "Setting route…"];
 const STAGE_MS = 3500;
 const WAKE_SLEEP_MS = 10 * 60 * 1000; // background without a route: turn the wake word off
-const FILLERS = ["On it.", "Let me check.", "One sec."];
+const FILLERS = [
+  "Alright, let me look.",
+  "Okay, one sec.",
+  "Got it, checking.",
+  "Hang on.",
+  "Let me see what's around.",
+  "On it.",
+  "Sure, one moment.",
+  "Checking.",
+];
 
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
@@ -137,15 +146,20 @@ export default function MapScreen() {
 
   // Instant acknowledgement while the real answer is on its way (cached TTS, rotated).
   const fillers = useRef<string[]>([]);
-  const fillerIdx = useRef(0);
+  const lastFiller = useRef(-1);
   useEffect(() => {
-    Promise.all(FILLERS.map((t) => api.speak(t).then((r) => absoluteUrl(r.audio_url))))
-      .then((urls) => (fillers.current = urls))
-      .catch(() => {});
+    Promise.allSettled(FILLERS.map((t) => api.speak(t).then((r) => absoluteUrl(r.audio_url)))).then((all) => {
+      fillers.current = all.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+    });
   }, []);
+  /** Random acknowledgement, never the same twice in a row; skipped one time in four. */
   const playFiller = () => {
-    if (!fillers.current.length) return;
-    voice.play(fillers.current[fillerIdx.current++ % fillers.current.length]);
+    const n = fillers.current.length;
+    if (!n || Math.random() < 0.25) return;
+    let i = Math.floor(Math.random() * n);
+    if (n > 1 && i === lastFiller.current) i = (i + 1 + Math.floor(Math.random() * (n - 1))) % n;
+    lastFiller.current = i;
+    voice.play(fillers.current[i]);
   };
 
   // Warm Places + parking caches around the driver: app on screen, no active route,

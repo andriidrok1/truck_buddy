@@ -80,26 +80,70 @@ def _background(coro) -> None:
 
 
 def _street(address: Optional[str]) -> str:
+    """Landmark for speech: the street/exit without the house number, or ''."""
     if not address:
         return ""
     first = address.split(",")[0].strip()
     first = re.sub(r"^\d+[\w-]*\s+", "", first)  # drop the house number
-    return f" on {first}" if first and not first[0].isdigit() else ""
+    return first if first and not first[0].isdigit() else ""
 
 
 def _miles(mi: float) -> str:
     return f"{mi:.1f}" if mi < 10 else f"{mi:,.0f}"
 
 
-def _route_reply(place: Place, route: RouteInfo) -> str:
-    """Short first sentence; a restriction notice, if any, is the second (spoken via audio_url_2)."""
-    if place.category == "destination":
-        dest = place.name.split(",")[0]
-        time = route.summary.split(" · ")[0]
-        out = f"Route to {dest} is set: {time}, {_miles(route.distance_mi)} miles."
-    else:
-        out = f"Route set to {place.name}{_street(place.address)}, {_miles(route.distance_mi)} miles away."
-    return f"{out} {route.notices[0]}" if route.notices else out
+# (intro, body): the short intro is the first spoken part; variants rotate per dialog.
+TEMPLATES = {
+    "truck_stop": [
+        ("Alright, got one", "{name}{off}, about {mi} miles out."),
+        ("Okay", "{name} is about {mi} miles ahead{up}."),
+        ("Here's a good one", "{name}{off}, {mi} miles away."),
+        ("Found you a stop", "{name}{up}, about {mi} miles."),
+    ],
+    "hotel": [
+        ("Alright, found you a bed", "{name}{off}, about {mi} miles out."),
+        ("Okay", "{name} is about {mi} miles ahead{up}."),
+        ("Here's a good one for the night", "{name}{off}, {mi} miles away."),
+        ("Got a place for you", "{name}{up}, about {mi} miles."),
+    ],
+    "rest_area": [
+        ("Alright, got a spot to stretch", "{name}{off}, about {mi} miles out."),
+        ("Okay", "{name} is about {mi} miles ahead{up}."),
+        ("Here's a good one", "{name}{off}, {mi} miles away."),
+        ("Found you a break", "{name}{up}, about {mi} miles."),
+    ],
+    "destination": [
+        ("Alright", "Route to {dest} is set, {time}, about {mi} miles."),
+        ("Okay, we're headed to {dest}", "That's {time}, {mi} miles."),
+        ("Got it", "{dest} it is, {time} and {mi} miles."),
+    ],
+}
+NOTICES = (
+    ("toll", "Heads up, couldn't dodge all the tolls on this one."),
+    ("restricted", "Heads up, part of this route might be tight for your rig, so watch the signs."),
+    ("ferry", "Heads up, there's a ferry on this one."),
+)
+_turns: dict = {"n": 0}  # rotation when there's no dialog session
+
+
+def _notice(raw: str) -> str:
+    low = raw.lower()
+    return next((say for key, say in NOTICES if key in low), "Heads up, check this route for restrictions.")
+
+
+def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[str] = None) -> str:
+    """Conversational intro + one line with the place, a landmark and the distance; then a notice, if any.
+    The driver's name is used about every third answer."""
+    intro, body = TEMPLATES[place.category][n % len(TEMPLATES[place.category])]
+    street = _street(place.address)
+    dest = place.name.split(",")[0]
+    vals = {"name": place.name, "dest": dest, "mi": _miles(route.distance_mi), "time": route.summary.split(" · ")[0],
+            "off": f", right off {street}" if street else "", "up": f", just up {street}" if street else ""}
+    intro = intro.format(**vals)
+    first_name = (driver or "").split(" ")[0]
+    out = f"{intro}, {first_name}. " if first_name and n % 3 == 2 else f"{intro}. "
+    out += body.format(**vals)
+    return f"{out} {_notice(route.notices[0])}" if route.notices else out
 
 
 def pick_place(d: dict, places: list[Place]) -> Optional[Place]:
@@ -206,8 +250,11 @@ class LlmAgentProvider:
         with stage("tools"):
             route = await get_routing_provider().route(req.lat, req.lng, place.lat, place.lng, req.truck_profile)
         others = [p for p in found if p.id != place.id][:MAX_OPTIONS]
+        counter = _SESSIONS[req.session_id] if req.session_id in _SESSIONS else _turns
+        n = counter.get("n", 0)
+        counter["n"] = n + 1
         return AgentResponse(status="route_set", transcript=text, category=place.category,
-                             reply=_route_reply(place, route), place=place, route=route,
+                             reply=_route_reply(place, route, n, req.truck_profile.driver_name), place=place, route=route,
                              parking=None if place.category == "destination" else cached_parking(place),
                              options=others, source=self.source)
 

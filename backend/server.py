@@ -98,9 +98,9 @@ async def _run_agent(req: AgentRequest, speak: bool) -> AgentResponse:
         # First sentence is spoken as soon as it's ready; the rest is generated in parallel.
         first, *rest = SENTENCE_END.split(res.reply.strip(), maxsplit=1)
         if rest:
-            res.audio_url_2 = f"/api/voice/audio/{voice.synthesize_later(rest[0])}"
+            res.audio_url_2 = f"/api/voice/audio/{voice.synthesize_later(rest[0], previous_text=first)}"
         with timing.stage("tts"):
-            audio_id = await voice.synthesize(first)
+            audio_id = await voice.synthesize(first, next_text=rest[0] if rest else None)
         if audio_id:
             res.audio_url = f"/api/voice/audio/{audio_id}"
     return res
@@ -220,6 +220,8 @@ class SpeakRequest(BaseModel):
     # Optional, for comparing voices; the app always uses the default.
     voice: Optional[Literal["alloy", "ash", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"]] = None
     model: Optional[Literal["tts-1", "gpt-4o-mini-tts"]] = None
+    # Optional ElevenLabs voice to compare (Voice Library id); the app always uses the configured one.
+    eleven_voice_id: Optional[str] = Field(None, pattern=r"^[A-Za-z0-9]{10,40}$")
 
 
 _SPEAK_CACHE: dict[str, str] = {}
@@ -229,12 +231,13 @@ _SPEAK_PENDING: dict[str, "asyncio.Task[Optional[str]]"] = {}
 @api.post("/speak")
 async def speak(req: SpeakRequest):
     """TTS for fixed copilot lines (onboarding, reminders). Cached per text, one generation per text."""
-    key = f"{voice.cache_tag(req.voice, req.model)}|{req.text}"
+    key = f"{voice.cache_tag(req.voice, req.model, req.eleven_voice_id)}|{req.text}"
     audio_id = _SPEAK_CACHE.get(key)
     if not audio_id or voice.get_audio(audio_id) is None:
         task = _SPEAK_PENDING.get(key)
         if task is None:
-            task = asyncio.create_task(voice.synthesize(req.text, req.voice, req.model))
+            task = asyncio.create_task(voice.synthesize(req.text, req.voice, req.model,
+                                                        eleven_voice_id=req.eleven_voice_id))
             _SPEAK_PENDING[key] = task
             task.add_done_callback(lambda _t: _SPEAK_PENDING.pop(key, None))
         audio_id = await asyncio.shield(task)

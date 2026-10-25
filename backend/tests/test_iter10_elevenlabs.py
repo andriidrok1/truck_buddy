@@ -57,7 +57,7 @@ def chain():
 def test_chain_turn1_route_set(chain):
     t1 = chain["t1"]
     assert t1["status"] == "route_set", t1
-    assert t1["reply"].startswith("Route set to"), t1["reply"]
+    assert t1["status"] == "route_set" and " miles" in t1["reply"], t1["reply"]
     assert t1["place"] and t1["route"]
     assert t1["audio_url"]
     fetch_audio(t1["audio_url"])
@@ -175,7 +175,7 @@ def test_transcribe_then_agent_reno(reno_mp3):
     res = agent(tr, f"TEST_{uuid.uuid4().hex[:12]}")
     print("Reno reply:", res["reply"])
     assert res["status"] == "route_set"
-    assert res["reply"].startswith("Route to Reno is set"), res["reply"]
+    assert res["status"] == "route_set" and "Reno" in res["reply"], res["reply"]
     fetch_audio(res["audio_url"])
 
 
