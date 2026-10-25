@@ -23,6 +23,11 @@ export function openGoogleMaps(lat: number, lng: number) {
   return openWithFallback(app, web);
 }
 
+/** Google Maps Street View at a point (opens the app when installed, else the browser). */
+export function openStreetView(lat: number, lng: number) {
+  return Linking.openURL(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`);
+}
+
 export function openWaze(lat: number, lng: number) {
   const web = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
   const app = Platform.OS === "web" ? null : `waze://?ll=${lat},${lng}&navigate=yes`;

@@ -1,4 +1,21 @@
-import type { ActiveRoute, LatLng, Place } from "../types";
+import type { ActiveRoute, LatLng, ParkingSpot, Place } from "../types";
+
+/** Same Esri World Imagery the satellite parking check is made on. */
+export const ESRI_TILES = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+
+/** Half-span (degrees) of the ~300 m x 300 m parking check frame, matching the backend. */
+export function frameSpan(lat: number) {
+  const dLat = 150 / 111320;
+  return { dLat, dLng: dLat / Math.max(0.2, Math.cos((lat * Math.PI) / 180)) };
+}
+
+export type ParkingSatMapProps = {
+  center: LatLng;
+  place?: Place | null;
+  spots: ParkingSpot[];
+  /** Last ~300 m of the active route, [lat, lng] pairs. */
+  tail: [number, number][];
+};
 
 export type MapLayerHandle = { recenter: () => void; zoomBy: (delta: number) => void };
 

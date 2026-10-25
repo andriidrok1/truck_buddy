@@ -66,7 +66,7 @@ function OptionCard({ place, state, onParking, onRoute, index }: { place: Place;
         </Text>
       )}
 
-      {state?.result && <ParkingStatus parking={state.result} idSuffix={`-${place.id}`} />}
+      {state?.result && <ParkingStatus parking={state.result} idSuffix={`-${place.id}`} place={place} />}
 
       <View style={styles.btnRow}>
         <PressableScale

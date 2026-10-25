@@ -6,9 +6,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { apiUrl } from "../api";
 import { fonts, radius, spacing, useTheme, type ThemeColors } from "../theme";
-import type { ParkingCheck, ParkingSpot } from "../types";
+import type { LatLng, ParkingCheck, ParkingSpot, Place } from "../types";
+import { routeTail } from "../utils/entry";
+import { openStreetView } from "../utils/navLinks";
 import { Icon } from "./Icon";
+import ParkingSatMap from "./ParkingSatMap";
 import { PressableScale } from "./PressableScale";
+import { SpotBadge } from "./SpotBadge";
 
 function look(c: ThemeColors, v: ParkingCheck["verdict"]) {
   if (v === "listed") return { icon: "check-circle", color: c.success };
@@ -19,39 +23,27 @@ function look(c: ThemeColors, v: ParkingCheck["verdict"]) {
 
 /** Entry (E) / park (P) markers drawn over the satellite image at normalized positions. */
 function SpotMarkers({ spots, size }: { spots: ParkingSpot[]; size: number }) {
-  const { colors } = useTheme();
   return (
     <>
-      {spots.map((s, i) => {
-        const bg = s.kind === "entry" ? colors.info : colors.success;
-        return (
-          <View
-            key={`${s.kind}-${i}`}
-            testID={`parking-spot-${s.kind}-${i}`}
-            pointerEvents="none"
-            style={[
-              styles.marker,
-              {
-                width: size,
-                height: size,
-                borderRadius: size / 2,
-                left: `${s.x * 100}%`,
-                top: `${s.y * 100}%`,
-                marginLeft: -size / 2,
-                marginTop: -size / 2,
-                backgroundColor: bg,
-                borderColor: colors.surface,
-              },
-            ]}
-          >
-            <Text style={[styles.markerText, { color: s.kind === "entry" ? colors.onInfo : colors.onSuccess, fontSize: size * 0.5 }]}>
-              {s.kind === "entry" ? "E" : "P"}
-            </Text>
-          </View>
-        );
-      })}
+      {spots.map((s, i) => (
+        <View
+          key={`${s.kind}-${i}`}
+          testID={`parking-spot-${s.kind}-${i}`}
+          pointerEvents="none"
+          style={[styles.marker, { left: `${s.x * 100}%`, top: `${s.y * 100}%`, marginLeft: -size / 2, marginTop: -size / 2 }]}
+        >
+          <SpotBadge kind={s.kind} size={size} />
+        </View>
+      ))}
     </>
   );
+}
+
+/** Center of the satellite frame, read from its image path (`/satellite?lat=..&lng=..`). */
+function frameCenter(path: string): LatLng | null {
+  const lat = Number(/[?&]lat=(-?[\d.]+)/.exec(path)?.[1]);
+  const lng = Number(/[?&]lng=(-?[\d.]+)/.exec(path)?.[1]);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
 }
 
 function Tip({ icon, text, testID }: { icon: string; text: string; testID: string }) {
@@ -66,8 +58,17 @@ function Tip({ icon, text, testID }: { icon: string; text: string; testID: strin
   );
 }
 
-/** Parking verdict, how to enter / where to park, and the satellite thumbnail (tap to enlarge). */
-export function ParkingStatus({ parking, idSuffix = "" }: { parking?: ParkingCheck | null; idSuffix?: string }) {
+type Props = {
+  parking?: ParkingCheck | null;
+  idSuffix?: string;
+  /** The checked place (draws its pin on the zoomable map). */
+  place?: Place | null;
+  /** Active route geometry; its last ~300 m is drawn on the zoomable map. */
+  route?: [number, number][] | null;
+};
+
+/** Parking verdict, how to enter / where to park, and the satellite thumbnail (tap for a zoomable map). */
+export function ParkingStatus({ parking, idSuffix = "", place, route }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
@@ -82,6 +83,8 @@ export function ParkingStatus({ parking, idSuffix = "" }: { parking?: ParkingChe
   const { icon, color } = look(colors, parking.verdict);
   const uri = parking.image_path ? apiUrl(parking.image_path) : null;
   const spots = parking.spots ?? [];
+  const center = parking.image_path ? frameCenter(parking.image_path) : null;
+  const close = () => setOpen(false);
 
   return (
     <View testID={`parking-status${idSuffix}`} style={styles.row}>
@@ -119,27 +122,48 @@ export function ParkingStatus({ parking, idSuffix = "" }: { parking?: ParkingChe
         </PressableScale>
       )}
 
-      {uri && (
-        <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-          <Pressable
-            testID={`parking-satellite-modal${idSuffix}`}
-            style={[styles.backdrop, { backgroundColor: colors.surfaceInverse, paddingTop: insets.top, paddingBottom: insets.bottom }]}
-            onPress={() => setOpen(false)}
-          >
-            <View style={styles.bigWrap}>
-              <Image source={{ uri }} style={styles.big} contentFit="contain" />
-              <View pointerEvents="none" style={[styles.crosshair, { borderColor: colors.onSurfaceInverse }]} />
-              <SpotMarkers spots={spots} size={28} />
+      {uri && center && (
+        <Modal visible={open} animationType="slide" presentationStyle="fullScreen" statusBarTranslucent onRequestClose={close}>
+          <View testID={`parking-satellite-modal${idSuffix}`} style={[styles.modal, { backgroundColor: colors.surfaceInverse }]}>
+            <View style={styles.mapWrap}>
+              {open && <ParkingSatMap center={center} place={place} spots={spots} tail={route?.length ? routeTail(route) : []} />}
+              <PressableScale
+                testID={`parking-satellite-close${idSuffix}`}
+                accessibilityLabel="Close satellite view"
+                onPress={close}
+                containerStyle={[styles.closeWrap, { top: insets.top + spacing.sm }]}
+                style={[styles.closeBtn, { backgroundColor: colors.surface }]}
+              >
+                <Icon name="close" size={22} color={colors.onSurface} />
+              </PressableScale>
             </View>
-            <Text style={[styles.caption, { color: colors.onSurfaceInverse }]}>{parking.label}</Text>
-            {!!parking.entry_tip && (
-              <Text style={[styles.modalTip, { color: colors.onSurfaceInverse }]}>E · {parking.entry_tip}</Text>
-            )}
-            {!!parking.park_tip && (
-              <Text style={[styles.modalTip, { color: colors.onSurfaceInverse }]}>P · {parking.park_tip}</Text>
-            )}
-            <Text style={[styles.attrib, { color: colors.onSurfaceTertiary }]}>Imagery © Esri · Tap to close</Text>
-          </Pressable>
+            <Pressable
+              testID={`parking-satellite-footer${idSuffix}`}
+              accessibilityLabel="Tap to close"
+              onPress={close}
+              style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}
+            >
+              <Text testID={`parking-satellite-verdict${idSuffix}`} style={[styles.caption, { color: colors.onSurfaceInverse }]}>
+                {parking.label}
+              </Text>
+              {!!parking.entry_tip && (
+                <Text style={[styles.modalTip, { color: colors.onSurfaceInverse }]}>E · {parking.entry_tip}</Text>
+              )}
+              {!!parking.park_tip && (
+                <Text style={[styles.modalTip, { color: colors.onSurfaceInverse }]}>P · {parking.park_tip}</Text>
+              )}
+              <PressableScale
+                testID={`parking-open-google${idSuffix}`}
+                accessibilityLabel="Open in Google Maps"
+                onPress={() => openStreetView(place?.lat ?? center.lat, place?.lng ?? center.lng)}
+                style={[styles.gmBtn, { backgroundColor: colors.surface }]}
+              >
+                <Icon name="google-maps" size={20} color={colors.info} />
+                <Text style={[styles.gmText, { color: colors.onSurface }]}>Open in Google Maps</Text>
+              </PressableScale>
+              <Text style={[styles.attrib, { color: colors.onSurfaceTertiary }]}>Imagery © Esri, may be dated · Tap to close</Text>
+            </Pressable>
+          </View>
         </Modal>
       )}
     </View>
@@ -157,13 +181,15 @@ const styles = StyleSheet.create({
   thumbWrap: { width: 72, height: 72, borderRadius: radius.md, overflow: "hidden" },
   thumb: { width: 72, height: 72 },
   thumbIcon: { ...StyleSheet.absoluteFill, alignItems: "center", justifyContent: "center" },
-  marker: { position: "absolute", borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
-  markerText: { fontFamily: fonts.extrabold },
-  backdrop: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm, paddingHorizontal: spacing.lg },
-  bigWrap: { width: "100%", aspectRatio: 1, alignItems: "center", justifyContent: "center" },
-  big: { width: "100%", height: "100%" },
-  crosshair: { position: "absolute", width: 28, height: 28, borderRadius: 14, borderWidth: 2 },
-  caption: { fontFamily: fonts.bold, fontSize: 16, marginTop: spacing.sm },
+  marker: { position: "absolute" },
+  modal: { flex: 1 },
+  mapWrap: { flex: 1, overflow: "hidden" },
+  closeWrap: { position: "absolute", right: spacing.md },
+  closeBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  footer: { alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  gmBtn: { flexDirection: "row", alignItems: "center", gap: spacing.sm, minHeight: 48, paddingHorizontal: spacing.lg, borderRadius: radius.lg, marginTop: spacing.xs },
+  gmText: { fontFamily: fonts.semibold, fontSize: 15 },
+  caption: { fontFamily: fonts.bold, fontSize: 16, textAlign: "center" },
   modalTip: { fontFamily: fonts.medium, fontSize: 14, textAlign: "center" },
   attrib: { fontFamily: fonts.regular, fontSize: 12, marginTop: spacing.sm },
 });

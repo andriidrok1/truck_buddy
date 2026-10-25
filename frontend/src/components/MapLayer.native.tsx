@@ -11,7 +11,7 @@ import { entrySpot } from "../utils/entry";
 const toCoord = (p: LatLng) => ({ latitude: p.lat, longitude: p.lng });
 
 /** Custom-view marker that stops tracking view changes once its icon has rendered. */
-function ViewMarker({ children, ...rest }: React.ComponentProps<typeof Marker> & { children: ReactNode }) {
+export function ViewMarker({ children, ...rest }: React.ComponentProps<typeof Marker> & { children: ReactNode }) {
   const [tracks, setTracks] = useState(true);
   useEffect(() => {
     const t = setTimeout(() => setTracks(false), 800);

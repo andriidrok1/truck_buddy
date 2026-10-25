@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 20, frontend only (web preview, 390x844): interactive satellite parking thumbnail. Login TRUCK2026 -> onboarding skip -> 'Take me to Pilot Travel Center Lodi CA' set the route, and the check returned 'Likely fits a truck (satellite check)' with E and P spots. Working: (1) Tapping parking-satellite-thumb opens parking-satellite-modal with parking-sat-map. It shows 8 Esri World_Imagery tiles at z17 (366 m across 390 px), all loaded. (2) Overlays: the place pin is centred. Modal E is at (278,287) and P at (240,357). Both match the thumbnail's normalised x/y (E 0.76/0.40, P 0.64/0.62) projected onto the 300 m frame, within about 2 px. The route tail line runs up to E. (3) Zoom in/out change z in the tile URL (17->18->19, clamped at 19, then down to 16). (4) Touch drag via CDP pans exactly (-100,-80 px). Two-finger pinch out goes 17->18 and pinch in goes back to 17. (5) Footer: the verdict text matches the parking label, the E/P tips show, and 'Imagery © Esri, may be dated · Tap to close' is present. parking-open-google opens a new tab at https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=38.11721,-121.39385 and does NOT close the modal. (6) Tapping the footer closes the modal, and so does the X (parking-satellite-close). On reopen the view resets to z17 centred. (7) Options list: 'I need fuel' -> other options -> option-parking-button-ts-49er -> parking-satellite-thumb-ts-49er opens parking-satellite-modal-ts-49er. It shows tiles, the pin and the entry/park spots, plus verdict 'Truck parking listed' and parking-open-google-ts-49er, and the X closes it. No route tail here, as expected because OptionsList passes no route. No console errors or warnings. BUG: dragging the map with a mouse on desktop web does not pan. The browser starts a native HTML5 image drag on the <img> tile (a dragstart event fired), so after the first ~10 px mousemove the PanResponder gets no more moves and a +100/+80 drag moved the map only +10/+8. Injecting CSS img{-webkit-user-drag:none} made the same mouse drag pan the full +100/+80, which confirms the root cause. Touch devices are not affected.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ParkingSatMap (web) mouse drag-to-pan", "issue": "Mouse drag pans only the first ~10 px, then stops. The browser's native HTML5 drag of the expo-image <img> tiles (and the SpotBadge/Pin images) takes over and the responder stops receiving mousemove. Confirmed: dragstart fired once, and adding img{-webkit-user-drag:none} fixed it (full +100/+80 pan). Fix: set draggable={false} on the web tiles, or style userSelect:'none' plus a CSS user-drag:none on the map container (for example a web-only style or a <style> injection). Alternatively put pointerEvents='none' on the tile images so the responder View gets the events. Reference: /app/frontend/src/components/ParkingSatMap.tsx:99-105", "testID": "parking-sat-map", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Parking satellite modal (web)", "issues": [
+        "Pinch zoom (and +/-) zoom around the view centre, not the pinch focal point, so the content under the fingers slides away. Minor, but users will expect it on a map.",
+        "No mouse-wheel or trackpad zoom on desktop web. Optional nice-to-have."
+      ]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_20.json"],
+  "action_items": [
+    "Fix mouse drag-to-pan on web in ParkingSatMap.tsx by stopping the native image drag on the tiles: draggable={false}, or pointerEvents='none' on the tile Images, or CSS -webkit-user-drag:none.",
+    "Optional: zoom around the pinch midpoint instead of the view centre; add wheel zoom on web."
+  ],
+  "critical_code_review_comments": [
+    "ParkingSatMap.tsx: the tile <Image> elements receive pointer events and are natively draggable on web. This is the root cause of the mouse-pan bug.",
+    "ParkingSatMap.tsx frameZoom uses Math.floor, so the initial frame is ~366 m wide at lat 38 rather than 300 m. That is acceptable (whole-tile zoom), and the native version uses an exact 300 m region.",
+    "ParkingSatMap.native.tsx uses mapType='satellite' with UrlTile shouldReplaceMapContent, but shouldReplaceMapContent is iOS-only. On Android, Google satellite imagery loads under the Esri tiles; mapType='none' on Android would avoid the double imagery load. Not testable on web.",
+    "ParkingStatus: the Google Maps button nested in the footer Pressable correctly does not trigger close (verified)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (not requested)", "frontend": "95% (all requested flows pass; mouse drag-to-pan broken on desktop web, touch pan OK)"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "For web: grant geolocation 38.58,-121.49, enter TRUCK2026 in access-code-input, tap onboarding-skip-button, fill search-input and press Enter. 'Take me to Pilot Travel Center Lodi CA' gives a thumb with E and P spots in about 10-20 s. For options: 'I need fuel' -> other-options-button -> option-parking-button-ts-49er -> parking-satellite-thumb-ts-49er. To check zoom, read z from the img src ('/tile/{z}/'). To test pinch or touch pan, use a CDP session: Emulation.setTouchEmulationEnabled, then Input.dispatchTouchEvent. Wait about 1 s after the modal opens before clicking footer elements (slide animation). To verify the mouse-drag fix, drag from (60,150) by +100/+80 and check that parking-sat-place-pin moves by the same amount and window dragstart does not fire.",
+  "rca_of_issue": "Mouse pan: react-native-web PanResponder relies on mousemove events. expo-image renders <img> elements, which browsers make draggable by default. After a few px of mouse movement the browser fires dragstart and takes over the pointer (an HTML5 DnD session), so mousemove stops reaching the responder. Reproduced with Playwright: dragstart count 1, pin moved +10/+8 instead of +100/+80. Mitigation verified: CSS user-drag:none on img gives a full +100/+80 pan."
+}

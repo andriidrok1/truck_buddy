@@ -144,3 +144,8 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Truck editor save reroutes silently (requestTruckReroute/takeTruckReroute)
 - find near X: geocode X, search around it, route from driver, "N miles from your delivery, M miles from you"; "and a hotel there" reuses point; parking intent with near -> truck stop search; rest_area->truck_stop fallback (said)
 - Animations: TopBar slide-in, route summary/name fade-in, parking label zoom, NavBanner slide + maneuver change, avatar double ripple
+
+## Interactive satellite parking map (June 2026)
+- Tapping the parking thumbnail opens a full-screen zoomable map (Esri World Imagery, ~300 m frame, same imagery as the verdict).
+- E/P spot markers, place pin, last ~300 m of the active route; pinch/pan; footer with verdict, tips, "Open in Google Maps" (Street View), "Imagery © Esri, may be dated · Tap to close".
+- Native: react-native-maps + UrlTile (ParkingSatMap.native.tsx); web: Esri tile renderer (ParkingSatMap.tsx). Not pushed yet — awaiting user confirmation.
