@@ -25,6 +25,8 @@ type Props = {
   onClose: () => void;
   onEndRoute: () => void;
   onLayout: (h: number) => void;
+  /** Set while the wake word is actively listening (shows the privacy dot + phrase). */
+  wakePhrase?: string | null;
 };
 
 function SideButton({
@@ -52,7 +54,7 @@ function SideButton({
 }
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, bottomInset, onAvatarPress, onClose, onEndRoute, onLayout } = props;
+  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, bottomInset, onAvatarPress, onClose, onEndRoute, onLayout, wakePhrase } = props;
   const { colors } = useTheme();
   const navigating = phase === "navigating";
 
@@ -63,9 +65,11 @@ export function CopilotSheet(props: Props) {
         ? "Thinking…"
         : speaking
           ? "Speaking…"
-          : navigating
-            ? "Talk to copilot"
-            : "Tap to talk";
+          : wakePhrase
+            ? `Say "${wakePhrase}"`
+            : navigating
+              ? "Talk to copilot"
+              : "Tap to talk";
 
   return (
     <View
@@ -153,9 +157,14 @@ export function CopilotSheet(props: Props) {
             mode={phase === "listening" ? "listening" : phase === "thinking" ? "thinking" : speaking ? "speaking" : "idle"}
             showMic={phase !== "thinking"}
           />
-          <Text testID="avatar-caption" style={[styles.caption, { color: colors.onSurfaceSecondary }]}>
-            {caption}
-          </Text>
+          <View style={styles.captionRow}>
+            {!!wakePhrase && (
+              <View testID="wake-indicator" accessibilityLabel="Listening for wake word" style={[styles.wakeDot, { backgroundColor: colors.success }]} />
+            )}
+            <Text testID="avatar-caption" style={[styles.caption, { color: colors.onSurfaceSecondary }]}>
+              {caption}
+            </Text>
+          </View>
         </Pressable>
 
         {phase === "ready" && <View style={styles.side} />}
@@ -198,5 +207,7 @@ const styles = StyleSheet.create({
   sideCircle: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
   sideLabel: { fontFamily: fonts.medium, fontSize: 12 },
   center: { alignItems: "center" },
-  caption: { fontFamily: fonts.medium, fontSize: 13, marginTop: 4 },
+  captionRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
+  caption: { fontFamily: fonts.medium, fontSize: 13 },
+  wakeDot: { width: 8, height: 8, borderRadius: 4 },
 });

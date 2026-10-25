@@ -16,7 +16,10 @@
           "waze"
         ],
         "NSLocationWhenInUseUsageDescription": "Find truck-friendly stops near you",
-        "NSMicrophoneUsageDescription": "Talk to your copilot hands-free"
+        "NSMicrophoneUsageDescription": "Talk to your copilot hands-free",
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "android": {
@@ -28,7 +31,9 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MICROPHONE"
       ]
     },
     "web": {
@@ -64,7 +69,8 @@
         {
           "microphonePermission": "Talk to your copilot hands-free"
         }
-      ]
+      ],
+      "./plugins/withWakeWord"
     ],
     "experiments": {
       "typedRoutes": true

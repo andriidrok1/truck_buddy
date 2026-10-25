@@ -60,6 +60,36 @@ export function getTruckProfile() {
   return current;
 }
 
+// Hands-free wake word setting (on by default), stored next to the truck profile.
+const HANDS_FREE_KEY = "hands_free_v1";
+let handsFree = true;
+let handsFreeLoaded = false;
+const handsFreeListeners = new Set<(v: boolean) => void>();
+
+export async function setHandsFree(v: boolean) {
+  handsFree = v;
+  handsFreeListeners.forEach((l) => l(v));
+  await storage.setItem(HANDS_FREE_KEY, v);
+}
+
+export function useHandsFree() {
+  const [value, setValue] = useState(handsFree);
+  useEffect(() => {
+    handsFreeListeners.add(setValue);
+    if (!handsFreeLoaded) {
+      handsFreeLoaded = true;
+      storage.getItem(HANDS_FREE_KEY, true as boolean).then((v) => {
+        handsFree = v !== false;
+        handsFreeListeners.forEach((l) => l(handsFree));
+      });
+    }
+    return () => {
+      handsFreeListeners.delete(setValue);
+    };
+  }, []);
+  return value;
+}
+
 export function useTruckProfile() {
   const [truck, setTruck] = useState<TruckProfile>(current);
   useEffect(() => {

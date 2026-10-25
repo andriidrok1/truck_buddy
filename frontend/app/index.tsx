@@ -1,6 +1,6 @@
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { AppState, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { absoluteUrl, api } from "@/src/api";
@@ -14,14 +14,16 @@ import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
-import { isOnboarded, truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { isOnboarded, truckLabel, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
+import { useWakeWord } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
 import type { ActiveRoute, AgentResponse, LatLng, ParkingState, Phase, Place } from "@/src/types";
 
 const REQUEST_TIMEOUT_MS = 60000;
 const STAGES = ["Searching nearby…", "Setting route…"];
 const STAGE_MS = 3500;
+const WAKE_SLEEP_MS = 10 * 60 * 1000; // background without a route: turn the wake word off
 
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
@@ -170,7 +172,7 @@ export default function MapScreen() {
     }
     await spoken;
     if (myTurn !== turn.current || !dialog.current) return;
-    beginListening();
+    listenNow();
   };
 
   const startRoute = (next: ActiveRoute) => {
@@ -269,6 +271,67 @@ export default function MapScreen() {
     submitTurn(res);
   };
 
+  // ---- Hands-free wake word: same beginListening() as a tap, no separate dialog logic. ----
+  const handsFree = useHandsFree();
+  const [micOk, setMicOk] = useState(false);
+  const [focused, setFocused] = useState(true);
+  const [asleep, setAsleep] = useState(false);
+  const wake = useWakeWord(() => {
+    // Barge-in: the wake word interrupts the copilot's speech and starts listening.
+    voice.stopSpeaking();
+    if (!dialog.current) setCaption(null);
+    beginListening();
+  });
+  /** The recorder and the wake word can't share the mic (Android): pause it first. */
+  const listenNow = async () => {
+    await wake.stop();
+    beginListening();
+  };
+
+  const { micPermission } = voice;
+  const checkMic = useCallback(() => {
+    micPermission().then((p) => setMicOk(p === "granted")).catch(() => setMicOk(false));
+  }, [micPermission]);
+
+  // Modal screens (onboarding, truck profile) pause the wake word.
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      checkMic();
+      return () => setFocused(false);
+    }, [checkMic]),
+  );
+
+  // Battery: in the background with no route for 10 min, turn it off; back in the app, on again.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const sub = AppState.addEventListener("change", (s) => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (s === "active") {
+        setAsleep(false);
+        checkMic();
+      } else if (s === "background") {
+        timer = setTimeout(() => {
+          if (!activeRef.current) setAsleep(true);
+        }, WAKE_SLEEP_MS);
+      }
+    });
+    return () => {
+      sub.remove();
+      if (timer) clearTimeout(timer);
+    };
+  }, [checkMic]);
+
+  const idle = phase === "ready" || phase === "navigating" || phase === "options";
+  const wakeArmed = wake.supported && handsFree && micOk && !asleep;
+  useEffect(() => {
+    if (!wakeArmed) wake.shutdown();
+    else if (focused && idle) wake.start();
+    else wake.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wakeArmed, focused, idle]);
+
   const onAvatarPress = async () => {
     if (phase === "thinking") return;
     if (phase === "listening") {
@@ -282,14 +345,15 @@ export default function MapScreen() {
       return;
     }
     if (!dialog.current) setCaption(null);
-    beginListening();
+    listenNow();
   };
 
   const onAllowMic = async () => {
     const perm = await voice.requestMic();
     if (perm === "granted") {
       setMicCard(null);
-      beginListening();
+      setMicOk(true);
+      listenNow();
     } else {
       // Asked once with context; after that only Settings can fix it.
       setMicCard("blocked");
@@ -420,6 +484,7 @@ export default function MapScreen() {
         onClose={onClose}
         onEndRoute={onEndRoute}
         onLayout={setSheetH}
+        wakePhrase={wake.active ? wake.phrase : null}
       />
 
       {micCard && (

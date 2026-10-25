@@ -1,5 +1,21 @@
 # Welcome to your Expo app 👋
 
+## Hands-free wake word ("Hey Buddy")
+
+The copilot can start a conversation when the driver says the wake word. Detection runs
+on the phone (Picovoice Porcupine); nothing is recorded or sent before the wake word fires.
+
+- **Works only in a dev/production build.** Expo Go and the web preview keep "Tap to talk".
+- **Access key:** create a free account at https://console.picovoice.ai (Free tier), copy the
+  AccessKey and set `EXPO_PUBLIC_PICOVOICE_ACCESS_KEY` in `frontend/.env`. No key = feature off.
+- **Custom keyword:** in Picovoice Console train "Hey Buddy" for Android and iOS, download the
+  files and save them as `assets/wakeword/hey_buddy_android.ppn` and `assets/wakeword/hey_buddy_ios.ppn`.
+  Without them the app uses the built-in keyword "Jarvis" (the caption shows the real phrase).
+- **Dev build:** `npx expo prebuild --clean` then `npx expo run:android` / `npx expo run:ios`
+  (or build through the Emergent Publish button). `plugins/withWakeWord.js` adds the Android
+  microphone foreground service and bundles the `.ppn` files.
+- Toggle: Truck profile → "Hands-free" (on by default).
+
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
 ## Get started

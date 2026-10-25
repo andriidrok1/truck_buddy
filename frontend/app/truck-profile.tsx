@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Icon } from "@/src/components/Icon";
 import { PressableScale } from "@/src/components/PressableScale";
-import { DEFAULT_TRUCK, saveTruckProfile, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { DEFAULT_TRUCK, saveTruckProfile, setHandsFree, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
 
 const LIMITS = {
@@ -59,6 +59,7 @@ export default function TruckProfileScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const truck = useTruckProfile();
+  const handsFree = useHandsFree();
 
   const [feet, setFeet] = useState(String(Math.floor(truck.height_in / 12)));
   const [inches, setInches] = useState(String(truck.height_in % 12));
@@ -140,6 +141,21 @@ export default function TruckProfileScreen() {
             value={hazmat}
             onValueChange={setHazmat}
             trackColor={{ true: colors.warning, false: colors.surfaceTertiary }}
+          />
+        </View>
+
+        <View style={[styles.switchRow, { backgroundColor: colors.surfaceSecondary }]}>
+          <View style={styles.flex}>
+            <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Hands-free</Text>
+            <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
+              Start the copilot by saying &quot;Hey Buddy&quot; (app build only)
+            </Text>
+          </View>
+          <Switch
+            testID="hands-free-switch"
+            value={handsFree}
+            onValueChange={setHandsFree}
+            trackColor={{ true: colors.brandPrimary, false: colors.surfaceTertiary }}
           />
         </View>
 
