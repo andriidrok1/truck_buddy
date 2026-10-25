@@ -11,6 +11,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
+import imageio_ffmpeg
 from emergentintegrations.llm.openai import OpenAISpeechToText, OpenAITextToSpeech
 
 from services.http import client
@@ -125,7 +126,7 @@ def cache_tag(voice: Optional[str] = None, model: Optional[str] = None, eleven_v
     """Identifies who speaks a cached line: provider + voice (changes invalidate /speak cache)."""
     if not voice and not model and eleven_voice():
         return f"elevenlabs|{ELEVEN_MODEL}|{eleven_voice_id or eleven_voice()}"
-    return f"openai|{model or FALLBACK_MODEL}|{voice or DEFAULT_VOICE}"
+    return f"openai|{model or FALLBACK_MODEL}|{voice or DEFAULT_VOICE}|g{OPENAI_GAIN_DB}"  # gain: old quiet clips miss
 
 
 def is_fallback(audio_id: str) -> bool:
@@ -175,6 +176,32 @@ async def _eleven(text: str, voice_id: str, previous_text: Optional[str] = None,
 # gpt-4o-mini-tts takes a speaking-style instruction (tts-1 ignores it).
 INSTRUCTIONS = "Calm, warm, confident co-pilot talking to a truck driver on the road. Natural pace, clear and friendly."
 
+# OpenAI TTS comes out ~-26 LUFS, ElevenLabs ~-15: on a phone speaker in a cab OpenAI is barely audible.
+# +13 dB with a peak limiter brings it to ~-15 LUFS (measured), same loudness as ElevenLabs.
+OPENAI_GAIN_DB = 13
+_FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+
+
+async def louder(mp3: bytes) -> bytes:
+    """Boosts an OpenAI TTS mp3; returns the original if ffmpeg fails."""
+    try:
+        p = await asyncio.create_subprocess_exec(
+            _FFMPEG, "-hide_banner", "-loglevel", "error", "-i", "pipe:0",
+            "-af", f"volume={OPENAI_GAIN_DB}dB,alimiter=limit=0.84:level=false",
+            "-c:a", "libmp3lame", "-b:a", "64k", "-f", "mp3", "pipe:1",
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try:
+            out, err = await asyncio.wait_for(p.communicate(mp3), timeout=5)
+        except asyncio.TimeoutError:
+            p.kill()
+            raise
+        if p.returncode == 0 and out:
+            return out
+        logger.warning("tts boost failed: %s", err[:200])
+    except Exception as e:  # noqa: BLE001
+        logger.warning("tts boost failed: %s", e)
+    return mp3
+
 
 async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str] = None,
                      previous_text: Optional[str] = None, next_text: Optional[str] = None,
@@ -198,6 +225,7 @@ async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str
         except Exception:
             logger.exception("TTS failed")
             return None
+        audio = await louder(audio)
     audio_id = uuid.uuid4().hex
     _AUDIO_CACHE[audio_id] = audio
     while len(_AUDIO_CACHE) > _CACHE_MAX:

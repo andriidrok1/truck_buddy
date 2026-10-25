@@ -1,0 +1,42 @@
+{
+  "summary": "Tested the OpenAI TTS loudness fix end to end with ElevenLabs out of quota (401 quota_exceeded, so every line falls back to OpenAI tts-1/sage). New audio is loud: /api/speak -16.4 LUFS / -0.4 dBTP over 8.0s; /api/agent?speak=true 'I need fuel' part 1 -16.3 LUFS / -1.7 dBTP, part 2 -17.5 LUFS / +0.1 dBTP. Raw OpenAI was about -26 to -33 LUFS. Audio is audio/mpeg and decodes, Range bytes=0-1023 returns 206 with the correct Content-Range and bytes, and duration matches the raw clip within 0.1s. louder() takes about 16-20 ms, and /api/speak took 1.2-3.6s, the same as or faster than a direct tts-1 call (1.9-2.7s). louder(b'garbage') and louder(b'') return the input unchanged. Web smoke test at 390x844 passed: access code TRUCK2026, skip onboarding, Type 'I need fuel', reply and route to Roady's Truck Stop shown, voice/audio requests 206, no console errors. One minor problem: 42 old, unboosted OpenAI clips (24kHz/128k, -26 to -33 LUFS) are still saved on disk in backend/.tts_cache.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/speak (pinned cache backend/.tts_cache)", "issue": "42 of 334 saved clips are unboosted OpenAI tts-1 audio from before the fix (24000 Hz, 128 kb/s, -26 to -33 LUFS). They are stored under the key 'openai|tts-1|sage|<text>', so they are not used while ELEVENLABS is set up, which is the current setup. If the ElevenLabs key is removed, or a request sets voice/model explicitly, /api/speak serves these quiet clips without boosting them, which brings back the user's 'very quiet' bug for fixed lines (onboarding, fillers)."},
+      {"endpoint": "POST /api/speak (pinned ElevenLabs lines)", "issue": "54 saved ElevenLabs clips (44.1kHz/96k) are only -21 to -25 LUFS. The boosted OpenAI fallback is now about -16 LUFS, so these lines play 5-8 dB quieter than the fallback lines mixed with them. This is a volume mismatch, not a regression."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter26_tts_loudness_api.py",
+    "/app/backend/tests/test_iter25_tts_loudness.py",
+    "/app/backend/tests/voice_latency_probe.py",
+    "/app/test_reports/pytest/pytest_iter26.xml"
+  ],
+  "action_items": [
+    "Stale quiet saved clips: add a boost version to the OpenAI branch of voice.cache_tag (e.g. 'openai|tts-1|sage|g13'), or delete the 24kHz/128k files in backend/.tts_cache, so old unboosted audio can never be served.",
+    "Optional: make loudness consistent by also normalizing saved ElevenLabs lines that are below about -20 LUFS, or check the ElevenLabs voice output level."
+  ],
+  "critical_code_review_comments": [
+    "louder() is safe: 5s timeout, returns the input on a non-zero exit code or empty output, and the subprocess is async, so the event loop is not blocked.",
+    "If wait_for times out, the ffmpeg process is not killed (no p.kill()), so it can be left orphaned. Add p.kill() in the timeout path.",
+    "The alimiter limit is 0.84 on sample peak, but true peak can reach +0.1 dBTP (seen on agent part 2). This is acceptable for phones but is not strictly at or below 0 dBTP.",
+    "conftest.py quietly adds a Bearer token to every requests.Session request. Auth-negative tests must pass their own Authorization header, otherwise they give false 200s."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter26_tts_loudness_api.py (new)",
+    "/app/backend/tests/voice_latency_probe.py (new)"
+  ],
+  "success_rate": {"backend": "100% (8/8: iter25 3/3 + iter26 5/5)", "frontend": "100% (smoke flow)"},
+  "seed_data_creation": "None. The /api/speak tests create 'TEST loudness check xxxx' and 'Probe xxxx' fallback clips in the in-memory cache only; fallback audio is not saved to disk.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Measure loudness with imageio_ffmpeg loudnorm print_format=summary. Duration from pipe input shows as N/A, so read the last time= value instead. ElevenLabs quota is exhausted, so every TTS call goes through the OpenAI fallback and louder(). Run tests with -n0 to see print output (pytest.ini uses xdist).",
+  "rca_of_issue": "Original bug: OpenAI tts-1 mp3 is about 12 dB quieter than ElevenLabs. Confirmed fixed for new audio (about -16 LUFS). What remains is old unboosted OpenAI clips saved to disk before the fix (see minor issue)."
+}

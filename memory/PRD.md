@@ -131,3 +131,6 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 
 ## Jun 2026 — Tester mode
 - Code test123 (env TESTER_CODE) logs in as role "tester" (JWT claim + stored on device). Tester sees a flask button -> /tester screen with scenarios; "Flat tire on I-80" moves the app's GPS to I-80 E near Vacaville (38.38585,-121.93664, heading 52). "Back to real GPS" resets. Simulated spot lives in memory (src/sim.ts), resets on app restart
+
+## Jun 2026 — Loud OpenAI voice fallback
+- OpenAI tts-1 was ~-26 LUFS vs ElevenLabs ~-15 (12 dB quieter on phones). louder(): bundled ffmpeg (imageio-ffmpeg) +13 dB + limiter -> ~-15..-17 LUFS, ~20 ms extra. OpenAI cache tag has |g13 so old quiet cached clips are not reused
