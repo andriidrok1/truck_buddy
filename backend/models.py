@@ -84,6 +84,17 @@ class ParkingSpot(BaseModel):
     lng: float
 
 
+class NearbyLot(BaseModel):
+    """A truck-capable lot elsewhere in the satellite frame (when the place itself won't fit)."""
+    direction: Literal["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"]
+    kind: Literal["public lot", "private yard", "unclear"] = "unclear"
+
+    @property
+    def phrase(self) -> str:
+        look = {"public lot": ", looks like a public lot", "private yard": ", looks like a private yard"}.get(self.kind, "")
+        return f"there's a lot with trailers to the {self.direction}{look}"
+
+
 class ParkingCheck(BaseModel):
     verdict: ParkingVerdict
     label: str  # e.g. "Likely fits a truck (satellite check)"
@@ -92,8 +103,9 @@ class ParkingCheck(BaseModel):
     image_path: Optional[str] = None  # relative to /api, e.g. "/satellite?lat=..&lng=.."
     entry_tip: Optional[str] = None  # how to drive in
     park_tip: Optional[str] = None  # where to leave the truck
-    spots: List[ParkingSpot] = Field(default_factory=list)
+    spots: List[ParkingSpot] = Field(default_factory=list)  # always at the place itself
     relative: bool = False  # entry_tip is relative to the driver's approach ("On your right ...")
+    nearby: Optional[NearbyLot] = None  # only with verdict "unlikely"
 
 
 TRACTOR_FT = 20  # typical tractor length added to the trailer

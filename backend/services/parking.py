@@ -19,7 +19,7 @@ from typing import Optional
 from services.http import client
 from emergentintegrations.llm.chat import ImageContent, LlmChat, StreamDone, TextDelta, UserMessage
 
-from models import ParkingCheck, ParkingSpot, Place
+from models import NearbyLot, ParkingCheck, ParkingSpot, Place
 from services import parking_store
 
 logger = logging.getLogger("truckbuddy.parking")
@@ -42,7 +42,13 @@ SYSTEM = (
     '{"fits": "likely" | "unlikely" | "unclear", "reason": "<max 15 words>", '
     '"entry": "<how to enter, max 14 words, use compass sides e.g. \'Use the wide east driveway off the frontage road\'>", '
     '"park": "<where to leave the truck, max 14 words, e.g. \'Park along the back lot on the north side\'>", '
-    '"spots": [{"kind": "entry" | "park", "x": 0.0-1.0, "y": 0.0-1.0}]} '
+    '"spots": [{"kind": "entry" | "park", "x": 0.0-1.0, "y": 0.0-1.0}], '
+    '"nearby": null | {"direction": "north" | "northeast" | "east" | "southeast" | "south" | "southwest" | "west" | '
+    '"northwest", "kind": "public lot" | "private yard" | "unclear"}} '
+    "spots are ONLY at the center place itself. "
+    "nearby: only when fits is \"unlikely\" and ANOTHER lot elsewhere in the image clearly has parked trailers or "
+    "long open paved stretches a semi could use; give its compass direction from the center and whether it looks "
+    "like a public lot or a fenced private yard (fences, gates, rows of company trailers). Otherwise null. "
     "Use empty strings and an empty list if you can't tell."
 )
 
@@ -128,7 +134,18 @@ def _parse(text: str, place: Place) -> dict:
         "entry_tip": _tip(data.get("entry")),
         "park_tip": _tip(data.get("park")),
         "spots": spots[:4],
+        "nearby": _nearby(data.get("nearby")) if fits == "unlikely" else None,
     }
+
+
+def _nearby(v) -> Optional[NearbyLot]:
+    if not isinstance(v, dict):
+        return None
+    try:
+        return NearbyLot(direction=str(v.get("direction") or "").strip().lower().replace("-", ""),
+                         kind=v.get("kind") if v.get("kind") in ("public lot", "private yard") else "unclear")
+    except ValueError:
+        return None
 
 
 async def _ask_vision(img: bytes, place: Place) -> dict:
@@ -278,8 +295,11 @@ async def _check_parking(place: Place, force: bool = False) -> ParkingCheck:
             "unlikely": "Unlikely to fit a truck (satellite check)",
             "unclear": "Truck parking unclear",
         }[verdict]
+    nearby = v["nearby"] if verdict == "unlikely" else None
+    if nearby:
+        reason = f"{reason.rstrip('.')}; {nearby.phrase}." if reason else f"{nearby.phrase[0].upper()}{nearby.phrase[1:]}."
     res = ParkingCheck(verdict=verdict, label=label, reason=reason, source=source, image_path=path,
-                       entry_tip=v["entry_tip"], park_tip=v["park_tip"], spots=v["spots"])
+                       entry_tip=v["entry_tip"], park_tip=v["park_tip"], spots=v["spots"], nearby=nearby)
     if force:
         return res  # _retry() keeps the better of old/new and saves it as final
     _put(_verdict_cache, k, res)

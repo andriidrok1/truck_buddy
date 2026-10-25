@@ -63,6 +63,8 @@ export type ParkingCheck = {
   park_tip?: string | null;
   spots?: ParkingSpot[];
   relative?: boolean;
+  /** Truck-capable lot elsewhere in the frame (only with verdict "unlikely"). */
+  nearby?: { direction: string; kind: "public lot" | "private yard" | "unclear" } | null;
 };
 
 export type PriceFact = {

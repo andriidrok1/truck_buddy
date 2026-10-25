@@ -57,6 +57,14 @@ MAX_OPTIONS = 4
 PRECHECK = 3  # nearest candidates satellite-checked in the background
 FAVORITE_EXTRA_MI = 5.0
 TRUCK_TAGS = ("truck parking", "53 ft", "truck lot", "hgv")
+# Names that mark a real truck stop (vs. an ordinary gas station Google tags as truck_stop).
+TRUCK_STOP_NAME = re.compile(
+    r"\b(?:love'?s|pilot|flying j|ta|petro|sapp bros|roady'?s|truck ?stop|travel (?:center|centre|plaza))\b", re.I)
+
+
+def is_fuel_stop(p: Place) -> bool:
+    """A truck_stop result with no truck-stop name and a satellite "unlikely": just a gas station."""
+    return p.category == "truck_stop" and not TRUCK_STOP_NAME.search(p.name) and _verdict(p) == "unlikely"
 CATEGORIES = ("truck_stop", "hotel", "rest_area")
 
 SYSTEM = """You are TruckBuddy, a hands-free voice copilot for a long-haul truck driver who is driving.
@@ -146,6 +154,11 @@ TEMPLATES = {
         ("Okay, we're headed to {dest}", "That's {time}, {mi} miles."),
         ("Got it", "{dest} it is, {time} and {mi} miles."),
     ],
+    # truck_stop results that are really gas stations: honest wording.
+    "fuel_stop": [
+        ("Closest I've got is a fuel stop", "{name}{off}, about {mi} miles out, might be tight for a rig."),
+        ("Okay, it's a fuel stop, not a truck stop", "{name} is about {mi} miles ahead{up}."),
+    ],
 }
 NOTICES = (
     ("toll", "Heads up, couldn't dodge all the tolls on this one."),
@@ -163,7 +176,8 @@ def _notice(raw: str) -> str:
 def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[str] = None) -> str:
     """Conversational intro + one line with the place, a landmark and the distance; then a notice, if any.
     The driver's name is used about every third answer."""
-    intro, body = TEMPLATES[place.category][n % len(TEMPLATES[place.category])]
+    kind = "fuel_stop" if is_fuel_stop(place) else place.category
+    intro, body = TEMPLATES[kind][n % len(TEMPLATES[kind])]
     street = _street(place.address)
     dest = place.name.split(",")[0]
     vals = {"name": place.name, "dest": dest, "mi": _miles(route.distance_mi), "time": route.summary.split(" · ")[0],
@@ -200,14 +214,16 @@ def choose_place(found: list[Place], truck: TruckProfile, exclude: set[str]) -> 
     pool = [p for p in found if p.id not in exclude] or found
     if not pool:
         return None
-    ok = [p for p in pool if _verdict(p) != "unlikely"] or pool
+    ok = [p for p in pool if not is_fuel_stop(p) and _verdict(p) != "unlikely"] or \
+        [p for p in pool if not is_fuel_stop(p)] or pool
     dist = lambda p: p.distance_mi or 0.0  # noqa: E731
     nearest = min(dist(p) for p in ok)
     chains = [re.compile(rf"\b{re.escape(c)}\b", re.I) for c in truck.favorite_chains if c.strip()]
     fav = [p for p in ok if any(rx.search(p.name) for rx in chains) and dist(p) <= nearest + FAVORITE_EXTRA_MI]
     if fav:
         return min(fav, key=dist)
-    good = [p for p in ok if _verdict(p) in ("listed", "likely") or any(w in t.lower() for t in p.tags for w in TRUCK_TAGS)]
+    good = [p for p in ok if _verdict(p) in ("listed", "likely") or any(w in t.lower() for t in p.tags for w in TRUCK_TAGS)
+            or (p.category == "truck_stop" and TRUCK_STOP_NAME.search(p.name))]
     return min(good or ok, key=dist)
 
 

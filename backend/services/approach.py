@@ -226,6 +226,9 @@ def speech(c: ParkingCheck) -> str:
         "unclear": "I can't tell for sure from the satellite if a rig fits.",
     }[c.verdict]
     parts = [verdict]
+    if c.verdict == "unlikely" and c.nearby:
+        p = c.nearby.phrase
+        parts.append(f"{p[0].upper()}{p[1:]}.")
     if c.entry_tip:
         tip = c.entry_tip.rstrip(".")
         parts.append(f"The truck entrance is {tip[0].lower()}{tip[1:]}." if c.relative else f"To get in: {tip}.")

@@ -21,7 +21,7 @@ import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, truckLabe
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { useWakeWord } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
-import type { ActiveRoute, AgentResponse, AppAction, LatLng, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
+import type { ActiveRoute, AgentResponse, AppAction, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
 import { storage } from "@/src/utils/storage";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
@@ -38,6 +38,12 @@ const REQUEST_TIMEOUT_MS = 60000;
 const STAGES = ["Searching nearby…", "Setting route…"];
 const STAGE_MS = 3500;
 const WAKE_SLEEP_MS = 10 * 60 * 1000; // background without a route: turn the wake word off
+/** " There's a lot with trailers to the southeast, looks like a private yard." (or "") */
+const nearbyLine = (pk: ParkingCheck) => {
+  if (!pk.nearby) return "";
+  const look = pk.nearby.kind === "unclear" ? "" : `, looks like a ${pk.nearby.kind}`;
+  return ` There's a lot with trailers to the ${pk.nearby.direction}${look}.`;
+};
 const FILLER_DELAY_MS = 300; // answer faster than this: no filler at all
 // Shortest first: scheduleFiller() picks from the top more often.
 const FILLERS = [
@@ -273,7 +279,7 @@ export default function MapScreen() {
       const tips = [entry, pk.park_tip].filter(Boolean).join(". ");
       const text =
         pk.verdict === "unlikely"
-          ? "Heads up: from the satellite, parking there looks tight for a rig."
+          ? `Heads up: from the satellite, parking there looks tight for a rig.${nearbyLine(pk)}`
           : tips
             ? `${tips}.`
             : "";

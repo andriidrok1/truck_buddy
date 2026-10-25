@@ -4,13 +4,14 @@ from datetime import datetime, timedelta, timezone
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
-_client = AsyncIOMotorClient(os.environ["MONGO_URL"])
-_col = _client[os.environ["DB_NAME"]]["conversation"]
+_col = None
 _indexed = False
 
 
 async def _ensure_index() -> None:
-    global _indexed
+    global _indexed, _col
+    if _col is None:  # lazy: importing the agent (tests, tools) must not need Mongo
+        _col = AsyncIOMotorClient(os.environ["MONGO_URL"])[os.environ["DB_NAME"]]["conversation"]
     if not _indexed:
         await _col.create_index([("driver", 1), ("at", 1)])
         _indexed = True
@@ -37,4 +38,5 @@ async def recent(driver: str, limit: int) -> list[dict]:
 
 
 async def clear(driver: str) -> int:
+    await _ensure_index()
     return (await _col.delete_many({"driver": driver})).deleted_count

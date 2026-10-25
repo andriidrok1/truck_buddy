@@ -108,3 +108,7 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - STT: Whisper prompt with trucking vocabulary/address style; drop segment only if (no_speech>=0.6 & logprob<-0.8) or logprob<-1.4 or compression>2.4; dropped segments logged; Whisper stock hallucinations ("www.FEMA.gov", "thanks for watching") dropped
 - Addresses: number words -> digits, HERE street/place/postalCode/intersection/houseNumber at score>=0.8, read-back on no match, previous town appended to street-only follow-ups; logs for intent/query/geocoder result
 - Parking "Let me look at the satellite": retry once, spoken apology if it still fails
+
+## Jun 2026 — Fuel stops vs truck stops, nearby truck lot
+- truck_stop results with no truck-stop name (Love's, Pilot, Flying J, TA, Petro, Sapp Bros, Roady's, truck stop, travel center/plaza) and satellite "unlikely" are demoted; named truck stops preferred when verdicts are unknown; if only such places are left the reply calls it "a fuel stop"
+- Vision JSON has optional "nearby" {direction, kind: public lot | private yard}: only with "unlikely"; appended to reason and spoken line ("There's a lot with trailers to the southwest, looks like a private yard."); spots stay at the place
