@@ -46,6 +46,7 @@ async def health():
             "places": get_places_provider().source,
             "routing": get_routing_provider().source,
             "agent": get_agent_provider().source,
+            "tts": voice.provider(),
         },
     }
 
@@ -218,7 +219,7 @@ class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=600)
     # Optional, for comparing voices; the app always uses the default.
     voice: Optional[Literal["alloy", "ash", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"]] = None
-    model: Literal["tts-1", "gpt-4o-mini-tts"] = "gpt-4o-mini-tts"
+    model: Optional[Literal["tts-1", "gpt-4o-mini-tts"]] = None
 
 
 _SPEAK_CACHE: dict[str, str] = {}
@@ -228,7 +229,7 @@ _SPEAK_PENDING: dict[str, "asyncio.Task[Optional[str]]"] = {}
 @api.post("/speak")
 async def speak(req: SpeakRequest):
     """TTS for fixed copilot lines (onboarding, reminders). Cached per text, one generation per text."""
-    key = f"{req.model}|{req.voice or ''}|{req.text}"
+    key = f"{voice.cache_tag(req.voice, req.model)}|{req.text}"
     audio_id = _SPEAK_CACHE.get(key)
     if not audio_id or voice.get_audio(audio_id) is None:
         task = _SPEAK_PENDING.get(key)

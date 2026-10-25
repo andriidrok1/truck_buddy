@@ -10,6 +10,8 @@ from typing import Optional
 
 from emergentintegrations.llm.openai import OpenAISpeechToText, OpenAITextToSpeech
 
+from services.http import client
+
 logger = logging.getLogger("truckbuddy.voice")
 
 NO_SPEECH_PROB = 0.6
@@ -52,20 +54,69 @@ async def transcribe(data: bytes, filename: str) -> str:
 
 VOICES = ("alloy", "ash", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer")
 DEFAULT_VOICE = "sage"
-DEFAULT_MODEL = "gpt-4o-mini-tts"  # warmer, natural tone (chosen by the owner)
+FALLBACK_MODEL = "tts-1"  # OpenAI fallback when ElevenLabs is off or fails
+
+ELEVEN_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+ELEVEN_DEFAULT_VOICE = "21m00Tcm4TlvDq8ikWAM"  # "Rachel", ElevenLabs premade voice
+ELEVEN_BODY = {"model_id": "eleven_flash_v2_5", "voice_settings": {"stability": 0.5, "similarity_boost": 0.75, "speed": 1.05}}
+ELEVEN_TIMEOUT_S = 8
+
+
+def eleven_voice() -> Optional[str]:
+    """ElevenLabs voice id when the key is set, else None (OpenAI is used)."""
+    if not os.environ.get("ELEVENLABS_API_KEY"):
+        return None
+    return os.environ.get("ELEVENLABS_VOICE_ID") or ELEVEN_DEFAULT_VOICE
+
+
+def provider() -> str:
+    return "elevenlabs" if eleven_voice() else "openai"
+
+
+def cache_tag(voice: Optional[str] = None, model: Optional[str] = None) -> str:
+    """Identifies who speaks a cached line: provider + voice (changes invalidate /speak cache)."""
+    if not voice and not model and eleven_voice():
+        return f"elevenlabs|{eleven_voice()}"
+    return f"openai|{model or FALLBACK_MODEL}|{voice or DEFAULT_VOICE}"
+
+
+async def _eleven(text: str, voice_id: str) -> Optional[bytes]:
+    try:
+        r = await client().post(
+            ELEVEN_URL.format(voice_id=voice_id),
+            params={"output_format": "mp3_22050_32"},
+            headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"], "Accept": "audio/mpeg"},
+            json={"text": text, **ELEVEN_BODY},
+            timeout=ELEVEN_TIMEOUT_S,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("ElevenLabs TTS failed, falling back to OpenAI: %s", e)
+        return None
+    if r.status_code != 200 or not r.content:
+        logger.warning("ElevenLabs TTS %s, falling back to OpenAI: %s", r.status_code, r.text[:200])
+        return None
+    return r.content
 # gpt-4o-mini-tts takes a speaking-style instruction (tts-1 ignores it).
 INSTRUCTIONS = "Calm, warm, confident co-pilot talking to a truck driver on the road. Natural pace, clear and friendly."
 
 
-async def synthesize(text: str, voice: Optional[str] = None, model: str = DEFAULT_MODEL) -> Optional[str]:
-    """Returns an id for GET /api/voice/audio/{id}, or None if TTS failed."""
-    try:
-        tts = OpenAITextToSpeech(api_key=os.environ["EMERGENT_LLM_KEY"])
-        extra = {"instructions": INSTRUCTIONS} if model == "gpt-4o-mini-tts" else {}
-        audio = await tts.generate_speech(text=text[:4000], model=model, voice=voice or DEFAULT_VOICE, **extra)
-    except Exception:
-        logger.exception("TTS failed")
-        return None
+async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str] = None) -> Optional[str]:
+    """Returns an id for GET /api/voice/audio/{id}, or None if TTS failed.
+    ElevenLabs first (when configured and no explicit OpenAI voice/model is asked), then OpenAI."""
+    text = text[:4000]
+    audio = None
+    eleven = eleven_voice() if not voice and not model else None
+    if eleven:
+        audio = await _eleven(text, eleven)
+    if audio is None:
+        model = model or FALLBACK_MODEL
+        try:
+            tts = OpenAITextToSpeech(api_key=os.environ["EMERGENT_LLM_KEY"])
+            extra = {"instructions": INSTRUCTIONS} if model == "gpt-4o-mini-tts" else {}
+            audio = await tts.generate_speech(text=text, model=model, voice=voice or DEFAULT_VOICE, **extra)
+        except Exception:
+            logger.exception("TTS failed")
+            return None
     audio_id = uuid.uuid4().hex
     _AUDIO_CACHE[audio_id] = audio
     while len(_AUDIO_CACHE) > _CACHE_MAX:
