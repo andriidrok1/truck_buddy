@@ -4,9 +4,11 @@ import { Platform, StyleSheet, Switch, Text, TextInput, View } from "react-nativ
 import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { setToken } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
 import { PressableScale } from "@/src/components/PressableScale";
 import { DEFAULT_TRUCK, saveTruckProfile, setHandsFree, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { setSim } from "@/src/sim";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
 
 const LIMITS = {
@@ -168,6 +170,19 @@ export default function TruckProfileScreen() {
             Check the highlighted values: height 5–16 ft, trailer 10–65 ft, weight 5,000–200,000 lb.
           </Text>
         )}
+
+        <PressableScale
+          testID="sign-out"
+          accessibilityLabel="Sign out"
+          onPress={async () => {
+            setSim(null);
+            await setToken(null); // back to the access-code screen
+          }}
+          style={[styles.signOut, { borderColor: colors.error }]}
+        >
+          <Icon name="logout" size={20} color={colors.error} />
+          <Text style={[styles.signOutText, { color: colors.error }]}>Sign out (enter a code again)</Text>
+        </PressableScale>
       </KeyboardAwareScrollView>
 
       <KeyboardStickyView offset={{ opened: insets.bottom }}>
@@ -187,6 +202,8 @@ export default function TruckProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  signOut: { height: 52, borderRadius: radius.pill, borderWidth: 1.5, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginTop: spacing.xl },
+  signOutText: { fontFamily: fonts.semibold, fontSize: 16 },
   root: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, gap: spacing.md },
   back: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
