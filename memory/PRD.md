@@ -59,3 +59,8 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Main mic is hands-free: stops on silence (expo-audio metering), tap to stop early
 - Onboarding: centered avatar, thought bubble with only the question, auto-listen after each spoken question, "Type instead" fallback, TTS lines pre-generated
 - Single-flight parking checks and /api/speak; negative satellite tips filtered; parking card updates immediately, tips spoken right after the reply; compact typing layout in onboarding
+
+## 2026-06 — Clean sheet + live dialog
+- Removed Google Maps / Waze handoff buttons and no-op Saved/Route/Mute/Speaker buttons; calmer sheet typography
+- Continuous conversation: one tap starts a dialog; after each spoken answer the copilot listens again; session memory (session_id, last 8 turns + last places) for follow-ups ("not that one", "the next closest"); ends on silence, goodbye, [END] from the agent, 2 misses, Close or End route
+- Note: true voice-to-voice realtime (barge-in) needs WebRTC → native build only; current dialog works in Expo Go

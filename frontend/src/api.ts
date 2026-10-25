@@ -43,9 +43,10 @@ export const api = {
     if (!res.ok) throw new Error(`/onboarding/parse failed: ${res.status}`);
     return (await res.json()) as { transcript: string; updates: Record<string, unknown> };
   },
-  voice: async (uri: string, at: LatLng, activePlace?: Place, signal?: AbortSignal) => {
+  voice: async (uri: string, at: LatLng, activePlace?: Place, signal?: AbortSignal, sessionId?: string) => {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
     const fields: Record<string, string> = { lat: String(at.lat), lng: String(at.lng) };
+    if (sessionId) fields.session_id = sessionId;
     if (activePlace) fields.active_place = JSON.stringify(activePlace);
     fields.truck_profile = JSON.stringify(getTruckProfile());
     const res = await uploadForm(`${BASE}/voice`, {

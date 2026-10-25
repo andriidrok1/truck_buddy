@@ -18,7 +18,6 @@ import { isOnboarded, truckLabel, useTruckProfile } from "@/src/hooks/useTruckPr
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { shadow, spacing, useTheme } from "@/src/theme";
 import type { ActiveRoute, AgentResponse, LatLng, ParkingState, Phase, Place } from "@/src/types";
-import { openGoogleMaps, openWaze } from "@/src/utils/navLinks";
 
 const REQUEST_TIMEOUT_MS = 60000;
 const STAGES = ["Searching nearby…", "Setting route…"];
@@ -144,10 +143,35 @@ export default function MapScreen() {
       if (myTurn !== turn.current || activeRef.current?.place.id !== place.id) return;
       setCaption({ reply: text });
       const r = await audio;
-      if (myTurn === turn.current && activeRef.current?.place.id === place.id) voice.play(absoluteUrl(r.audio_url));
+      if (myTurn === turn.current && activeRef.current?.place.id === place.id) {
+        await voice.playAndWait(absoluteUrl(r.audio_url), Math.min(15000, 1500 + text.length * 65));
+      }
     } catch {
       // parking stays "unclear"; the route still works
     }
+  };
+
+  // ---- Live dialog: one tap starts it, the copilot keeps listening after each answer. ----
+  const dialog = useRef<string | null>(null);
+  const misses = useRef(0);
+  const endDialog = () => {
+    dialog.current = null;
+    misses.current = 0;
+  };
+  const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+  /** After an answer: keep talking unless the conversation is over. */
+  const continueDialog = async (myTurn: number, res: AgentResponse | null, spoken: Promise<void>, extra?: Promise<void>) => {
+    if (!dialog.current) return;
+    misses.current = res && res.status !== "not_understood" ? 0 : misses.current + 1;
+    if (res?.end_conversation || misses.current >= 2) {
+      endDialog();
+      return;
+    }
+    await spoken;
+    if (extra) await Promise.race([extra, wait(3500)]); // parking directions, if they come quickly
+    if (myTurn !== turn.current || !dialog.current) return;
+    beginListening();
   };
 
   const startRoute = (next: ActiveRoute) => {
@@ -187,7 +211,7 @@ export default function MapScreen() {
     try {
       const uri = recorded ?? (await voice.stopRecording());
       if (!uri) throw new Error("no recording");
-      const res = await api.voice(uri, loc.coords, activeRef.current?.place, ctrl.signal);
+      const res = await api.voice(uri, loc.coords, activeRef.current?.place, ctrl.signal, dialog.current ?? undefined);
       if (myTurn !== turn.current) return;
       if (res.status === "route_set" && res.place && res.route) {
         const others = res.options ?? [];
@@ -196,13 +220,12 @@ export default function MapScreen() {
         setPlaces([res.place, ...others]);
         startRoute({ place: res.place, route: res.route, parking: res.parking });
         const replyDone = sayReply(res);
-        if (res.place.category !== "destination") {
-          followParking(res.place, replyDone, myTurn);
-        }
+        const tips = res.place.category !== "destination" ? followParking(res.place, replyDone, myTurn) : undefined;
+        continueDialog(myTurn, res, replyDone, tips);
       } else {
-        if (res.status !== "chat") showToast(res.message ?? MESSAGES.notUnderstood);
+        if (res.status !== "chat" && res.status !== "not_understood") showToast(res.message ?? MESSAGES.notUnderstood);
         backToIdle();
-        sayReply(res);
+        continueDialog(myTurn, res, sayReply(res));
       }
     } catch (e) {
       if (myTurn !== turn.current) return;
@@ -214,6 +237,7 @@ export default function MapScreen() {
           : MESSAGES.notUnderstood;
       setCaption({ reply: msg });
       backToIdle();
+      continueDialog(myTurn, null, wait(1200));
     } finally {
       clearTimeout(timer);
       if (myTurn === turn.current) clearTimers();
@@ -222,7 +246,7 @@ export default function MapScreen() {
 
   // Hands-free: listening stops by itself when the driver pauses (tap to stop early).
   const beginListening = async () => {
-    setCaption(null);
+    if (!dialog.current) dialog.current = `dlg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setPhase("listening");
     clearTimers();
     const myTurn = ++turn.current;
@@ -230,13 +254,16 @@ export default function MapScreen() {
     try {
       res = await voice.listen({ silenceMs: 1000 });
     } catch {
+      endDialog();
       showToast(MESSAGES.notUnderstood);
       backToIdle();
       return;
     }
     if (res === "cancelled" || myTurn !== turn.current) return;
     if (res === "silent") {
-      setCaption({ reply: MESSAGES.notUnderstood });
+      // Silence ends the conversation; on the very first turn tell the driver we heard nothing.
+      if (misses.current === 0 && !caption) setCaption({ reply: MESSAGES.notUnderstood });
+      endDialog();
       backToIdle();
       return;
     }
@@ -255,6 +282,7 @@ export default function MapScreen() {
       setMicCard(perm);
       return;
     }
+    if (!dialog.current) setCaption(null);
     beginListening();
   };
 
@@ -281,6 +309,8 @@ export default function MapScreen() {
   };
 
   const onClose = () => {
+    endDialog();
+    voice.stopSpeaking();
     clearTimers();
     turn.current++; // discard any in-flight turn
     inflight.current?.abort();
@@ -302,6 +332,9 @@ export default function MapScreen() {
   };
 
   const onEndRoute = () => {
+    endDialog();
+    turn.current++;
+    voice.cancelRecording().catch(() => {});
     voice.stopSpeaking();
     routeStart.current = null;
     setActive(null);
@@ -387,8 +420,6 @@ export default function MapScreen() {
         onAvatarPress={onAvatarPress}
         onClose={onClose}
         onEndRoute={onEndRoute}
-        onOpenGoogle={() => active && openGoogleMaps(active.place.lat, active.place.lng)}
-        onOpenWaze={() => active && openWaze(active.place.lat, active.place.lng)}
         onLayout={setSheetH}
       />
 

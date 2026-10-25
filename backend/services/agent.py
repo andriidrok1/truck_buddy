@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import uuid
+from collections import OrderedDict
 from typing import Optional
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -83,8 +84,27 @@ How to act:
 - If search_places returns no places, reply exactly: "I couldn't find one nearby."
 - If the driver names a destination (a city, address, business or landmark: "take me to Reno", "go to 1200 Main St Dallas", "I need to get to the Port of Oakland"), call route_to_address with it. The route already accounts for the truck's height, length, weight and hazmat. - If the driver asks something that is not a place request (e.g. "how far is it?", "where do I park?", "thanks"), answer briefly using the context and do NOT call any tool.
 - If the input is just a sound or noise label (siren, beeping, music) or is unintelligible, reply exactly: "Sorry, I didn't catch that. Try again."
+- This is a live, continuous conversation: use "Conversation so far" for follow-ups like "not that one", "something closer", "the second one" (set_route with an earlier place id; search again only if needed). Never repeat yourself.
+- If the driver says goodbye or is done ("thanks, that's all", "bye", "no, I'm good", "that's it"), or the conversation reached its natural end, reply with one short friendly line and append the token [END].
 - Reply in English, spoken style, no markdown, no lists, at most 2 short sentences.
 """
+
+MAX_HISTORY = 8
+_SESSIONS: "OrderedDict[str, dict]" = OrderedDict()
+END_TOKEN = "[END]"
+GOODBYE = re.compile(r"\b(bye|goodbye|that's all|that is all|that's it|i'm good|im good|no thanks|nothing else|see you)\b", re.I)
+
+
+def _session(sid: Optional[str]) -> dict:
+    """Short-lived conversation memory (per dialog, in process)."""
+    if not sid:
+        return {"history": [], "places": []}
+    if sid not in _SESSIONS:
+        _SESSIONS[sid] = {"history": [], "places": []}
+        while len(_SESSIONS) > 200:
+            _SESSIONS.popitem(last=False)
+    _SESSIONS.move_to_end(sid)
+    return _SESSIONS[sid]
 
 
 def _place_brief(p: Place) -> dict:
@@ -133,12 +153,36 @@ class LlmAgentProvider:
     source = "gpt-5.5"
 
     async def handle(self, req: AgentRequest) -> AgentResponse:
+        res = await self._handle(req)
+        reply = res.reply or ""
+        if END_TOKEN in reply:
+            res.reply = reply.replace(END_TOKEN, "").strip()
+            res.end_conversation = True
+        elif res.status == "chat" and GOODBYE.search(req.text or ""):
+            res.end_conversation = True
+        if req.session_id:
+            sess = _session(req.session_id)
+            if req.text:
+                sess["history"].append(f"Driver: {req.text.strip()[:200]}")
+            sess["history"].append(f"Copilot: {res.reply[:200]}")
+            del sess["history"][:-MAX_HISTORY * 2]
+            if res.place:
+                sess["places"] = ([res.place] + list(res.options))[:MAX_OPTIONS + 1]
+        return res
+
+    async def _handle(self, req: AgentRequest) -> AgentResponse:
         text = (req.text or "").strip()
         if not re.search(r"[a-zA-Z]{2,}", text):
             return _not_understood(text, self.source)
 
         places_p, routing_p = get_places_provider(), get_routing_provider()
         context = f"Driver location: {req.lat:.5f}, {req.lng:.5f}."
+        sess = _session(req.session_id)
+        if sess["history"]:
+            context += " Conversation so far: " + " | ".join(sess["history"][-MAX_HISTORY:]) + "."
+        if sess["places"]:
+            context += " Places found earlier in this conversation (usable with set_route): " + "; ".join(
+                f"{p.id}={p.name} {p.distance_mi:.1f} mi" for p in sess["places"]) + "."
         cur = req.active_place
         if cur:
             r = await routing_p.route(req.lat, req.lng, cur.lat, cur.lng, req.truck_profile)
@@ -154,7 +198,7 @@ class LlmAgentProvider:
 
         category = None
         searched_empty = False
-        candidates: dict[str, Place] = {}
+        candidates: dict[str, Place] = {p.id: p for p in sess["places"]}
         found: list[Place] = []
         chosen: Optional[Place] = None
         route: Optional[RouteInfo] = None
@@ -218,7 +262,7 @@ class LlmAgentProvider:
         if chosen and route:
             if not reply:
                 reply = f"Found {chosen.name}, about {route.distance_mi:.0f} miles away. Route is set."
-            others = [p for p in found if p.id != chosen.id][:MAX_OPTIONS]
+            others = [p for p in (found or sess["places"]) if p.id != chosen.id][:MAX_OPTIONS]
             return AgentResponse(status="route_set", transcript=text, category=chosen.category, reply=reply,
                                  place=chosen, route=route, parking=parking, options=others, source=self.source)
         if searched_empty:

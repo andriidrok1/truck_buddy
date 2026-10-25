@@ -107,6 +107,7 @@ async def voice_turn(
     lat: float = Form(..., ge=-90, le=90),
     lng: float = Form(..., ge=-180, le=180),
     active_place: Optional[str] = Form(None),  # JSON of the current destination Place
+    session_id: Optional[str] = Form(None, max_length=64),  # live dialog id (conversation memory)
     truck_profile: Optional[str] = Form(None),  # JSON TruckProfile from the in-app editor
 ):
     data = await audio.read()
@@ -133,7 +134,7 @@ async def voice_turn(
         logger.exception("transcription failed")
         text = ""
     logger.info("voice transcript=%r", text)
-    return await _run_agent(AgentRequest(text=text, lat=lat, lng=lng, active_place=current, truck_profile=truck), speak=True)
+    return await _run_agent(AgentRequest(text=text, lat=lat, lng=lng, active_place=current, truck_profile=truck, session_id=session_id), speak=True)
 
 
 class SpeakRequest(BaseModel):

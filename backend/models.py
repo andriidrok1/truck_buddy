@@ -133,6 +133,7 @@ class AgentRequest(BaseModel):
     lng: float = Field(ge=-180, le=180)
     truck_profile: TruckProfile = Field(default_factory=TruckProfile)
     active_place: Optional[Place] = None  # current route destination, for follow-up questions
+    session_id: Optional[str] = Field(None, max_length=64)  # one live dialog = one session (memory)
 
 
 AgentStatus = Literal["options", "route_set", "chat", "no_results", "not_understood"]
@@ -148,5 +149,6 @@ class AgentResponse(BaseModel):
     route: Optional[RouteInfo] = None
     parking: Optional[ParkingCheck] = None
     options: List[Place] = Field(default_factory=list)  # other candidates, closest first
+    end_conversation: bool = False  # the dialog reached its end (goodbye / done)
     audio_url: Optional[str] = None  # relative path to the spoken reply (mp3)
     source: str

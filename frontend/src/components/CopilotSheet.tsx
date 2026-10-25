@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
+import Animated, { FadeIn } from "react-native-reanimated";
 
-import { fonts, radius, shadow, spacing, useTheme } from "../theme";
+import { fonts, shadow, spacing, useTheme } from "../theme";
 import type { ActiveRoute, ParkingState, Phase, Place } from "../types";
 import { Avatar } from "./Avatar";
 import { Icon } from "./Icon";
@@ -24,8 +24,6 @@ type Props = {
   onAvatarPress: () => void;
   onClose: () => void;
   onEndRoute: () => void;
-  onOpenGoogle: () => void;
-  onOpenWaze: () => void;
   onLayout: (h: number) => void;
 };
 
@@ -45,8 +43,8 @@ function SideButton({
   const { colors } = useTheme();
   return (
     <PressableScale testID={testID} accessibilityLabel={label} onPress={onPress} style={styles.side} haptic={danger ? "heavy" : "light"}>
-      <View style={[styles.sideCircle, { backgroundColor: danger ? colors.error : colors.surfaceSecondary }]}>
-        <Icon name={icon} size={26} color={danger ? colors.onError : colors.onSurface} />
+      <View style={[styles.sideCircle, { backgroundColor: colors.surfaceSecondary }]}>
+        <Icon name={icon} size={24} color={danger ? colors.error : colors.onSurface} />
       </View>
       <Text style={[styles.sideLabel, { color: danger ? colors.error : colors.onSurfaceSecondary }]}>{label}</Text>
     </PressableScale>
@@ -54,7 +52,7 @@ function SideButton({
 }
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, bottomInset, onAvatarPress, onClose, onEndRoute, onOpenGoogle, onOpenWaze, onLayout } = props;
+  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, bottomInset, onAvatarPress, onClose, onEndRoute, onLayout } = props;
   const { colors } = useTheme();
   const navigating = phase === "navigating";
 
@@ -137,9 +135,7 @@ export function CopilotSheet(props: Props) {
       </Animated.View>
 
       <View style={styles.actions}>
-        {(phase === "ready" || phase === "options") && <SideButton icon="bookmark-outline" label="Saved" testID="saved-button" />}
-        {(phase === "listening" || phase === "thinking") && <SideButton icon="microphone-off" label="Mute" testID="mute-button" />}
-        {navigating && <SideButton icon="volume-high" label="Speaker" testID="speaker-button" />}
+        <View style={styles.side} />
 
         <Pressable
           testID="copilot-avatar-button"
@@ -153,7 +149,7 @@ export function CopilotSheet(props: Props) {
           style={styles.center}
         >
           <Avatar
-            size={navigating || phase === "options" ? 80 : 112}
+            size={navigating || phase === "options" ? 72 : 104}
             mode={phase === "listening" ? "listening" : phase === "thinking" ? "thinking" : speaking ? "speaking" : "idle"}
             showMic={phase !== "thinking"}
           />
@@ -162,7 +158,7 @@ export function CopilotSheet(props: Props) {
           </Text>
         </Pressable>
 
-        {phase === "ready" && <SideButton icon="arrow-right-top" label="Route" testID="route-button" />}
+        {phase === "ready" && <View style={styles.side} />}
         {phase === "options" && <SideButton icon="close" label="Close" testID="close-options-button" onPress={onClose} />}
         {(phase === "listening" || phase === "thinking") && (
           <SideButton icon="close" label="Close" testID="close-listening-button" onPress={onClose} />
@@ -170,28 +166,6 @@ export function CopilotSheet(props: Props) {
         {navigating && <SideButton icon="close" label="End route" testID="end-route-button" onPress={onEndRoute} danger />}
       </View>
 
-      {navigating && (
-        <Animated.View entering={FadeInDown.duration(260)} style={styles.handoff}>
-          <PressableScale
-            testID="open-google-maps-button"
-            onPress={onOpenGoogle}
-            containerStyle={styles.handoffItem}
-            style={[styles.handoffBtn, { backgroundColor: colors.brandPrimary }]}
-          >
-            <Icon name="google-maps" size={20} color={colors.onBrandPrimary} />
-            <Text style={[styles.handoffText, { color: colors.onBrandPrimary }]}>Open in Google Maps</Text>
-          </PressableScale>
-          <PressableScale
-            testID="open-waze-button"
-            onPress={onOpenWaze}
-            containerStyle={styles.handoffItem}
-            style={[styles.handoffBtn, { backgroundColor: colors.surfaceSecondary }]}
-          >
-            <Icon name="waze" size={20} color={colors.onSurface} />
-            <Text style={[styles.handoffText, { color: colors.onSurface }]}>Open in Waze</Text>
-          </PressableScale>
-        </Animated.View>
-      )}
     </View>
   );
 }
@@ -212,8 +186,8 @@ const styles = StyleSheet.create({
   title: { fontFamily: fonts.bold, fontSize: 22, textAlign: "center" },
   listenRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.md },
   navInfo: { gap: 2 },
-  eta: { fontFamily: fonts.extrabold, fontSize: 26, letterSpacing: -0.3 },
-  placeName: { fontFamily: fonts.semibold, fontSize: 17, marginTop: 2 },
+  eta: { fontFamily: fonts.extrabold, fontSize: 24, letterSpacing: -0.3 },
+  placeName: { fontFamily: fonts.semibold, fontSize: 16, marginTop: 4 },
   tagRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.xs },
   tags: { fontFamily: fonts.medium, fontSize: 14, flexShrink: 1 },
   notice: { fontFamily: fonts.medium, fontSize: 12 },
@@ -222,18 +196,7 @@ const styles = StyleSheet.create({
   actions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.sm },
   side: { width: 72, alignItems: "center", gap: 6 },
   sideCircle: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
-  sideLabel: { fontFamily: fonts.semibold, fontSize: 13 },
+  sideLabel: { fontFamily: fonts.medium, fontSize: 12 },
   center: { alignItems: "center" },
-  caption: { fontFamily: fonts.semibold, fontSize: 14, marginTop: 2 },
-  handoff: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg },
-  handoffItem: { flex: 1 },
-  handoffBtn: {
-    height: 56,
-    borderRadius: radius.md,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-  },
-  handoffText: { fontFamily: fonts.bold, fontSize: 14 },
+  caption: { fontFamily: fonts.medium, fontSize: 13, marginTop: 4 },
 });
