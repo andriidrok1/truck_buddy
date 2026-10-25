@@ -1,6 +1,7 @@
-"""Speech in / speech out: Whisper (STT) and OpenAI TTS via the Emergent universal key."""
+"""Speech in / speech out: Whisper (STT); TTS via ElevenLabs (primary) or OpenAI tts-1 (fallback)."""
 import asyncio
 import io
+import time
 import logging
 import os
 import re
@@ -60,6 +61,9 @@ ELEVEN_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 ELEVEN_DEFAULT_VOICE = "21m00Tcm4TlvDq8ikWAM"  # "Rachel", ElevenLabs premade voice
 ELEVEN_BODY = {"model_id": "eleven_flash_v2_5", "voice_settings": {"stability": 0.5, "similarity_boost": 0.75, "speed": 1.05}}
 ELEVEN_TIMEOUT_S = 8
+ELEVEN_COOLDOWN_S = 60  # after a failure, skip ElevenLabs for a while (no 8 s waits, no mixed voices)
+_eleven_down_until = 0.0
+_FALLBACK_IDS: "OrderedDict[str, None]" = OrderedDict()  # audio ids spoken by the fallback
 
 
 def eleven_voice() -> Optional[str]:
@@ -80,7 +84,18 @@ def cache_tag(voice: Optional[str] = None, model: Optional[str] = None) -> str:
     return f"openai|{model or FALLBACK_MODEL}|{voice or DEFAULT_VOICE}"
 
 
+def is_fallback(audio_id: str) -> bool:
+    return audio_id in _FALLBACK_IDS
+
+
+def _eleven_failed() -> None:
+    global _eleven_down_until
+    _eleven_down_until = time.monotonic() + ELEVEN_COOLDOWN_S
+
+
 async def _eleven(text: str, voice_id: str) -> Optional[bytes]:
+    if time.monotonic() < _eleven_down_until:
+        return None
     try:
         r = await client().post(
             ELEVEN_URL.format(voice_id=voice_id),
@@ -91,9 +106,11 @@ async def _eleven(text: str, voice_id: str) -> Optional[bytes]:
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("ElevenLabs TTS failed, falling back to OpenAI: %s", e)
+        _eleven_failed()
         return None
     if r.status_code != 200 or not r.content:
         logger.warning("ElevenLabs TTS %s, falling back to OpenAI: %s", r.status_code, r.text[:200])
+        _eleven_failed()
         return None
     return r.content
 # gpt-4o-mini-tts takes a speaking-style instruction (tts-1 ignores it).
@@ -108,6 +125,7 @@ async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str
     eleven = eleven_voice() if not voice and not model else None
     if eleven:
         audio = await _eleven(text, eleven)
+    fell_back = bool(eleven) and audio is None
     if audio is None:
         model = model or FALLBACK_MODEL
         try:
@@ -121,6 +139,10 @@ async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str
     _AUDIO_CACHE[audio_id] = audio
     while len(_AUDIO_CACHE) > _CACHE_MAX:
         _AUDIO_CACHE.popitem(last=False)
+    if fell_back:
+        _FALLBACK_IDS[audio_id] = None
+        while len(_FALLBACK_IDS) > _CACHE_MAX:
+            _FALLBACK_IDS.popitem(last=False)
     return audio_id
 
 

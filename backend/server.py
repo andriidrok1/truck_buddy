@@ -240,6 +240,8 @@ async def speak(req: SpeakRequest):
         audio_id = await asyncio.shield(task)
         if not audio_id:
             raise HTTPException(status_code=502, detail="Voice unavailable")
+        if voice.is_fallback(audio_id):
+            return {"audio_url": f"/api/voice/audio/{audio_id}"}  # don't cache fallback audio as ElevenLabs
         if len(_SPEAK_CACHE) >= 200:
             _SPEAK_CACHE.pop(next(iter(_SPEAK_CACHE)))
         _SPEAK_CACHE[key] = audio_id
