@@ -16,15 +16,15 @@ WIDE_RADIUS_KM = 60.0
 MOCK_ANCHOR_KM = 80.0
 
 MOCK_PLACES = [
-    # Truck stops (blue)
-    {"id": "ts-capitol", "name": "Capitol Truck Plaza", "category": "truck_stop", "lat": 38.6105, "lng": -121.5390,
-     "tags": ["53 ft parking", "Truck access", "Diesel"], "address": "I-80 Exit 85, West Sacramento"},
-    {"id": "ts-sierra", "name": "Sierra Fuel & Truck Stop", "category": "truck_stop", "lat": 38.5480, "lng": -121.4120,
-     "tags": ["Truck access", "Diesel", "Showers"], "address": "US-50 & Howe Ave"},
-    {"id": "ts-delta", "name": "Delta Junction Truck Stop", "category": "truck_stop", "lat": 38.4990, "lng": -121.5100,
-     "tags": ["53 ft parking", "Diesel", "24/7"], "address": "I-5 Exit 512"},
-    {"id": "ts-northgate", "name": "Northgate Travel Center", "category": "truck_stop", "lat": 38.6490, "lng": -121.4590,
-     "tags": ["Truck access", "Diesel"], "address": "Northgate Blvd & I-80"},
+    # Truck stops (blue): real travel centers, coordinates on the truck lot (satellite check finds E).
+    {"id": "ts-49er", "name": "Sacramento 49er Travel Plaza", "category": "truck_stop", "lat": 38.61736, "lng": -121.53861,
+     "tags": ["53 ft parking", "Truck access", "Diesel", "Showers"], "address": "2828 El Centro Rd, Sacramento (I-80 at W El Camino Ave)"},
+    {"id": "ts-flyingj-lodi", "name": "Flying J Travel Center", "category": "truck_stop", "lat": 38.11716, "lng": -121.39385,
+     "tags": ["53 ft parking", "Diesel", "24/7"], "address": "15100 N Thornton Rd, Lodi"},
+    {"id": "ts-petro-corning", "name": "Petro Stopping Center", "category": "truck_stop", "lat": 39.90611, "lng": -122.19623,
+     "tags": ["53 ft parking", "Truck access", "Diesel", "Showers"], "address": "2151 South Ave, Corning"},
+    {"id": "ts-loves-williams", "name": "Love's Travel Stop", "category": "truck_stop", "lat": 39.16765, "lng": -122.14382,
+     "tags": ["Truck access", "Diesel"], "address": "100 Marguerite St, Williams"},
     # Hotels (purple)
     {"id": "ht-oakgrove", "name": "Oak Grove Inn", "category": "hotel", "lat": 38.6230, "lng": -121.4480,
      "tags": ["53 ft parking", "Truck access"], "address": "Arden Way, Sacramento"},

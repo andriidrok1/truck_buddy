@@ -92,7 +92,7 @@ def test_all_rejected(with_active):
     assert final is not None, f"never reached all-rejected after {len(seen)} places"
     assert final["status"] == "chat"
     assert final["reply"] == "That's every one I found nearby. Want me to go back to one of them?"
-    assert len(seen) >= 2
+    assert len(seen) >= 1  # real demo stops: only the 49er is within 25 km of downtown Sacramento
 
 
 # /api/speak pinned id

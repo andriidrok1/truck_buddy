@@ -1,40 +1,62 @@
-"""Approach-aware parking: which way the driver arrives, entrance relative to the driver,
+"""Approach-aware parking: which way the driver arrives, entrance side relative to the driver,
 answers to "how do I get in / where do I park / will I fit", and routing to the entrance (E).
 
-- from_route(): bearing over the last 300 m of the route + street of the last HERE maneuver.
-- relative(): second vision call on the SAME satellite image that rewrites only the entry tip
-  as "On your right/left ..." for that approach (warm-up checks keep compass directions).
+- from_route(): heading over the last 300 m, the route point 100 m before the finish and the
+  street of the last HERE maneuver.
+- side(): right/left of the entrance E by geometry (sign of the 2D cross product), no vision call.
+- relative(): "On your {side}, off {street}, {landmarks}"; landmarks = the base entry tip
+  reworded by a small text model (compass and left/right words removed). < 1 s, cached.
 - answer(): spoken parking answer, waiting up to WAIT_S for a check in flight.
 """
 import asyncio
-import base64
 import logging
 import math
 import os
 import re
 import uuid
-from typing import Optional
+from collections import OrderedDict
+from typing import Literal, Optional
 
-from emergentintegrations.llm.chat import ImageContent, LlmChat, UserMessage
+from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 from models import Approach, ParkingCheck, Place, RouteInfo
 
 logger = logging.getLogger("truckbuddy.approach")
 
-SPAN_M = 300.0
+SPAN_M = 300.0  # heading is measured over the last 300 m
+POINT_M = 100.0  # approach point: 100 m before the finish
 WAIT_S = 15.0
-REWRITE_TIMEOUT_S = 25
+LANDMARK_TIMEOUT_S = 3.0
+CACHE_MAX = 500
 COMPASS = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"]
 LOOKING = "Let me look at the satellite."
 STILL = "Still looking at the satellite, I'll tell you when I have it."
-RELATIVE = re.compile(r"^On your (right|left)\b", re.I)
 _STREET = re.compile(r"\b(?:onto|on)\s+(.+?)(?:\.\s|\.?$|,| toward)", re.I)
+# Words that only make sense from the satellite's point of view (north-up), not the driver's.
+_DIRECTIONAL = re.compile(
+    r"\b(north|south|east|west)(?:ern)?(?:[- ]?(?:east|west)(?:ern)?)?(?:-side| side)?\b|\b(right|left)(?:-hand)?\b", re.I)
 
 PROMPT = """- parking: a question about getting into or parking at a place ("how do I get in?", "where do I park?", "will I fit?", "is there truck parking?"). place_index = the number of that place in "Places found earlier", or null for the current route."""
 
-_last: dict[str, Approach] = {}  # place key -> approach of the latest route to it
-_rel: dict[str, ParkingCheck] = {}  # place key|bearing bucket -> check with a relative entry tip
-_rel_pending: dict[str, "asyncio.Task[ParkingCheck]"] = {}
+
+class _LRU(OrderedDict):
+    def put(self, k, v):
+        self[k] = v
+        self.move_to_end(k)
+        while len(self) > CACHE_MAX:
+            self.popitem(last=False)
+
+
+_last: _LRU = _LRU()  # place key -> approach of the latest route to it
+_landmarks: _LRU = _LRU()  # base entry tip -> landmark phrase ("" = none)
+_tasks: set = set()
+
+
+def background(coro) -> None:
+    """Fire-and-forget that keeps a reference so the task isn't garbage-collected."""
+    t = asyncio.ensure_future(coro)
+    _tasks.add(t)
+    t.add_done_callback(_tasks.discard)
 
 
 def _pkey(p: Place) -> str:
@@ -54,17 +76,24 @@ def _bearing(a: list, b: list) -> float:
     return (math.degrees(math.atan2(y, x)) + 360) % 360
 
 
+def _back(g: list, meters: float) -> tuple[int, float]:
+    """Index of the route point `meters` before the finish and the distance actually walked."""
+    i, dist = len(g) - 1, 0.0
+    while i > 0 and dist < meters:
+        dist += _m(g[i - 1], g[i])
+        i -= 1
+    return i, dist
+
+
 def from_route(route: RouteInfo) -> Optional[Approach]:
     g = route.geometry
     if len(g) < 2:
         return None
-    i, dist = len(g) - 1, 0.0
-    while i > 0 and dist < SPAN_M:
-        dist += _m(g[i - 1], g[i])
-        i -= 1
+    i, dist = _back(g, SPAN_M)
     if dist < 15:
         return None
     b = _bearing(g[i], g[-1])
+    p = g[_back(g, POINT_M)[0]]
     street = None
     for m in reversed(route.maneuvers):
         if m.action == "arrive":
@@ -73,35 +102,55 @@ def from_route(route: RouteInfo) -> Optional[Approach]:
         if hit:
             street = hit.group(1).strip()[:60]
             break
-    return Approach(bearing=round(b) % 360, compass=COMPASS[round(((b + 180) % 360) / 45) % 8], street=street)
+    return Approach(bearing=round(b) % 360, compass=COMPASS[round(((b + 180) % 360) / 45) % 8], street=street,
+                    lat=p[0], lng=p[1])
+
+
+def side(ap: Approach, e_lat: float, e_lng: float) -> Optional[Literal["right", "left"]]:
+    """Side of E for a driver at the approach point moving along `bearing`.
+
+    Local plane, x = east, y = north (right-handed, north up). heading h = (sin b, cos b),
+    v = E - approach point. cross = h.x*v.y - h.y*v.x: negative = clockwise from the heading = right.
+    """
+    if ap.lat is None or ap.lng is None:
+        return None
+    b = math.radians(ap.bearing)
+    hx, hy = math.sin(b), math.cos(b)
+    vx = (e_lng - ap.lng) * 111320 * math.cos(math.radians(ap.lat))
+    vy = (e_lat - ap.lat) * 111320
+    cross = hx * vy - hy * vx
+    if abs(cross) < 1.0:  # dead ahead: don't guess
+        return None
+    return "right" if cross < 0 else "left"
 
 
 def remember(place: Place, ap: Optional[Approach]) -> None:
     if ap:
-        _last[_pkey(place)] = ap
+        _last.put(_pkey(place), ap)
 
 
 def has_approach(place: Place) -> bool:
-    """A route to this place was built (its entry tip will be rewritten relative to the driver)."""
+    """A route to this place was built (its entry tip will be phrased relative to the driver)."""
     return _pkey(place) in _last
 
 
-def _rkey(place: Place, ap: Approach) -> str:
-    return f"{_pkey(place)}|{ap.bearing // 30}"
+def _entry(c: Optional[ParkingCheck]):
+    return next((s for s in (c.spots if c else []) if s.kind == "entry"), None)
 
 
 def best(place: Place) -> Optional[ParkingCheck]:
-    """Cached check, with the relative entry tip if one exists for the latest approach."""
+    """Cached check; entry tip relative to the driver when the approach and E are known (sync, cached text)."""
     from services.parking import cached_parking
     base = cached_parking(place)
     ap = _last.get(_pkey(place))
-    return (_rel.get(_rkey(place, ap)) if ap else None) or base
+    if not base or not ap or not base.entry_tip or base.entry_tip not in _landmarks:
+        return base
+    return _phrase(base, ap, _landmarks[base.entry_tip])
 
 
 def target(place: Place) -> tuple[float, float]:
     """Route end: the truck entrance (E) when the satellite check found one, else the place."""
-    c = best(place)
-    e = next((s for s in (c.spots if c else []) if s.kind == "entry"), None)
+    e = _entry(best(place))
     return (e.lat, e.lng) if e else (place.lat, place.lng)
 
 
@@ -118,52 +167,54 @@ def note(place: Place) -> str:
     return out
 
 
-async def _rewrite(img: bytes, base: ParkingCheck, ap: Approach) -> str:
-    e = next((s for s in base.spots if s.kind == "entry"), None)
-    along = f" along {ap.street}" if ap.street else ""
-    chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"approach-{uuid.uuid4()}",
-                   system_message="You give a truck driver one short, concrete direction to a site entrance "
-                                  "from a satellite image (north is up, ~300 m across).").with_model("openai", "gpt-5.5")
-    text = (f"The driver arrives from the {ap.compass} heading {ap.bearing}°{along}. "
-            "Describe the entrance relative to the driver: on your right/left, before/after a landmark. "
-            f"The truck entrance was described as: '{base.entry_tip or 'see marker'}'"
-            + (f", marked at x={e.x:.2f}, y={e.y:.2f} of the image" if e else "") + ". "
-            "Answer with ONE sentence, max 18 words, that starts with 'On your right' or 'On your left', "
-            "and name the street it's off if you can.")
-    out = await chat.send_message(UserMessage(text=text, file_contents=[ImageContent(image_base64=base64.b64encode(img).decode())]))
-    return str(out or "").strip().strip('"').split("\n")[0][:160]
+def _clean(text: str) -> str:
+    t = _DIRECTIONAL.sub("", text)
+    t = re.sub(r"\s{2,}", " ", re.sub(r"\s+([,.])", r"\1", t)).strip(" ,.;-")
+    return t[:1].lower() + t[1:] if t else ""
+
+
+async def landmarks(tip: str) -> str:
+    """'Use the wide north driveway, just after the landscaped island' -> 'just after the landscaped island'."""
+    if tip in _landmarks:
+        return _landmarks[tip]
+    out = ""
+    try:
+        chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"landmarks-{uuid.uuid4()}",
+                       system_message="You shorten driving notes.").with_model("openai", "gpt-5.4-mini")
+        raw = await asyncio.wait_for(chat.send_message(UserMessage(text=(
+            "From this truck entrance note keep only the landmarks, as a short phrase (max 10 words) that "
+            "continues a sentence, e.g. 'just after the landscaped island' or 'past the fuel canopy'. "
+            "Never use north, south, east, west, right or left. If there is no landmark answer NONE.\n"
+            f"Note: {tip}"))), LANDMARK_TIMEOUT_S)
+        text = str(raw or "").strip().strip('"').split("\n")[0]
+        out = "" if text.upper().startswith("NONE") else _clean(text)[:80]
+    except Exception as e:  # noqa: BLE001 - no landmarks is fine
+        logger.warning("landmarks failed for %r: %s", tip, e)
+    _landmarks.put(tip, out)
+    return out
+
+
+def _phrase(base: ParkingCheck, ap: Approach, marks: str) -> ParkingCheck:
+    e = _entry(base)
+    s = side(ap, e.lat, e.lng) if e else None
+    if not s:
+        return base  # no E (or straight ahead): keep the base tip, don't name a side
+    parts = [f"On your {s}"]
+    if ap.street:
+        parts.append(f"off {ap.street}")
+    if marks:
+        parts.append(marks)
+    return base.model_copy(update={"entry_tip": ", ".join(parts), "relative": True})
 
 
 async def relative(place: Place, base: ParkingCheck, ap: Approach) -> ParkingCheck:
-    """Same check, entry tip rewritten for this approach (single-flight, cached)."""
+    """Same check, entry tip phrased for this approach (geometry + cached text rewrite, < 1 s)."""
     remember(place, ap)
-    if base.source == "none" or not base.image_path or not (base.entry_tip or base.spots):
+    if not base.entry_tip or not _entry(base):
         return base
-    k = _rkey(place, ap)
-    if k in _rel:
-        return _rel[k]
-    task = _rel_pending.get(k)
-    if task is None:
-        task = asyncio.create_task(_relative(place, base, ap, k))
-        _rel_pending[k] = task
-        task.add_done_callback(lambda _t: _rel_pending.pop(k, None))
-    return await asyncio.shield(task)
-
-
-async def _relative(place: Place, base: ParkingCheck, ap: Approach, k: str) -> ParkingCheck:
-    from services.parking import fetch_satellite
-    try:
-        img = await fetch_satellite(place.lat, place.lng)  # cached: the same image as the first call
-        tip = await asyncio.wait_for(_rewrite(img, base, ap), REWRITE_TIMEOUT_S)
-    except Exception as e:  # noqa: BLE001 - keep the compass tip
-        logger.warning("relative entry failed for %s: %s", place.name, e)
-        return base
-    if not RELATIVE.match(tip):
-        logger.info("relative entry rejected for %s: %r", place.name, tip)
-        return base
-    res = base.model_copy(update={"entry_tip": tip.rstrip("."), "relative": True})
-    _rel[k] = res
-    logger.info("entry %s: %r -> %r", place.name, base.entry_tip, res.entry_tip)
+    res = _phrase(base, ap, await landmarks(base.entry_tip))
+    if res.relative:
+        logger.info("entry %s: %r -> %r", place.name, base.entry_tip, res.entry_tip)
     return res
 
 

@@ -19,7 +19,7 @@ from models import AgentRequest, AgentResponse, Category, ParkingCheck, ParkingR
 from services.agent import get_agent_provider  # noqa: E402
 from services import breakdown  # noqa: E402
 from services.google_places import PlacesUnavailable  # noqa: E402
-from services.parking import check_parking, fetch_satellite  # noqa: E402
+from services.parking import cached_parking, check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.routing import get_routing_provider  # noqa: E402
 from services import approach, approach_api, onboarding, timing, voice  # noqa: E402
@@ -61,10 +61,6 @@ async def search_places(
     return await get_places_provider().search(category, lat, lng)
 
 
-async def _none():
-    return None
-
-
 @api.post("/route", response_model=RouteResponse)
 async def build_route(req: RouteRequest):
     place = req.place
@@ -72,9 +68,11 @@ async def build_route(req: RouteRequest):
         place = await get_places_provider().get(req.place_id, req.lat, req.lng)
     if place is None:
         raise HTTPException(status_code=404, detail="Place not found")
-    route_task = get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile)
-    route, parking = await asyncio.gather(route_task, _none() if req.skip_parking else check_parking(place))
-    return RouteResponse(place=place, route=route, parking=parking)
+    route = await get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile)
+    if req.skip_parking:  # breakdown providers: the driver needs the shop, no parking check at all
+        return RouteResponse(place=place, route=route, parking=None)
+    approach.background(check_parking(place, route.approach))  # don't wait for the satellite; app re-asks /parking
+    return RouteResponse(place=place, route=route, parking=cached_parking(place))
 
 
 @api.post("/parking", response_model=ParkingCheck)
