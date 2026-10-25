@@ -21,9 +21,9 @@ async def one(raw):
 
 
 async def main():
-    stops = [r for r in MOCK_PLACES if r["category"] == "truck_stop"]
+    stops = list(MOCK_PLACES)
     for p, c, e, k in await asyncio.gather(*(one(r) for r in stops)):
-        print(f"{p.name} | {c.verdict} | E={'%.5f,%.5f' % (e.lat, e.lng) if e else '-'} | "
+        print(f"| {p.category} | {p.name} | {p.address} | {c.verdict} | E={'%.5f,%.5f' % (e.lat, e.lng) if e else '-'} | "
               f"P={'%.5f,%.5f' % (k.lat, k.lng) if k else '-'} | entry={c.entry_tip!r}")
 
 

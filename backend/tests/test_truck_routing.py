@@ -40,7 +40,7 @@ class TestAgentDestination:
         assert " h " in d["route"]["summary"] and "mi" in d["route"]["summary"]
         assert 100 < d["route"]["distance_mi"] < 180
         assert len(d["route"]["geometry"]) > 100
-        assert d["parking"] is None
+        assert d["parking"] is None or "verdict" in d["parking"]  # iter17: destinations checked too
         assert d["options"] == []
 
     def test_hazmat_low_profile_differs(self, s):

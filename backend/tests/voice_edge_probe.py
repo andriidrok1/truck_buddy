@@ -37,7 +37,7 @@ async def main():
         post(f"tone{i}.wav", wav("tone"), "audio/wav")
     post("silence.wav", wav("silence"), "audio/wav")
     tts = OpenAITextToSpeech(api_key=os.environ["EMERGENT_LLM_KEY"])
-    for phrase, extra in [("How far is it?", {"active_place_id": "ts-capitol"}), ("Thanks a lot", {}),
+    for phrase, extra in [("How far is it?", {"active_place_id": "ts-49er"}), ("Thanks a lot", {}),
                           ("I'm tired, I need to sleep", {})]:
         audio = await tts.generate_speech(text=phrase, model="tts-1", voice="alloy")
         post(phrase[:16] + ".mp3", audio, "audio/mpeg", **extra)

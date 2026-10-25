@@ -43,7 +43,7 @@ def test_agent_route_set(s, text, cat):
 
 # Agent: chat with active route does NOT change route
 def test_agent_how_far_chat(s):
-    d = _agent(s, "how far is it?", active_place_id="ts-capitol")
+    d = _agent(s, "how far is it?", active_place_id="ts-49er")
     assert d["status"] == "chat", d
     assert d["place"] is None and d["route"] is None
     assert d["reply"]
@@ -104,7 +104,7 @@ def test_voice_real_speech(s):
 def test_voice_with_active_place(s):
     with open("/tmp/q.mp3", "rb") as f:
         r = s.post(f"{API}/voice", files={"audio": ("q.mp3", f, "audio/mpeg")},
-                   data={"lat": str(LAT), "lng": str(LNG), "active_place_id": "ts-capitol"}, timeout=T)
+                   data={"lat": str(LAT), "lng": str(LNG), "active_place_id": "ts-49er"}, timeout=T)
     assert r.status_code == 200, r.text
 
 

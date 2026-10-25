@@ -98,7 +98,8 @@ class TestDestinationParking:
         r = s.post(f"{BASE_URL}/api/route", json={**SAC, "place": place, "truck_profile": DEFAULT_TP}, timeout=120)
         assert r.status_code == 200, r.text
         d = r.json()
-        assert d["parking"] is None
+        # iter17+: destinations get the satellite check too; /route returns only the cached verdict (no wait)
+        assert d["parking"] is None or d["parking"]["verdict"] in ("listed", "likely", "unlikely", "unclear")
         assert d["route"]["source"] == "here"
 
     def test_fuel_place_has_parking(self, s):
