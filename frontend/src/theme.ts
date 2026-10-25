@@ -3,7 +3,7 @@
 // A plain key is a background; its `on` partner is the text/icon color on top of it.
 
 import { useMemo } from "react";
-import { Appearance, StyleSheet, useColorScheme, type ImageStyle, type TextStyle, type ViewStyle } from "react-native";
+import { Appearance, StyleSheet, type ImageStyle, type TextStyle, type ViewStyle } from "react-native";
 
 export type ColorScheme = "light" | "dark";
 
@@ -72,12 +72,11 @@ export function setColorScheme(scheme: ColorScheme | null) {
   Appearance.setColorScheme?.(scheme ?? "unspecified");
 }
 
-setColorScheme?.(themes.dark ? null : defaultScheme);
+setColorScheme?.("light");
 
+/** Light only (owner's choice): the map and panels stay the same day and night. */
 export function useTheme(): { scheme: ColorScheme; colors: ThemeColors } {
-  const system = useColorScheme();
-  const scheme: ColorScheme = (system === "light" || system === "dark") && themes[system] ? system : defaultScheme;
-  return { scheme, colors: themes[scheme] ?? themes.light };
+  return { scheme: "light", colors: themes.light };
 }
 
 export const colors = light;

@@ -839,8 +839,9 @@ export default function MapScreen() {
         topInset={insets.top}
         truckLabel={truckLabel(truck)}
         hazmat={truck.hazmat}
+        destination={active?.place.name ?? null}
+        onSearch={(q) => onSubmitText(`Take me to ${q}`)}
         onTruckPress={() => router.push("/truck-profile")}
-        onMenuPress={() => router.push("/onboarding")}
         onHistoryPress={() => router.push("/history")}
         isDemo={loc.resolved && loc.isDemo}
         onLayout={setTopH}
