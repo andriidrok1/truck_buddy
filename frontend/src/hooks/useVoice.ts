@@ -23,6 +23,12 @@ const DROP_FROM_VOICE_DB = 14; // this far under the driver's average voice = a 
 const POLL_MS = 100;
 const CHIME = require("../../assets/sounds/chime.mp3");
 
+// iOS: shouldRouteThroughEarpiece false = .defaultToSpeaker whenever the session is playAndRecord.
+// The recorder's prepare reuses the options of the last mode, so it must follow RECORD_MODE.
+const RECORD_MODE = { allowsRecording: true, playsInSilentMode: true, shouldRouteThroughEarpiece: false };
+// Replies play in a pure playback session (never play-and-record, which iOS sends to the earpiece).
+const PLAYBACK_MODE = { allowsRecording: false, playsInSilentMode: true, shouldRouteThroughEarpiece: false };
+
 type ListenOptions = { maxMs?: number; silenceMs?: number; startTimeoutMs?: number; chime?: boolean };
 
 // 16 kHz mono AAC: Whisper resamples to 16 kHz anyway, and the upload is ~4x smaller.
@@ -62,6 +68,30 @@ export function useVoice() {
     return p.canAskAgain ? "ask" : "blocked";
   }, []);
 
+  // Recorder prepared while idle, so record() starts the moment the driver taps (native only:
+  // on web preparing opens the mic). Off while the wake word owns the mic (Android can't share it).
+  // Never while a reply plays: `audioGen` changes on every play / record, and an idle prepare
+  // that sees a newer generation after any await gives up.
+  const prepared = useRef(false);
+  const prewarm = useRef(false);
+  const audioGen = useRef(0);
+  const prepareIdle = useCallback(async () => {
+    if (Platform.OS === "web" || !prewarm.current || prepared.current || recorder.isRecording || player.current) return;
+    const gen = audioGen.current;
+    const stale = () => gen !== audioGen.current || player.current !== null || recorder.isRecording;
+    try {
+      const p = await getRecordingPermissionsAsync();
+      if (!p.granted || stale()) return;
+      await setAudioModeAsync(RECORD_MODE);
+      if (stale()) return;
+      await recorder.prepareToRecordAsync();
+      if (stale()) return;
+      prepared.current = true;
+    } catch (e) {
+      console.log(`[voice] idle prepare failed: ${String(e)}`);
+    }
+  }, [recorder]);
+
   const stopSpeaking = useCallback(() => {
     const p = player.current;
     if (p) {
@@ -74,23 +104,9 @@ export function useVoice() {
     setSpeaking(false);
     playDone.current?.();
     playDone.current = null;
-  }, []);
-
-  // Recorder prepared while idle, so record() starts the moment the driver taps (native only:
-  // on web preparing opens the mic). Off while the wake word owns the mic (Android can't share it).
-  const prepared = useRef(false);
-  const prewarm = useRef(false);
-  const prepareIdle = useCallback(async () => {
-    if (Platform.OS === "web" || !prewarm.current || prepared.current || recorder.isRecording) return;
-    try {
-      const p = await getRecordingPermissionsAsync();
-      if (!p.granted) return;
-      await recorder.prepareToRecordAsync();
-      prepared.current = true;
-    } catch (e) {
-      console.log(`[voice] idle prepare failed: ${String(e)}`);
-    }
-  }, [recorder]);
+    // A reply just finished (or was cut): get the mic ready for the next tap.
+    if (p) prepareIdle();
+  }, [prepareIdle]);
   const setPrewarm = useCallback(
     (on: boolean) => {
       prewarm.current = on;
@@ -101,7 +117,8 @@ export function useVoice() {
 
   const startRecording = useCallback(async () => {
     stopSpeaking();
-    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+    audioGen.current++;
+    await setAudioModeAsync(RECORD_MODE);
     if (!prepared.current) await recorder.prepareToRecordAsync();
     prepared.current = false;
     recorder.record();
@@ -111,17 +128,17 @@ export function useVoice() {
   const stopRecording = useCallback(async (): Promise<string | null> => {
     if (!recorder.isRecording) return recorder.uri ?? null;
     await recorder.stop();
-    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
-    const uri = recorder.uri ?? null;
-    setTimeout(prepareIdle, 1500); // after the upload has read the file
-    return uri;
-  }, [recorder, prepareIdle]);
+    await setAudioModeAsync(PLAYBACK_MODE);
+    // No re-prepare here: the reply comes next and must play in the playback session.
+    // The recorder is prepared again once it finishes (stopSpeaking) or when idle.
+    return recorder.uri ?? null;
+  }, [recorder]);
 
   const cancelRecording = useCallback(async () => {
     listenToken.current++;
     if (recorder.isRecording) await recorder.stop();
-    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
-    setTimeout(prepareIdle, 500);
+    await setAudioModeAsync(PLAYBACK_MODE);
+    prepareIdle(); // idle again; any reply that starts meanwhile cancels this (audioGen)
   }, [recorder, prepareIdle]);
 
   /**
@@ -226,6 +243,7 @@ export function useVoice() {
   const play = useCallback(
     (source: string | AudioPlayer) => {
       stopSpeaking();
+      audioGen.current++;
       const p = typeof source === "string" ? createAudioPlayer({ uri: source }) : source;
       player.current = p;
       setSpeaking(true);
@@ -243,7 +261,18 @@ export function useVoice() {
         }
       });
       subs.current.set(p, sub);
-      p.play();
+      if (Platform.OS === "web") {
+        p.play();
+        return;
+      }
+      // Native: the playback session must be in place before the first sample (loudspeaker on iOS).
+      // That leaves no prepared recorder behind, so the next tap prepares it again.
+      prepared.current = false;
+      setAudioModeAsync(PLAYBACK_MODE)
+        .catch((e) => console.log(`[voice] playback mode failed: ${String(e)}`))
+        .finally(() => {
+          if (player.current === p) p.play();
+        });
     },
     [stopSpeaking],
   );

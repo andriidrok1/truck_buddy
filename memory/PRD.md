@@ -151,3 +151,4 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Native: react-native-maps + UrlTile (ParkingSatMap.native.tsx); web: Esri tile renderer (ParkingSatMap.tsx). Not pushed yet — awaiting user confirmation.
 - Web satellite map: pinch zooms around the fingers, mouse wheel around the cursor; no browser page-zoom on pinch.
 - CopilotSheet shows "Route ends at truck entrance" when the route ends at the E spot. Not pushed — awaiting user confirmation.
+- iOS earpiece fix (useVoice.ts): replies play in a playback-only session (PLAYBACK_MODE awaited before play()); recorder re-prepared only after a reply finishes / when idle, always after RECORD_MODE (shouldRouteThroughEarpiece:false => .defaultToSpeaker). Not pushed — awaiting iPhone confirmation.
