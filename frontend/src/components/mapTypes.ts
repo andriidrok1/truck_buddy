@@ -1,6 +1,6 @@
 import type { ActiveRoute, LatLng, Place } from "../types";
 
-export type MapLayerHandle = { recenter: () => void };
+export type MapLayerHandle = { recenter: () => void; zoomBy: (delta: number) => void };
 
 export type MapLayerProps = {
   driver: LatLng;

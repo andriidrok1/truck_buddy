@@ -44,7 +44,13 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
   const recenter = () =>
     mapRef.current?.animateToRegion({ ...toCoord(driver), latitudeDelta: 0.015, longitudeDelta: 0.015 }, 450);
 
-  useImperativeHandle(ref, () => ({ recenter }));
+  const zoomBy = async (delta: number) => {
+    const cam = await mapRef.current?.getCamera();
+    if (cam?.zoom != null) mapRef.current?.animateCamera({ zoom: Math.min(20, Math.max(3, cam.zoom + delta)) }, { duration: 350 });
+    else if (cam?.altitude != null) mapRef.current?.animateCamera({ altitude: cam.altitude / 2 ** delta }, { duration: 350 });
+  };
+
+  useImperativeHandle(ref, () => ({ recenter, zoomBy }));
 
   useEffect(() => {
     if (fitPoints.length > 1) {

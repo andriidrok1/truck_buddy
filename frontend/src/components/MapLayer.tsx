@@ -44,7 +44,9 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
   const fy = topInset + Math.max(80, size.h - topInset - bottomInset) / 2;
 
   const recenter = () => setView({ center: driver, zoom: DEFAULT_ZOOM });
-  useImperativeHandle(ref, () => ({ recenter }));
+  const zoomBy = (delta: number) =>
+    setView((v) => ({ center: v.center, zoom: Math.min(18, Math.max(3, v.zoom + delta)) }));
+  useImperativeHandle(ref, () => ({ recenter, zoomBy }));
 
   useEffect(() => {
     if (fitPoints.length === 0) return;

@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -143,6 +143,19 @@ class RouteResponse(BaseModel):
     parking: Optional[ParkingCheck] = None
 
 
+class UiState(BaseModel):
+    """What the app shows right now (so the copilot knows what it can toggle)."""
+    driving: bool = False
+    voice_guidance: bool = True
+    hands_free: bool = True
+    options_count: int = Field(0, ge=0)
+
+
+class AppAction(BaseModel):
+    type: str  # start_navigation | end_route | set_height_in | voice_guidance | reroute | ...
+    value: Optional[Union[bool, int, float, str]] = None
+
+
 class AgentRequest(BaseModel):
     text: str
     lat: float = Field(ge=-90, le=90)
@@ -153,6 +166,7 @@ class AgentRequest(BaseModel):
     # Last known distance/time of the active route (the app already has it; no re-routing per turn).
     active_distance_mi: Optional[float] = Field(None, ge=0)
     active_duration_min: Optional[int] = Field(None, ge=0)
+    ui: UiState = Field(default_factory=UiState)
 
 
 AgentStatus = Literal["options", "route_set", "chat", "no_results", "not_understood"]
@@ -169,7 +183,7 @@ class AgentResponse(BaseModel):
     parking: Optional[ParkingCheck] = None
     options: List[Place] = Field(default_factory=list)  # other candidates, closest first
     end_conversation: bool = False  # the dialog reached its end (goodbye / done)
-    voice_guidance: Optional[bool] = None  # driver asked to turn spoken directions on/off
+    actions: List[AppAction] = Field(default_factory=list)  # app controls to run (see services/controls.py)
     audio_url: Optional[str] = None  # relative path to the spoken reply (mp3)
     audio_url_2: Optional[str] = None  # rest of a 2-sentence reply, generated in parallel
     timings: dict[str, int] = Field(default_factory=dict)  # ms per pipeline stage (voice turns)

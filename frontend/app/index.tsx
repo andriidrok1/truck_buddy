@@ -16,11 +16,11 @@ import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance } from "@/src/hooks/useGuidance";
-import { isOnboarded, truckLabel, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, truckLabel, useHandsFree, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { useWakeWord } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
-import type { ActiveRoute, AgentResponse, LatLng, ParkingState, Phase, Place } from "@/src/types";
+import type { ActiveRoute, AgentResponse, AppAction, LatLng, ParkingState, Phase, Place } from "@/src/types";
 import { storage } from "@/src/utils/storage";
 
 const VOICE_GUIDANCE_KEY = "voice_guidance_v1";
@@ -65,6 +65,13 @@ export default function MapScreen() {
   const [options, setOptions] = useState<Place[]>([]);
   const [parking, setParking] = useState<Record<string, ParkingState>>({});
   const [driving, setDriving] = useState(false);
+  const [overview, setOverview] = useState(false);
+  // Whole-route view while driving: back to following the truck after 15 s.
+  useEffect(() => {
+    if (!overview) return;
+    const t = setTimeout(() => setOverview(false), 15000);
+    return () => clearTimeout(t);
+  }, [overview]);
   const [voiceOn, setVoiceOnState] = useState(true);
 
   useEffect(() => {
@@ -355,7 +362,12 @@ export default function MapScreen() {
         if (typed === undefined) filler = scheduleFiller(); // only when the driver actually said something
         setCaption({ reply: "…", heard: transcript });
       }
-      const res = await api.agentSpeak(transcript, loc.coords, activeRef.current, ctrl.signal, dialog.current ?? undefined);
+      const res = await api.agentSpeak(transcript, loc.coords, activeRef.current, ctrl.signal, dialog.current ?? undefined, {
+        driving,
+        voice_guidance: voiceOn,
+        hands_free: handsFree,
+        options_count: optionsRef.current.length,
+      });
       if (myTurn !== turn.current) return;
       // Fast answer: the filler never starts. Otherwise the answer waits for it to finish.
       filler?.cancel();
@@ -371,9 +383,9 @@ export default function MapScreen() {
         if (res.place.category !== "destination") followParking(res.place, replyDone, myTurn);
         endDialog(); // route is set: stop listening until the driver taps the mic again
       } else {
-        if (typeof res.voice_guidance === "boolean") setVoiceOn(res.voice_guidance);
         if (res.status !== "chat" && res.status !== "not_understood") showToast(res.message ?? MESSAGES.notUnderstood);
         backToIdle();
+        if (res.actions?.length) runActions(res.actions, myTurn); // after backToIdle: actions may change the phase
         continueDialog(myTurn, res, speak());
       }
     } catch (e) {
@@ -549,6 +561,11 @@ export default function MapScreen() {
     turn.current++;
     voice.cancelRecording().catch(() => {});
     voice.stopSpeaking();
+    clearRoute();
+  };
+
+  /** Route state reset without touching audio (used by the copilot so its reply isn't cut). */
+  const clearRoute = () => {
     routeStart.current = null;
     setDriving(false);
     setActive(null);
@@ -558,6 +575,109 @@ export default function MapScreen() {
     setPlaces([]);
     setPhase("ready");
     setFit({ key: `end-${Date.now()}`, points: [loc.coords] });
+  };
+
+  /** Re-plans the active route with the current truck profile (after a voice change). */
+  const reroute = async (myTurn: number) => {
+    const cur = activeRef.current;
+    if (!cur) return;
+    try {
+      const res = await api.route(loc.coords, cur.place);
+      // Only the destination must still match: a newer turn shouldn't keep the old route on screen.
+      if (activeRef.current?.place.id === cur.place.id) {
+        setActive((a) => (a ? { ...a, route: res.route } : a));
+      }
+    } catch {
+      if (myTurn === turn.current) showToast("Couldn't update the route. Try again.");
+    }
+  };
+
+  /** Executes app controls the copilot returned (trip, sound, map, truck data, preferences). */
+  const runActions = (actions: AppAction[], myTurn: number) => {
+    let truckPatch: Partial<TruckProfile> = {};
+    for (const { type, value } of actions) {
+      switch (type) {
+        case "start_navigation":
+          if (activeRef.current) {
+            endDialog();
+            setDriving(true);
+          }
+          break;
+        case "end_route":
+          endDialog();
+          clearRoute();
+          break;
+        case "show_options":
+          if (optionsRef.current.length) setPhase("options");
+          break;
+        case "recenter":
+          setOverview(false);
+          mapRef.current?.recenter();
+          break;
+        case "overview":
+          if (activeRef.current) {
+            // Stay in driving mode; the camera stops following for a moment.
+            setOverview(true);
+            setFit({ key: `overview-${Date.now()}`, points: [loc.coords, activeRef.current.place] });
+          }
+          break;
+        case "zoom_in":
+          mapRef.current?.zoomBy(1);
+          break;
+        case "zoom_out":
+          mapRef.current?.zoomBy(-1);
+          break;
+        case "voice_guidance":
+          setVoiceOn(value === true);
+          break;
+        case "wake_word":
+          setHandsFree(value === true);
+          break;
+        case "stop_talking":
+          endDialog();
+          break;
+        case "set_height_in":
+          truckPatch.height_in = Number(value);
+          break;
+        case "set_trailer_ft":
+          truckPatch.trailer_ft = Number(value);
+          break;
+        case "set_weight_lb":
+          truckPatch.weight_lb = Number(value);
+          break;
+        case "set_hazmat":
+          truckPatch.hazmat = value === true;
+          break;
+        case "set_driver_name":
+          truckPatch.driver_name = String(value);
+          break;
+        case "avoid_tolls":
+          truckPatch.avoid_tolls = value === true;
+          break;
+        case "avoid_ferries_tunnels":
+          truckPatch.avoid_ferries_tunnels = value === true;
+          break;
+        case "add_favorite_chain": {
+          const list = truckPatch.favorite_chains ?? getTruckProfile().favorite_chains ?? [];
+          truckPatch.favorite_chains = [...list, String(value)];
+          break;
+        }
+        case "remove_favorite_chain": {
+          const list = truckPatch.favorite_chains ?? getTruckProfile().favorite_chains ?? [];
+          truckPatch.favorite_chains = list.filter((c) => c.toLowerCase() !== String(value).toLowerCase());
+          break;
+        }
+        case "set_break_hours":
+          truckPatch.break_hours = value == null ? null : Number(value);
+          break;
+        case "reroute":
+          // Save first so the new route uses the new profile.
+          saveTruckProfile({ ...getTruckProfile(), ...truckPatch }).then(() => reroute(myTurn));
+          truckPatch = {};
+          break;
+      }
+    }
+    if (Object.keys(truckPatch).length) saveTruckProfile({ ...getTruckProfile(), ...truckPatch });
   };
 
   const onPlacePress = async (p: Place) => {
@@ -597,7 +717,7 @@ export default function MapScreen() {
         fitPoints={fit.points}
         onCenterChange={(c) => (center.current = c)}
         onPlacePress={onPlacePress}
-        follow={driving}
+        follow={driving && !overview}
       />
 
       {driving && active ? (
@@ -624,7 +744,10 @@ export default function MapScreen() {
       <PressableScale
         testID="recenter-button"
         accessibilityLabel="Recenter"
-        onPress={() => mapRef.current?.recenter()}
+        onPress={() => {
+          setOverview(false);
+          mapRef.current?.recenter();
+        }}
         style={[styles.recenter, shadow(colors), { backgroundColor: colors.surface, bottom: sheetH + spacing.lg }]}
       >
         <Icon name="crosshairs-gps" size={24} color={colors.info} />

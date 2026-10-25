@@ -75,9 +75,13 @@ export type AgentResponse = {
   audio_url_2?: string | null;
   timings?: Record<string, number>;
   end_conversation?: boolean;
-  voice_guidance?: boolean | null;
+  actions?: AppAction[];
   source: string;
 };
+
+export type AppAction = { type: string; value?: boolean | number | string | null };
+
+export type UiState = { driving: boolean; voice_guidance: boolean; hands_free: boolean; options_count: number };
 
 export type ActiveRoute = { place: Place; route: RouteInfo; parking?: ParkingCheck | null };
 
