@@ -26,6 +26,7 @@ logger = logging.getLogger("truckbuddy.agent")
 
 NOT_UNDERSTOOD = "Sorry, I didn't catch that. Try again."
 NO_PLACES = "I couldn't find one nearby"
+ALL_REJECTED = "That's every one I found nearby. Want me to go back to one of them?"
 NO_ADDRESS = "I couldn't find that place. Can you say the address again?"
 MODEL = ("openai", "gpt-5.4-mini")
 MAX_OPTIONS = 4
@@ -89,7 +90,7 @@ def _street(address: Optional[str]) -> str:
 
 
 def _miles(mi: float) -> str:
-    return f"{mi:.1f}" if mi < 10 else f"{mi:,.0f}"
+    return f"{mi:.1f}".removesuffix(".0") if mi < 10 else f"{mi:,.0f}"
 
 
 # (intro, body): the short intro is the first spoken part; variants rotate per dialog.
@@ -267,6 +268,9 @@ class LlmAgentProvider:
                                  reply=f"{NO_PLACES}.", message=NO_PLACES, source=self.source)
         for p in found[:PRECHECK]:
             _background(check_parking(p))  # warm satellite checks; never wait for them here
+        if all(p.id in exclude for p in found):
+            return AgentResponse(status="chat", transcript=text, category=category, reply=ALL_REJECTED,
+                                 source=self.source)
         chosen = choose_place(found, req.truck_profile, exclude)
         return await self._route_to(req, chosen, found, text)
 
@@ -295,7 +299,7 @@ class LlmAgentProvider:
         try:
             if intent == "pick":
                 place = pick_place(d, sess["places"])
-                if place and place.id != current:
+                if place and place.id not in exclude:
                     return await self._route_to(req, place, sess["places"], text)
                 category = d.get("category") or (last.category if last else None)
                 if category in CATEGORIES:

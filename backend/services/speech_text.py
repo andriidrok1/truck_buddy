@@ -28,8 +28,10 @@ def words(n: int) -> str:
 def _miles(m: re.Match) -> str:
     about, raw = m.group(1) or "", m.group(2).replace(",", "")
     v = float(raw)
+    if v < 0.4:
+        return "less than half a mile"
     if v < 10:
-        half = round(v * 2) / 2
+        half = max(0.5, round(v * 2) / 2)
         whole, frac = int(half), half - int(half)
         if whole == 0:
             text = "half a mile"
@@ -45,6 +47,8 @@ def _miles(m: re.Match) -> str:
 def _minutes(m: re.Match) -> str:
     about, v = m.group(1) or "", int(m.group(2))
     r = max(5, int(5 * round(v / 5)))
+    if r == 60:
+        return "about an hour"
     return f"{about or ('' if r == v else 'about ')}{words(r)} minutes"
 
 
@@ -69,12 +73,16 @@ _RULES = [
     (re.compile(r"(?<![.\w])N\.(?=\s)"), "North"),
     (re.compile(r"(?<![.\w])S\.(?=\s)"), "South"),
     (re.compile(r"(?<![.\w])E\.(?=\s)"), "East"),
-    (re.compile(r"\bAve\b\.?"), "Avenue"),
-    (re.compile(r"\bSt\b\.?(?=[\s,]|$)"), "Street"),
-    (re.compile(r"\bBlvd\b\.?"), "Boulevard"),
-    (re.compile(r"\bRd\b\.?"), "Road"),
-    (re.compile(r"\bPkwy\b\.?"), "Parkway"),
-    (re.compile(r"\bDr\b\.?(?=[\s,]|$)"), "Drive"),
+    # Before a name: "St. Louis" = Saint, "Dr. Martin..." = Doctor; otherwise street suffixes.
+    (re.compile(r"\bSt\.?\s+(?=[A-Z][a-z])(?!Next\b|Then\b|Turn\b|The\b)"), "Saint "),
+    (re.compile(r"\bDr\.?\s+(?=[A-Z][a-z])(?!Next\b|Then\b|Turn\b|The\b)"), "Doctor "),
+    (re.compile(r"\bAve\b"), "Avenue"),
+    (re.compile(r"\bSt\b(?=[\s,.]|$)"), "Street"),
+    (re.compile(r"\bBlvd\b"), "Boulevard"),
+    (re.compile(r"\bRd\b"), "Road"),
+    (re.compile(r"\bPkwy\b"), "Parkway"),
+    (re.compile(r"\bDr\b(?=[\s,.]|$)"), "Drive"),
+    (re.compile(r"\b24/7\b"), "twenty-four seven"),
     (re.compile(r"\bDEF\b"), "D-E-F"),
     (re.compile(r"\s*&\s*"), " and "),
 ]

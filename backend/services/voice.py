@@ -1,5 +1,6 @@
 """Speech in / speech out: Whisper (STT); TTS via ElevenLabs (primary) or OpenAI tts-1 (fallback)."""
 import asyncio
+import hashlib
 import io
 import time
 import logging
@@ -7,6 +8,7 @@ import os
 import re
 import uuid
 from collections import OrderedDict
+from pathlib import Path
 from typing import Optional
 
 from emergentintegrations.llm.openai import OpenAISpeechToText, OpenAITextToSpeech
@@ -170,8 +172,33 @@ async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str
     return audio_id
 
 
+_PIN_DIR = Path(__file__).resolve().parent.parent / ".tts_cache"
+
+
+def pin(audio_id: str, key: str) -> str:
+    """Stores a fixed line (fillers, onboarding) on disk under a stable id derived from its cache key."""
+    data = _AUDIO_CACHE.get(audio_id)
+    if data is None or audio_id in _FALLBACK_IDS:
+        return audio_id
+    stable = hashlib.sha1(key.encode()).hexdigest()[:32]
+    try:
+        _PIN_DIR.mkdir(exist_ok=True)
+        (_PIN_DIR / f"{stable}.mp3").write_bytes(data)
+    except OSError as e:
+        logger.warning("could not pin audio: %s", e)
+        return audio_id
+    _AUDIO_CACHE[stable] = data
+    return stable
+
+
 def get_audio(audio_id: str) -> Optional[bytes]:
-    return _AUDIO_CACHE.get(audio_id)
+    data = _AUDIO_CACHE.get(audio_id)
+    if data is None and re.fullmatch(r"[0-9a-f]{32}", audio_id or ""):
+        f = _PIN_DIR / f"{audio_id}.mp3"
+        if f.exists():
+            data = f.read_bytes()
+            _AUDIO_CACHE[audio_id] = data
+    return data
 
 
 _PENDING: dict[str, "asyncio.Task[Optional[str]]"] = {}

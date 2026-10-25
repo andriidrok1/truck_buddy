@@ -88,7 +88,7 @@ async def satellite(lat: float = Query(..., ge=-90, le=90), lng: float = Query(.
     return Response(content=img, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
 
 
-SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+SENTENCE_END = re.compile(r"(?<!\bSt\.)(?<!\bDr\.)(?<!U\.S\.)(?<=[.!?])\s+(?=[A-Z])")
 
 
 async def _run_agent(req: AgentRequest, speak: bool) -> AgentResponse:
@@ -243,6 +243,7 @@ async def speak(req: SpeakRequest):
         audio_id = await asyncio.shield(task)
         if not audio_id:
             raise HTTPException(status_code=502, detail="Voice unavailable")
+        audio_id = voice.pin(audio_id, key)  # fixed lines survive cache eviction and restarts
         if voice.is_fallback(audio_id):
             return {"audio_url": f"/api/voice/audio/{audio_id}"}  # don't cache fallback audio as ElevenLabs
         if len(_SPEAK_CACHE) >= 200:
