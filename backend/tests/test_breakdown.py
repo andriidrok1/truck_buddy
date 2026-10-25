@@ -221,6 +221,14 @@ def test_pending_answer_keeps_kind_and_can_back_out(monkeypatch):
     assert "breakdown_pending" not in sess
 
 
+def test_no_false_24_7_guard():
+    jb = dict(prov("jb", 1), name="J B BROS TRUCK (Speak Punjabi)")
+    reno = dict(prov("r", 2), name="Reno Truck and Trailer Repair", listed_24_7=True)
+    text = "Best bet is J B BROS TRUCK: 0.7 miles away, open 24/7, mobile. Reno Truck is open twenty-four seven."
+    out = bd.no_false_24_7(text, [jb, reno])
+    assert "J B BROS TRUCK: 0.7 miles away, mobile." in out and "Reno Truck is open twenty-four seven." in out
+
+
 def test_wait_text():
     assert bd.wait_text({"typical_min_low": 0, "typical_min_high": 60}) == "within an hour"
     assert bd.wait_text({"typical_min_low": 120, "typical_min_high": 120}) == "about 2 hours"

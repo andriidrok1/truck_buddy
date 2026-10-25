@@ -277,8 +277,30 @@ async def summarize(d: dict, mode: str, providers: list[dict]) -> tuple[str, str
         spoken = fallback_spoken(providers)
     if priced == 0 and "nobody posts prices" not in spoken.lower():
         spoken = spoken.replace("Tap one to call", "Nobody posts prices, you'll have to ask. Tap one to call")
-    spoken = fit_spoken(spoken)
-    return spoken, summary or spoken
+    spoken = fit_spoken(no_false_24_7(spoken, providers))
+    return spoken, no_false_24_7(summary, providers) or spoken
+
+
+_247 = re.compile(r",?\s*(?:and\s+)?(?:open\s+)?(?:24/7|twenty[- ]four seven|around the clock)", re.I)
+
+
+def no_false_24_7(text: str, providers: list[dict]) -> str:
+    """Removes "24/7" from sentences about a provider that is not listed as 24/7 (model guard)."""
+    def is247(p: dict) -> bool:
+        return bool(p.get("listed_24_7") or p["facts"]["hours_24_7"] is True)
+
+    def key(p: dict) -> str:
+        words = [w for w in re.findall(r"[A-Za-z0-9']+", p["name"]) if len(w) >= 3]
+        return words[0].lower() if words else ""
+
+    out = []
+    for s in re.split(r"(?<=[.!?])\s+", text or ""):
+        low = s.lower()
+        named = [p for p in providers if key(p) and re.search(rf"\b{re.escape(key(p))}\b", low)]
+        if named and not any(is247(p) for p in named):
+            s = _247.sub("", s)
+        out.append(s)
+    return " ".join(out)
 
 
 END = "Tap one to call, or ask me anything about them."
