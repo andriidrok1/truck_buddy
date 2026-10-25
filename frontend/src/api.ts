@@ -41,7 +41,8 @@ export async function redeemAccessCode(code: string) {
   if (res.status === 429) throw new Error("Too many tries. Wait a few minutes and try again.");
   if (res.status === 401) throw new Error("That code isn't right. Check it and try again.");
   if (!res.ok) throw new Error("Something went wrong. Try again.");
-  await setToken(((await res.json()) as { access_token: string }).access_token);
+  const data = (await res.json()) as { access_token: string; role?: "driver" | "tester" };
+  await setToken(data.access_token, data.role === "tester" ? "tester" : "driver");
 }
 
 export const api = {

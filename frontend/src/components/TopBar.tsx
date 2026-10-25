@@ -14,12 +14,17 @@ type Props = {
   onSearch: (text: string) => void;
   onTruckPress: () => void;
   onHistoryPress: () => void;
+  /** Tester login: shows the test-scenarios button. */
+  tester: boolean;
+  /** Active simulated location label (tester), shown instead of "Demo location". */
+  simLabel?: string | null;
+  onTesterPress: () => void;
   isDemo: boolean;
   onLayout: (h: number) => void;
 };
 
 /** Google-Maps-style top: "Where to?" search bar, truck settings on the right, memory below it. */
-export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, onTruckPress, onHistoryPress, isDemo, onLayout }: Props) {
+export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, onTruckPress, onHistoryPress, tester, simLabel, onTesterPress, isDemo, onLayout }: Props) {
   const { colors } = useTheme();
   const card = [shadow(colors), { backgroundColor: colors.surface }];
   const [text, setText] = useState("");
@@ -66,7 +71,12 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, on
       </View>
 
       <View style={styles.second} pointerEvents="box-none">
-        {isDemo ? (
+        {simLabel ? (
+          <PressableScale testID="sim-location-tag" accessibilityLabel="Test location" onPress={onTesterPress} style={[card, styles.demo]}>
+            <View style={[styles.demoDot, { backgroundColor: colors.warning }]} />
+            <Text style={[styles.demoText, { color: colors.onSurfaceSecondary }]} numberOfLines={1}>{simLabel}</Text>
+          </PressableScale>
+        ) : isDemo ? (
           <View testID="demo-location-tag" style={[card, styles.demo]}>
             <View style={[styles.demoDot, { backgroundColor: colors.warning }]} />
             <Text style={[styles.demoText, { color: colors.onSurfaceSecondary }]}>Demo location</Text>
@@ -74,9 +84,16 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, on
         ) : (
           <View />
         )}
-        <PressableScale testID="history-button" accessibilityLabel="Conversation memory" onPress={onHistoryPress} style={[card, styles.small]}>
-          <Icon name="chat-processing-outline" size={22} color={colors.onSurface} />
-        </PressableScale>
+        <View style={styles.side} pointerEvents="box-none">
+          <PressableScale testID="history-button" accessibilityLabel="Conversation memory" onPress={onHistoryPress} style={[card, styles.small]}>
+            <Icon name="chat-processing-outline" size={22} color={colors.onSurface} />
+          </PressableScale>
+          {tester && (
+            <PressableScale testID="tester-button" accessibilityLabel="Test scenarios" onPress={onTesterPress} style={[card, styles.small]}>
+              <Icon name="flask-outline" size={22} color={colors.onSurface} />
+            </PressableScale>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -109,9 +126,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  second: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, marginTop: spacing.md },
+  second: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingHorizontal: spacing.lg, marginTop: spacing.md, gap: spacing.md },
+  side: { gap: spacing.md },
   small: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center", marginRight: 4 },
-  demo: { height: 28, borderRadius: radius.pill, flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.md, gap: 6 },
+  demo: { height: 28, maxWidth: 260, borderRadius: radius.pill, flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.md, gap: 6, flexShrink: 1 },
   demoDot: { width: 8, height: 8, borderRadius: 4 },
   demoText: { fontFamily: fonts.medium, fontSize: 12 },
 });

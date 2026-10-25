@@ -128,3 +128,6 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Polish: no web focus outline on inputs, white switch thumbs, sheet title "Ask your copilot", destination label/search show only the name before the comma
 - Town destinations (HERE locality/area, id here-town-*) skip the satellite check: "No parking check for a town"
 - NOTE: ElevenLabs quota is exhausted (0 credits) -> TTS falls back to OpenAI; TTS latency/cache tests fail until topped up
+
+## Jun 2026 — Tester mode
+- Code test123 (env TESTER_CODE) logs in as role "tester" (JWT claim + stored on device). Tester sees a flask button -> /tester screen with scenarios; "Flat tire on I-80" moves the app's GPS to I-80 E near Vacaville (38.38585,-121.93664, heading 52). "Back to real GPS" resets. Simulated spot lives in memory (src/sim.ts), resets on app restart

@@ -15,6 +15,7 @@ import { dial, ProvidersList } from "@/src/components/ProvidersList";
 import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
+import { isTester } from "@/src/auth";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance } from "@/src/hooks/useGuidance";
 import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, truckLabel, useHandsFree, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
@@ -171,6 +172,19 @@ export default function MapScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loc.isDemo]);
+
+  // Tester jumped to a made-up spot (or back to GPS): show it.
+  const simId = loc.sim?.id ?? "real";
+  const firstSim = useRef(true);
+  useEffect(() => {
+    if (firstSim.current) {
+      firstSim.current = false;
+      return;
+    }
+    center.current = loc.coords;
+    setFit({ key: `sim-${simId}-${Date.now()}`, points: [loc.coords] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [simId]);
 
   // Fit all option pins once the (taller) options sheet has been laid out.
   useEffect(() => {
@@ -843,6 +857,9 @@ export default function MapScreen() {
         onSearch={(q) => onSubmitText(`Take me to ${q}`)}
         onTruckPress={() => router.push("/truck-profile")}
         onHistoryPress={() => router.push("/history")}
+        tester={isTester()}
+        simLabel={loc.sim?.label ?? null}
+        onTesterPress={() => router.push("/tester")}
         isDemo={loc.resolved && loc.isDemo}
         onLayout={setTopH}
       />

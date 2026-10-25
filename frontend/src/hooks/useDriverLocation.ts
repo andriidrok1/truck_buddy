@@ -2,6 +2,7 @@ import * as Location from "expo-location";
 import { useEffect, useState } from "react";
 
 import { DEMO_LOCATION } from "../constants";
+import { useSim } from "../sim";
 import type { LatLng } from "../types";
 
 type State = { coords: LatLng; heading: number | null; isDemo: boolean; resolved: boolean };
@@ -10,9 +11,11 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
 }
 
-/** Live GPS with Sacramento fallback when permission is denied or no fix arrives. */
+/** Live GPS with Sacramento fallback when permission is denied or no fix arrives.
+ *  A tester's simulated spot (src/sim.ts) overrides both. */
 export function useDriverLocation() {
   const [state, setState] = useState<State>({ coords: DEMO_LOCATION, heading: null, isDemo: true, resolved: false });
+  const sim = useSim();
 
   useEffect(() => {
     let cancelled = false;
@@ -51,5 +54,6 @@ export function useDriverLocation() {
     };
   }, []);
 
-  return state;
+  if (sim) return { coords: sim.coords, heading: sim.heading, isDemo: false, resolved: true, sim };
+  return { ...state, sim: null };
 }

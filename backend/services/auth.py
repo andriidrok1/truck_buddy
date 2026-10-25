@@ -27,8 +27,9 @@ def _client_ip(request: Request) -> str:
     return fwd.split(",")[-1].strip() if fwd else (request.client.host if request.client else "unknown")
 
 
-def redeem(code: str, request: Request) -> str:
-    """Checks the code (5 tries per IP per 10 min) and returns a new device token."""
+def redeem(code: str, request: Request) -> tuple[str, str]:
+    """Checks the code (5 tries per IP per 10 min); returns (device token, role).
+    ACCESS_CODE -> "driver"; TESTER_CODE -> "tester" (same app plus the test-scenario screen)."""
     now = time.monotonic()
     q = _attempts[_client_ip(request)]
     while q and now - q[0] > WINDOW_S:
@@ -37,13 +38,17 @@ def redeem(code: str, request: Request) -> str:
         raise HTTPException(status_code=429, detail="Too many attempts. Try again in a few minutes.")
     q.append(now)
     supplied = hashlib.sha256(code.strip().upper().encode()).digest()
-    expected = hashlib.sha256(os.environ["ACCESS_CODE"].strip().upper().encode()).digest()
-    if not hmac.compare_digest(supplied, expected):
+    role = None
+    for env, r in (("ACCESS_CODE", "driver"), ("TESTER_CODE", "tester")):
+        value = os.environ.get(env, "").strip()
+        if value and hmac.compare_digest(supplied, hashlib.sha256(value.upper().encode()).digest()):
+            role = r
+    if not role:
         raise HTTPException(status_code=401, detail="Invalid access code")
     q.clear()
     now_dt = datetime.now(timezone.utc)
-    payload = {"sub": f"drv_{uuid.uuid4().hex}", "iat": now_dt, "exp": now_dt + timedelta(days=JWT_DAYS)}
-    return jwt.encode(payload, _secret(), algorithm="HS256")
+    payload = {"sub": f"drv_{uuid.uuid4().hex}", "role": role, "iat": now_dt, "exp": now_dt + timedelta(days=JWT_DAYS)}
+    return jwt.encode(payload, _secret(), algorithm="HS256"), role
 
 
 def require_driver(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:

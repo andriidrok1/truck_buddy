@@ -46,7 +46,8 @@ class AccessCodeRequest(BaseModel):
 
 @public.post("/auth/access-code")
 async def access_code(req: AccessCodeRequest, request: Request):
-    return {"access_token": auth.redeem(req.code, request), "token_type": "bearer"}
+    token, role = auth.redeem(req.code, request)
+    return {"access_token": token, "token_type": "bearer", "role": role}
 
 
 @api.get("/auth/check")
