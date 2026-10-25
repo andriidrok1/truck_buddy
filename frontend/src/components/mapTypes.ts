@@ -17,4 +17,6 @@ export type MapLayerProps = {
   onPlacePress: (p: Place) => void;
   /** Driving mode: keep the camera close behind the driver. */
   follow?: boolean;
+  /** The driver dragged the map (stops following). */
+  onUserPan?: () => void;
 };

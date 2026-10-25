@@ -77,6 +77,13 @@ export default function MapScreen() {
   const [parking, setParking] = useState<Record<string, ParkingState>>({});
   const [driving, setDriving] = useState(false);
   const [overview, setOverview] = useState(false);
+  // "Follow" button: the camera keeps the truck arrow in view until the driver drags the map.
+  const [tracking, setTracking] = useState(false);
+  const following = tracking || (driving && !overview);
+  // A new view to show (route, options, overview) wins over the Follow button.
+  useEffect(() => {
+    if (fit.key !== "init" && fit.key !== "gps") setTracking(false);
+  }, [fit.key]);
   // Whole-route view while driving: back to following the truck after 15 s.
   useEffect(() => {
     if (!overview) return;
@@ -479,14 +486,14 @@ export default function MapScreen() {
   };
 
   // Hands-free: listening stops by itself when the driver pauses (tap to stop early).
-  const beginListening = async () => {
+  const beginListening = async (fromWake = false) => {
     if (!dialog.current) dialog.current = `dlg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setPhase("listening");
     clearTimers();
     const myTurn = ++turn.current;
     let res: string;
     try {
-      res = await voice.listen({ silenceMs: 700 });
+      res = await voice.listen({ silenceMs: 1100, chime: !fromWake }); // the wake word plays its own chime
     } catch {
       endDialog();
       showToast(MESSAGES.notUnderstood);
@@ -513,7 +520,7 @@ export default function MapScreen() {
     // Barge-in: the wake word interrupts the copilot's speech and starts listening.
     voice.stopSpeaking();
     if (!dialog.current) setCaption(null);
-    beginListening();
+    beginListening(true);
   });
   /** The recorder and the wake word can't share the mic (Android): pause it first. */
   const listenNow = async () => {
@@ -564,6 +571,12 @@ export default function MapScreen() {
     else wake.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wakeArmed, focused, idle]);
+  // Keep the recorder ready for an instant tap-to-talk, unless the wake word holds the mic.
+  const { setPrewarm } = voice;
+  useEffect(() => {
+    setPrewarm(micOk && focused && !wakeArmed);
+  }, [setPrewarm, micOk, focused, wakeArmed]);
+
 
   const onAvatarPress = async () => {
     if (phase === "thinking") return;
@@ -799,7 +812,11 @@ export default function MapScreen() {
         fitPoints={fit.points}
         onCenterChange={(c) => (center.current = c)}
         onPlacePress={onPlacePress}
-        follow={driving && !overview}
+        follow={following}
+        onUserPan={() => {
+          setTracking(false);
+          if (driving) setOverview(true); // look around; following resumes after 15 s
+        }}
       />
 
       {driving && active ? (
@@ -825,15 +842,22 @@ export default function MapScreen() {
       )}
 
       <PressableScale
-        testID="recenter-button"
-        accessibilityLabel="Recenter"
+        testID="follow-button"
+        accessibilityLabel={following ? "Stop following" : "Follow truck"}
+        accessibilityState={{ selected: following }}
         onPress={() => {
-          setOverview(false);
-          mapRef.current?.recenter();
+          if (following) {
+            setTracking(false);
+            if (driving) setOverview(true);
+          } else {
+            setOverview(false);
+            setTracking(true);
+          }
         }}
-        style={[styles.recenter, shadow(colors), { backgroundColor: colors.surface, bottom: sheetH + spacing.lg }]}
+        containerStyle={[styles.recenter, { bottom: sheetH + spacing.lg }]}
+        style={[styles.recenterBtn, shadow(colors), { backgroundColor: following ? colors.info : colors.surface }]}
       >
-        <Icon name="crosshairs-gps" size={24} color={colors.info} />
+        <Icon name={following ? "navigation-variant" : "crosshairs-gps"} size={24} color={following ? colors.onInfo : colors.info} />
       </PressableScale>
 
       <CaptionBubble text={caption?.reply ?? null} heard={caption?.heard} bottom={sheetH + spacing.lg} />
@@ -877,9 +901,8 @@ export default function MapScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  recenter: {
-    position: "absolute",
-    right: spacing.lg,
+  recenter: { position: "absolute", right: spacing.lg },
+  recenterBtn: {
     width: 56,
     height: 56,
     borderRadius: 28,

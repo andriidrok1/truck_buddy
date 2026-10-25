@@ -7,15 +7,22 @@ import {
   useAudioRecorder,
   type AudioPlayer,
 } from "expo-audio";
+import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 
 export type MicPermission = "granted" | "ask" | "blocked";
 
-const SPEECH_DB = -38; // louder than this = the driver is talking
-const SILENCE_DB = -45; // quieter than this = pause
-const POLL_MS = 150;
+const SPEECH_DB = -38; // lower bound for "the driver is talking" (quiet cab)
+const SILENCE_DB = -45; // lower bound for "pause"
+const SPEECH_OVER_FLOOR = 10; // dB above the calibrated noise floor
+const SILENCE_OVER_FLOOR = 4;
+const CALIBRATE_MS = 400; // the first part of each listen measures the cab noise
+const SUSTAIN_MS = 300; // speech only counts after this long above the threshold
+const POLL_MS = 100;
+const CHIME = require("../../assets/sounds/chime.mp3");
 
-type ListenOptions = { maxMs?: number; silenceMs?: number; startTimeoutMs?: number };
+type ListenOptions = { maxMs?: number; silenceMs?: number; startTimeoutMs?: number; chime?: boolean };
 
 // 16 kHz mono AAC: Whisper resamples to 16 kHz anyway, and the upload is ~4x smaller.
 const SPEECH_PRESET = {
@@ -68,10 +75,34 @@ export function useVoice() {
     playDone.current = null;
   }, []);
 
+  // Recorder prepared while idle, so record() starts the moment the driver taps (native only:
+  // on web preparing opens the mic). Off while the wake word owns the mic (Android can't share it).
+  const prepared = useRef(false);
+  const prewarm = useRef(false);
+  const prepareIdle = useCallback(async () => {
+    if (Platform.OS === "web" || !prewarm.current || prepared.current || recorder.isRecording) return;
+    try {
+      const p = await getRecordingPermissionsAsync();
+      if (!p.granted) return;
+      await recorder.prepareToRecordAsync();
+      prepared.current = true;
+    } catch (e) {
+      console.log(`[voice] idle prepare failed: ${String(e)}`);
+    }
+  }, [recorder]);
+  const setPrewarm = useCallback(
+    (on: boolean) => {
+      prewarm.current = on;
+      if (on) prepareIdle();
+    },
+    [prepareIdle],
+  );
+
   const startRecording = useCallback(async () => {
     stopSpeaking();
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-    await recorder.prepareToRecordAsync();
+    if (!prepared.current) await recorder.prepareToRecordAsync();
+    prepared.current = false;
     recorder.record();
   }, [recorder, stopSpeaking]);
 
@@ -80,59 +111,103 @@ export function useVoice() {
     if (!recorder.isRecording) return recorder.uri ?? null;
     await recorder.stop();
     await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
-    return recorder.uri ?? null;
-  }, [recorder]);
+    const uri = recorder.uri ?? null;
+    setTimeout(prepareIdle, 1500); // after the upload has read the file
+    return uri;
+  }, [recorder, prepareIdle]);
 
   const cancelRecording = useCallback(async () => {
     listenToken.current++;
     if (recorder.isRecording) await recorder.stop();
     await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
-  }, [recorder]);
+    setTimeout(prepareIdle, 500);
+  }, [recorder, prepareIdle]);
 
   /**
    * Hands-free answer: records until the driver stops talking.
+   * The first ~400 ms calibrate the noise floor (speech = floor + 10 dB, pause = floor + 4 dB,
+   * never below the fixed quiet-cab values); speech counts after 300 ms above the threshold.
    * Resolves the file uri, "silent" if nobody spoke, or "cancelled".
    */
   const listen = useCallback(
-    async ({ maxMs = 15000, silenceMs = 1100, startTimeoutMs = 7000 }: ListenOptions = {}) => {
+    async ({ maxMs = 15000, silenceMs = 1100, startTimeoutMs = 7000, chime = true }: ListenOptions = {}) => {
       const token = ++listenToken.current;
       finishNow.current = false;
       await startRecording();
+      if (chime) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+        const c = createAudioPlayer(CHIME);
+        c.play();
+        setTimeout(() => c.remove(), 1500);
+      }
       const t0 = Date.now();
       let spoke = false;
       let quietSince = 0;
+      let loudSince = 0;
       let hasMeter = false;
+      const calib: number[] = [];
+      let speechDb = SPEECH_DB;
+      let silenceDb = SILENCE_DB;
+      let calibrated = false;
+      let peak = -160;
+      let sum = 0;
+      let n = 0;
+      let ended = "max";
       while (listenToken.current === token) {
         await new Promise((r) => setTimeout(r, POLL_MS));
         if (listenToken.current !== token) break;
         if (finishNow.current) {
           spoke = true;
+          ended = "tap";
           break;
         }
         const db = recorder.getStatus().metering;
         const now = Date.now();
         if (typeof db === "number" && Number.isFinite(db)) {
           hasMeter = true;
-          if (db > SPEECH_DB) {
-            spoke = true;
+          peak = Math.max(peak, db);
+          sum += db;
+          n++;
+          if (!calibrated) {
+            calib.push(db);
+            if (now - t0 < CALIBRATE_MS) continue;
+            // Quietest sample = the cab noise (the chime or an early word only raise the others).
+            const floor = Math.min(...calib);
+            speechDb = Math.max(SPEECH_DB, floor + SPEECH_OVER_FLOOR);
+            silenceDb = Math.max(SILENCE_DB, floor + SILENCE_OVER_FLOOR);
+            calibrated = true;
+            console.log(`[voice] calibrated floor=${floor.toFixed(1)} speech>${speechDb.toFixed(1)} silence<${silenceDb.toFixed(1)} samples=${calib.map((v) => v.toFixed(0)).join(",")}`);
+          }
+          if (db > speechDb) {
+            loudSince = loudSince || now;
+            if (now - loudSince >= SUSTAIN_MS) spoke = true;
             quietSince = 0;
-          } else if (db < SILENCE_DB && spoke) {
-            quietSince = quietSince || now;
-            if (now - quietSince >= silenceMs) break;
+          } else {
+            loudSince = 0;
+            if (db < silenceDb && spoke) {
+              quietSince = quietSince || now;
+              if (now - quietSince >= silenceMs) {
+                ended = "silence";
+                break;
+              }
+            }
           }
         }
         if (!spoke && hasMeter && now - t0 > startTimeoutMs) {
+          console.log(`[voice] no speech: peak=${peak.toFixed(1)} avg=${n ? (sum / n).toFixed(1) : "-"} speech>${speechDb.toFixed(1)}`);
           await cancelRecording();
           return "silent" as const;
         }
         // No level meter on this device: fixed answer window.
         if (!hasMeter && now - t0 > 7000) {
           spoke = true;
+          ended = "no-meter";
           break;
         }
         if (now - t0 > maxMs) break;
       }
       if (listenToken.current !== token) return "cancelled" as const;
+      console.log(`[voice] turn end=${ended} ms=${Date.now() - t0} peak=${peak.toFixed(1)} avg=${n ? (sum / n).toFixed(1) : "-"} speech>${speechDb.toFixed(1)} silence<${silenceDb.toFixed(1)} silenceMs=${silenceMs}`);
       return (await stopRecording()) ?? ("silent" as const);
     },
     [recorder, startRecording, stopRecording, cancelRecording],
@@ -210,6 +285,7 @@ export function useVoice() {
     stopRecording,
     cancelRecording,
     listen,
+    setPrewarm,
     finishListening,
     play,
     preload,

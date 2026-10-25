@@ -101,3 +101,10 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Long-term memory in Mongo `conversation` per driver: every turn saved; new dialogs get the driver's lines from the last 80 turns as background. History screen (/history, top-bar chat button) with Clear memory (GET/DELETE /api/memory)
 - Mobile web: PWA meta tags (home-screen app, no zoom on input)
 - Security audit: PASS (only P3 hardening left: token revocation, web token in localStorage)
+
+## Jun 2026 — Follow button, voice capture, addresses, parking follow-up
+- Follow button (testID follow-button): camera follows the truck arrow; dragging the map stops it; also fixed the button being off-screen
+- Mic: per-listen noise-floor calibration (400 ms; speech = floor+10 dB, pause = floor+4 dB, fixed values as lower bounds), speech after 300 ms sustained, tap path silence 1100 ms, recorder pre-prepared while idle (native, not with wake word), chime + haptic at listen start, metering logs
+- STT: Whisper prompt with trucking vocabulary/address style; drop segment only if (no_speech>=0.6 & logprob<-0.8) or logprob<-1.4 or compression>2.4; dropped segments logged; Whisper stock hallucinations ("www.FEMA.gov", "thanks for watching") dropped
+- Addresses: number words -> digits, HERE street/place/postalCode/intersection/houseNumber at score>=0.8, read-back on no match, previous town appended to street-only follow-ups; logs for intent/query/geocoder result
+- Parking "Let me look at the satellite": retry once, spoken apology if it still fails

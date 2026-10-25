@@ -19,8 +19,13 @@ from services.speech_text import spoken
 logger = logging.getLogger("truckbuddy.voice")
 
 NO_SPEECH_PROB = 0.6
-MIN_AVG_LOGPROB = -1.0
+NO_SPEECH_LOGPROB = -0.8  # a likely-silent segment is dropped only when Whisper is also unsure of the words
+MIN_AVG_LOGPROB = -1.4
 MAX_COMPRESSION = 2.4
+# Domain words + address style, so Whisper writes chains correctly and numbers as digits.
+PROMPT = ("Truck driver talking to a copilot. Take me to 2828 El Centro Rd, Sacramento, CA. "
+          "Exit 12 on Interstate 80, I-5 south, Highway 99. Love's, Pilot, Flying J, TA, Petro, Sapp Bros, "
+          "Kwik Trip, Buc-ee's, Motel 6, rest area, weigh station, 13 foot 6, 53 foot trailer, 80,000 pounds.")
 # Whisper labels for non-speech sounds, e.g. "Beeping", "[siren]", "(music)".
 NOISE_ONLY = re.compile(
     r"[\s\W]*(?:(?:beep(?:ing|s)?|siren(?:s)?|music|noise|static|buzz(?:ing)?|tone|silence|applause|"
@@ -35,25 +40,42 @@ async def transcribe(data: bytes, filename: str) -> str:
     buf = io.BytesIO(data)
     buf.name = filename
     stt = OpenAISpeechToText(api_key=os.environ["EMERGENT_LLM_KEY"])
-    res = await stt.transcribe(file=buf, model="whisper-1", response_format="verbose_json", language="en")
+    res = await stt.transcribe(file=buf, model="whisper-1", response_format="verbose_json", language="en",
+                               prompt=PROMPT)
     segments = getattr(res, "segments", None) or []
     # Whisper invents text on silence/noise; drop segments that are most likely not speech.
     if segments:
         def _get(s, key, default=None):
             return s.get(key, default) if isinstance(s, dict) else getattr(s, key, default)
 
-        kept = [
-            _get(s, "text", "") for s in segments
-            if _get(s, "no_speech_prob", 0) < NO_SPEECH_PROB
-            and _get(s, "avg_logprob", 0) >= MIN_AVG_LOGPROB
-            and _get(s, "compression_ratio", 0) <= MAX_COMPRESSION
-        ]
-        text = " ".join(t.strip() for t in kept).strip()
+        kept = []
+        for s in segments:
+            nsp, lp, cr = _get(s, "no_speech_prob", 0), _get(s, "avg_logprob", 0), _get(s, "compression_ratio", 0)
+            seg = (_get(s, "text", "") or "").strip()
+            if (nsp >= NO_SPEECH_PROB and lp < NO_SPEECH_LOGPROB) or lp < MIN_AVG_LOGPROB or cr > MAX_COMPRESSION:
+                logger.info("stt dropped segment %r no_speech=%.2f logprob=%.2f compression=%.2f", seg, nsp, lp, cr)
+            else:
+                kept.append(seg)
+        text = " ".join(kept).strip()
     else:
         text = (getattr(res, "text", "") or "").strip()
     if NOISE_ONLY.fullmatch(text):
+        if text:
+            logger.info("stt dropped noise-only text %r", text)
+        return ""
+    if PROMPT_ECHO.search(text) or HALLUCINATION.search(text):  # prompt echo / Whisper's stock lines on noise
+        logger.info("stt dropped hallucination %r", text)
         return ""
     return text
+
+
+PROMPT_ECHO = re.compile(r"Truck driver talking to a copilot|Sapp Bros, Kwik Trip, Buc-ee", re.I)
+# Lines Whisper is known to invent on road noise / silence (subtitle credits, video outros, URLs).
+HALLUCINATION = re.compile(
+    r"for more information,? visit|www\.|\.(?:gov|com|org)\b|thanks? (?:you )?for watching|please subscribe|"
+    r"like and subscribe|subtitles? by|captions? by|amara\.org|transcribed by|see you in the next video",
+    re.I,
+)
 
 
 VOICES = ("alloy", "ash", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer")

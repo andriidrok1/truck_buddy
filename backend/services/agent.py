@@ -29,7 +29,29 @@ logger = logging.getLogger("truckbuddy.agent")
 NOT_UNDERSTOOD = "Sorry, I didn't catch that. Try again."
 NO_PLACES = "I couldn't find one nearby"
 ALL_REJECTED = "That's every one I found nearby. Want me to go back to one of them?"
-NO_ADDRESS = "I couldn't find that place. Can you say the address again?"
+_STREET_ONLY = re.compile(r"^\s*\d+[a-z]?\s+[\w .'-]+$", re.I)  # "2828 El Centro Rd" (no town after a comma)
+_ZIP_COUNTRY = re.compile(r"^\s*(?:[A-Z]{2}(?:\s+\d{5}(?:-\d{4})?)?|\d{5}|United States|USA)\s*$")
+
+
+def heard_not_found(query: str) -> str:
+    """Reads back what was heard and offers typing."""
+    return f"I heard {query}, but can't find it. Say it again or type it."
+
+
+def with_city(query: str, city: Optional[str]) -> str:
+    """Street address alone after a turn that named a city: search it in that city."""
+    return f"{query}, {city}" if city and _STREET_ONLY.match(query) else query
+
+
+def city_of(query: str, place: Place) -> Optional[str]:
+    """Town named in this turn ("Reno, NV" or "..., Sacramento, CA"), for a follow-up street address."""
+    parts = [p.strip() for p in query.split(",") if p.strip()]
+    if parts and not re.search(r"\d", parts[0]):  # a town ("Reno, NV"), not a landmark that geocoded elsewhere
+        return query if place.name.split(",")[0].strip().lower() == parts[0].lower() else None
+    if len(parts) > 1 and re.search(r"\d", parts[0]):
+        rest = [p for p in parts[1:] if not _ZIP_COUNTRY.match(p)]
+        return ", ".join(rest) or None
+    return None
 MODEL = ("openai", "gpt-5.4-mini")
 MAX_OPTIONS = 4
 PRECHECK = 3  # nearest candidates satellite-checked in the background
@@ -48,7 +70,7 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
   truck_stop = fuel, diesel, DEF, food, showers, truck stop;
   hotel = sleep, tired, overnight, bed, motel, hotel, room;
   rest_area = quick break, stretch, restroom, short nap, rest area.
-- go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV".
+- go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV". Write numbers as digits ("2828 El Centro Rd, Sacramento"). If the driver gives only a street address and named a town earlier in the conversation, add that town to query.
 - pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something closer"). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. If no earlier place fits, use find with the same category instead.
 {controls}
 {parking}
@@ -338,6 +360,8 @@ class LlmAgentProvider:
             return _not_understood(text, self.source)
 
         intent = d.get("intent")
+        logger.info("agent intent=%s category=%s query=%r place_index=%s", intent, d.get("category"),
+                    d.get("query"), d.get("place_index"))
         reply = str(d.get("reply") or "").strip()
         # Current pick: the active route, or the last place chosen in this dialog.
         last = req.active_place or (sess["places"][0] if sess["places"] else None)
@@ -362,10 +386,15 @@ class LlmAgentProvider:
             if intent == "find" and d.get("category") in CATEGORIES:
                 return await self._find(req, d["category"], text, exclude)
             if intent == "go" and str(d.get("query") or "").strip():
+                query = with_city(str(d["query"]).strip(), sess.get("city"))
                 with stage("tools"):
-                    matches = await geocode(str(d["query"]).strip(), req.lat, req.lng)
+                    matches = await geocode(query, req.lat, req.lng)
+                logger.info("agent go query=%r (llm %r) city_ctx=%r -> %s", query, d.get("query"), sess.get("city"),
+                            matches[0].name if matches else "no match")
                 if not matches:
-                    return AgentResponse(status="chat", transcript=text, reply=NO_ADDRESS, source=self.source)
+                    return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query),
+                                         source=self.source)
+                sess["city"] = city_of(query, matches[0]) or sess.get("city")
                 return await self._route_to(req, matches[0], [], text)
         except Exception:
             logger.exception("agent action failed")
