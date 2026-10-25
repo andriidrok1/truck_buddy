@@ -1,6 +1,6 @@
 export type LatLng = { lat: number; lng: number };
 
-export type Category = "truck_stop" | "hotel" | "rest_area" | "destination";
+export type Category = "truck_stop" | "hotel" | "rest_area" | "destination" | "service";
 
 export type Place = {
   id: string;

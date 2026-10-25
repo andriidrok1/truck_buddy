@@ -30,7 +30,7 @@ const VOICE_GUIDANCE_KEY = "voice_guidance_v1";
 const RESEARCH_INTERIM = "Reading reviews now, almost there.";
 const RESEARCH_INTERIM_MS = 7000;
 const providerPlace = (p: Provider): Place => ({
-  id: p.id, name: p.name, category: "destination", lat: p.lat, lng: p.lng, tags: [],
+  id: p.id, name: p.name, category: "service", lat: p.lat, lng: p.lng, tags: [],
   address: p.address, rating: p.rating, rating_count: p.rating_count, distance_mi: p.distance_mi,
 });
 
@@ -254,6 +254,7 @@ export default function MapScreen() {
 
   /** Satellite parking check runs after the route is set; its directions are spoken when the reply ends. */
   const followParking = async (place: Place, replyDone: Promise<void>, myTurn: number, approach = activeRef.current?.route.approach) => {
+    if (place.category === "service") return; // breakdown provider: no truck-parking check
     try {
       const pk = await api.parking(place, approach);
       // The card always takes the result if it's still the same destination.
@@ -769,7 +770,7 @@ export default function MapScreen() {
     setThinkingText(STAGES[1]);
     try {
       // Breakdown providers: the driver needs the shop, not a satellite parking check (faster route).
-      const isProvider = !!providersRef.current?.providers.some((x) => x.id === p.id);
+      const isProvider = p.category === "service" || !!providersRef.current?.providers.some((x) => x.id === p.id);
       const res = await api.route(loc.coords, p, isProvider);
       if (myTurn !== turn.current) return;
       // Keep the previous destination among the alternatives.

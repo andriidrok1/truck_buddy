@@ -14,10 +14,11 @@ export const CATEGORY_ICON: Record<Category, string> = {
   hotel: "bed",
   rest_area: "pine-tree-variant",
   destination: "flag-checkered",
+  service: "wrench",
 };
 
 export function categoryColor(c: ThemeColors, cat: Category) {
-  if (cat === "destination") return c.brandPrimary;
+  if (cat === "destination" || cat === "service") return c.brandPrimary;
   return cat === "truck_stop" ? c.truckStop : cat === "hotel" ? c.hotel : c.restArea;
 }
 

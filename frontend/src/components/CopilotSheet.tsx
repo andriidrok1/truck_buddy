@@ -170,7 +170,7 @@ export function CopilotSheet(props: Props) {
                 {active.place.tags.length ? active.place.tags.join(" · ") : active.place.address ?? (active.place.category === "destination" ? "Destination" : "Address unknown")}
               </Text>
             </View>
-            {<ParkingStatus parking={active.parking} />}
+            {active.place.category !== "service" && <ParkingStatus parking={active.parking} />}
             {options.length > 0 && (
               <Pressable testID="other-options-button" onPress={onShowOptions} hitSlop={8} style={styles.otherBtn}>
                 <Text style={[styles.otherText, { color: colors.info }]}>

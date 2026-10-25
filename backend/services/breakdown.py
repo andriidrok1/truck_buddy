@@ -163,7 +163,7 @@ def call_card(d: dict, req: AgentRequest, place_text: str) -> CallCard:
 # ---------------------------------------------------------------- research job
 
 def _place(p: dict) -> Place:
-    return Place(id=p["id"], name=p["name"], category="destination", lat=p["lat"], lng=p["lng"],
+    return Place(id=p["id"], name=p["name"], category="service", lat=p["lat"], lng=p["lng"],
                  address=p.get("address"), rating=p.get("rating"), rating_count=p.get("rating_count"),
                  distance_mi=p.get("distance_mi"))
 
@@ -423,7 +423,7 @@ async def followup(req: AgentRequest, sess: dict, text: str, source: str) -> Opt
         with stage("tools"):
             route = await get_routing_provider().route(req.lat, req.lng, place.lat, place.lng, req.truck_profile)
         others = [_place(p) for p in providers if p["id"] != chosen["id"]]
-        return AgentResponse(status="route_set", transcript=text, category="destination", place=place, route=route,
+        return AgentResponse(status="route_set", transcript=text, category="service", place=place, route=route,
                              options=others, source=source,
                              reply=f"Okay, route to {chosen['name']} is set, {route.summary.split(' · ')[0]}.")
     if action == "more":

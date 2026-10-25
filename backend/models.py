@@ -3,7 +3,7 @@ from typing import List, Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 Category = Literal["truck_stop", "hotel", "rest_area"]
-PlaceCategory = Literal["truck_stop", "hotel", "rest_area", "destination"]
+PlaceCategory = Literal["truck_stop", "hotel", "rest_area", "destination", "service"]  # service = breakdown provider
 
 
 class LatLng(BaseModel):
