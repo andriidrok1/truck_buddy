@@ -51,12 +51,13 @@ async def transcribe(data: bytes, filename: str) -> str:
 
 
 VOICES = ("alloy", "ash", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer")
-DEFAULT_VOICE = "coral"
+DEFAULT_VOICE = "sage"
+DEFAULT_MODEL = "gpt-4o-mini-tts"  # warmer, natural tone (chosen by the owner)
 # gpt-4o-mini-tts takes a speaking-style instruction (tts-1 ignores it).
 INSTRUCTIONS = "Calm, warm, confident co-pilot talking to a truck driver on the road. Natural pace, clear and friendly."
 
 
-async def synthesize(text: str, voice: Optional[str] = None, model: str = "tts-1") -> Optional[str]:
+async def synthesize(text: str, voice: Optional[str] = None, model: str = DEFAULT_MODEL) -> Optional[str]:
     """Returns an id for GET /api/voice/audio/{id}, or None if TTS failed."""
     try:
         tts = OpenAITextToSpeech(api_key=os.environ["EMERGENT_LLM_KEY"])

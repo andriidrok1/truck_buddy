@@ -47,7 +47,7 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
   rest_area = quick break, stretch, restroom, short nap, rest area.
 - go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV".
 - pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something closer"). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. If no earlier place fits, use find with the same category instead.
-- chat: a question or remark that is not a place request ("how far is it?", "where do I park?", "thanks"). reply = a brief answer using the context.
+- chat: a question or remark that is not a place request ("how far is it?", "where do I park?", "thanks"). reply = a brief answer using the context. For parking/entry questions use only the satellite parking check; if there is none, say you haven't checked parking there yet. Never invent parking details.
 - bye: goodbye or done ("bye", "that's all", "no, I'm good", "that's it"). reply = one short friendly line.
 - unclear: only a sound or noise label (siren, beeping, music) or unintelligible.
 reply is only for chat and bye: English, spoken style, no markdown, at most 2 short sentences, never repeat yourself.
@@ -189,6 +189,15 @@ class LlmAgentProvider:
             if req.active_duration_min is not None:
                 context += f", about {req.active_duration_min} minutes"
             context += "."
+            pk = cached_parking(cur) if cur.category != "destination" else None
+            if pk:
+                context += f" Satellite parking check there: {pk.label}. {pk.reason}"
+                if pk.entry_tip:
+                    context += f" Entry: {pk.entry_tip}."
+                if pk.park_tip:
+                    context += f" Park: {pk.park_tip}."
+            elif cur.category != "destination":
+                context += " Parking there has not been checked yet."
         else:
             context += " No route is active."
         return context

@@ -218,7 +218,7 @@ class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=600)
     # Optional, for comparing voices; the app always uses the default.
     voice: Optional[Literal["alloy", "ash", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"]] = None
-    model: Literal["tts-1", "gpt-4o-mini-tts"] = "tts-1"
+    model: Literal["tts-1", "gpt-4o-mini-tts"] = "gpt-4o-mini-tts"
 
 
 _SPEAK_CACHE: dict[str, str] = {}
