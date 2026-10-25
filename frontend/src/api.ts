@@ -1,6 +1,6 @@
 import { getTruckProfile } from "./hooks/useTruckProfile";
 import { uploadForm } from "./utils/upload";
-import type { AgentResponse, Category, LatLng, ParkingCheck, PlacesResponse, Place, RouteInfo } from "./types";
+import type { ActiveRoute, AgentResponse, Category, LatLng, ParkingCheck, PlacesResponse, Place, RouteInfo } from "./types";
 
 const ORIGIN = process.env.EXPO_PUBLIC_BACKEND_URL;
 const BASE = `${ORIGIN}/api`;
@@ -34,6 +34,35 @@ export const api = {
       body: JSON.stringify({ text, lat: at.lat, lng: at.lng, truck_profile: getTruckProfile() }),
     }),
   speak: (text: string) => request<{ audio_url: string }>(`/speak`, { method: "POST", body: JSON.stringify({ text }) }),
+  /** Pre-fetch nearby places (+ parking checks) so the next voice turn hits warm caches. */
+  warm: (at: LatLng) => request<{ ok: boolean }>(`/warm?lat=${at.lat}&lng=${at.lng}`, { method: "POST" }),
+  /** Voice turn step 1: speech -> text, shown to the driver right away. */
+  transcribe: async (uri: string, signal?: AbortSignal) => {
+    const web = uri.startsWith("blob:") || uri.startsWith("data:");
+    const res = await uploadForm(`${BASE}/voice/transcribe`, {
+      fields: {},
+      files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
+      signal,
+    });
+    if (!res.ok) throw new Error(`/voice/transcribe failed: ${res.status}`);
+    return (await res.json()) as { transcript: string; timings?: Record<string, number> };
+  },
+  /** Voice turn step 2: text -> action + spoken reply. */
+  agentSpeak: (text: string, at: LatLng, active?: ActiveRoute | null, signal?: AbortSignal, sessionId?: string) =>
+    request<AgentResponse>(`/agent?speak=true`, {
+      method: "POST",
+      signal,
+      body: JSON.stringify({
+        text,
+        lat: at.lat,
+        lng: at.lng,
+        truck_profile: getTruckProfile(),
+        session_id: sessionId,
+        active_place: active?.place,
+        active_distance_mi: active?.route.distance_mi,
+        active_duration_min: active?.route.duration_min,
+      }),
+    }),
   onboardingParse: async (uri: string, step: "name" | "truck" | "prefs") => {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
     const res = await uploadForm(`${BASE}/onboarding/parse`, {
@@ -42,19 +71,5 @@ export const api = {
     });
     if (!res.ok) throw new Error(`/onboarding/parse failed: ${res.status}`);
     return (await res.json()) as { transcript: string; updates: Record<string, unknown> };
-  },
-  voice: async (uri: string, at: LatLng, activePlace?: Place, signal?: AbortSignal, sessionId?: string) => {
-    const web = uri.startsWith("blob:") || uri.startsWith("data:");
-    const fields: Record<string, string> = { lat: String(at.lat), lng: String(at.lng) };
-    if (sessionId) fields.session_id = sessionId;
-    if (activePlace) fields.active_place = JSON.stringify(activePlace);
-    fields.truck_profile = JSON.stringify(getTruckProfile());
-    const res = await uploadForm(`${BASE}/voice`, {
-      fields,
-      files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
-      signal,
-    });
-    if (!res.ok) throw new Error(`/voice failed: ${res.status}`);
-    return (await res.json()) as AgentResponse;
   },
 };

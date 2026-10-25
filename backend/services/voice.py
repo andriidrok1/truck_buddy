@@ -1,4 +1,5 @@
 """Speech in / speech out: Whisper (STT) and OpenAI TTS via the Emergent universal key."""
+import asyncio
 import io
 import logging
 import os
@@ -66,3 +67,29 @@ async def synthesize(text: str) -> Optional[str]:
 
 def get_audio(audio_id: str) -> Optional[bytes]:
     return _AUDIO_CACHE.get(audio_id)
+
+
+_PENDING: dict[str, "asyncio.Task[Optional[str]]"] = {}
+
+
+def synthesize_later(text: str) -> str:
+    """Starts TTS in the background and returns the audio id right away (served once ready)."""
+    audio_id = uuid.uuid4().hex
+
+    async def run() -> Optional[str]:
+        tmp = await synthesize(text)
+        if tmp:
+            _AUDIO_CACHE[audio_id] = _AUDIO_CACHE.pop(tmp)
+        return tmp
+
+    task = asyncio.create_task(run())
+    _PENDING[audio_id] = task
+    task.add_done_callback(lambda _t: _PENDING.pop(audio_id, None))
+    return audio_id
+
+
+async def wait_audio(audio_id: str) -> Optional[bytes]:
+    task = _PENDING.get(audio_id)
+    if task is not None:
+        await asyncio.shield(task)
+    return get_audio(audio_id)

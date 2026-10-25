@@ -16,7 +16,7 @@ import time
 import uuid
 from typing import Optional
 
-import httpx
+from services.http import client
 from emergentintegrations.llm.chat import ImageContent, LlmChat, StreamDone, TextDelta, UserMessage
 
 from models import ParkingCheck, ParkingSpot, Place
@@ -82,13 +82,12 @@ async def fetch_satellite(lat: float, lng: float) -> bytes:
         "format": "jpg",
         "f": "image",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(ESRI_EXPORT, params=params)
-        r.raise_for_status()
-        if not r.headers.get("content-type", "").startswith("image/"):
-            raise RuntimeError("satellite service returned no image")
-        _put(_img_cache, k, r.content)
-        return r.content
+    r = await client().get(ESRI_EXPORT, params=params, timeout=15)
+    r.raise_for_status()
+    if not r.headers.get("content-type", "").startswith("image/"):
+        raise RuntimeError("satellite service returned no image")
+    _put(_img_cache, k, r.content)
+    return r.content
 
 
 def _spans(lat: float) -> tuple[float, float]:

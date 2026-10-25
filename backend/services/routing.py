@@ -11,7 +11,7 @@ import os
 from typing import List, Optional
 
 import flexpolyline
-import httpx
+from services.http import client
 
 from models import RouteInfo, TrafficSegment, TruckProfile
 from services.geo import haversine_km, km_to_mi
@@ -100,8 +100,7 @@ async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile) -> 
     avoid = (["tollRoad"] if t.avoid_tolls else []) + (["ferry", "tunnel"] if t.avoid_ferries_tunnels else [])
     if avoid:
         params["avoid[features]"] = ",".join(avoid)
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.get(HERE_URL, params=params)
+    r = await client().get(HERE_URL, params=params, timeout=20)
     if r.is_error:
         raise RuntimeError(f"HERE {r.status_code}: {r.text[:200]}")
     routes = r.json().get("routes") or []
@@ -156,8 +155,7 @@ async def _ors(fl: float, fg: float, tl: float, tg: float, t: TruckProfile) -> R
     if avoid:
         body["options"]["avoid_features"] = avoid
     headers = {"Authorization": os.environ["ORS_API_KEY"], "Content-Type": "application/json"}
-    async with httpx.AsyncClient(timeout=25) as client:
-        r = await client.post(ORS_URL, headers=headers, json=body)
+    r = await client().post(ORS_URL, headers=headers, json=body, timeout=25)
     if r.is_error:
         raise RuntimeError(f"ORS {r.status_code}: {r.text[:200]}")
     feats = r.json().get("features") or []

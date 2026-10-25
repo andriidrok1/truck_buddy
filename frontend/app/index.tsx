@@ -24,6 +24,7 @@ const REQUEST_TIMEOUT_MS = 60000;
 const STAGES = ["Searching nearby…", "Setting route…"];
 const STAGE_MS = 3500;
 const WAKE_SLEEP_MS = 10 * 60 * 1000; // background without a route: turn the wake word off
+const FILLERS = ["On it.", "Let me check.", "One sec."];
 
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
@@ -122,8 +123,38 @@ export default function MapScreen() {
   const sayReply = (res: AgentResponse) => {
     setCaption({ reply: res.reply, heard: res.transcript || undefined });
     if (!res.audio_url) return Promise.resolve();
-    return voice.playAndWait(absoluteUrl(res.audio_url), Math.min(20000, 1500 + res.reply.length * 65));
+    const [first, rest] = res.reply.split(/(?<=[.!?])\s+/, 2).concat("");
+    const done = voice.playAndWait(absoluteUrl(res.audio_url), Math.min(20000, 1500 + first.length * 65));
+    if (!res.audio_url_2) return done;
+    const myTurn = turn.current;
+    return done.then(() =>
+      myTurn === turn.current
+        ? voice.playAndWait(absoluteUrl(res.audio_url_2!), Math.min(20000, 1500 + (rest || res.reply).length * 65))
+        : undefined,
+    );
   };
+
+  // Instant acknowledgement while the real answer is on its way (cached TTS, rotated).
+  const fillers = useRef<string[]>([]);
+  const fillerIdx = useRef(0);
+  useEffect(() => {
+    Promise.all(FILLERS.map((t) => api.speak(t).then((r) => absoluteUrl(r.audio_url))))
+      .then((urls) => (fillers.current = urls))
+      .catch(() => {});
+  }, []);
+  const playFiller = () => {
+    if (!fillers.current.length) return;
+    voice.play(fillers.current[fillerIdx.current++ % fillers.current.length]);
+  };
+
+  // Warm Places + parking caches around the driver (on open and after moving ~1 km).
+  const warmedAt = useRef<LatLng | null>(null);
+  useEffect(() => {
+    const w = warmedAt.current;
+    if (w && Math.hypot(w.lat - loc.coords.lat, (w.lng - loc.coords.lng) * 0.8) < 0.009) return;
+    warmedAt.current = loc.coords;
+    api.warm(loc.coords).catch(() => {});
+  }, [loc.coords]);
 
   /** Satellite parking check runs after the route is set; its directions are spoken when the reply ends. */
   const followParking = async (place: Place, replyDone: Promise<void>, myTurn: number) => {
@@ -212,7 +243,11 @@ export default function MapScreen() {
     try {
       const uri = recorded ?? (await voice.stopRecording());
       if (!uri) throw new Error("no recording");
-      const res = await api.voice(uri, loc.coords, activeRef.current?.place, ctrl.signal, dialog.current ?? undefined);
+      playFiller();
+      const { transcript } = await api.transcribe(uri, ctrl.signal);
+      if (myTurn !== turn.current) return;
+      if (transcript) setCaption({ reply: "…", heard: transcript });
+      const res = await api.agentSpeak(transcript, loc.coords, activeRef.current, ctrl.signal, dialog.current ?? undefined);
       if (myTurn !== turn.current) return;
       if (res.status === "route_set" && res.place && res.route) {
         const others = res.options ?? [];
@@ -253,7 +288,7 @@ export default function MapScreen() {
     const myTurn = ++turn.current;
     let res: string;
     try {
-      res = await voice.listen({ silenceMs: 1000 });
+      res = await voice.listen({ silenceMs: 700 });
     } catch {
       endDialog();
       showToast(MESSAGES.notUnderstood);

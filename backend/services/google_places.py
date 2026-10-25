@@ -7,7 +7,7 @@ import os
 import time
 from typing import Optional
 
-import httpx
+from services.http import client
 
 from models import Category, Place, PlacesResponse
 from services.geo import haversine_km, km_to_mi
@@ -62,8 +62,7 @@ class GooglePlacesProvider:
             "X-Goog-Api-Key": os.environ["GOOGLE_MAPS_API_KEY"],
             "X-Goog-FieldMask": FIELD_MASK,
         }
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.post(URL, headers=headers, json=body)
+        r = await client().post(URL, headers=headers, json=body, timeout=15)
         if r.is_error:
             logger.error("Google Places error %s: %s", r.status_code, r.text[:300])
             raise PlacesUnavailable("Places provider request failed")

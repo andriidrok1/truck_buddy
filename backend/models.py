@@ -140,6 +140,9 @@ class AgentRequest(BaseModel):
     truck_profile: TruckProfile = Field(default_factory=TruckProfile)
     active_place: Optional[Place] = None  # current route destination, for follow-up questions
     session_id: Optional[str] = Field(None, max_length=64)  # one live dialog = one session (memory)
+    # Last known distance/time of the active route (the app already has it; no re-routing per turn).
+    active_distance_mi: Optional[float] = Field(None, ge=0)
+    active_duration_min: Optional[int] = Field(None, ge=0)
 
 
 AgentStatus = Literal["options", "route_set", "chat", "no_results", "not_understood"]
@@ -157,4 +160,6 @@ class AgentResponse(BaseModel):
     options: List[Place] = Field(default_factory=list)  # other candidates, closest first
     end_conversation: bool = False  # the dialog reached its end (goodbye / done)
     audio_url: Optional[str] = None  # relative path to the spoken reply (mp3)
+    audio_url_2: Optional[str] = None  # rest of a 2-sentence reply, generated in parallel
+    timings: dict[str, int] = Field(default_factory=dict)  # ms per pipeline stage (voice turns)
     source: str

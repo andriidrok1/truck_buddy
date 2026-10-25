@@ -10,7 +10,7 @@ import os
 import re
 from typing import Optional
 
-import httpx
+from services.http import client
 
 from models import Place
 from services.geo import haversine_km, km_to_mi
@@ -52,11 +52,11 @@ def _here_item(it: dict, at: tuple[float, float]) -> Optional[Place]:
 async def _here(q: str, lat: float, lng: float) -> list[Place]:
     key = os.environ["HERE_API_KEY"]
     common = {"q": q, "at": f"{lat},{lng}", "limit": 3, "apiKey": key}
-    async with httpx.AsyncClient(timeout=10) as c:
-        geo, disc = await asyncio.gather(
-            c.get("https://geocode.search.hereapi.com/v1/geocode", params={**common, "in": "countryCode:USA"}),
-            c.get("https://discover.search.hereapi.com/v1/discover", params={**common, "in": "countryCode:USA"}),
-        )
+    c = client()
+    geo, disc = await asyncio.gather(
+        c.get("https://geocode.search.hereapi.com/v1/geocode", params={**common, "in": "countryCode:USA"}, timeout=10),
+        c.get("https://discover.search.hereapi.com/v1/discover", params={**common, "in": "countryCode:USA"}, timeout=10),
+    )
     geo.raise_for_status()
     items = geo.json().get("items", [])
     top = items[0] if items else None
@@ -81,8 +81,7 @@ async def _here(q: str, lat: float, lng: float) -> list[Place]:
 async def _ors(q: str, lat: float, lng: float) -> list[Place]:
     params = {"api_key": os.environ["ORS_API_KEY"], "text": q, "size": 3, "boundary.country": "US",
               "focus.point.lat": lat, "focus.point.lon": lng}
-    async with httpx.AsyncClient(timeout=10) as c:
-        r = await c.get("https://api.openrouteservice.org/geocode/search", params=params)
+    r = await client().get("https://api.openrouteservice.org/geocode/search", params=params, timeout=10)
     r.raise_for_status()
     out = []
     for f in r.json().get("features", []):
@@ -98,8 +97,7 @@ async def _ors(q: str, lat: float, lng: float) -> list[Place]:
 async def _nominatim(q: str, lat: float, lng: float) -> list[Place]:
     params = {"q": q, "format": "jsonv2", "limit": 3, "countrycodes": "us"}
     headers = {"User-Agent": "TruckBuddy/1.0 (truck copilot demo)"}
-    async with httpx.AsyncClient(timeout=10) as c:
-        r = await c.get("https://nominatim.openstreetmap.org/search", params=params, headers=headers)
+    r = await client().get("https://nominatim.openstreetmap.org/search", params=params, headers=headers, timeout=10)
     r.raise_for_status()
     return [_place(f"osm-{it.get('osm_id')}", it.get("name") or q, float(it["lat"]), float(it["lon"]),
                    it.get("display_name"), (lat, lng))

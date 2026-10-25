@@ -62,6 +62,8 @@ export type AgentResponse = {
   parking?: ParkingCheck | null;
   options?: Place[];
   audio_url?: string | null;
+  audio_url_2?: string | null;
+  timings?: Record<string, number>;
   end_conversation?: boolean;
   source: string;
 };

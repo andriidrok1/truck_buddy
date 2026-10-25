@@ -17,9 +17,19 @@ const POLL_MS = 150;
 
 type ListenOptions = { maxMs?: number; silenceMs?: number; startTimeoutMs?: number };
 
+// 16 kHz mono AAC: Whisper resamples to 16 kHz anyway, and the upload is ~4x smaller.
+const SPEECH_PRESET = {
+  ...RecordingPresets.HIGH_QUALITY,
+  sampleRate: 16000,
+  numberOfChannels: 1,
+  bitRate: 32000,
+  isMeteringEnabled: true,
+  web: { ...RecordingPresets.HIGH_QUALITY.web, bitsPerSecond: 32000 },
+};
+
 // Microphone recording + reply playback (expo-audio).
 export function useVoice() {
-  const recorder = useAudioRecorder({ ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true });
+  const recorder = useAudioRecorder(SPEECH_PRESET);
   const player = useRef<AudioPlayer | null>(null);
   const playDone = useRef<(() => void) | null>(null);
   const listenToken = useRef(0);

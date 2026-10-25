@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import logging
 import os
 from pathlib import Path
@@ -20,7 +21,7 @@ from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.routing import get_routing_provider  # noqa: E402
-from services import onboarding, voice  # noqa: E402
+from services import onboarding, timing, voice  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -86,19 +87,64 @@ async def satellite(lat: float = Query(..., ge=-90, le=90), lng: float = Query(.
     return Response(content=img, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
 
 
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
 async def _run_agent(req: AgentRequest, speak: bool) -> AgentResponse:
     res = await get_agent_provider().handle(req)
     logger.info("agent text=%r status=%s place=%s", req.text, res.status, res.place.name if res.place else None)
     if speak and res.reply:
-        audio_id = await voice.synthesize(res.reply)
+        # First sentence is spoken as soon as it's ready; the rest is generated in parallel.
+        first, *rest = SENTENCE_END.split(res.reply.strip(), maxsplit=1)
+        if rest:
+            res.audio_url_2 = f"/api/voice/audio/{voice.synthesize_later(rest[0])}"
+        with timing.stage("tts"):
+            audio_id = await voice.synthesize(first)
         if audio_id:
             res.audio_url = f"/api/voice/audio/{audio_id}"
     return res
 
 
+def _finish(res: AgentResponse, extra: Optional[dict] = None) -> AgentResponse:
+    res.timings = {**(extra or {}), **timing.current()}
+    res.timings["total"] = sum(v for k, v in res.timings.items() if k != "total")
+    logger.info("voice timings %s", " ".join(f"{k}={v}" for k, v in res.timings.items()))
+    return res
+
+
 @api.post("/agent", response_model=AgentResponse)
 async def agent(req: AgentRequest, speak: bool = Query(False)):
-    return await _run_agent(req, speak)
+    timing.begin()
+    return _finish(await _run_agent(req, speak))
+
+
+def _bg(coro) -> None:
+    t = asyncio.create_task(coro)
+    _BG.add(t)
+    t.add_done_callback(_BG.discard)
+
+
+_BG: set = set()
+WARM_TOP = 2
+
+
+async def _warm(lat: float, lng: float) -> None:
+    async def one(cat: str):
+        try:
+            res = await get_places_provider().search(cat, lat, lng)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("warm %s failed: %s", cat, e)
+            return
+        for p in res.places[:WARM_TOP]:
+            _bg(check_parking(p))
+    await asyncio.gather(*(one(c) for c in ("truck_stop", "hotel", "rest_area")))
+
+
+@api.post("/warm")
+async def warm(lat: float = Query(..., ge=-90, le=90), lng: float = Query(..., ge=-180, le=180)):
+    """Pre-fetch Places for all categories (+ satellite checks for the top 2) around the driver."""
+    _bg(_warm(lat, lng))
+    return {"ok": True}
 
 
 @api.post("/voice", response_model=AgentResponse)
@@ -109,8 +155,12 @@ async def voice_turn(
     active_place: Optional[str] = Form(None),  # JSON of the current destination Place
     session_id: Optional[str] = Form(None, max_length=64),  # live dialog id (conversation memory)
     truck_profile: Optional[str] = Form(None),  # JSON TruckProfile from the in-app editor
+    active_distance_mi: Optional[float] = Form(None, ge=0),
+    active_duration_min: Optional[int] = Form(None, ge=0),
 ):
-    data = await audio.read()
+    timing.begin()
+    with timing.stage("upload"):
+        data = await audio.read()
     if not data:
         raise HTTPException(status_code=400, detail="Empty audio")
     if len(data) > 25 * 1024 * 1024:
@@ -129,12 +179,39 @@ async def voice_turn(
     if "." not in name:
         name += ".webm" if "webm" in (audio.content_type or "") else ".m4a"
     try:
-        text = await voice.transcribe(data, name)
+        with timing.stage("stt"):
+            text = await voice.transcribe(data, name)
     except Exception:
         logger.exception("transcription failed")
         text = ""
     logger.info("voice transcript=%r", text)
-    return await _run_agent(AgentRequest(text=text, lat=lat, lng=lng, active_place=current, truck_profile=truck, session_id=session_id), speak=True)
+    req = AgentRequest(text=text, lat=lat, lng=lng, active_place=current, truck_profile=truck, session_id=session_id,
+                       active_distance_mi=active_distance_mi, active_duration_min=active_duration_min)
+    return _finish(await _run_agent(req, speak=True))
+
+
+@api.post("/voice/transcribe")
+async def voice_transcribe(audio: UploadFile = File(...)):
+    """Step 1 of a voice turn: speech -> text (the app shows it right away, then calls /agent?speak=true)."""
+    timing.begin()
+    with timing.stage("upload"):
+        data = await audio.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty audio")
+    if len(data) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Audio too long")
+    name = audio.filename or "speech.m4a"
+    if "." not in name:
+        name += ".webm" if "webm" in (audio.content_type or "") else ".m4a"
+    try:
+        with timing.stage("stt"):
+            text = await voice.transcribe(data, name)
+    except Exception:
+        logger.exception("transcription failed")
+        text = ""
+    t = timing.current()
+    logger.info("voice transcribe bytes=%d transcript=%r %s", len(data), text, " ".join(f"{k}={v}" for k, v in t.items()))
+    return {"transcript": text, "timings": t}
 
 
 class SpeakRequest(BaseModel):
@@ -186,7 +263,7 @@ async def onboarding_parse(audio: UploadFile = File(...), step: str = Form(...))
 
 @api.get("/voice/audio/{audio_id}")
 async def voice_audio(audio_id: str):
-    data = voice.get_audio(audio_id)
+    data = await voice.wait_audio(audio_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Audio not found")
     return Response(content=data, media_type="audio/mpeg")
