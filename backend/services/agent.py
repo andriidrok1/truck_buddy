@@ -283,14 +283,21 @@ class LlmAgentProvider:
 
         intent = d.get("intent")
         reply = str(d.get("reply") or "").strip()
-        current = req.active_place.id if req.active_place else None
+        # Current pick: the active route, or the last place chosen in this dialog.
+        last = req.active_place or (sess["places"][0] if sess["places"] else None)
+        current = last.id if last else None
         exclude = {current} if current else set()
+        if current and (intent == "pick" or (intent == "find" and last and d.get("category") == last.category)):
+            # "not that one" / "something else": never offer an already rejected place again in this dialog.
+            rejected = sess.setdefault("rejected", set())
+            rejected.add(current)
+            exclude = set(rejected)
         try:
             if intent == "pick":
                 place = pick_place(d, sess["places"])
                 if place and place.id != current:
                     return await self._route_to(req, place, sess["places"], text)
-                category = d.get("category") or (req.active_place.category if req.active_place else None)
+                category = d.get("category") or (last.category if last else None)
                 if category in CATEGORIES:
                     return await self._find(req, category, text, exclude)
                 return _not_understood(text, self.source)
