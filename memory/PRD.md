@@ -152,3 +152,4 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Web satellite map: pinch zooms around the fingers, mouse wheel around the cursor; no browser page-zoom on pinch.
 - CopilotSheet shows "Route ends at truck entrance" when the route ends at the E spot. Not pushed — awaiting user confirmation.
 - iOS earpiece fix (useVoice.ts): replies play in a playback-only session (PLAYBACK_MODE awaited before play()); recorder re-prepared only after a reply finishes / when idle, always after RECORD_MODE (shouldRouteThroughEarpiece:false => .defaultToSpeaker). Not pushed — awaiting iPhone confirmation.
+- One voice: ElevenLabs off by default (ELEVENLABS_ENABLED=1 turns it back on); all speech uses OpenAI female voice 'sage', fixed lines re-recorded in sage automatically.

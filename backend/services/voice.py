@@ -112,8 +112,10 @@ _FALLBACK_IDS: "OrderedDict[str, None]" = OrderedDict()  # audio ids spoken by t
 
 
 def eleven_voice() -> Optional[str]:
-    """ElevenLabs voice id when the key is set, else None (OpenAI is used)."""
-    if not os.environ.get("ELEVENLABS_API_KEY"):
+    """ElevenLabs voice id when enabled and the key is set, else None (OpenAI is used).
+    Off by default: the app speaks with one female OpenAI voice ("sage") everywhere.
+    Set ELEVENLABS_ENABLED=1 to switch back to ElevenLabs."""
+    if os.environ.get("ELEVENLABS_ENABLED") != "1" or not os.environ.get("ELEVENLABS_API_KEY"):
         return None
     return os.environ.get("ELEVENLABS_VOICE_ID") or ELEVEN_DEFAULT_VOICE
 
