@@ -8,7 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from typing import Literal, Optional
 
-from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
@@ -272,12 +272,30 @@ async def onboarding_parse(audio: UploadFile = File(...), step: str = Form(...))
     return {"transcript": text, "updates": updates}
 
 
+_RANGE = re.compile(r"bytes=(\d*)-(\d*)")
+
+
 @api.get("/voice/audio/{audio_id}")
-async def voice_audio(audio_id: str):
+async def voice_audio(audio_id: str, request: Request):
+    """mp3 with byte-range support (AVPlayer on iOS probes with Range: bytes=0-1)."""
     data = await voice.wait_audio(audio_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Audio not found")
-    return Response(content=data, media_type="audio/mpeg")
+    size = len(data)
+    headers = {"Accept-Ranges": "bytes", "Cache-Control": "private, max-age=3600"}
+    m = _RANGE.fullmatch((request.headers.get("range") or "").strip())
+    if not m or (not m.group(1) and not m.group(2)):
+        return Response(content=data, media_type="audio/mpeg", headers={**headers, "Content-Length": str(size)})
+    if m.group(1):
+        start = int(m.group(1))
+        end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+    else:  # suffix range: last N bytes
+        start, end = max(0, size - int(m.group(2))), size - 1
+    if start >= size or start > end:
+        return Response(status_code=416, headers={**headers, "Content-Range": f"bytes */{size}"})
+    chunk = data[start:end + 1]
+    return Response(content=chunk, status_code=206, media_type="audio/mpeg", headers={
+        **headers, "Content-Range": f"bytes {start}-{end}/{size}", "Content-Length": str(len(chunk))})
 
 
 app.include_router(api)

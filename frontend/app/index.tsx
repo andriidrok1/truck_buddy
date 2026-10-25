@@ -29,15 +29,17 @@ const REQUEST_TIMEOUT_MS = 60000;
 const STAGES = ["Searching nearby…", "Setting route…"];
 const STAGE_MS = 3500;
 const WAKE_SLEEP_MS = 10 * 60 * 1000; // background without a route: turn the wake word off
+const FILLER_DELAY_MS = 300; // answer faster than this: no filler at all
+// Shortest first: scheduleFiller() picks from the top more often.
 const FILLERS = [
-  "Alright, let me look.",
+  "Hang on.",
+  "On it.",
+  "Checking.",
   "Okay, one sec.",
   "Got it, checking.",
-  "Hang on.",
-  "Let me see what's around.",
-  "On it.",
   "Sure, one moment.",
-  "Checking.",
+  "Alright, let me look.",
+  "Let me see what's around.",
 ];
 
 export default function MapScreen() {
@@ -152,11 +154,29 @@ export default function MapScreen() {
     const done = voice.playAndWait(absoluteUrl(res.audio_url), Math.min(20000, 1500 + first.length * 65));
     if (!res.audio_url_2) return done;
     const myTurn = turn.current;
-    return done.then(() =>
-      myTurn === turn.current
-        ? voice.playAndWait(absoluteUrl(res.audio_url_2!), Math.min(20000, 1500 + (rest || res.reply).length * 65))
-        : undefined,
-    );
+    // Buffer the second half while the first plays, so it starts right after it (<150 ms gap).
+    const url2 = absoluteUrl(res.audio_url_2);
+    const next = voice.preload(url2);
+    const available = fetch(url2, { headers: { Range: "bytes=0-0" } })
+      .then((r) => r.ok)
+      .catch(() => false);
+    return done.then(async () => {
+      if (myTurn !== turn.current) {
+        next.remove();
+        return;
+      }
+      if (!(await available)) {
+        console.warn(`[voice] second half unavailable (${url2}); showing the full text instead`);
+        next.remove();
+        setCaption({ reply: res.reply, heard: res.transcript || undefined });
+        return;
+      }
+      if (myTurn !== turn.current) {
+        next.remove();
+        return;
+      }
+      return voice.playAndWait(next, Math.min(20000, 1500 + (rest || res.reply).length * 65));
+    });
   };
 
   // Instant acknowledgement while the real answer is on its way (cached TTS, rotated).
@@ -167,14 +187,32 @@ export default function MapScreen() {
       fillers.current = all.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
     });
   }, []);
-  /** Random acknowledgement, never the same twice in a row; skipped one time in four. */
-  const playFiller = () => {
+  /**
+   * Acknowledgement that starts after FILLER_DELAY_MS unless the answer is already there.
+   * Short fillers (listed first) are picked more often; never the same twice in a row; skipped 1 in 4.
+   * Returns `cancel()` (true if the filler hadn't started) and `done` (resolves when it finished).
+   */
+  const scheduleFiller = () => {
     const n = fillers.current.length;
-    if (!n || Math.random() < 0.25) return;
-    let i = Math.floor(Math.random() * n);
-    if (n > 1 && i === lastFiller.current) i = (i + 1 + Math.floor(Math.random() * (n - 1))) % n;
-    lastFiller.current = i;
-    voice.play(fillers.current[i]);
+    if (!n || Math.random() < 0.25) return null;
+    let i = Math.floor(n * Math.random() ** 2); // biased towards the short ones at the top
+    if (n > 1 && i === lastFiller.current) i = (i + 1) % n;
+    let started = false;
+    let resolveDone: () => void = () => {};
+    const done = new Promise<void>((r) => (resolveDone = r));
+    const timer = setTimeout(() => {
+      started = true;
+      lastFiller.current = i;
+      voice.playAndWait(fillers.current[i], 4000).then(resolveDone);
+    }, FILLER_DELAY_MS);
+    return {
+      done,
+      cancel: () => {
+        clearTimeout(timer);
+        if (!started) resolveDone();
+        return !started;
+      },
+    };
   };
 
   // Warm Places + parking caches around the driver: app on screen, no active route,
@@ -304,6 +342,7 @@ export default function MapScreen() {
     const ctrl = new AbortController();
     inflight.current = ctrl;
     const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+    let filler: ReturnType<typeof scheduleFiller> = null;
     try {
       let transcript = typed ?? "";
       if (typed === undefined) {
@@ -313,27 +352,32 @@ export default function MapScreen() {
       }
       if (myTurn !== turn.current) return;
       if (transcript) {
-        if (typed === undefined) playFiller(); // only when the driver actually said something
+        if (typed === undefined) filler = scheduleFiller(); // only when the driver actually said something
         setCaption({ reply: "…", heard: transcript });
       }
       const res = await api.agentSpeak(transcript, loc.coords, activeRef.current, ctrl.signal, dialog.current ?? undefined);
       if (myTurn !== turn.current) return;
+      // Fast answer: the filler never starts. Otherwise the answer waits for it to finish.
+      filler?.cancel();
+      const afterFiller = filler?.done ?? Promise.resolve();
+      const speak = () => afterFiller.then(() => (myTurn === turn.current ? sayReply(res) : undefined));
       if (res.status === "route_set" && res.place && res.route) {
         const others = res.options ?? [];
         setOptions(others);
         setParking({});
         setPlaces([res.place, ...others]);
         startRoute({ place: res.place, route: res.route, parking: res.parking });
-        const replyDone = sayReply(res);
+        const replyDone = speak();
         if (res.place.category !== "destination") followParking(res.place, replyDone, myTurn);
         endDialog(); // route is set: stop listening until the driver taps the mic again
       } else {
         if (typeof res.voice_guidance === "boolean") setVoiceOn(res.voice_guidance);
         if (res.status !== "chat" && res.status !== "not_understood") showToast(res.message ?? MESSAGES.notUnderstood);
         backToIdle();
-        continueDialog(myTurn, res, sayReply(res));
+        continueDialog(myTurn, res, speak());
       }
     } catch (e) {
+      filler?.cancel();
       if (myTurn !== turn.current) return;
       const err = String(e);
       const msg = err.includes("422")
@@ -346,6 +390,7 @@ export default function MapScreen() {
       continueDialog(myTurn, null, wait(1200));
     } finally {
       clearTimeout(timer);
+      if (myTurn !== turn.current) filler?.cancel(); // turn abandoned: never start its filler
       if (myTurn === turn.current) clearTimers();
     }
   };

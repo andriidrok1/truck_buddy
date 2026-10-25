@@ -80,3 +80,4 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Turn-by-turn from HERE actions (RouteInfo.maneuvers, imperial). Spoken prompts ~1 mi / ~0.5 mi-500 ft / at turn when voice on
 - Voice guidance on/off: banner button (persisted) + agent intent "voice" (AgentResponse.voice_guidance)
 - Fix: speech cut-off — playAndWait safety timer now only guards never-started playback; after start waits real audio duration +2.5s. Turn prompts never interrupt the copilot.
+- Voice cut-off fixes (iter14): filler awaited before reply + skipped if answer <300ms; 2nd half preloaded (gap ~100ms web), 404 → console.warn + full caption; playAndWait safety = remaining + dur*0.5 + 2s, armed only when playing & not buffering, listeners removed; /api/voice/audio supports Range (206/416, Accept-Ranges). Logs: [voice] play start/didJustFinish/gap.

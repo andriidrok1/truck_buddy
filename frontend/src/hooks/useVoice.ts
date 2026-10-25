@@ -32,6 +32,9 @@ export function useVoice() {
   const recorder = useAudioRecorder(SPEECH_PRESET);
   const player = useRef<AudioPlayer | null>(null);
   const playDone = useRef<(() => void) | null>(null);
+  const subs = useRef(new Map<AudioPlayer, { remove: () => void }>());
+  const startedAt = useRef(new Map<AudioPlayer, number>());
+  const lastFinishAt = useRef(0);
   const listenToken = useRef(0);
   const finishNow = useRef(false);
   const finishListening = useCallback(() => {
@@ -52,7 +55,13 @@ export function useVoice() {
   }, []);
 
   const stopSpeaking = useCallback(() => {
-    player.current?.remove();
+    const p = player.current;
+    if (p) {
+      subs.current.get(p)?.remove();
+      subs.current.delete(p);
+      startedAt.current.delete(p);
+      p.remove();
+    }
     player.current = null;
     setSpeaking(false);
     playDone.current?.();
@@ -130,39 +139,56 @@ export function useVoice() {
   );
 
   const play = useCallback(
-    (uri: string) => {
+    (source: string | AudioPlayer) => {
       stopSpeaking();
-      const p = createAudioPlayer({ uri });
+      const p = typeof source === "string" ? createAudioPlayer({ uri: source }) : source;
       player.current = p;
       setSpeaking(true);
-      p.addListener("playbackStatusUpdate", (s) => {
-        if (s.didJustFinish && player.current === p) stopSpeaking();
+      const sub = p.addListener("playbackStatusUpdate", (s) => {
+        if (player.current !== p) return;
+        if (s.playing && startedAt.current.get(p) === undefined) {
+          const now = Date.now();
+          startedAt.current.set(p, now);
+          console.log(`[voice] play start t=${now}${lastFinishAt.current ? ` gap=${now - lastFinishAt.current}ms` : ""}`);
+        }
+        if (s.didJustFinish) {
+          lastFinishAt.current = Date.now();
+          console.log(`[voice] didJustFinish t=${lastFinishAt.current} dur=${Math.round((s.duration || 0) * 1000)}ms`);
+          stopSpeaking();
+        }
       });
+      subs.current.set(p, sub);
       p.play();
     },
     [stopSpeaking],
   );
 
+  /** Creates a paused player so the file is already buffered when it's time to play it. */
+  const preload = useCallback((uri: string) => createAudioPlayer({ uri }), []);
+
   /**
    * Plays and resolves when finished. `maxMs` only guards playback that never starts
-   * (e.g. autoplay blocked); once audio plays, it runs to the end (real duration + margin).
+   * (e.g. autoplay blocked). Once audio really plays (not buffering), the safety timer is
+   * the remaining duration + duration*0.5 + 2 s.
    */
   const playAndWait = useCallback(
-    (uri: string, maxMs: number) =>
+    (source: string | AudioPlayer, maxMs: number) =>
       new Promise<void>((resolve) => {
-        play(uri);
+        play(source);
         const p = player.current;
         let timer = setTimeout(() => stopSpeaking(), Math.max(maxMs, 6000));
-        let started = false;
-        p?.addListener("playbackStatusUpdate", (s) => {
-          if (started || player.current !== p || !s.playing) return;
-          started = true;
+        let armed = false;
+        const sub = p?.addListener("playbackStatusUpdate", (s) => {
+          if (armed || player.current !== p || !s.playing || s.isBuffering) return;
+          armed = true;
           clearTimeout(timer);
-          const left = s.duration > 0 ? (s.duration - (s.currentTime || 0)) * 1000 : 60000;
-          timer = setTimeout(() => player.current === p && stopSpeaking(), left + 2500);
+          const dur = s.duration > 0 ? s.duration * 1000 : 0;
+          const left = dur ? dur - (s.currentTime || 0) * 1000 + dur * 0.5 + 2000 : 60000;
+          timer = setTimeout(() => player.current === p && stopSpeaking(), left);
         });
         playDone.current = () => {
           clearTimeout(timer);
+          sub?.remove();
           resolve();
         };
       }),
@@ -186,6 +212,7 @@ export function useVoice() {
     listen,
     finishListening,
     play,
+    preload,
     playAndWait,
     stopSpeaking,
     speaking,
