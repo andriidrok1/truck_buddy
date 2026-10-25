@@ -1,0 +1,52 @@
+{
+  "summary": "Iteration 10 (test files named iter11): tested the conversational voice changes on backend and frontend. Everything requested works. spoken(): 26/26 spec cases pass, including 'US-50 & Howe Ave' -> 'U.S. 50 and Howe Avenue' (no 'U.South'), '2 h 49 min' -> 'two hours fifty', 12.4 -> 'about twelve miles', 13 -> 'about fifteen minutes', DEF -> D-E-F, and '·', '/', '()', '[]' removed. _route_reply: the toll notice comes out as 'Heads up, couldn't dodge all the tolls on this one.', truck_stop/hotel/rest_area have 4 variants each and destination has 3, and the first name appears on turns 3 and 6 only. Live 5-turn dialog as Mike (fuel -> not that one -> something else -> motel -> Reno), run with and without active_place: every turn route_set, 3 different truck stops with no rejected place repeated, intros rotate, 'Mike' only on turn 3, audio_url and audio_url_2 both serve audio/mpeg, timings.tts is 220-360 ms. /api/speak: default, Brian, Chris and Laura give 4 different ids; repeating the same voice and text gives the same id; 4 invalid voice ids return 422. 8 parallel /api/speak calls all returned 200, ElevenLabs answered 200 each time, and there were no 429, 'busy' or 'falling back' log lines. /api/health shows tts=elevenlabs. The existing suite (iter7, iter9, iter10) passes 31/31. Frontend smoke on a 390x844 viewport: map-screen loads, 'Tap to talk' shows, exactly 8 /api/speak calls and 1 /api/warm, no console errors. No deprecated Expo packages (expo-audio is used). Remaining findings are minor edge cases in spoken() and in sentence splitting.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "services/speech_text.py spoken()", "issue": "'St.' before a name is read as Street: 'St. Louis' -> 'Street Louis', 'St. George, UT' -> 'Street George'. 'Dr. Martin Luther King Jr Blvd' -> 'Drive Martin Luther King Jr Boulevard'. Rules at lines 73 and 77 don't tell a prefix (Saint/Doctor) from a suffix (Street/Drive)."},
+      {"endpoint": "services/speech_text.py spoken()", "issue": "The slash rule (line 94) turns '24/7' into '24 or 7' ('Open 24/7' is common for truck stops). 'Main St. Next exit' -> 'Main Street Next exit': the period is dropped, so the sentence boundary is lost."},
+      {"endpoint": "services/speech_text.py _miles/_minutes", "issue": "Small values are vague or odd: 0.1, 0.2 and 0.7 mi all become 'about half a mile'. '58 min' -> 'about sixty minutes' ('about an hour' would sound better). '2 h 3 min' -> 'two hours five'."},
+      {"endpoint": "server.py _run_agent SENTENCE_END split", "issue": "The reply is split for TTS at the first '. '. A destination like 'Okay, we're headed to St. Louis. That's ...' splits after 'St.', so audio part 1 is 'Okay, we're headed to Street' and part 2 starts with 'Louis.'"},
+      {"endpoint": "services/agent.py choose_place", "issue": "Once every place in a category has been rejected (4 mock truck stops), the next 'not that one' silently brings back the first rejected place (Capitol Truck Plaza) with a fresh 'Alright, got one.' intro. The fallback 'pool = ... or found' at line 171 hides this. It would be better to say that's all nearby, or to admit it's going back to an earlier one."},
+      {"endpoint": "services/agent.py pick path (line 297-299)", "issue": "The pick path only checks place.id != current, not the rejected set. If the LLM gives a place_index that points at an earlier rejected place for 'not that one', that place is offered again. This did not happen in the runs here (the LLM chose well), but the code does not prevent it."},
+      {"endpoint": "Fillers + _AUDIO_CACHE (voice.py _CACHE_MAX=50)", "issue": "The app fetches the 8 filler URLs once on mount. Each turn adds about 2 audio ids to a cache of 50 shared by all clients, so filler ids get evicted after about 20 turns, or right away on a backend reload. After that the stale URLs return 404 and the fillers go silent until the app is remounted."},
+      {"endpoint": "backend dev reload", "issue": "uvicorn WatchFiles also watches /app/backend/tests, so creating or editing a test file reloads the backend and clears sessions and caches (this happened during this run)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Filler playback", "issue": "Filler URLs are prefetched only once and go stale after backend cache eviction or restart (see backend minor issue), so fillers stop playing without any error.", "affected_testIDs": []}
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter11_speech_text.py",
+    "/app/backend/tests/test_iter11_conversational.py",
+    "/app/test_reports/pytest/pytest_iter11_unit.xml",
+    "/app/test_reports/pytest/pytest_iter11_api.xml",
+    "/app/test_reports/pytest/pytest_iter11_existing.xml"
+  ],
+  "action_items": [
+    "spoken(): read 'St.'/'Dr.' as Saint/Doctor when followed by a capitalized word (St. Louis, St. George, Dr. Martin Luther King). Keep Street/Drive at the end or before a comma. Keep the sentence-ending period after an expanded 'St.'",
+    "spoken(): special-case '24/7' -> 'twenty-four seven' before the slash rule",
+    "server.py SENTENCE_END: don't split after abbreviations such as St., Dr., U.S., Mt. (use a negative lookbehind or a small abbreviation list)",
+    "agent.py: when every candidate has been rejected, reply e.g. 'That's all I've got nearby, going back to <name>.' instead of silently repeating. Optionally also skip rejected ids in the pick path unless the driver names the place explicitly",
+    "Fillers: re-fetch filler URLs on 404 or when the dialog starts, or keep filler audio in a cache that doesn't evict (pinned)",
+    "Optional: exclude tests/ from uvicorn --reload watch"
+  ],
+  "critical_code_review_comments": [
+    "voice.py: the semaphore (2) plus one 429 retry with a 0.4 s sleep is correct. 429 does not start the cooldown, while exceptions and other non-200 codes do. The semaphore wait is outside the 8 s timeout, which is fine.",
+    "voice.py synthesize(): spoken() is applied to text, previous_text and next_text. Captions are unchanged, as specified.",
+    "Driver name rotation is shared across categories within a session (n % 3 == 2), as intended.",
+    "Caption shows 'about 5.0 miles': _miles formats with .1f, so whole numbers keep '.0'. Cosmetic only."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter11_speech_text.py", "/app/backend/tests/test_iter11_conversational.py"],
+  "success_rate": {"backend": "100% of requested checks (71/71 incl. existing; 2 extra edge cases xfail)", "frontend": "100% smoke"},
+  "seed_data_creation": "None. Only in-memory TEST_ sessions and TEST_ /api/speak texts.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run with: cd /app/backend && export $(grep EXPO_PUBLIC_BACKEND_URL ../frontend/.env | xargs) && python -m pytest -q tests/test_iter11_*.py (pytest.ini adds -n; use -n 0 to see printed dialog replies). Mock truck stops: Capitol, Sierra, Delta, Northgate. Backend log timestamps are in 2026-10-25 server time. Other agents may hit the backend at the same time, so attribute log lines carefully. ElevenLabs voice in .env is q1OMOTZNtqpS50TIQtu4.",
+  "rca_of_issue": "Earlier 429 'concurrent_limit_exceeded' lines (06:14-06:15) come from before the semaphore fix. None appeared after 06:16, including 8+8 parallel /api/speak bursts and one burst running alongside an agent turn (agent tts 361 ms under load vs 227 ms alone)."
+}

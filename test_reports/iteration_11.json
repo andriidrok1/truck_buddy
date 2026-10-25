@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 11, backend only: checked the fixes for the minor bugs from iteration 10. All listed fixes work. spoken(): all 10 requested cases pass (Saint, Doctor, 'Main Street. Next exit', twenty-four seven, less than half a mile, about half a mile, about an hour, U.S. 50), plus 5 regression cases. SENTENCE_END no longer splits after St., Dr. or U.S. Captions show '5' and '4.9 miles' (no trailing .0). Live dialog ('I need fuel' then repeated 'not that one', with and without active_place): 4 different truck stops, none repeated, then status=chat with the ALL_REJECTED line. /api/speak 'Okay, one sec.' twice gives the same 32-hex id. That audio is 200 audio/mpeg on localhost and on the public URL, and still 200 after `supervisorctl restart backend`. The requested suite plus the new test_iter12_fixes.py: 93/93 passed in 2 of 3 runs. One run had 3 failures in test_iter11_conversational [dialog]; they passed on rerun and in 4 more isolated runs. New issue: after the ALL_REJECTED line, the driver cannot go back to any place; see action_items.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "services/agent.py _handle/_find (ALL_REJECTED dead end)", "issue": "The copilot says 'Want me to go back to one of them?', but the rejected set is never cleared, and both the pick path and the find path exclude it. Driver replies 'yes, go back to the first one' or 'take the Pilot', and 'I need fuel' as well, all get the same ALL_REJECTED line again. The session loops and truck stops are unusable for the rest of the dialog. Reproduced live with /tmp/probe_back.py."},
+      {"endpoint": "POST /api/speak after restart", "issue": "After a restart, _SPEAK_CACHE is empty, so the first /speak per fixed line calls ElevenLabs again and rewrites the file, even though .tts_cache/{sha1(key)[:32]}.mp3 already exists. The id stays stable, but there is one extra paid TTS call per fixed line per restart (logs show ElevenLabs 200 after the restart). Fix: compute the stable id from the key and check voice.get_audio(stable) before synthesize."},
+      {"endpoint": "services/voice.py pin()", "issue": "The original uuid entry stays in _AUDIO_CACHE next to the stable copy, so each pinned line is held in memory twice. Minor."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []},
+  "test_report_links": ["/app/backend/tests/test_iter12_fixes.py", "/app/test_reports/pytest/iter12_results.xml"],
+  "action_items": [
+    "agent.py: make the 'go back to one of them' offer work. After ALL_REJECTED, either clear sess['rejected'] for that category, or allow an explicit pick (by index or name) of a rejected place when the previous reply was ALL_REJECTED. A fresh 'find' of the same category should also be able to start over.",
+    "server.py /speak: check the on-disk pin (stable id from the key) before synthesizing, so restarts don't re-bill ElevenLabs for fixed lines.",
+    "Optional: test_iter11_conversational [dialog] (no active_place) failed once in 7 runs under -n 4 (it depends on LLM classification). Consider a retry or a looser assertion."
+  ],
+  "critical_code_review_comments": [
+    "The SENTENCE_END lookbehinds also suppress real sentence ends such as 'Turn onto Elm Dr. Then ...'. The reply then just isn't split there, which is acceptable.",
+    "The Saint/Doctor rule depends on a capitalised next word plus a small negative list (Next, Then, Turn, The). Other sentence starters after a street suffix, e.g. 'Main St. Exit 12' or 'Oak Dr. Keep left', would be read as Saint or Doctor."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter12_fixes.py (new)"],
+  "success_rate": {"backend": "100% of the requested fixes verified (93/93 suite in 2 of 3 runs; 1 flaky LLM-dependent dialog test)", "frontend": "not tested (backend only)"},
+  "flaky_tests": ["test_iter11_conversational.py::test_every_turn_route_set[dialog], test_rejected_places_not_repeated[dialog], test_templates_rotate_and_name[dialog]: failed in 1 of 7 runs, passed on rerun"],
+  "seed_data_creation": "None. Sessions are prefixed TEST_ and kept in memory only.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && EXPO_PUBLIC_BACKEND_URL=http://localhost:8001 python -m pytest -q -n 4 tests/test_iter7_latency.py tests/test_iter9_dialog.py tests/test_iter10_elevenlabs.py tests/test_iter11_speech_text.py tests/test_iter11_conversational.py tests/test_iter12_fixes.py. Places are MOCKED demo data with 4 truck stops near Sacramento. The pinned id for 'Okay, one sec.' with the default voice is 600681590d830523dedf15e9adb558bf.",
+  "rca_of_issue": "ALL_REJECTED loop: in agent._handle, every pick, and every find of the same category as the last place, adds `current` to sess['rejected'] and uses it as `exclude`. pick_place results inside exclude are dropped, and _find returns ALL_REJECTED when every place found is excluded. Nothing ever clears the set, so the offer to go back cannot be accepted. Steps: 'I need fuel', then 'not that one' x4, then 'yes, go back to the first one' gives ALL_REJECTED again."
+}
