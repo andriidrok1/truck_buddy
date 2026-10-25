@@ -141,6 +141,8 @@ export default function TruckProfileScreen() {
             value={hazmat}
             onValueChange={setHazmat}
             trackColor={{ true: colors.warning, false: colors.surfaceTertiary }}
+            thumbColor={colors.surface}
+            {...(Platform.OS === "web" ? { activeThumbColor: colors.surface } : {})}
           />
         </View>
 
@@ -156,6 +158,8 @@ export default function TruckProfileScreen() {
             value={handsFree}
             onValueChange={setHandsFree}
             trackColor={{ true: colors.brandPrimary, false: colors.surfaceTertiary }}
+            thumbColor={colors.surface}
+            {...(Platform.OS === "web" ? { activeThumbColor: colors.surface } : {})}
           />
         </View>
 

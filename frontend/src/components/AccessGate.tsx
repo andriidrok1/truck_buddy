@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ActivityIndicator, Image, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -88,6 +88,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     letterSpacing: 2,
     textAlign: "center",
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}),
   },
   error: { fontFamily: fonts.medium, fontSize: 14 },
   buttonWrap: { alignSelf: "stretch" },

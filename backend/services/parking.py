@@ -229,6 +229,9 @@ NEGATIVE_TIP = re.compile(
 async def check_parking(place: Place, approach=None) -> ParkingCheck:
     """Single-flight wrapper: concurrent checks of the same place share one vision call.
     With an approach (route set), the entry tip is rewritten relative to the driver."""
+    if place.id.startswith("here-town-"):  # a satellite frame of a town center says nothing about truck parking
+        return ParkingCheck(verdict="unclear", label="No parking check for a town",
+                            reason="Ask for a truck stop or give an address to check the parking.", source="none")
     k = _key(place.lat, place.lng) + (":listed" if listed_in_data(place) else "")
     if approach is not None:
         from services import approach as approach_mod  # lazy: approach imports this module

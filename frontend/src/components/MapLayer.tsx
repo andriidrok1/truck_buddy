@@ -196,7 +196,7 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
       {active && dest && (
         <>
           <View style={{ position: "absolute", left: dest.x, top: dest.y - 50 }} pointerEvents="none">
-            <DestinationLabel name={active.place.name} />
+            <DestinationLabel name={active.place.name.split(",")[0]} />
           </View>
           <View testID="map-destination-pin" style={{ position: "absolute", left: dest.x - PIN_W / 2, top: dest.y - PIN_H }} pointerEvents="none">
             <Pin category={active.place.category} selected />

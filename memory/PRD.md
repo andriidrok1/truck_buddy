@@ -122,3 +122,9 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - STT model: gpt-4o-mini-transcribe (json, en, trucking prompt, temp 0); whisper-1 + confidence guard only as fallback on error
 - Agent prompt: words come from noisy-cab speech recognition; act on the corrected trucker meaning ("a few" = fuel, "the stars are out" = start the route), never invent destinations
 - Mic: pause also detected when the level drops 14 dB under the driver's average voice this turn (loud cab noise no longer keeps the mic open)
+
+## Jun 2026 — Google-Maps-style top bar, UI polish
+- TopBar: "Where to?" search (sends "Take me to …", shows "To: <dest>" while routing), truck settings button on the right (hazmat dot), memory button under it; menu button removed. Light theme only
+- Polish: no web focus outline on inputs, white switch thumbs, sheet title "Ask your copilot", destination label/search show only the name before the comma
+- Town destinations (HERE locality/area, id here-town-*) skip the satellite check: "No parking check for a town"
+- NOTE: ElevenLabs quota is exhausted (0 credits) -> TTS falls back to OpenAI; TTS latency/cache tests fail until topped up

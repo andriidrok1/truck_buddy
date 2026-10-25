@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import Animated, { FadeIn } from "react-native-reanimated";
 
@@ -116,7 +116,7 @@ export function CopilotSheet(props: Props) {
       <Animated.View key={`head-${phase}`} entering={FadeIn.duration(220)} style={styles.header}>
         {phase === "ready" && (
           <Text testID="sheet-title" style={[styles.title, { color: colors.onSurface }]}>
-            Where to next?
+            Ask your copilot
           </Text>
         )}
         {phase === "listening" && (
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
   goBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, height: 52, borderRadius: 26, marginTop: spacing.sm },
   goText: { fontFamily: fonts.bold, fontSize: 18 },
   inputRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.md },
-  input: { flex: 1, minWidth: 0, width: 0, minHeight: 52, borderRadius: 26, paddingHorizontal: spacing.lg, fontFamily: fonts.medium, fontSize: 16 },
+  input: { flex: 1, minWidth: 0, width: 0, minHeight: 52, borderRadius: 26, paddingHorizontal: spacing.lg, fontFamily: fonts.medium, fontSize: 16, ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}) },
   roundBtn: { flexShrink: 0, width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center" },
   sheet: {
     borderTopLeftRadius: 28,

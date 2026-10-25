@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { Platform, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import { Icon } from "./Icon";
@@ -41,7 +41,7 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, on
             value={text}
             onChangeText={setText}
             onSubmitEditing={submit}
-            placeholder={destination ? `To: ${destination}` : "Where to?"}
+        placeholder={destination ? `To: ${destination.split(",")[0]}` : "Where to?"}
             placeholderTextColor={destination ? colors.onSurface : colors.muted}
             returnKeyType="search"
             autoCorrect={false}
@@ -95,7 +95,7 @@ const styles = StyleSheet.create({
     paddingRight: spacing.sm,
     gap: spacing.sm,
   },
-  input: { flex: 1, height: 56, fontFamily: fonts.medium, fontSize: 17 },
+  input: { flex: 1, minWidth: 0, height: 56, fontFamily: fonts.medium, fontSize: 17, ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}) },
   go: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   circle: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
   hazmat: {

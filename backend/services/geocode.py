@@ -107,7 +107,9 @@ def _here_item(it: dict, at: tuple[float, float]) -> Optional[Place]:
     if not pos:
         return None
     addr = (it.get("address") or {}).get("label")
-    return _place(f"here-{it.get('id')}", it.get("title") or addr or "Destination", pos["lat"], pos["lng"], addr, at)
+    town = it.get("resultType") in AREA_TYPES  # a whole town: no satellite parking check
+    return _place(f"here-{'town-' if town else ''}{it.get('id')}", it.get("title") or addr or "Destination",
+                  pos["lat"], pos["lng"], addr, at)
 
 
 async def _here(q: str, lat: float, lng: float) -> list[Place]:
