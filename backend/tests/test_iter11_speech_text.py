@@ -54,7 +54,6 @@ def test_spoken_route_summary():
 
 
 # Edge cases likely in real addresses / place names (known issues reported in iteration 11)
-@pytest.mark.xfail(reason="iter11: 'St.' before a name -> 'Street', '24/7' -> '24 or 7'", strict=False)
 @pytest.mark.parametrize("raw,bad", [
     ("Route to St. Louis is set", "Street Louis"),
     ("Open 24/7 with showers", "24 or 7"),
