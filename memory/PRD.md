@@ -112,3 +112,8 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 ## Jun 2026 — Fuel stops vs truck stops, nearby truck lot
 - truck_stop results with no truck-stop name (Love's, Pilot, Flying J, TA, Petro, Sapp Bros, Roady's, truck stop, travel center/plaza) and satellite "unlikely" are demoted; named truck stops preferred when verdicts are unknown; if only such places are left the reply calls it "a fuel stop"
 - Vision JSON has optional "nearby" {direction, kind: public lot | private yard}: only with "unlikely"; appended to reason and spoken line ("There's a lot with trailers to the southwest, looks like a private yard."); spots stay at the place
+
+## Jun 2026 — Google truck_stop filter
+- Drop truck_stop results named truck wash/scale/restaurant/taqueria/tacos/tech/office or with restaurant/cafe/car_wash/office primaryType; keep only truck_stop+fuel type or chain/truck-stop name (chain name always wins)
+- Dedupe: 60 m, or 500 m with the same name; curated MOCK_PLACES merged into Google results and preferred
+- Raw Google list (name, primaryType, types, km, drop reason) logged per search
