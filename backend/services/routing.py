@@ -66,6 +66,9 @@ async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile) -> 
     }
     if t.hazmat:
         params["vehicle[shippedHazardousGoods]"] = HERE_HAZMAT
+    avoid = (["tollRoad"] if t.avoid_tolls else []) + (["ferry", "tunnel"] if t.avoid_ferries_tunnels else [])
+    if avoid:
+        params["avoid[features]"] = ",".join(avoid)
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.get(HERE_URL, params=params)
     if r.is_error:
@@ -87,10 +90,10 @@ def _friendly(codes: List[str]) -> List[str]:
     out = []
     for c in codes:
         lc = c.lower()
-        if "restriction" in lc or "violated" in lc:
+        if lc == "tollroad" or "toll" in lc:
+            msg = "Tolls couldn't be fully avoided on this route."
+        elif "restriction" in lc or "violated" in lc:
             msg = "Part of the route may be restricted for your truck. Watch posted signs."
-        elif "toll" in lc:
-            msg = "Route includes tolls."
         elif "ferry" in lc:
             msg = "Route includes a ferry."
         elif lc:
@@ -116,6 +119,9 @@ async def _ors(fl: float, fg: float, tl: float, tg: float, t: TruckProfile) -> R
             }},
         },
     }
+    avoid = (["tollways"] if t.avoid_tolls else []) + (["ferries"] if t.avoid_ferries_tunnels else [])
+    if avoid:
+        body["options"]["avoid_features"] = avoid
     headers = {"Authorization": os.environ["ORS_API_KEY"], "Content-Type": "application/json"}
     async with httpx.AsyncClient(timeout=25) as client:
         r = await client.post(ORS_URL, headers=headers, json=body)

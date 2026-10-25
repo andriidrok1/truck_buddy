@@ -88,7 +88,7 @@ class TestNotices:
         sys.path.insert(0, "/app/backend")
         from services.routing import _friendly
         out = _friendly(["violatedVehicleRestriction", "violatedVehicleRestriction", "tollsDataUnavailable", ""])
-        assert out == ["Part of the route may be restricted for your truck. Watch posted signs.", "Route includes tolls."]
+        assert out == ["Part of the route may be restricted for your truck. Watch posted signs.", "Tolls couldn't be fully avoided on this route."]
 
 
 # (7) /api/route destination -> parking None

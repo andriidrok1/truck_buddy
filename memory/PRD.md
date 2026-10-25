@@ -47,3 +47,9 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Editable truck profile (/truck-profile; height ft/in, trailer ft, weight lb, hazmat) stored on device, sent with every request; chip in top bar + hazmat badge
 - Keys: HERE_API_KEY, ORS_API_KEY (backend)
 - Backlog: real places for stops (Google key), turn-by-turn guidance in app, E/P spots on map (map agent)
+
+## 2026-06 — First-run onboarding ("let's get to know each other")
+- /onboarding: copilot speaks each step (POST /api/speak TTS); driver answers by voice (POST /api/onboarding/parse → Whisper + gpt-5.4-mini extraction) or inputs
+- Steps: name → truck (height/trailer/weight/hazmat) → preferences list (avoid tolls, avoid ferries & tunnels, favorite chains, break reminder) → summary → map
+- Stored in the truck profile (device); sent with every request; HERE avoid[features], ORS avoid_features; agent uses name + favorite chains
+- Break reminder spoken every N hours of an active route; menu button reopens onboarding

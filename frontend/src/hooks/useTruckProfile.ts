@@ -2,10 +2,30 @@ import { useEffect, useState } from "react";
 
 import { storage } from "../utils/storage";
 
-export type TruckProfile = { height_in: number; trailer_ft: number; weight_lb: number; hazmat: boolean };
+export type TruckProfile = {
+  height_in: number;
+  trailer_ft: number;
+  weight_lb: number;
+  hazmat: boolean;
+  // Driver preferences collected during onboarding
+  driver_name?: string | null;
+  avoid_tolls?: boolean;
+  avoid_ferries_tunnels?: boolean;
+  favorite_chains?: string[];
+  break_hours?: number | null;
+};
 
 export const DEFAULT_TRUCK: TruckProfile = { height_in: 162, trailer_ft: 53, weight_lb: 80000, hazmat: false };
 const KEY = "truck_profile_v1";
+const ONBOARDED_KEY = "onboarded_v1";
+
+export async function isOnboarded() {
+  return (await storage.getItem(ONBOARDED_KEY, false as boolean)) === true;
+}
+
+export async function setOnboarded() {
+  await storage.setItem(ONBOARDED_KEY, true);
+}
 
 export function truckLabel(t: TruckProfile) {
   return `${Math.floor(t.height_in / 12)}'${t.height_in % 12}" · ${t.trailer_ft}' · ${Math.round(t.weight_lb / 1000)}k lb`;

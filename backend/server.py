@@ -20,7 +20,8 @@ from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.routing import get_routing_provider  # noqa: E402
-from services import voice  # noqa: E402
+from services import onboarding, voice  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("truckbuddy")
@@ -133,6 +134,47 @@ async def voice_turn(
         text = ""
     logger.info("voice transcript=%r", text)
     return await _run_agent(AgentRequest(text=text, lat=lat, lng=lng, active_place=current, truck_profile=truck), speak=True)
+
+
+class SpeakRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=600)
+
+
+_SPEAK_CACHE: dict[str, str] = {}
+
+
+@api.post("/speak")
+async def speak(req: SpeakRequest):
+    """TTS for fixed copilot lines (onboarding, reminders). Cached per text."""
+    audio_id = _SPEAK_CACHE.get(req.text)
+    if not audio_id or voice.get_audio(audio_id) is None:
+        audio_id = await voice.synthesize(req.text)
+        if not audio_id:
+            raise HTTPException(status_code=502, detail="Voice unavailable")
+        if len(_SPEAK_CACHE) >= 200:
+            _SPEAK_CACHE.pop(next(iter(_SPEAK_CACHE)))
+        _SPEAK_CACHE[req.text] = audio_id
+    return {"audio_url": f"/api/voice/audio/{audio_id}"}
+
+
+@api.post("/onboarding/parse")
+async def onboarding_parse(audio: UploadFile = File(...), step: str = Form(...)):
+    if step not in ("name", "truck", "prefs"):
+        raise HTTPException(status_code=422, detail="Invalid step")
+    data = await audio.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty audio")
+    if len(data) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Audio too long")
+    name = audio.filename or "speech.m4a"
+    try:
+        text = await voice.transcribe(data, name)
+    except Exception:
+        logger.exception("transcription failed")
+        text = ""
+    updates = await onboarding.extract(step, text)
+    logger.info("onboarding step=%s transcript=%r updates=%s", step, text, updates)
+    return {"transcript": text, "updates": updates}
 
 
 @api.get("/voice/audio/{audio_id}")

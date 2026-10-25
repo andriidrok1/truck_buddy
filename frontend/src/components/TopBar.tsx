@@ -9,11 +9,12 @@ type Props = {
   truckLabel: string;
   hazmat: boolean;
   onTruckPress: () => void;
+  onMenuPress: () => void;
   isDemo: boolean;
   onLayout: (h: number) => void;
 };
 
-export function TopBar({ topInset, truckLabel, hazmat, onTruckPress, isDemo, onLayout }: Props) {
+export function TopBar({ topInset, truckLabel, hazmat, onTruckPress, onMenuPress, isDemo, onLayout }: Props) {
   const { colors } = useTheme();
   const card = [styles.white, shadow(colors), { backgroundColor: colors.surface }];
 
@@ -24,7 +25,7 @@ export function TopBar({ topInset, truckLabel, hazmat, onTruckPress, isDemo, onL
       onLayout={(e) => onLayout(e.nativeEvent.layout.height)}
     >
       <View style={styles.row} pointerEvents="box-none">
-        <PressableScale testID="menu-button" accessibilityLabel="Menu" style={[card, styles.circle]}>
+        <PressableScale testID="menu-button" accessibilityLabel="Menu" onPress={onMenuPress} style={[card, styles.circle]}>
           <Icon name="menu" size={24} color={colors.onSurface} />
         </PressableScale>
 

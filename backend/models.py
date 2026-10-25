@@ -76,6 +76,12 @@ class TruckProfile(BaseModel):
     trailer_ft: int = Field(53, ge=10, le=65)
     weight_lb: int = Field(80000, ge=5000, le=200000)
     hazmat: bool = False
+    # Driver preferences from onboarding
+    driver_name: Optional[str] = Field(None, max_length=40)
+    avoid_tolls: bool = False
+    avoid_ferries_tunnels: bool = False
+    favorite_chains: List[str] = Field(default_factory=list, max_length=8)
+    break_hours: Optional[int] = Field(None, ge=1, le=14)
 
     @property
     def total_length_ft(self) -> int:
@@ -86,6 +92,21 @@ class TruckProfile(BaseModel):
         h = f"{self.height_in // 12} ft {self.height_in % 12} in"
         return (f"{h} tall, {self.trailer_ft} ft trailer (~{self.total_length_ft} ft total), "
                 f"{self.weight_lb:,} lb gross{', hazmat' if self.hazmat else ''}")
+
+    @property
+    def prefs_label(self) -> str:
+        p = []
+        if self.driver_name:
+            p.append(f"Driver's name: {self.driver_name} (use it now and then, not every reply)")
+        if self.avoid_tolls:
+            p.append("avoids toll roads")
+        if self.avoid_ferries_tunnels:
+            p.append("avoids ferries and tunnels")
+        if self.favorite_chains:
+            p.append("favorite truck stop chains: " + ", ".join(self.favorite_chains))
+        if self.break_hours:
+            p.append(f"wants a break reminder every {self.break_hours} h")
+        return "; ".join(p) or "none"
 
 
 class RouteRequest(BaseModel):

@@ -88,7 +88,7 @@ export default function TruckProfileScreen() {
 
   const onSave = async () => {
     if (!valid) return;
-    await saveTruckProfile({ height_in: v.feet * 12 + v.inches, trailer_ft: v.trailer, weight_lb: v.weight, hazmat });
+    await saveTruckProfile({ ...truck, height_in: v.feet * 12 + v.inches, trailer_ft: v.trailer, weight_lb: v.weight, hazmat });
     close();
   };
 

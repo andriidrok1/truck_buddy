@@ -33,6 +33,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ text, lat: at.lat, lng: at.lng, truck_profile: getTruckProfile() }),
     }),
+  speak: (text: string) => request<{ audio_url: string }>(`/speak`, { method: "POST", body: JSON.stringify({ text }) }),
+  onboardingParse: async (uri: string, step: "name" | "truck" | "prefs") => {
+    const web = uri.startsWith("blob:") || uri.startsWith("data:");
+    const res = await uploadForm(`${BASE}/onboarding/parse`, {
+      fields: { step },
+      files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
+    });
+    if (!res.ok) throw new Error(`/onboarding/parse failed: ${res.status}`);
+    return (await res.json()) as { transcript: string; updates: Record<string, unknown> };
+  },
   voice: async (uri: string, at: LatLng, activePlace?: Place, signal?: AbortSignal) => {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
     const fields: Record<string, string> = { lat: String(at.lat), lng: String(at.lng) };

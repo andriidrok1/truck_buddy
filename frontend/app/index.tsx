@@ -14,7 +14,7 @@ import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
-import { truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { isOnboarded, truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { shadow, spacing, useTheme } from "@/src/theme";
 import type { ActiveRoute, AgentResponse, LatLng, ParkingState, Phase, Place } from "@/src/types";
@@ -73,6 +73,35 @@ export default function MapScreen() {
     return () => clearTimeout(t);
   }, [caption, voice.speaking]);
 
+  // First launch: meet the copilot.
+  useEffect(() => {
+    isOnboarded().then((ok) => {
+      if (!ok) router.replace("/onboarding");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Break reminder while a route is active.
+  const routeStart = useRef<number | null>(null);
+  useEffect(() => {
+    if (!active || !truck.break_hours) return;
+    const limitMs = truck.break_hours * 3600 * 1000;
+    const t = setInterval(() => {
+      if (!routeStart.current || Date.now() - routeStart.current < limitMs) return;
+      routeStart.current = Date.now(); // remind again after the next interval
+      const who = truck.driver_name ? `Hey ${truck.driver_name}, ` : "";
+      const hrs = truck.break_hours === 1 ? "an hour" : `${truck.break_hours} hours`;
+      const text = `${who}you've been driving for ${hrs}. Want me to find a rest area?`;
+      setCaption({ reply: text });
+      api
+        .speak(text)
+        .then((r) => voice.play(absoluteUrl(r.audio_url)))
+        .catch(() => {});
+    }, 60000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, truck.break_hours, truck.driver_name]);
+
   // Re-center once when the real GPS fix arrives.
   useEffect(() => {
     if (!loc.isDemo) {
@@ -96,6 +125,7 @@ export default function MapScreen() {
   };
 
   const startRoute = (next: ActiveRoute) => {
+    if (!activeRef.current) routeStart.current = Date.now();
     setActive(next);
     setPhase("navigating");
     setFit({ key: `route-${next.place.id}-${Date.now()}`, points: [loc.coords, next.place] });
@@ -234,6 +264,7 @@ export default function MapScreen() {
 
   const onEndRoute = () => {
     voice.stopSpeaking();
+    routeStart.current = null;
     setActive(null);
     setCaption(null);
     setOptions([]);
@@ -287,6 +318,7 @@ export default function MapScreen() {
         truckLabel={truckLabel(truck)}
         hazmat={truck.hazmat}
         onTruckPress={() => router.push("/truck-profile")}
+        onMenuPress={() => router.push("/onboarding")}
         isDemo={loc.resolved && loc.isDemo}
         onLayout={setTopH}
       />
