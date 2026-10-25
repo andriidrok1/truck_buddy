@@ -51,8 +51,10 @@ def test_voice_fuel_route_set(s):
     assert d["status"] == "route_set", d
     assert d["category"] == "truck_stop"
     assert d["place"] and d["route"] and d["route"]["distance_mi"] > 0
-    _check_parking(d["parking"])
-    assert d["parking"]["image_path"].startswith("/satellite?")
+    # iter7: parking is null unless cached (the app fetches /api/parking afterwards)
+    if d["parking"] is not None:
+        _check_parking(d["parking"])
+        assert d["parking"]["image_path"].startswith("/satellite?")
     assert isinstance(d["options"], list) and len(d["options"]) <= 4
     assert all(o["id"] != d["place"]["id"] for o in d["options"])
     assert d["audio_url"] and d["audio_url"].startswith("/api/voice/audio/")
@@ -69,7 +71,8 @@ def test_agent_route_set(s, text, cat):
     d = r.json()
     assert d["status"] == "route_set", d
     assert d["category"] == cat and d["place"]["category"] == cat
-    _check_parking(d["parking"])
+    if d["parking"] is not None:  # iter7: null unless cached
+        _check_parking(d["parking"])
     _cache[cat] = d
 
 

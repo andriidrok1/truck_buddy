@@ -14,6 +14,7 @@ import os
 import re
 import time
 import uuid
+from typing import Optional
 
 import httpx
 from emergentintegrations.llm.chat import ImageContent, LlmChat, StreamDone, TextDelta, UserMessage
@@ -95,6 +96,12 @@ def _spans(lat: float) -> tuple[float, float]:
     return dlat, dlat / max(0.2, math.cos(math.radians(lat)))
 
 
+def _tip(v) -> Optional[str]:
+    """Directions only; drop 'no entrance visible'-style non-answers."""
+    t = str(v or "").strip()[:120]
+    return None if not t or NEGATIVE_TIP.search(t) else t
+
+
 def _parse(text: str, place: Place) -> dict:
     m = re.search(r"\{.*\}", text or "", re.S)
     data = json.loads(m.group(0)) if m else {}
@@ -117,8 +124,8 @@ def _parse(text: str, place: Place) -> dict:
     return {
         "fits": fits,
         "reason": str(data.get("reason") or "").strip()[:140],
-        "entry_tip": str(data.get("entry") or "").strip()[:120] or None,
-        "park_tip": str(data.get("park") or "").strip()[:120] or None,
+        "entry_tip": _tip(data.get("entry")),
+        "park_tip": _tip(data.get("park")),
         "spots": spots[:4],
     }
 
@@ -146,6 +153,12 @@ async def _ask_vision(img: bytes, place: Place) -> dict:
     return _parse(out, place)
 
 
+def cached_parking(place: Place) -> Optional[ParkingCheck]:
+    """Satellite verdict if already computed, without waiting."""
+    k = _key(place.lat, place.lng) + (":listed" if listed_in_data(place) else "")
+    return _verdict_cache.get(k)
+
+
 def listed_in_data(place: Place) -> bool:
     return any(w in t.lower() for t in place.tags for w in LISTED_WORDS)
 
@@ -153,7 +166,28 @@ def listed_in_data(place: Place) -> bool:
 LISTED = ("listed", "Truck parking listed", "The place info lists truck parking.")
 
 
+_pending: dict[str, "asyncio.Task[ParkingCheck]"] = {}
+NEGATIVE_TIP = re.compile(
+    r"^\s*(no|none|n/a|unclear|unknown|nothing)\b(?!\.\s*\d)|no suitable|not (clear|visible)|isn't (clear|visible)|"
+    r"\bunclear\b|hard to tell|no visible|nothing suitable|can't (tell|see)|cannot (tell|see)|unable to",
+    re.I,
+)
+
+
 async def check_parking(place: Place) -> ParkingCheck:
+    """Single-flight wrapper: concurrent checks of the same place share one vision call."""
+    k = _key(place.lat, place.lng) + (":listed" if listed_in_data(place) else "")
+    if k in _verdict_cache:
+        return _verdict_cache[k]
+    task = _pending.get(k)
+    if task is None:
+        task = asyncio.create_task(_check_parking(place))
+        _pending[k] = task
+        task.add_done_callback(lambda _t: _pending.pop(k, None))
+    return await asyncio.shield(task)
+
+
+async def _check_parking(place: Place) -> ParkingCheck:
     """Always looks at the satellite image so the driver also gets entry/parking directions."""
     listed = listed_in_data(place)
     k = _key(place.lat, place.lng) + (":listed" if listed else "")

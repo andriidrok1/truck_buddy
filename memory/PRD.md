@@ -53,3 +53,9 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Steps: name → truck (height/trailer/weight/hazmat) → preferences list (avoid tolls, avoid ferries & tunnels, favorite chains, break reminder) → summary → map
 - Stored in the truck profile (device); sent with every request; HERE avoid[features], ORS avoid_features; agent uses name + favorite chains
 - Break reminder spoken every N hours of an active route; menu button reopens onboarding
+
+## 2026-06 — Speed + conversational onboarding
+- Stop search answer 16s → ~3.5s: no blocking satellite checks in the agent (cached + background warm-up), templated route replies (one less LLM round); app fetches /api/parking after the route and speaks entry/park directions after the reply
+- Main mic is hands-free: stops on silence (expo-audio metering), tap to stop early
+- Onboarding: centered avatar, thought bubble with only the question, auto-listen after each spoken question, "Type instead" fallback, TTS lines pre-generated
+- Single-flight parking checks and /api/speak; negative satellite tips filtered; parking card updates immediately, tips spoken right after the reply; compact typing layout in onboarding

@@ -48,7 +48,7 @@ def test_agent_hotel_route_set_with_options(s):
     assert d["category"] == "hotel"
     assert d["place"] and d["place"]["category"] == "hotel"
     assert d["route"] and d["route"]["distance_mi"] > 0
-    assert d["parking"] and d["parking"]["verdict"] in ("listed", "likely", "unlikely", "unclear")
+    assert d["parking"] is None or d["parking"]["verdict"] in ("listed", "likely", "unlikely", "unclear")
     opts = d["options"]
     assert len(opts) <= 4
     assert all(o["id"] != d["place"]["id"] for o in opts)

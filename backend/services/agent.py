@@ -1,7 +1,7 @@
 """Copilot agent: GPT-5.5 with tool calling (search_places / set_route).
 
-set_route also runs the satellite parking check, so the spoken reply can tell the
-driver how to drive in and where to leave the truck. Each request is independent.
+Route answers are templated and parking directions are fetched by the app afterwards,
+so the driver hears the answer fast. Each request is independent.
 """
 import asyncio
 import json
@@ -15,7 +15,7 @@ from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 from models import AgentRequest, AgentResponse, ParkingCheck, Place, RouteInfo
 from services.geocode import geocode
-from services.parking import check_parking
+from services.parking import cached_parking, check_parking, listed_in_data
 from services.places import get_places_provider
 from services.routing import get_routing_provider
 
@@ -79,21 +79,49 @@ How to act:
   truck_stop = fuel, diesel, DEF, food, showers, truck stop;
   hotel = sleep, tired, overnight, bed, motel, hotel, room;
   rest_area = quick break, stretch, restroom, short nap, rest area.
-- Then pick the best result and call set_route with its id. The nearest results include a satellite parking check: prefer the driver's favorite chains when one is close (within ~5 extra miles), then parking verdict "listed" or "likely" over "unclear", and never pick "unlikely" if another option is "listed"/"likely"/"unclear"; among equals pick the closest. Always set the route; don't ask for confirmation.
+- Then pick the best result and call set_route with its id. Prefer the driver's favorite chains when one is close (within ~5 extra miles), then places whose parking is "listed" or "likely" or tagged with truck parking, and never pick "unlikely" if another option isn't; among equals pick the closest. Always set the route; don't ask for confirmation.
 - If search_places returns no places, reply exactly: "I couldn't find one nearby."
-- If the driver names a destination (a city, address, business or landmark: "take me to Reno", "go to 1200 Main St Dallas", "I need to get to the Port of Oakland"), call route_to_address with it. The route already accounts for the truck's height, length, weight and hazmat. Reply with the destination, total time and miles; mention any restriction notices briefly. Don't do a parking check for these.
-- If the driver asks something that is not a place request (e.g. "how far is it?", "where do I park?", "thanks"), answer briefly using the context and do NOT call any tool.
+- If the driver names a destination (a city, address, business or landmark: "take me to Reno", "go to 1200 Main St Dallas", "I need to get to the Port of Oakland"), call route_to_address with it. The route already accounts for the truck's height, length, weight and hazmat. - If the driver asks something that is not a place request (e.g. "how far is it?", "where do I park?", "thanks"), answer briefly using the context and do NOT call any tool.
 - If the input is just a sound or noise label (siren, beeping, music) or is unintelligible, reply exactly: "Sorry, I didn't catch that. Try again."
 - Reply in English, spoken style, no markdown, no lists, at most 2 short sentences.
-  When a route is set: sentence 1 names the place, the street from its address and the distance in miles, and says the route is set.
-  Sentence 2 tells how to drive in and where to leave the truck, from the parking check (entry_tip / park_tip). If the check says it's unlikely to fit, say so instead.
-  Example: "Found Motel 6 on West Capitol Ave, about 4 miles away, route is set. Use the wide east driveway and park along the back lot."
 """
 
 
 def _place_brief(p: Place) -> dict:
     return {"id": p.id, "name": p.name, "distance_mi": p.distance_mi, "tags": p.tags, "address": p.address,
             "rating": p.rating}
+
+
+_tasks: set = set()
+
+
+def _background(coro) -> None:
+    t = asyncio.create_task(coro)
+    _tasks.add(t)
+    t.add_done_callback(_tasks.discard)
+
+
+def _street(address: Optional[str]) -> str:
+    if not address:
+        return ""
+    first = address.split(",")[0].strip()
+    first = re.sub(r"^\d+[\w-]*\s+", "", first)  # drop the house number
+    return f" on {first}" if first and not first[0].isdigit() else ""
+
+
+def _miles(mi: float) -> str:
+    return f"{mi:.1f}" if mi < 10 else f"{mi:,.0f}"
+
+
+def _route_reply(place: Place, route: RouteInfo) -> str:
+    if place.category == "destination":
+        dest = place.name.split(",")[0]
+        time = route.summary.split(" · ")[0]
+        out = f"Route to {dest} is set: {time}, {_miles(route.distance_mi)} miles."
+        if route.notices:
+            out += f" {route.notices[0]}"
+        return out
+    return f"Found {place.name}{_street(place.address)}, about {_miles(route.distance_mi)} miles away. Route is set."
 
 
 def _not_understood(text: str, source: str) -> AgentResponse:
@@ -131,6 +159,7 @@ class LlmAgentProvider:
         chosen: Optional[Place] = None
         route: Optional[RouteInfo] = None
         parking: Optional[ParkingCheck] = None
+        done = False
 
         try:
             response = await chat.send_message_with_tools(UserMessage(text=f"[{context}]\nDriver said: {text}"))
@@ -145,11 +174,13 @@ class LlmAgentProvider:
                         searched_empty = not res.places
                         found = res.places[:MAX_OPTIONS + 2]
                         candidates.update({p.id: p for p in found})
-                        # Satellite-check the closest few up front so the agent picks a place a rig fits.
-                        checks = await asyncio.gather(*(check_parking(p) for p in found[:PRECHECK]))
+                        # Never wait for satellite checks here: use what's cached and warm the rest in the background.
                         briefs = [_place_brief(p) for p in found]
-                        for b, c in zip(briefs, checks):
-                            b["parking"] = {"verdict": c.verdict, "reason": c.reason}
+                        for b, p in zip(briefs, found):
+                            c = cached_parking(p)
+                            b["parking"] = c.verdict if c else ("listed" if listed_in_data(p) else "not checked")
+                        for p in found[:PRECHECK]:
+                            _background(check_parking(p))
                         result = {"widened": res.widened, "places": briefs}
                     elif tc.name == "route_to_address" and str(args.get("query", "")).strip():
                         matches = await geocode(str(args["query"]).strip(), req.lat, req.lng)
@@ -157,30 +188,29 @@ class LlmAgentProvider:
                             chosen, parking = matches[0], None
                             route = await routing_p.route(req.lat, req.lng, chosen.lat, chosen.lng, req.truck_profile)
                             found = []
-                            result = {"ok": True, "destination": chosen.address or chosen.name,
-                                      "distance_mi": route.distance_mi, "duration": route.summary.split(" · ")[0],
-                                      "truck_safe_routing": route.truck_aware, "notices": route.notices[:3]}
+                            done = True
+                            break
                         else:
                             result = {"ok": False, "error": "address not found; ask the driver to repeat the destination"}
                     elif tc.name == "set_route":
                         place = candidates.get(str(args.get("place_id", "")))
                         if place:
                             chosen = place
-                            route, parking = await asyncio.gather(
-                                routing_p.route(req.lat, req.lng, place.lat, place.lng, req.truck_profile),
-                                check_parking(place),
-                            )
-                            result = {"ok": True, "name": place.name, "address": place.address,
-                                      "distance_mi": route.distance_mi, "duration_min": route.duration_min,
-                                      "parking": {"verdict": parking.verdict, "reason": parking.reason,
-                                                  "entry_tip": parking.entry_tip, "park_tip": parking.park_tip}}
+                            # Parking directions follow from the app via /api/parking, so the answer isn't delayed.
+                            route = await routing_p.route(req.lat, req.lng, place.lat, place.lng, req.truck_profile)
+                            parking = cached_parking(place)
+                            done = True
+                            break
                         else:
                             result = {"ok": False, "error": "unknown place_id, use an id from search_places"}
                     else:
                         result = {"error": "invalid tool call"}
                     chat.add_tool_result(tc.id, json.dumps(result))
+                if done:
+                    break
                 response = await chat.send_message_with_tools()
-            reply = (response.content or "").strip()
+            # Route answers are templated: saves a whole LLM round trip.
+            reply = _route_reply(chosen, route) if done and chosen and route else (response.content or "").strip()
         except Exception:
             logger.exception("agent LLM failed")
             return _not_understood(text, self.source)

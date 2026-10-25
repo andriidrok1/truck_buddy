@@ -20,9 +20,8 @@ import { shadow, spacing, useTheme } from "@/src/theme";
 import type { ActiveRoute, AgentResponse, LatLng, ParkingState, Phase, Place } from "@/src/types";
 import { openGoogleMaps, openWaze } from "@/src/utils/navLinks";
 
-const LISTEN_WATCHDOG_MS = 30000;
 const REQUEST_TIMEOUT_MS = 60000;
-const STAGES = ["Searching nearby…", "Checking truck parking from satellite…", "Setting route…"];
+const STAGES = ["Searching nearby…", "Setting route…"];
 const STAGE_MS = 3500;
 
 export default function MapScreen() {
@@ -121,7 +120,34 @@ export default function MapScreen() {
 
   const sayReply = (res: AgentResponse) => {
     setCaption({ reply: res.reply, heard: res.transcript || undefined });
-    if (res.audio_url) voice.play(absoluteUrl(res.audio_url));
+    if (!res.audio_url) return Promise.resolve();
+    return voice.playAndWait(absoluteUrl(res.audio_url), Math.min(20000, 1500 + res.reply.length * 65));
+  };
+
+  /** Satellite parking check runs after the route is set; its directions are spoken when the reply ends. */
+  const followParking = async (place: Place, replyDone: Promise<void>, myTurn: number) => {
+    try {
+      const pk = await api.parking(place);
+      // The card always takes the result if it's still the same destination.
+      setActive((a) => (a && a.place.id === place.id ? { ...a, parking: pk } : a));
+      if (myTurn !== turn.current || activeRef.current?.place.id !== place.id) return;
+      const tips = [pk.entry_tip, pk.park_tip].filter(Boolean).join(". ");
+      const text =
+        pk.verdict === "unlikely"
+          ? "Heads up: from the satellite, parking there looks tight for a rig."
+          : tips
+            ? `${tips}.`
+            : "";
+      if (!text) return;
+      const audio = api.speak(text); // generate while the first answer is still playing
+      await replyDone;
+      if (myTurn !== turn.current || activeRef.current?.place.id !== place.id) return;
+      setCaption({ reply: text });
+      const r = await audio;
+      if (myTurn === turn.current && activeRef.current?.place.id === place.id) voice.play(absoluteUrl(r.audio_url));
+    } catch {
+      // parking stays "unclear"; the route still works
+    }
   };
 
   const startRoute = (next: ActiveRoute) => {
@@ -150,7 +176,7 @@ export default function MapScreen() {
   const backToIdle = () =>
     setPhase(activeRef.current ? "navigating" : optionsRef.current.length ? "options" : "ready");
 
-  const submitTurn = async () => {
+  const submitTurn = async (recorded?: string) => {
     clearTimers();
     const myTurn = ++turn.current;
     setPhase("thinking");
@@ -159,7 +185,7 @@ export default function MapScreen() {
     inflight.current = ctrl;
     const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const uri = await voice.stopRecording();
+      const uri = recorded ?? (await voice.stopRecording());
       if (!uri) throw new Error("no recording");
       const res = await api.voice(uri, loc.coords, activeRef.current?.place, ctrl.signal);
       if (myTurn !== turn.current) return;
@@ -169,11 +195,15 @@ export default function MapScreen() {
         setParking({});
         setPlaces([res.place, ...others]);
         startRoute({ place: res.place, route: res.route, parking: res.parking });
+        const replyDone = sayReply(res);
+        if (res.place.category !== "destination") {
+          followParking(res.place, replyDone, myTurn);
+        }
       } else {
         if (res.status !== "chat") showToast(res.message ?? MESSAGES.notUnderstood);
         backToIdle();
+        sayReply(res);
       }
-      sayReply(res);
     } catch (e) {
       if (myTurn !== turn.current) return;
       const err = String(e);
@@ -182,7 +212,6 @@ export default function MapScreen() {
         : err.includes("502")
           ? MESSAGES.placesUnavailable
           : MESSAGES.notUnderstood;
-      showToast(msg);
       setCaption({ reply: msg });
       backToIdle();
     } finally {
@@ -191,23 +220,33 @@ export default function MapScreen() {
     }
   };
 
+  // Hands-free: listening stops by itself when the driver pauses (tap to stop early).
   const beginListening = async () => {
-    try {
-      await voice.startRecording();
-    } catch {
-      showToast(MESSAGES.notUnderstood);
-      return;
-    }
     setCaption(null);
     setPhase("listening");
     clearTimers();
-    watchdog.current = setTimeout(submitTurn, LISTEN_WATCHDOG_MS);
+    const myTurn = ++turn.current;
+    let res: string;
+    try {
+      res = await voice.listen({ silenceMs: 1000 });
+    } catch {
+      showToast(MESSAGES.notUnderstood);
+      backToIdle();
+      return;
+    }
+    if (res === "cancelled" || myTurn !== turn.current) return;
+    if (res === "silent") {
+      setCaption({ reply: MESSAGES.notUnderstood });
+      backToIdle();
+      return;
+    }
+    submitTurn(res);
   };
 
   const onAvatarPress = async () => {
     if (phase === "thinking") return;
     if (phase === "listening") {
-      submitTurn();
+      voice.finishListening();
       return;
     }
     voice.stopSpeaking();

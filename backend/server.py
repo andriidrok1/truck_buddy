@@ -141,14 +141,20 @@ class SpeakRequest(BaseModel):
 
 
 _SPEAK_CACHE: dict[str, str] = {}
+_SPEAK_PENDING: dict[str, "asyncio.Task[Optional[str]]"] = {}
 
 
 @api.post("/speak")
 async def speak(req: SpeakRequest):
-    """TTS for fixed copilot lines (onboarding, reminders). Cached per text."""
+    """TTS for fixed copilot lines (onboarding, reminders). Cached per text, one generation per text."""
     audio_id = _SPEAK_CACHE.get(req.text)
     if not audio_id or voice.get_audio(audio_id) is None:
-        audio_id = await voice.synthesize(req.text)
+        task = _SPEAK_PENDING.get(req.text)
+        if task is None:
+            task = asyncio.create_task(voice.synthesize(req.text))
+            _SPEAK_PENDING[req.text] = task
+            task.add_done_callback(lambda _t: _SPEAK_PENDING.pop(req.text, None))
+        audio_id = await asyncio.shield(task)
         if not audio_id:
             raise HTTPException(status_code=502, detail="Voice unavailable")
         if len(_SPEAK_CACHE) >= 200:

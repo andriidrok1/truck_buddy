@@ -105,5 +105,6 @@ class TestDestinationParking:
         r = agent(s, "I need fuel")
         d = r.json()
         assert d["status"] == "route_set"
-        assert d["parking"] is not None
+        # iter7: parking null unless cached; app calls /api/parking afterwards
+        assert d["parking"] is None or d["parking"]["verdict"]
         assert len(d.get("options") or []) >= 1

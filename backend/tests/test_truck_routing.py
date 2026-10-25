@@ -123,7 +123,7 @@ class TestStopSearch:
         d = r.json()
         assert d["status"] == "route_set"
         assert d["place"]["category"] == "truck_stop"
-        assert d["parking"] is not None and d["parking"]["verdict"] in ("listed", "likely", "unlikely", "unclear")
+        assert d["parking"] is None or d["parking"]["verdict"] in ("listed", "likely", "unlikely", "unclear")
         assert len(d["options"]) >= 1
 
 
