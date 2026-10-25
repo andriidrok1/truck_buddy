@@ -39,14 +39,14 @@ Truck: {truck}.
 Driver preferences: {prefs}.
 
 Classify the driver's LAST utterance and answer with JSON only, no other text:
-{{"intent": "find"|"go"|"pick"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "query": string|null, "place_id": string|null, "reply": string|null}}
+{{"intent": "find"|"go"|"pick"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "query": string|null, "place_index": integer|null, "reply": string|null}}
 
 - find: the driver needs a place. Pick the category yourself, never ask:
   truck_stop = fuel, diesel, DEF, food, showers, truck stop;
   hotel = sleep, tired, overnight, bed, motel, hotel, room;
   rest_area = quick break, stretch, restroom, short nap, rest area.
 - go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV".
-- pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something closer"). place_id = the best matching id from "Places found earlier", never the current route. If no earlier place fits, use find with the same category instead.
+- pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something closer"). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. If no earlier place fits, use find with the same category instead.
 - chat: a question or remark that is not a place request ("how far is it?", "where do I park?", "thanks"). reply = a brief answer using the context.
 - bye: goodbye or done ("bye", "that's all", "no, I'm good", "that's it"). reply = one short friendly line.
 - unclear: only a sound or noise label (siren, beeping, music) or unintelligible.
@@ -92,12 +92,23 @@ def _miles(mi: float) -> str:
 
 
 def _route_reply(place: Place, route: RouteInfo) -> str:
-    """One spoken sentence; restriction notices stay on the route card."""
+    """Short first sentence; a restriction notice, if any, is the second (spoken via audio_url_2)."""
     if place.category == "destination":
         dest = place.name.split(",")[0]
         time = route.summary.split(" · ")[0]
-        return f"Route to {dest} is set: {time}, {_miles(route.distance_mi)} miles."
-    return f"Route set to {place.name}{_street(place.address)}, {_miles(route.distance_mi)} miles away."
+        out = f"Route to {dest} is set: {time}, {_miles(route.distance_mi)} miles."
+    else:
+        out = f"Route set to {place.name}{_street(place.address)}, {_miles(route.distance_mi)} miles away."
+    return f"{out} {route.notices[0]}" if route.notices else out
+
+
+def pick_place(d: dict, places: list[Place]) -> Optional[Place]:
+    """Resolves the model's 1-based place_index into a place found earlier."""
+    try:
+        i = int(d.get("place_index"))
+    except (TypeError, ValueError):
+        return None
+    return places[i - 1] if 1 <= i <= len(places) else None
 
 
 def _not_understood(text: str, source: str) -> AgentResponse:
@@ -167,10 +178,12 @@ class LlmAgentProvider:
             context += " Conversation so far: " + " | ".join(sess["history"][-MAX_HISTORY:]) + "."
         if sess["places"]:
             context += " Places found earlier: " + "; ".join(
-                f"{p.id}={p.name} ({p.category}) {p.distance_mi or 0:.1f} mi" for p in sess["places"]) + "."
+                f"{i}={p.name} ({p.category}) {p.distance_mi or 0:.1f} mi"
+                + (" [current route]" if req.active_place and p.id == req.active_place.id else "")
+                for i, p in enumerate(sess["places"], 1)) + "."
         cur = req.active_place
         if cur:
-            context += f" Current route: id {cur.id}, {cur.name} ({cur.address or 'address unknown'})"
+            context += f" Current route: {cur.name} ({cur.address or 'address unknown'})"
             if req.active_distance_mi is not None:
                 context += f", {req.active_distance_mi:.1f} miles"
             if req.active_duration_min is not None:
@@ -218,8 +231,7 @@ class LlmAgentProvider:
         exclude = {current} if current else set()
         try:
             if intent == "pick":
-                earlier = {p.id: p for p in sess["places"]}
-                place = earlier.get(str(d.get("place_id") or ""))
+                place = pick_place(d, sess["places"])
                 if place and place.id != current:
                     return await self._route_to(req, place, sess["places"], text)
                 category = d.get("category") or (req.active_place.category if req.active_place else None)

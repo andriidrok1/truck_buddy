@@ -125,7 +125,7 @@ def _bg(coro) -> None:
 
 
 _BG: set = set()
-WARM_TOP = 2
+WARM_TOP = 1  # satellite check only for the first place of each category
 
 
 async def _warm(lat: float, lng: float) -> None:

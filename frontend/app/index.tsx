@@ -123,7 +123,8 @@ export default function MapScreen() {
   const sayReply = (res: AgentResponse) => {
     setCaption({ reply: res.reply, heard: res.transcript || undefined });
     if (!res.audio_url) return Promise.resolve();
-    const [first, rest] = res.reply.split(/(?<=[.!?])\s+/, 2).concat("");
+    const [first, ...restParts] = res.reply.split(/(?<=[.!?])\s+/);
+    const rest = restParts.join(" ");
     const done = voice.playAndWait(absoluteUrl(res.audio_url), Math.min(20000, 1500 + first.length * 65));
     if (!res.audio_url_2) return done;
     const myTurn = turn.current;
@@ -147,14 +148,21 @@ export default function MapScreen() {
     voice.play(fillers.current[fillerIdx.current++ % fillers.current.length]);
   };
 
-  // Warm Places + parking caches around the driver (on open and after moving ~1 km).
+  // Warm Places + parking caches around the driver: app on screen, no active route,
+  // real GPS fix (or demo after location resolved), then again after moving ~5 km.
   const warmedAt = useRef<LatLng | null>(null);
+  const [appActive, setAppActive] = useState(AppState.currentState === "active");
   useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => setAppActive(s === "active"));
+    return () => sub.remove();
+  }, []);
+  useEffect(() => {
+    if (!appActive || active || (loc.isDemo && !loc.resolved)) return;
     const w = warmedAt.current;
-    if (w && Math.hypot(w.lat - loc.coords.lat, (w.lng - loc.coords.lng) * 0.8) < 0.009) return;
+    if (w && Math.hypot(w.lat - loc.coords.lat, (w.lng - loc.coords.lng) * 0.8) < 0.045) return;
     warmedAt.current = loc.coords;
     api.warm(loc.coords).catch(() => {});
-  }, [loc.coords]);
+  }, [loc.coords, loc.isDemo, loc.resolved, appActive, active]);
 
   /** Satellite parking check runs after the route is set; its directions are spoken when the reply ends. */
   const followParking = async (place: Place, replyDone: Promise<void>, myTurn: number) => {
@@ -243,10 +251,12 @@ export default function MapScreen() {
     try {
       const uri = recorded ?? (await voice.stopRecording());
       if (!uri) throw new Error("no recording");
-      playFiller();
       const { transcript } = await api.transcribe(uri, ctrl.signal);
       if (myTurn !== turn.current) return;
-      if (transcript) setCaption({ reply: "…", heard: transcript });
+      if (transcript) {
+        playFiller(); // only when the driver actually said something
+        setCaption({ reply: "…", heard: transcript });
+      }
       const res = await api.agentSpeak(transcript, loc.coords, activeRef.current, ctrl.signal, dialog.current ?? undefined);
       if (myTurn !== turn.current) return;
       if (res.status === "route_set" && res.place && res.route) {
