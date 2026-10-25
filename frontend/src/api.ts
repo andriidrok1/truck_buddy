@@ -63,6 +63,9 @@ export const api = {
         active_duration_min: active?.route.duration_min,
       }),
     }),
+  /** Breakdown research result (long-poll: waits until the research is done). */
+  breakdownResult: (id: string, signal?: AbortSignal) =>
+    request<AgentResponse>(`/breakdown/${id}?speak=true`, { signal }),
   onboardingParse: async (uri: string, step: "name" | "truck" | "prefs") => {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
     const res = await uploadForm(`${BASE}/onboarding/parse`, {

@@ -17,6 +17,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 from models import AgentRequest, AgentResponse, Category, ParkingCheck, ParkingRequest, Place, PlacesResponse, RouteRequest, RouteResponse, TruckProfile  # noqa: E402
 from services.agent import get_agent_provider  # noqa: E402
+from services import breakdown  # noqa: E402
 from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
@@ -94,6 +95,10 @@ SENTENCE_END = re.compile(r"(?<!\bSt\.)(?<!\bDr\.)(?<!U\.S\.)(?<=[.!?])\s+(?=[A-
 async def _run_agent(req: AgentRequest, speak: bool) -> AgentResponse:
     res = await get_agent_provider().handle(req)
     logger.info("agent text=%r status=%s place=%s", req.text, res.status, res.place.name if res.place else None)
+    return await _speak(res, speak)
+
+
+async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
     if speak and res.reply:
         # First sentence is spoken as soon as it's ready; the rest is generated in parallel.
         first, *rest = SENTENCE_END.split(res.reply.strip(), maxsplit=1)
@@ -117,6 +122,16 @@ def _finish(res: AgentResponse, extra: Optional[dict] = None) -> AgentResponse:
 async def agent(req: AgentRequest, speak: bool = Query(False)):
     timing.begin()
     return _finish(await _run_agent(req, speak))
+
+
+@api.get("/breakdown/{rid}", response_model=AgentResponse)
+async def breakdown_result(rid: str, speak: bool = Query(False)):
+    """Result of a breakdown research started by /agent (status=researching); waits until it's ready."""
+    timing.begin()
+    res = await breakdown.result(rid)
+    if res is None:
+        raise HTTPException(status_code=404, detail="Unknown research id")
+    return _finish(await _speak(res, speak))
 
 
 def _bg(coro) -> None:

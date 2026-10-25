@@ -61,8 +61,72 @@ export type ParkingCheck = {
   spots?: ParkingSpot[];
 };
 
+export type PriceFact = {
+  what: string;
+  amount_usd_low: number;
+  amount_usd_high: number;
+  source: "review" | "website";
+  quote: string;
+};
+
+export type ProviderFacts = {
+  mobile_service: boolean | "unknown";
+  hours_24_7: boolean | "unknown";
+  truck_focused: boolean;
+  prices: PriceFact[];
+  wait_time?: { typical_min_low: number; typical_min_high: number; quote: string } | null;
+  payment: string[];
+  red_flags: string[];
+  praise: string[];
+  last_review_date?: string | null;
+};
+
+export type Provider = {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  phone?: string | null;
+  website?: string | null;
+  address?: string | null;
+  rating?: number | null;
+  rating_count: number;
+  distance_mi?: number | null;
+  open_now?: boolean | null;
+  listed_24_7: boolean;
+  shop_only: boolean;
+  score: number;
+  source: string;
+  facts: ProviderFacts;
+  quotes: string[];
+};
+
+export type CallCard = {
+  problem: string;
+  tire?: string | null;
+  location?: string | null;
+  gps: string;
+  map_link: string;
+  truck: string;
+  questions: string[];
+  share_text: string;
+};
+
+export type ProvidersResult = {
+  providers: Provider[];
+  call_card?: CallCard | null;
+  summary?: string | null;
+  provider_source?: string | null;
+};
+
 export type AgentResponse = {
-  status: "options" | "route_set" | "chat" | "no_results" | "not_understood";
+  status: "options" | "route_set" | "chat" | "no_results" | "not_understood" | "researching" | "providers";
+  research_id?: string | null;
+  providers?: Provider[];
+  call_card?: CallCard | null;
+  summary?: string | null;
+  provider_source?: string | null;
+  dial_phone?: string | null;
   transcript: string;
   category?: Category | null;
   reply: string;
@@ -81,6 +145,6 @@ export type AgentResponse = {
 
 export type ActiveRoute = { place: Place; route: RouteInfo; parking?: ParkingCheck | null };
 
-export type Phase = "ready" | "listening" | "thinking" | "options" | "navigating";
+export type Phase = "ready" | "listening" | "thinking" | "options" | "navigating" | "providers";
 
 export type ParkingState = { loading: boolean; result?: ParkingCheck };

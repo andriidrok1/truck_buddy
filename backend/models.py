@@ -155,7 +155,50 @@ class AgentRequest(BaseModel):
     active_duration_min: Optional[int] = Field(None, ge=0)
 
 
-AgentStatus = Literal["options", "route_set", "chat", "no_results", "not_understood"]
+AgentStatus = Literal["options", "route_set", "chat", "no_results", "not_understood", "researching", "providers"]
+
+
+class ProviderFacts(BaseModel):
+    mobile_service: bool | Literal["unknown"] = "unknown"
+    hours_24_7: bool | Literal["unknown"] = "unknown"
+    truck_focused: bool = False
+    prices: List[dict] = Field(default_factory=list)  # {what, amount_usd_low, amount_usd_high, source, quote}
+    wait_time: Optional[dict] = None  # {typical_min_low, typical_min_high, quote}
+    payment: List[str] = Field(default_factory=list)
+    red_flags: List[str] = Field(default_factory=list)
+    praise: List[str] = Field(default_factory=list)
+    last_review_date: Optional[str] = None
+
+
+class Provider(BaseModel):
+    id: str
+    name: str
+    lat: float
+    lng: float
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    address: Optional[str] = None
+    rating: Optional[float] = None
+    rating_count: int = 0
+    distance_mi: Optional[float] = None
+    open_now: Optional[bool] = None
+    listed_24_7: bool = False
+    shop_only: bool = False
+    score: float = 0
+    source: str = "google"
+    facts: ProviderFacts = Field(default_factory=ProviderFacts)
+    quotes: List[str] = Field(default_factory=list)  # verbatim review snippets
+
+
+class CallCard(BaseModel):
+    problem: str
+    tire: Optional[str] = None
+    location: Optional[str] = None
+    gps: str
+    map_link: str
+    truck: str
+    questions: List[str]
+    share_text: str
 
 
 class AgentResponse(BaseModel):
@@ -173,4 +216,14 @@ class AgentResponse(BaseModel):
     audio_url: Optional[str] = None  # relative path to the spoken reply (mp3)
     audio_url_2: Optional[str] = None  # rest of a 2-sentence reply, generated in parallel
     timings: dict[str, int] = Field(default_factory=dict)  # ms per pipeline stage (voice turns)
+    # Breakdown scenario (services/breakdown.py)
+    research_id: Optional[str] = None
+    providers: List[Provider] = Field(default_factory=list)
+    call_card: Optional[CallCard] = None
+    summary: Optional[str] = None
+    breakdown_kind: Optional[str] = None
+    breakdown_mode: Optional[str] = None
+    provider_source: Optional[str] = None
+    research_stats: dict = Field(default_factory=dict)
+    dial_phone: Optional[str] = None
     source: str

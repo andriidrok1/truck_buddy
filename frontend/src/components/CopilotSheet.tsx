@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import Animated, { FadeIn } from "react-native-reanimated";
@@ -34,6 +34,8 @@ type Props = {
   onLayout: (h: number) => void;
   /** Set while the wake word is actively listening (shows the privacy dot + phrase). */
   wakePhrase?: string | null;
+  /** Breakdown results (phase "providers"). */
+  panel?: ReactNode;
 };
 
 function SideButton({
@@ -74,10 +76,10 @@ function durationLabel(seconds: number) {
 }
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, onClose, onEndRoute, onLayout, wakePhrase } = props;
+  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, onClose, onEndRoute, onLayout, wakePhrase, panel } = props;
   const { colors } = useTheme();
   const navigating = phase === "navigating";
-  const canType = phase === "ready" || phase === "navigating" || phase === "options";
+  const canType = phase === "ready" || phase === "navigating" || phase === "options" || phase === "providers";
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState("");
   const send = () => {
@@ -130,6 +132,7 @@ export function CopilotSheet(props: Props) {
             {thinkingText ?? "Finding the best spot…"}
           </Text>
         )}
+        {phase === "providers" && panel}
         {phase === "options" && (
           <OptionsList options={options} parking={parking} onParking={onOptionParking} onRoute={onOptionRoute} />
         )}
@@ -241,7 +244,7 @@ export function CopilotSheet(props: Props) {
           style={styles.center}
         >
           <Avatar
-            size={navigating || phase === "options" ? 72 : 104}
+            size={navigating || phase === "options" || phase === "providers" ? 72 : 104}
             mode={phase === "listening" ? "listening" : phase === "thinking" ? "thinking" : speaking ? "speaking" : "idle"}
             showMic={phase !== "thinking"}
           />
@@ -256,7 +259,7 @@ export function CopilotSheet(props: Props) {
         </Pressable>
 
         {phase === "ready" && <View style={styles.side} />}
-        {phase === "options" && <SideButton icon="close" label="Close" testID="close-options-button" onPress={onClose} />}
+        {(phase === "options" || phase === "providers") && <SideButton icon="close" label="Close" testID="close-options-button" onPress={onClose} />}
         {(phase === "listening" || phase === "thinking") && (
           <SideButton icon="close" label="Close" testID="close-listening-button" onPress={onClose} />
         )}

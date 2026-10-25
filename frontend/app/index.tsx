@@ -11,6 +11,7 @@ import type { MapLayerHandle } from "@/src/components/mapTypes";
 import { MicPermissionCard } from "@/src/components/MicPermissionCard";
 import { NavBanner } from "@/src/components/NavBanner";
 import { PressableScale } from "@/src/components/PressableScale";
+import { dial, ProvidersList } from "@/src/components/ProvidersList";
 import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
@@ -20,10 +21,16 @@ import { isOnboarded, truckLabel, useHandsFree, useTruckProfile } from "@/src/ho
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { useWakeWord } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
-import type { ActiveRoute, AgentResponse, LatLng, ParkingState, Phase, Place } from "@/src/types";
+import type { ActiveRoute, AgentResponse, LatLng, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
 import { storage } from "@/src/utils/storage";
 
 const VOICE_GUIDANCE_KEY = "voice_guidance_v1";
+const RESEARCH_INTERIM = "Reading reviews now, almost there.";
+const RESEARCH_INTERIM_MS = 7000;
+const providerPlace = (p: Provider): Place => ({
+  id: p.id, name: p.name, category: "destination", lat: p.lat, lng: p.lng, tags: [],
+  address: p.address, rating: p.rating, rating_count: p.rating_count, distance_mi: p.distance_mi,
+});
 
 const REQUEST_TIMEOUT_MS = 60000;
 const STAGES = ["Searching nearby…", "Setting route…"];
@@ -64,6 +71,9 @@ export default function MapScreen() {
   const [parking, setParking] = useState<Record<string, ParkingState>>({});
   const [driving, setDriving] = useState(false);
   const [voiceOn, setVoiceOnState] = useState(true);
+  const [providers, setProviders] = useState<ProvidersResult | null>(null);
+  const providersRef = useRef<ProvidersResult | null>(null);
+  providersRef.current = providers;
 
   useEffect(() => {
     storage.getItem(VOICE_GUIDANCE_KEY, true as boolean).then((v) => setVoiceOnState(v !== false));
@@ -267,7 +277,7 @@ export default function MapScreen() {
   };
 
   const backToIdle = () =>
-    setPhase(activeRef.current ? "navigating" : optionsRef.current.length ? "options" : "ready");
+    setPhase(activeRef.current ? "navigating" : providersRef.current ? "providers" : optionsRef.current.length ? "options" : "ready");
 
   // Turn-by-turn while driving; prompts stay quiet while the driver is talking to the copilot.
   const guidance = useGuidance(active, loc.coords, driving, voiceOn, (text) => {
@@ -318,6 +328,11 @@ export default function MapScreen() {
       }
       const res = await api.agentSpeak(transcript, loc.coords, activeRef.current, ctrl.signal, dialog.current ?? undefined);
       if (myTurn !== turn.current) return;
+      if (res.dial_phone) dial(res.dial_phone);
+      if (res.status === "researching" && res.research_id) {
+        await runResearch(res, myTurn, ctrl.signal);
+        return;
+      }
       if (res.status === "route_set" && res.place && res.route) {
         const others = res.options ?? [];
         setOptions(others);
@@ -348,6 +363,39 @@ export default function MapScreen() {
       clearTimeout(timer);
       if (myTurn === turn.current) clearTimers();
     }
+  };
+
+  /** Breakdown: say "give me a minute", wait for the research, an interim line at ~7 s, then the list. */
+  const runResearch = async (res: AgentResponse, myTurn: number, signal: AbortSignal) => {
+    clearTimers();
+    setThinkingText("Checking who's around…");
+    const intro = sayReply(res);
+    let done = false;
+    const interimAudio = api.speak(RESEARCH_INTERIM).catch(() => null);
+    let interimPlayed: Promise<unknown> = Promise.resolve();
+    const interim = setTimeout(() => {
+      if (done || myTurn !== turn.current) return;
+      setThinkingText("Reading reviews…");
+      interimPlayed = intro.then(async () => {
+        const a = await interimAudio;
+        if (a && !done && myTurn === turn.current) await voice.playAndWait(absoluteUrl(a.audio_url), 4000);
+      });
+    }, RESEARCH_INTERIM_MS);
+    const out = await api.breakdownResult(res.research_id!, signal);
+    done = true;
+    clearTimeout(interim);
+    if (myTurn !== turn.current) return;
+    await intro;
+    await interimPlayed;
+    if (myTurn !== turn.current) return;
+    if (out.status === "providers" && out.providers?.length) {
+      const list = out.providers;
+      setProviders({ providers: list, call_card: out.call_card, summary: out.summary, provider_source: out.provider_source });
+      setPlaces(list.map(providerPlace));
+      setPhase("providers");
+      setFit({ key: `providers-${Date.now()}`, points: [loc.coords, ...list] });
+    } else backToIdle();
+    continueDialog(myTurn, out, sayReply(out));
   };
 
   // Hands-free: listening stops by itself when the driver pauses (tap to stop early).
@@ -428,7 +476,7 @@ export default function MapScreen() {
     };
   }, [checkMic]);
 
-  const idle = phase === "ready" || phase === "navigating" || phase === "options";
+  const idle = phase === "ready" || phase === "navigating" || phase === "options" || phase === "providers";
   const wakeArmed = wake.supported && handsFree && micOk && !asleep;
   useEffect(() => {
     if (!wakeArmed) wake.shutdown();
@@ -483,6 +531,13 @@ export default function MapScreen() {
     turn.current++; // discard any in-flight turn
     inflight.current?.abort();
     voice.cancelRecording().catch(() => {});
+    if (phase === "providers") {
+      setProviders(null);
+      setPlaces([]);
+      setCaption(null);
+      setPhase(activeRef.current ? "navigating" : "ready");
+      return;
+    }
     if (phase === "options") {
       // Back to the route card if one is active, otherwise clear the list.
       if (activeRef.current) {
@@ -510,8 +565,10 @@ export default function MapScreen() {
     setCaption(null);
     setOptions([]);
     setParking({});
-    setPlaces([]);
-    setPhase("ready");
+    // A route to a breakdown provider: back to the providers list.
+    const prov = providersRef.current;
+    setPlaces(prov ? prov.providers.map(providerPlace) : []);
+    setPhase(prov ? "providers" : "ready");
     setFit({ key: `end-${Date.now()}`, points: [loc.coords] });
   };
 
@@ -607,6 +664,7 @@ export default function MapScreen() {
         onEndRoute={onEndRoute}
         onLayout={setSheetH}
         wakePhrase={wake.active ? wake.phrase : null}
+        panel={providers ? <ProvidersList data={providers} onRoute={(p) => onPlacePress(providerPlace(p))} /> : null}
       />
 
       {micCard && (

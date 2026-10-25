@@ -16,6 +16,7 @@ from typing import Optional
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 from models import AgentRequest, AgentResponse, Place, RouteInfo, TruckProfile
+from services import breakdown
 from services.geocode import geocode
 from services.parking import cached_parking, check_parking, listed_in_data
 from services.places import get_places_provider
@@ -282,6 +283,9 @@ class LlmAgentProvider:
         if not re.search(r"[a-zA-Z]{2,}", text):
             return _not_understood(text, self.source)
         sess = _session(req.session_id)
+        bd = await breakdown.handle(req, sess, text, self.source)
+        if bd:
+            return bd
         try:
             d = await classify(text, self._context(req, sess), req.truck_profile)
         except Exception:
