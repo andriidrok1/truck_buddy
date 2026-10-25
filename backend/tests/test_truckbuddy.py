@@ -21,7 +21,7 @@ def test_health(s):
     data = r.json()
     assert data.get("ok") is True
     assert data["providers"]["places"] == "mock"
-    assert data["providers"]["agent"] == "gpt-5.5"
+    assert data["providers"]["agent"] == "gpt-5.4-mini"  # single mini model since iter7
 
 
 # OpenAPI
@@ -81,10 +81,10 @@ def test_agent_empty(s):
 
 # Route
 def test_route_valid(s):
-    r = s.post(f"{API}/route", json={"lat": 38.5816, "lng": -121.4944, "place_id": "ts-capitol"}, timeout=60)
+    r = s.post(f"{API}/route", json={"lat": 38.5816, "lng": -121.4944, "place_id": "ts-49er"}, timeout=60)
     assert r.status_code == 200
     d = r.json()
-    assert d["place"]["id"] == "ts-capitol"
+    assert d["place"]["id"] == "ts-49er"
     assert "geometry" in d["route"]
     assert d["route"]["distance_mi"] > 0
 

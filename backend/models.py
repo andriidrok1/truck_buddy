@@ -32,6 +32,7 @@ class PlacesResponse(BaseModel):
     widened: bool
     places: List[Place]
     source: str
+    message: Optional[str] = None  # e.g. outside the demo coverage area
 
 
 class TrafficSegment(BaseModel):
