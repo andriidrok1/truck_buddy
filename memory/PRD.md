@@ -94,3 +94,10 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Frontend: ProvidersList (filters, sort, cards, call/route, tell-them card, share location SMS); provider routes skip parking check.
 - Backlog: hide parking row on provider route card; heading/exit in call card (needs HERE key); HERE fallback live test.
 - 2026-10-25: merged main 4c145cc into emergency (/route: instant reply + background check; skip_parking → no check, parking=None). tests/conftest.py: backend URL from frontend/.env, speech fixtures (/tmp/q.mp3 etc.) generated via /api/speak. Fixed /speak single-flight (pin inside the shared task). Agent context: straight-line distance to active place when the app sends no route numbers. Suite: 335 passed.
+
+## Jun 2026 — Access code, long-term memory, mobile web
+- Shared access code (env ACCESS_CODE=TRUCK2026, case-insensitive) on first launch -> 365-day JWT per device (sub = random driver id), stored in SecureStore/AsyncStorage; 401 sends the app back to the code screen. 5 wrong tries per IP / 10 min (last X-Forwarded-For hop = ingress)
+- All /api routes need Bearer except /health, /auth/access-code, /voice/audio/{id}, /satellite. CORS without credentials
+- Long-term memory in Mongo `conversation` per driver: every turn saved; new dialogs get the driver's lines from the last 80 turns as background. History screen (/history, top-bar chat button) with Clear memory (GET/DELETE /api/memory)
+- Mobile web: PWA meta tags (home-screen app, no zoom on input)
+- Security audit: PASS (only P3 hardening left: token revocation, web token in localStorage)

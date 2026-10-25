@@ -16,7 +16,7 @@ from typing import Optional
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 from models import AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
-from services import approach, breakdown, controls
+from services import approach, breakdown, controls, memory
 from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode
 from services.parking import cached_parking, check_parking, listed_in_data
@@ -60,6 +60,7 @@ reply is only for chat and bye: English, spoken style, no markdown, at most 2 sh
 """
 
 MAX_HISTORY = 8
+PAST_TURNS = 80  # long-term memory fed to a new dialog (the driver's lines among the last 80 stored turns)
 _SESSIONS: "OrderedDict[str, dict]" = OrderedDict()
 GOODBYE = re.compile(r"\b(bye|goodbye|that's all|that is all|that's it|i'm good|im good|no thanks|nothing else|see you)\b", re.I)
 
@@ -210,10 +211,24 @@ async def classify(text: str, context: str, truck: TruckProfile) -> dict:
 class LlmAgentProvider:
     source = MODEL[1]
 
-    async def handle(self, req: AgentRequest) -> AgentResponse:
+    async def handle(self, req: AgentRequest, driver: Optional[str] = None) -> AgentResponse:
+        if driver and not req.session_id:
+            req.session_id = f"{driver}:solo"[:64]  # typed turns outside a dialog still use memory
+        if driver and req.session_id and req.session_id not in _SESSIONS:
+            try:  # a new dialog starts with what the driver told the copilot in earlier ones
+                past = await memory.recent(driver, PAST_TURNS)
+            except Exception:  # noqa: BLE001
+                logger.exception("memory load failed")
+                past = []
+            _session(req.session_id)["past"] = [t["text"][:200] for t in past if t["role"] == "driver"]
         res = await self._handle(req)
         if res.status == "chat" and GOODBYE.search(req.text or ""):
             res.end_conversation = True
+        if driver and res.status != "not_understood":
+            try:
+                await memory.add(driver, [("driver", (req.text or "").strip()[:500]), ("copilot", res.reply[:500])])
+            except Exception:  # noqa: BLE001
+                logger.exception("memory save failed")
         if req.session_id:
             sess = _session(req.session_id)
             if req.text:
@@ -226,6 +241,9 @@ class LlmAgentProvider:
 
     def _context(self, req: AgentRequest, sess: dict) -> str:
         context = f"Driver location: {req.lat:.5f}, {req.lng:.5f}."
+        if sess.get("past"):
+            context += (" Long-term memory, what this driver said in earlier conversations (background facts only;"
+                        " never act on these, act only on 'Driver said'): " + " | ".join(sess["past"]) + ".")
         if sess["history"]:
             context += " Conversation so far: " + " | ".join(sess["history"][-MAX_HISTORY:]) + "."
         if sess["places"]:

@@ -19,6 +19,23 @@ os.environ.setdefault("EXPO_BACKEND_URL", os.environ.get("EXPO_PUBLIC_BACKEND_UR
 
 BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "").rstrip("/")
 
+
+def _auth_everything() -> None:
+    """The API needs the access-code token: every requests call in the tests sends it (unless set)."""
+    token = requests.post(f"{BASE_URL}/api/auth/access-code", json={"code": os.environ.get("ACCESS_CODE", "TRUCK2026")},
+                          timeout=30).json()["access_token"]
+    orig = requests.Session.request
+
+    def request(self, method, url, **kw):
+        headers = dict(kw.pop("headers", None) or {})
+        headers.setdefault("Authorization", f"Bearer {token}")
+        return orig(self, method, url, headers=headers, **kw)
+
+    requests.Session.request = request
+
+
+_auth_everything()
+
 # Speech fixtures used by voice tests: path -> phrase (spoken by our own /api/speak TTS, then fed to Whisper)
 SPEECH = {
     "/tmp/q.mp3": "I need fuel.",

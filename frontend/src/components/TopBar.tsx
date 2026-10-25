@@ -10,11 +10,12 @@ type Props = {
   hazmat: boolean;
   onTruckPress: () => void;
   onMenuPress: () => void;
+  onHistoryPress: () => void;
   isDemo: boolean;
   onLayout: (h: number) => void;
 };
 
-export function TopBar({ topInset, truckLabel, hazmat, onTruckPress, onMenuPress, isDemo, onLayout }: Props) {
+export function TopBar({ topInset, truckLabel, hazmat, onTruckPress, onMenuPress, onHistoryPress, isDemo, onLayout }: Props) {
   const { colors } = useTheme();
   const card = [styles.white, shadow(colors), { backgroundColor: colors.surface }];
 
@@ -42,8 +43,8 @@ export function TopBar({ topInset, truckLabel, hazmat, onTruckPress, onMenuPress
           <Icon name="pencil-outline" size={16} color={colors.muted} />
         </PressableScale>
 
-        <PressableScale testID="layers-button" accessibilityLabel="Map layers" style={[card, styles.circle]}>
-          <Icon name="layers-outline" size={24} color={colors.onSurface} />
+        <PressableScale testID="history-button" accessibilityLabel="Conversation memory" onPress={onHistoryPress} style={[card, styles.circle]}>
+          <Icon name="chat-processing-outline" size={24} color={colors.onSurface} />
         </PressableScale>
       </View>
 

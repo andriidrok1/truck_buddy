@@ -8,7 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from typing import Literal, Optional
 
-from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
@@ -22,7 +22,7 @@ from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import cached_parking, check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.routing import get_routing_provider  # noqa: E402
-from services import approach, approach_api, onboarding, parking_store, parking_warm, timing, voice  # noqa: E402
+from services import approach, approach_api, auth, memory, onboarding, parking_store, parking_warm, timing, voice  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -36,10 +36,43 @@ app = FastAPI(
     docs_url="/api/docs",
     redoc_url=None,
 )
-api = APIRouter(prefix="/api")
+public = APIRouter(prefix="/api")  # no access code: health, code check, audio/satellite (opened by players/images)
+api = APIRouter(prefix="/api", dependencies=[Depends(auth.require_driver)])
 
 
-@api.get("/health")
+class AccessCodeRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=64)
+
+
+@public.post("/auth/access-code")
+async def access_code(req: AccessCodeRequest, request: Request):
+    return {"access_token": auth.redeem(req.code, request), "token_type": "bearer"}
+
+
+@api.get("/auth/check")
+async def auth_check():
+    return {"ok": True}
+
+
+@api.get("/memory")
+async def memory_list(driver: str = Depends(auth.require_driver), limit: int = Query(200, ge=1, le=1000)):
+    return {"turns": await memory.recent(driver, limit)}
+
+
+@api.delete("/memory")
+async def memory_clear(driver: str = Depends(auth.require_driver)):
+    agent_sessions_drop(driver)
+    return {"deleted": await memory.clear(driver)}
+
+
+def agent_sessions_drop(driver: str) -> None:
+    """Forget the in-process dialog of this driver too (its id prefixes the session ids)."""
+    from services.agent import _SESSIONS
+    for sid in [s for s in _SESSIONS if s.startswith(driver)]:
+        _SESSIONS.pop(sid, None)
+
+
+@public.get("/health")
 async def health():
     return {
         "ok": True,
@@ -81,7 +114,7 @@ async def parking_check(req: ParkingRequest):
     return await check_parking(req.place, req.approach)
 
 
-@api.get("/satellite")
+@public.get("/satellite")
 async def satellite(lat: float = Query(..., ge=-90, le=90), lng: float = Query(..., ge=-180, le=180)):
     try:
         img = await fetch_satellite(lat, lng)
@@ -93,8 +126,10 @@ async def satellite(lat: float = Query(..., ge=-90, le=90), lng: float = Query(.
 SENTENCE_END = re.compile(r"(?<!\bSt\.)(?<!\bDr\.)(?<!U\.S\.)(?<=[.!?])\s+(?=[A-Z])")
 
 
-async def _run_agent(req: AgentRequest, speak: bool) -> AgentResponse:
-    res = await get_agent_provider().handle(req)
+async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = None) -> AgentResponse:
+    if driver and req.session_id:
+        req.session_id = f"{driver}:{req.session_id}"[:64]  # sessions can't be shared across drivers
+    res = await get_agent_provider().handle(req, driver)
     logger.info("agent text=%r status=%s place=%s", req.text, res.status, res.place.name if res.place else None)
     return await _speak(res, speak)
 
@@ -120,9 +155,9 @@ def _finish(res: AgentResponse, extra: Optional[dict] = None) -> AgentResponse:
 
 
 @api.post("/agent", response_model=AgentResponse)
-async def agent(req: AgentRequest, speak: bool = Query(False)):
+async def agent(req: AgentRequest, speak: bool = Query(False), driver: str = Depends(auth.require_driver)):
     timing.begin()
-    return _finish(await _run_agent(req, speak))
+    return _finish(await _run_agent(req, speak, driver))
 
 
 @api.get("/breakdown/{rid}", response_model=AgentResponse)
@@ -174,6 +209,7 @@ async def voice_turn(
     truck_profile: Optional[str] = Form(None),  # JSON TruckProfile from the in-app editor
     active_distance_mi: Optional[float] = Form(None, ge=0),
     active_duration_min: Optional[int] = Form(None, ge=0),
+    driver: str = Depends(auth.require_driver),
 ):
     timing.begin()
     with timing.stage("upload"):
@@ -204,7 +240,7 @@ async def voice_turn(
     logger.info("voice transcript=%r", text)
     req = AgentRequest(text=text, lat=lat, lng=lng, active_place=current, truck_profile=truck, session_id=session_id,
                        active_distance_mi=active_distance_mi, active_duration_min=active_duration_min)
-    return _finish(await _run_agent(req, speak=True))
+    return _finish(await _run_agent(req, speak=True, driver=driver))
 
 
 @api.post("/voice/transcribe")
@@ -294,7 +330,7 @@ async def onboarding_parse(audio: UploadFile = File(...), step: str = Form(...))
 _RANGE = re.compile(r"bytes=(\d*)-(\d*)")
 
 
-@api.get("/voice/audio/{audio_id}")
+@public.get("/voice/audio/{audio_id}")
 async def voice_audio(audio_id: str, request: Request):
     """mp3 with byte-range support (AVPlayer on iOS probes with Range: bytes=0-1)."""
     data = await voice.wait_audio(audio_id)
@@ -317,8 +353,9 @@ async def voice_audio(audio_id: str, request: Request):
         **headers, "Content-Range": f"bytes {start}-{end}/{size}", "Content-Length": str(len(chunk))})
 
 
+app.include_router(public)
 app.include_router(api)
-app.include_router(approach_api.router)
+app.include_router(approach_api.router, dependencies=[Depends(auth.require_driver)])
 app.include_router(parking_warm.router)
 
 
@@ -328,7 +365,7 @@ async def places_unavailable(_request, _exc):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
+    allow_credentials=False,  # Bearer tokens only, no cookies
     allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
     allow_methods=["*"],
     allow_headers=["*"],

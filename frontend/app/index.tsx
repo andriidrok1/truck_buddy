@@ -818,6 +818,7 @@ export default function MapScreen() {
         hazmat={truck.hazmat}
         onTruckPress={() => router.push("/truck-profile")}
         onMenuPress={() => router.push("/onboarding")}
+        onHistoryPress={() => router.push("/history")}
         isDemo={loc.resolved && loc.isDemo}
         onLayout={setTopH}
       />

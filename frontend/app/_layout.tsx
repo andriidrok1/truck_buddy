@@ -6,6 +6,8 @@ import { LogBox, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 
+import { useAuthState } from "@/src/auth";
+import { AccessGate } from "@/src/components/AccessGate";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { queryClient } from "@/src/query-client";
 
@@ -14,6 +16,7 @@ import { queryClient } from "@/src/query-client";
 LogBox.ignoreAllLogs(true);
 
 export default function RootLayout() {
+  const auth = useAuthState();
   // Pre-load the icon font (prevents blank icons in Expo Go) and app fonts.
   const [loaded, error] = useFonts({
     MaterialDesignIcons: require("@react-native-vector-icons/material-design-icons/fonts/MaterialDesignIcons.ttf"),
@@ -24,7 +27,7 @@ export default function RootLayout() {
     "PlusJakartaSans-ExtraBold": require("../assets/fonts/PlusJakartaSans-ExtraBold.ttf"),
   });
 
-  if (!loaded && !error) return null;
+  if ((!loaded && !error) || auth === "loading") return null;
 
   // One app level ErrorBoundary; a render crash shows a reload screen
   // instead of a blank app. GestureHandlerRootView must wrap the whole tree
@@ -35,7 +38,7 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <KeyboardProvider>
             <StatusBar style="dark" />
-            <Stack screenOptions={{ headerShown: false }} />
+            {auth === "in" ? <Stack screenOptions={{ headerShown: false }} /> : <AccessGate />}
           </KeyboardProvider>
         </QueryClientProvider>
       </ErrorBoundary>
