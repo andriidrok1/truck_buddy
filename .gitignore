@@ -87,3 +87,4 @@ credentials.json
 *.key
 .credentials
 backend/.tts_cache/
+backend/.parking_cache/

@@ -20,6 +20,7 @@ from services.http import client
 from emergentintegrations.llm.chat import ImageContent, LlmChat, StreamDone, TextDelta, UserMessage
 
 from models import ParkingCheck, ParkingSpot, Place
+from services import parking_store
 
 logger = logging.getLogger("truckbuddy.parking")
 
@@ -51,6 +52,7 @@ FAIL_TTL_S = 300  # don't re-hit the LLM for a failed check for 5 minutes
 _img_cache: dict[str, bytes] = {}
 _verdict_cache: dict[str, ParkingCheck] = {}
 _fail_cache: dict[str, tuple[float, ParkingCheck]] = {}
+_verdict_cache.update(list(parking_store.load_all().items())[-CACHE_MAX:])  # verdicts survive restarts
 
 
 def _put(cache: dict, k: str, v) -> None:
@@ -153,9 +155,43 @@ async def _ask_vision(img: bytes, place: Place) -> dict:
 
 
 def cached_parking(place: Place) -> Optional[ParkingCheck]:
-    """Satellite verdict if already computed, without waiting."""
+    """Satellite verdict if already computed (memory, then disk), without waiting."""
     k = _key(place.lat, place.lng) + (":listed" if listed_in_data(place) else "")
-    return _verdict_cache.get(k)
+    return _from_cache(k)
+
+
+def _from_cache(k: str) -> Optional[ParkingCheck]:
+    hit = _verdict_cache.get(k)
+    if hit is None:
+        hit = parking_store.get(k)
+        if hit is not None:
+            _put(_verdict_cache, k, hit)
+    return hit
+
+
+async def _retry(place: Place, k: str) -> ParkingCheck:
+    """The single allowed re-check of a verdict without an entry point; the result is final."""
+    old = _from_cache(k)
+    new = await _check_parking(place, force=True)
+    keep = new if new.source != "none" and (parking_store.has_entry(new) or not parking_store.has_entry(old)) else old
+    if keep is not None and keep.source != "none":
+        _put(_verdict_cache, k, keep)
+        parking_store.save(k, keep, retried=True)
+    logger.info("parking re-check %s: entry %s -> %s", place.name, parking_store.has_entry(old), parking_store.has_entry(keep))
+    return keep or new
+
+
+async def retry_once(place: Place) -> Optional[ParkingCheck]:
+    """Await the one re-check if this verdict still needs it (used by the startup warm-up)."""
+    k = _key(place.lat, place.lng) + (":listed" if listed_in_data(place) else "")
+    if not parking_store.needs_retry(k):
+        return _from_cache(k)
+    task = _pending.get(k + "#retry")
+    if task is None:
+        task = asyncio.create_task(_retry(place, k))
+        _pending[k + "#retry"] = task
+        task.add_done_callback(lambda _t: _pending.pop(k + "#retry", None))
+    return await asyncio.shield(task)
 
 
 def listed_in_data(place: Place) -> bool:
@@ -180,8 +216,10 @@ async def check_parking(place: Place, approach=None) -> ParkingCheck:
     if approach is not None:
         from services import approach as approach_mod  # lazy: approach imports this module
         approach_mod.remember(place, approach)  # answers asked meanwhile use this approach too
-    if k in _verdict_cache:
-        res = _verdict_cache[k]
+    res = _from_cache(k)
+    if res is not None:
+        if parking_store.needs_retry(k) and k + "#retry" not in _pending:
+            asyncio.ensure_future(retry_once(place))  # answer now from cache; one background re-check
     else:
         task = _pending.get(k)
         if task is None:
@@ -195,12 +233,13 @@ async def check_parking(place: Place, approach=None) -> ParkingCheck:
     return await approach_mod.relative(place, res, approach)
 
 
-async def _check_parking(place: Place) -> ParkingCheck:
-    """Always looks at the satellite image so the driver also gets entry/parking directions."""
+async def _check_parking(place: Place, force: bool = False) -> ParkingCheck:
+    """Always looks at the satellite image so the driver also gets entry/parking directions.
+    force: the one re-check (ignores the cache; the caller decides what to keep)."""
     listed = listed_in_data(place)
     k = _key(place.lat, place.lng) + (":listed" if listed else "")
-    if k in _verdict_cache:
-        return _verdict_cache[k]
+    if not force and (hit := _from_cache(k)) is not None:
+        return hit
     failed = _fail_cache.get(k)
     if failed and time.monotonic() - failed[0] < FAIL_TTL_S:
         return failed[1]
@@ -241,6 +280,9 @@ async def _check_parking(place: Place) -> ParkingCheck:
         }[verdict]
     res = ParkingCheck(verdict=verdict, label=label, reason=reason, source=source, image_path=path,
                        entry_tip=v["entry_tip"], park_tip=v["park_tip"], spots=v["spots"])
+    if force:
+        return res  # _retry() keeps the better of old/new and saves it as final
     _put(_verdict_cache, k, res)
+    parking_store.save(k, res, retried=False)
     logger.info("parking %s -> %s (%s) entry=%r park=%r", place.name, verdict, reason, v["entry_tip"], v["park_tip"])
     return res

@@ -21,7 +21,7 @@ from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import cached_parking, check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.routing import get_routing_provider  # noqa: E402
-from services import approach, approach_api, onboarding, timing, voice  # noqa: E402
+from services import approach, approach_api, onboarding, parking_store, parking_warm, timing, voice  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -48,6 +48,7 @@ async def health():
             "agent": get_agent_provider().source,
             "tts": voice.provider(),
         },
+        "parking_cache": parking_store.stats(),
     }
 
 
@@ -298,6 +299,7 @@ async def voice_audio(audio_id: str, request: Request):
 
 app.include_router(api)
 app.include_router(approach_api.router)
+app.include_router(parking_warm.router)
 
 
 @app.exception_handler(PlacesUnavailable)
