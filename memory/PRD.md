@@ -149,3 +149,5 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Tapping the parking thumbnail opens a full-screen zoomable map (Esri World Imagery, ~300 m frame, same imagery as the verdict).
 - E/P spot markers, place pin, last ~300 m of the active route; pinch/pan; footer with verdict, tips, "Open in Google Maps" (Street View), "Imagery © Esri, may be dated · Tap to close".
 - Native: react-native-maps + UrlTile (ParkingSatMap.native.tsx); web: Esri tile renderer (ParkingSatMap.tsx). Not pushed yet — awaiting user confirmation.
+- Web satellite map: pinch zooms around the fingers, mouse wheel around the cursor; no browser page-zoom on pinch.
+- CopilotSheet shows "Route ends at truck entrance" when the route ends at the E spot. Not pushed — awaiting user confirmation.

@@ -11,6 +11,7 @@ import { OptionsList } from "./OptionsList";
 import { ParkingStatus } from "./ParkingStatus";
 import { haptic, PressableScale } from "./PressableScale";
 import { Waveform } from "./Waveform";
+import { entrySpot, routeEndsAt } from "../utils/entry";
 
 type Props = {
   phase: Phase;
@@ -151,6 +152,17 @@ export function CopilotSheet(props: Props) {
             <Animated.Text key={`sum-${active.route.summary}`} entering={FadeInDown.springify().damping(15)} testID="route-summary" style={[styles.eta, { color: colors.onSurface }]}>
               {active.route.summary}
             </Animated.Text>
+            {(() => {
+              const e = entrySpot(active.parking);
+              return e && routeEndsAt(active.route, e) ? (
+                <Animated.View key={`to-entry-${active.place.id}`} entering={FadeIn} style={styles.entryRow}>
+                  <Icon name="login-variant" size={16} color={colors.info} />
+                  <Text testID="route-to-entry" style={[styles.notice, { color: colors.info }]}>
+                    Route ends at truck entrance
+                  </Text>
+                </Animated.View>
+              ) : null;
+            })()}
             {active.route.truck_aware === false && (
               <Text testID="route-not-truck-checked" style={[styles.notice, { color: colors.warning }]}>
                 Estimated route · truck restrictions not checked
@@ -295,6 +307,7 @@ const styles = StyleSheet.create({
   tagRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.xs },
   tags: { fontFamily: fonts.medium, fontSize: 14, flexShrink: 1 },
   notice: { fontFamily: fonts.medium, fontSize: 12 },
+  entryRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   otherBtn: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", minHeight: 44, gap: 2 },
   otherText: { fontFamily: fonts.bold, fontSize: 14 },
   actions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.sm },

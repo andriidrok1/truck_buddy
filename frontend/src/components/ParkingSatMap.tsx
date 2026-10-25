@@ -1,7 +1,7 @@
 // Web version (react-native-maps does not run on web): Esri imagery tiles with
 // drag-to-pan, pinch / +- zoom, and the same E / P / place / route-tail overlays.
 import { Image } from "expo-image";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentRef } from "react";
 import { PanResponder, StyleSheet, View, type LayoutChangeEvent } from "react-native";
 
 import { radius, useTheme } from "../theme";
@@ -37,15 +37,18 @@ function frameZoom(lat: number, width: number) {
 export default function ParkingSatMap({ center, place, spots, tail }: ParkingSatMapProps) {
   const { colors } = useTheme();
   const [size, setSize] = useState({ w: 390, h: 600 });
+  const sizeRef = useRef(size);
   const [view, setView] = useState({ center, zoom: frameZoom(center.lat, 390) });
   const viewRef = useRef(view);
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
   const sized = useRef(false);
+  const rootRef = useRef<ComponentRef<typeof View>>(null);
 
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
+    sizeRef.current = { w: width, h: height };
     setSize({ w: width, h: height });
     if (!sized.current) {
       sized.current = true;
@@ -53,11 +56,41 @@ export default function ParkingSatMap({ center, place, spots, tail }: ParkingSat
     }
   };
 
-  const zoomBy = (d: number) => setView((v) => ({ center: v.center, zoom: Math.min(MAX_Z, Math.max(3, v.zoom + d)) }));
+  /** Zoom to level `to(z)` keeping the point at screen (px, py) fixed; no point = view centre. */
+  const zoomTo = (to: (z: number) => number, px?: number, py?: number) =>
+    setView((v) => {
+      const z2 = Math.min(MAX_Z, Math.max(3, to(v.zoom)));
+      if (z2 === v.zoom) return v;
+      const { w, h } = sizeRef.current;
+      const ox = (px ?? w / 2) - w / 2;
+      const oy = (py ?? h / 2) - h / 2;
+      const c0 = project(v.center, v.zoom);
+      const q = project(unproject(c0.x + ox, c0.y + oy, v.zoom), z2);
+      return { zoom: z2, center: unproject(q.x - ox, q.y - oy, z2) };
+    });
+  const zoomBy = (d: number) => zoomTo((z) => z + d);
+
+  // Mouse wheel / trackpad: one zoom level per ~100 px of scroll, around the cursor (web only).
+  useEffect(() => {
+    const node = rootRef.current as unknown as HTMLElement | null;
+    if (!node?.addEventListener) return;
+    let acc = 0;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      acc += e.deltaY;
+      if (Math.abs(acc) < 100) return;
+      const d = acc > 0 ? -1 : 1;
+      acc = 0;
+      const r = node.getBoundingClientRect();
+      zoomTo((z) => z + d, e.clientX - r.left, e.clientY - r.top);
+    };
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return () => node.removeEventListener("wheel", onWheel);
+  }, []);
 
   const [pan] = useState(() => {
     let start = { x: 0, y: 0 };
-    let pinch: { dist: number; zoom: number } | null = null;
+    let pinch: { dist: number; zoom: number; x: number; y: number } | null = null;
     const dist = (t: readonly { pageX: number; pageY: number }[]) => Math.hypot(t[0].pageX - t[1].pageX, t[0].pageY - t[1].pageY);
     return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -70,9 +103,19 @@ export default function ParkingSatMap({ center, place, spots, tail }: ParkingSat
         const t = e.nativeEvent.touches;
         if (t.length === 2) {
           const d = dist(t);
-          if (!pinch) pinch = { dist: d, zoom: viewRef.current.zoom };
-          const z = Math.min(MAX_Z, Math.max(3, Math.round(pinch.zoom + Math.log2(d / pinch.dist))));
-          if (z !== viewRef.current.zoom) setView({ zoom: z, center: viewRef.current.center });
+          // Focal point = midpoint between the fingers when the pinch started.
+          if (!pinch) {
+            // Measured now: the modal may still have been sliding in at layout time.
+            const r = (rootRef.current as unknown as HTMLElement | null)?.getBoundingClientRect?.() ?? { left: 0, top: 0 };
+            pinch = {
+              dist: d,
+              zoom: viewRef.current.zoom,
+              x: (t[0].pageX + t[1].pageX) / 2 - r.left,
+              y: (t[0].pageY + t[1].pageY) / 2 - r.top,
+            };
+          }
+          const p = pinch;
+          zoomTo(() => Math.round(p.zoom + Math.log2(d / p.dist)), p.x, p.y);
           return;
         }
         if (pinch) return;
@@ -137,7 +180,7 @@ export default function ParkingSatMap({ center, place, spots, tail }: ParkingSat
   const pin = place ? toScreen(place.lat, place.lng) : null;
 
   return (
-    <View testID="parking-sat-map" style={[StyleSheet.absoluteFill, styles.root, { backgroundColor: colors.surfaceInverse }]} onLayout={onLayout}>
+    <View ref={rootRef} testID="parking-sat-map" style={[StyleSheet.absoluteFill, styles.root, { backgroundColor: colors.surfaceInverse }]} onLayout={onLayout}>
       <View style={StyleSheet.absoluteFill} {...pan.panHandlers}>
         {/* Not hit-testable, so the browser can't start an image drag and steal the pan */}
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -185,7 +228,8 @@ export default function ParkingSatMap({ center, place, spots, tail }: ParkingSat
 }
 
 const styles = StyleSheet.create({
-  root: { overflow: "hidden" },
+  // touchAction: the browser must not page-zoom on a pinch over the map (web only).
+  root: { overflow: "hidden", touchAction: "none" } as object,
   zoomCol: { position: "absolute", right: 16, bottom: 16, gap: 8 },
   zoomBtn: { width: 44, height: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
 });
