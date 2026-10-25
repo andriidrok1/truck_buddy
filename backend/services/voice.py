@@ -180,15 +180,26 @@ def pin(audio_id: str, key: str) -> str:
     data = _AUDIO_CACHE.get(audio_id)
     if data is None or audio_id in _FALLBACK_IDS:
         return audio_id
-    stable = hashlib.sha1(key.encode()).hexdigest()[:32]
+    stable = _stable_id(key)
     try:
         _PIN_DIR.mkdir(exist_ok=True)
         (_PIN_DIR / f"{stable}.mp3").write_bytes(data)
     except OSError as e:
         logger.warning("could not pin audio: %s", e)
         return audio_id
+    _AUDIO_CACHE.pop(audio_id, None)
     _AUDIO_CACHE[stable] = data
     return stable
+
+
+def _stable_id(key: str) -> str:
+    return hashlib.sha1(key.encode()).hexdigest()[:32]
+
+
+def pinned(key: str) -> Optional[str]:
+    """Id of an already stored fixed line (no new TTS call after a restart), or None."""
+    sid = _stable_id(key)
+    return sid if get_audio(sid) is not None else None
 
 
 def get_audio(audio_id: str) -> Optional[bytes]:

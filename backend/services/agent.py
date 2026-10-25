@@ -269,6 +269,8 @@ class LlmAgentProvider:
         for p in found[:PRECHECK]:
             _background(check_parking(p))  # warm satellite checks; never wait for them here
         if all(p.id in exclude for p in found):
+            # Everything was turned down: offer them again (the driver can now pick or search anew).
+            _SESSIONS.get(req.session_id or "", {}).pop("rejected", None)
             return AgentResponse(status="chat", transcript=text, category=category, reply=ALL_REJECTED,
                                  source=self.source)
         chosen = choose_place(found, req.truck_profile, exclude)

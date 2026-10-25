@@ -232,7 +232,7 @@ _SPEAK_PENDING: dict[str, "asyncio.Task[Optional[str]]"] = {}
 async def speak(req: SpeakRequest):
     """TTS for fixed copilot lines (onboarding, reminders). Cached per text, one generation per text."""
     key = f"{voice.cache_tag(req.voice, req.model, req.eleven_voice_id)}|{req.text}"
-    audio_id = _SPEAK_CACHE.get(key)
+    audio_id = _SPEAK_CACHE.get(key) or voice.pinned(key)
     if not audio_id or voice.get_audio(audio_id) is None:
         task = _SPEAK_PENDING.get(key)
         if task is None:
