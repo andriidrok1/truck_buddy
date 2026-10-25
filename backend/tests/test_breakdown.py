@@ -229,6 +229,25 @@ def test_no_false_24_7_guard():
     assert "J B BROS TRUCK: 0.7 miles away, mobile." in out and "Reno Truck is open twenty-four seven." in out
 
 
+def test_superlatives_in_code():
+    a, b = dict(prov("a", 5, prices=True), name="A"), dict(prov("b", 1), name="B")
+    assert bd.pick_superlative([a, b], "cheapest")["id"] == "a"  # one priced provider is enough
+    assert bd.pick_superlative([b], "cheapest") is None
+    assert bd.pick_superlative([a, b], "closest")["id"] == "b"
+    assert bd.SUPERLATIVE.search("call the cheapest one") and bd.DO_CALL.search("call the cheapest one")
+
+
+def test_price_filter_and_dedupe():
+    raw = {"prices": [{"what": "other", "amount_usd_low": 15, "amount_usd_high": 15, "source": "review",
+                       "quote": "showers $15, open 24 hours"},
+                      {"what": "hourly labor", "amount_usd_low": 180, "amount_usd_high": 180, "source": "website",
+                       "quote": "$180 per hour"},
+                      {"what": "hourly labor", "amount_usd_low": 180, "amount_usd_high": 180, "source": "website",
+                       "quote": "$180 per hour"}]}
+    f = ps.clean_facts(raw, "- showers $15, open 24 hours", "Rates: $180 per hour")
+    assert [p["amount_usd_low"] for p in f["prices"]] == [180]
+
+
 def test_wait_text():
     assert bd.wait_text({"typical_min_low": 0, "typical_min_high": 60}) == "within an hour"
     assert bd.wait_text({"typical_min_low": 120, "typical_min_high": 120}) == "about 2 hours"

@@ -51,7 +51,7 @@ PARSE_SYSTEM = """A truck driver describes a mechanical problem. Return JSON onl
  "mode": "mobile_needed"|"shop_ok"|"unknown",
  "tire_position": "steer"|"drive"|"trailer"|null, "tire_size": "<e.g. 295/75R22.5>"|null,
  "changed_topic": true|false}
-changed_topic is true only if the driver's answer is not an answer to our question but a new request or a cancel ("never mind", "take me to Reno", "forget it").
+changed_topic is true only if the driver's answer is not an answer to our question but a new request or a cancel ("never mind", "take me to Reno", "find a truck stop", "forget it"); then breakdown is false too.
 breakdown is false if this is not about the truck or trailer needing repair, tow or fuel (e.g. "find a truck stop").
 kind: tire = flat/blowout/tire; tow = needs a tow or wrecker; reefer = refrigeration unit; fuel = ran out of fuel/DEF;
 electrical = lights, battery, alternator, wiring, brake/ABS light; trailer = landing gear, doors, air lines, trailer brakes;
@@ -375,9 +375,37 @@ async def result(rid: str) -> Optional[AgentResponse]:
 
 # ---------------------------------------------------------------- follow-ups
 
+SUPERLATIVE = re.compile(r"\b(cheapest|fastest|quickest|closest|nearest)\b", re.I)
+DO_CALL = re.compile(r"\b(call|dial|phone|ring)\b", re.I)
+DO_ROUTE = re.compile(r"\b(route|take me|go to|drive to|navigate)\b", re.I)
+
+
+def pick_superlative(providers: list[dict], word: str) -> Optional[dict]:
+    """cheapest = lowest posted price (one priced provider is enough), fastest = lowest ETA, closest = distance."""
+    w = word.lower()
+    if w == "cheapest":
+        priced = [p for p in providers if p["facts"]["prices"]]
+        return min(priced, key=lambda p: min(x["amount_usd_low"] for x in p["facts"]["prices"])) if priced else None
+    if w in ("fastest", "quickest"):
+        timed = [p for p in providers if p["facts"]["wait_time"]]
+        return min(timed, key=lambda p: p["facts"]["wait_time"]["typical_min_high"]) if timed else None
+    return min(providers, key=lambda p: p.get("distance_mi") or 0)
+
+
 async def followup(req: AgentRequest, sess: dict, text: str, source: str) -> Optional[AgentResponse]:
     providers = sess["providers"]
-    out = await _llm(FOLLOWUP_SYSTEM.format(providers=_brief(providers)), f"Driver said: {text}")
+    sup = SUPERLATIVE.search(text)
+    if sup and (DO_CALL.search(text) or DO_ROUTE.search(text)):
+        # "call the cheapest one" / "route me to the closest": decided in code, not by the model.
+        chosen = pick_superlative(providers, sup.group(1))
+        if chosen is None:
+            what = "prices" if sup.group(1).lower() == "cheapest" else "how fast they come out"
+            return AgentResponse(status="chat", transcript=text, source=source,
+                                 reply=f"None of them mention {what}. Want me to call {providers[0]['name']}, the top pick?")
+        out = {"about_providers": True, "action": "call" if DO_CALL.search(text) else "route",
+               "index": providers.index(chosen) + 1, "reply": ""}
+    else:
+        out = await _llm(FOLLOWUP_SYSTEM.format(providers=_brief(providers)), f"Driver said: {text}")
     if out.get("about_providers") is not True:
         return None
     action = out.get("action")
@@ -440,8 +468,8 @@ async def _handle(req: AgentRequest, sess: dict, text: str, source: str) -> Opti
             d = await _llm(PARSE_SYSTEM, f"Driver said: {pending['text']} | We asked: {pending.get('question', '')} | "
                                          f"Then answered: {text}")
         sess.pop("breakdown_pending", None)
-        if d.get("changed_topic") is True:
-            return None  # "never mind, take me to Reno": the normal agent handles it, no research
+        if d.get("changed_topic") is True or d.get("breakdown") is False:
+            return None  # "never mind, take me to Reno" / "find a truck stop": the normal agent handles it
         # The answer only fills in how/which; the problem itself stays what the driver said first.
         d["kind"] = pending["kind"]
         d["detail"] = pending.get("detail") or d.get("detail")

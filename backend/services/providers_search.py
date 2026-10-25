@@ -305,8 +305,8 @@ async def site_text(url: Optional[str]) -> str:
 EMPTY_FACTS = {"mobile_service": "unknown", "hours_24_7": "unknown", "truck_focused": False, "prices": [],
                "wait_time": None, "payment": [], "red_flags": [], "praise": [], "last_review_date": None}
 PAYMENTS = ("comchek", "efs", "t-chek", "card", "cash")
-SERVICE_PRICE = re.compile(r"repair|tire|tow|road ?call|service call|labor|hour|hook|per mile|mile|deliver|install|"
-                           r"mount|patch|jump|unlock|reefer|diag", re.I)
+SERVICE_PRICE = re.compile(r"repair|tire|tow|road ?call|service call|labor|per hour|hourly|an hour|/ ?hr|hook|"
+                           r"per mile|a mile|/ ?mi\b|deliver|install|mount|patch|jump|unlock|reefer|diag", re.I)
 
 
 def _norm(s: str) -> str:
@@ -359,6 +359,8 @@ def clean_facts(raw: dict, reviews_text: str, website_text: str) -> dict:
         what = str(p.get("what") or "price")[:40]
         if not SERVICE_PRICE.search(quote):
             continue  # fuel, showers, food: the quote itself must be about a repair/tow/road call
+        if any((x["what"], x["amount_usd_low"], x["amount_usd_high"]) == (what, lo, hi) for x in prices):
+            continue  # same price twice (review + website)
         prices.append({"what": what, "amount_usd_low": lo, "amount_usd_high": hi,
                        "source": source, "quote": quote})
     out["prices"] = prices[:6]
