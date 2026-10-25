@@ -768,7 +768,9 @@ export default function MapScreen() {
     setPhase("thinking");
     setThinkingText(STAGES[1]);
     try {
-      const res = await api.route(loc.coords, p);
+      // Breakdown providers: the driver needs the shop, not a satellite parking check (faster route).
+      const isProvider = !!providersRef.current?.providers.some((x) => x.id === p.id);
+      const res = await api.route(loc.coords, p, isProvider);
       if (myTurn !== turn.current) return;
       // Keep the previous destination among the alternatives.
       setOptions((list) => [...(prev ? [prev.place] : []), ...list].filter((o) => o.id !== p.id));

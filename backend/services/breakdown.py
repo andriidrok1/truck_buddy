@@ -42,19 +42,21 @@ RESULT_WAIT_S = 30
 # Block for the agent's classification prompt (services/agent.py SYSTEM, same pattern as approach.PROMPT).
 PROMPT = """- breakdown: the truck or trailer is broken or stuck and the driver wants someone to fix it, tow it or bring fuel ("I blew a tire", "flat on the trailer", "truck won't start", "losing power", "need a tow", "reefer quit", "ran out of fuel", "brake light on", "landing gear stuck", "who can fix ... near me"). Use intent "breakdown" and also return
   "kind": "tire"|"mechanic"|"tow"|"reefer"|"fuel"|"electrical"|"trailer" (tire = flat/blowout; tow = needs a tow or wrecker; reefer = refrigeration unit; fuel = out of fuel/DEF; electrical = lights, battery, alternator, wiring, brake/ABS light; trailer = landing gear, doors, air lines, trailer brakes; mechanic = engine, won't start, losing power, check engine, overheating, anything else),
-  "detail": the problem in the driver's own words (short), "mode": "mobile_needed" (can't move, needs them to come out) | "shop_ok" (still drives, can roll to a shop) | "unknown",
+  "detail": the problem in the driver's own words (short), "mode": "mobile_needed" (can't move, needs them to come out) | "shop_ok" (ONLY if the driver says it still drives / can roll to a shop; "losing power" alone is unknown) | "unknown",
   "tire_position": "steer"|"drive"|"trailer"|null, "tire_size": e.g. "295/75R22.5" or null. Only what the driver said; no safety lectures."""
 
 PARSE_SYSTEM = """A truck driver describes a mechanical problem. Return JSON only:
 {"breakdown": true|false, "kind": "tire"|"mechanic"|"tow"|"reefer"|"fuel"|"electrical"|"trailer"|null,
  "detail": "<the problem in the driver's own words, short, e.g. blew a drive tire on the trailer>",
  "mode": "mobile_needed"|"shop_ok"|"unknown",
- "tire_position": "steer"|"drive"|"trailer"|null, "tire_size": "<e.g. 295/75R22.5>"|null}
+ "tire_position": "steer"|"drive"|"trailer"|null, "tire_size": "<e.g. 295/75R22.5>"|null,
+ "changed_topic": true|false}
+changed_topic is true only if the driver's answer is not an answer to our question but a new request or a cancel ("never mind", "take me to Reno", "forget it").
 breakdown is false if this is not about the truck or trailer needing repair, tow or fuel (e.g. "find a truck stop").
 kind: tire = flat/blowout/tire; tow = needs a tow or wrecker; reefer = refrigeration unit; fuel = ran out of fuel/DEF;
 electrical = lights, battery, alternator, wiring, brake/ABS light; trailer = landing gear, doors, air lines, trailer brakes;
 mechanic = engine, won't start, losing power, check engine, overheating, air leak, anything else.
-mode: mobile_needed if the truck can't move, is stuck, needs them to come out, or a tow; shop_ok if the driver says it still drives or can roll to a shop; else unknown.
+mode: mobile_needed if the truck can't move, is stuck, needs them to come out, or a tow; shop_ok ONLY if the driver explicitly says it still drives or they can roll to a shop ("losing power" alone is unknown); else unknown.
 Never add details the driver didn't say."""
 
 FOLLOWUP_SYSTEM = """You help a stranded truck driver choose between roadside service providers found a moment ago.
@@ -66,7 +68,7 @@ Classify the driver's LAST utterance. JSON only:
 - call: driver wants to phone one ("call the cheapest one", "call Big Rig"). index = that provider. reply = "Calling <name>."
 - route: driver wants to drive/be routed there ("route me to the mobile one"). index = that provider. reply = "".
 - more: "anyone else", "any other options". reply = "".
-- answer: any question about them ("which one takes Comchek", "how far is the second one", "read me their reviews"). reply = spoken answer, max 3 short sentences, ONLY from the facts above; quote reviews from the facts when asked to read them. If the fact is not there, say exactly: "They don't mention that, ask when you call."
+- answer: any question about them ("which one takes Comchek", "how far is the second one", "read me their reviews"). reply = spoken answer, max 3 short sentences, ONLY from the facts above; quote reviews from the facts when asked to read them. Only if the asked fact is missing, say exactly: "They don't mention that, ask when you call." Never add that sentence after a real answer.
 "cheapest" = lowest price amount in the facts; "fastest" = lowest wait time; "closest" = smallest distance. If nobody has that fact, answer and say they don't mention it.
 English, spoken style, no markdown, no numbers as digits with units glued (say "six miles")."""
 
@@ -75,9 +77,9 @@ Here are the ranked providers. "known" lists the ONLY things that are true about
 {providers}
 Cheapest by price mentions: {cheapest}. Fastest by reviews: {fastest}.
 Write JSON only: {{"spoken": "...", "summary": "..."}}
-spoken: what you say out loud, max 60 words, natural like a dispatcher who just called around. Start with "Okay, here's what I found." The list is already ranked: the best bet is ALWAYS provider i=1; say why using its "known" facts. Name the cheapest and the fastest only if given above (not "none") and they are someone else. If a provider has red flags, say you'd skip them and why in a few words. End with "Tap one to call, or ask me anything about them."
+spoken: what you say out loud, max 60 words, natural like a dispatcher who just called around. Start with "Okay, here's what I found." The list is already ranked: the best bet is ALWAYS provider i=1; say why using its "known" facts. Name the cheapest and the fastest only if given above (not "none") and they are someone else. If a provider has red flags, say you'd skip them and why in a few words; if nobody has red flags, say nothing about skipping. End with "Tap one to call, or ask me anything about them."
 {price_rule}
-summary: two sentences for the screen: who is the best choice and why, who to avoid if anyone.
+summary: two sentences for the screen (digits are fine here: 2.6 mi, 24/7, 4.7 stars): who is the best choice and why, who to avoid if anyone.
 Never invent prices, times, hours or services. Never lecture about safety. Write numbers in words for spoken (four point seven stars, six miles)."""
 
 _JOBS: dict[str, "asyncio.Task[AgentResponse]"] = {}
@@ -207,15 +209,18 @@ def known(p: dict) -> list[str]:
         out.append("shop only, you'd have to roll there")
     if p.get("listed_24_7") or f["hours_24_7"] is True:
         out.append("open 24/7")
-    elif p.get("open_now") is True:
-        out.append("open now")
-    elif p.get("open_now") is False:
-        out.append("closed right now")
+    else:
+        out.append("NOT listed as 24/7 (never say 24/7 for this one)")
+        if p.get("open_now") is True:
+            out.append("open now")
+        elif p.get("open_now") is False:
+            out.append("closed right now")
     for x in f["prices"]:
         amt = f"${x['amount_usd_low']:.0f}" + (f"-{x['amount_usd_high']:.0f}" if x["amount_usd_high"] != x["amount_usd_low"] else "")
         out.append(f"{'drivers mention' if x['source'] == 'review' else 'website says'} {amt} {x['what']}")
     if f["wait_time"]:
-        out.append(f"drivers say they come out {wait_text(f['wait_time'])}")
+        who = "drivers say they" if f["wait_time"].get("source") != "website" else "their website says they"
+        out.append(f"{who} come out {wait_text(f['wait_time'])}")
     if f["red_flags"]:
         out.append("red flags in reviews: " + ", ".join(f["red_flags"]))
     if f["payment"]:
@@ -387,7 +392,7 @@ async def from_intent(d: dict, req: AgentRequest, sess: dict, text: str, source:
         d["kind"] = "mechanic"
     q = needs_question(d)
     if q:
-        sess["breakdown_pending"] = {"text": text, "kind": d["kind"], "detail": d.get("detail")}
+        sess["breakdown_pending"] = {"text": text, "kind": d["kind"], "detail": d.get("detail"), "question": q}
         return AgentResponse(status="chat", transcript=text, reply=q, breakdown_kind=d["kind"], source=source)
     return start_research(d, req, sess, text, source)
 
@@ -410,10 +415,14 @@ async def _handle(req: AgentRequest, sess: dict, text: str, source: str) -> Opti
     pending = sess.get("breakdown_pending")
     if pending:
         with stage("llm_round_1"):
-            d = await _llm(PARSE_SYSTEM, f"Driver said: {pending['text']} | Then answered: {text}")
-        if d.get("kind") not in ps.KINDS:
-            d["kind"] = pending["kind"]
-        d["detail"] = d.get("detail") or pending.get("detail")
+            d = await _llm(PARSE_SYSTEM, f"Driver said: {pending['text']} | We asked: {pending.get('question', '')} | "
+                                         f"Then answered: {text}")
+        sess.pop("breakdown_pending", None)
+        if d.get("changed_topic") is True:
+            return None  # "never mind, take me to Reno": the normal agent handles it, no research
+        # The answer only fills in how/which; the problem itself stays what the driver said first.
+        d["kind"] = pending["kind"]
+        d["detail"] = pending.get("detail") or d.get("detail")
         return start_research(d, req, sess, text, source)
 
     if sess.get("providers") and time.monotonic() - sess.get("providers_at", 0) < FOLLOWUP_TTL_S:

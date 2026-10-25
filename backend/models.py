@@ -139,6 +139,7 @@ class RouteRequest(BaseModel):
     lng: float
     place_id: Optional[str] = None
     place: Optional[Place] = None  # preferred: the place object from a previous search
+    skip_parking: bool = False  # breakdown providers: the driver needs the shop, not a parking check
     truck_profile: TruckProfile = Field(default_factory=lambda: TruckProfile())
 
 

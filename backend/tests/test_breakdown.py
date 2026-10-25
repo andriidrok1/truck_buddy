@@ -180,8 +180,45 @@ def test_fit_spoken_cuts_whole_sentences():
 
 def test_fuel_and_shower_prices_are_not_repair_prices():
     raw = {"prices": [{"what": "other: diesel", "amount_usd_low": 6, "amount_usd_high": 6, "source": "review",
-                       "quote": "$6.41 for diesel here"}]}
-    assert ps.clean_facts(raw, "- $6.41 for diesel here", "")["prices"] == []
+                       "quote": "$6.41 for diesel here"},
+                      {"what": "hourly labor", "amount_usd_low": 18, "amount_usd_high": 18, "source": "review",
+                       "quote": "purchase my shower for $18.00"}]}
+    assert ps.clean_facts(raw, "- $6.41 for diesel here. purchase my shower for $18.00", "")["prices"] == []
+
+
+def test_vague_hour_wait_is_bounded():
+    raw = {"wait_time": {"typical_min_low": 60, "typical_min_high": 300, "quote": "back on the road in less than an hour"}}
+    assert ps.clean_facts(raw, "- back on the road in less than an hour.", "")["wait_time"] is None
+    raw = {"wait_time": {"typical_min_low": 0, "typical_min_high": 60, "quote": "back on the road in less than an hour"}}
+    assert ps.clean_facts(raw, "- back on the road in less than an hour.", "")["wait_time"]["typical_min_high"] == 60
+
+
+def test_wait_range_must_match_quote():
+    raw = {"wait_time": {"typical_min_low": 30, "typical_min_high": 45, "quote": "usually 30 min out"}}
+    assert ps.clean_facts(raw, "- usually 30 min out to me", "")["wait_time"] is None
+    raw = {"wait_time": {"typical_min_low": 0, "typical_min_high": 120, "quote": "2 hr later they arrived"}}
+    w = ps.clean_facts(raw, "- 2 hr later they arrived", "")["wait_time"]
+    assert w["typical_min_high"] == 120 and w["source"] == "review"
+    raw = {"wait_time": {"typical_min_low": 30, "typical_min_high": 60, "quote": "30-60 min ETA guaranteed"}}
+    assert ps.clean_facts(raw, "", "30-60 min ETA guaranteed in the county")["wait_time"]["source"] == "website"
+
+
+def test_pending_answer_keeps_kind_and_can_back_out(monkeypatch):
+    from models import AgentRequest
+    req = AgentRequest(text="x", lat=38.58, lng=-121.49)
+    started = {}
+
+    async def fake_llm(system, text, timeout=25):
+        return {"kind": "trailer", "detail": "trailer", "mode": "mobile_needed", "changed_topic": "Reno" in text}
+
+    monkeypatch.setattr(bd, "_llm", fake_llm)
+    monkeypatch.setattr(bd, "start_research", lambda d, *a: started.update(d) or "started")
+    sess = {"breakdown_pending": {"text": "I blew a tire", "kind": "tire", "detail": "blew a tire"}}
+    assert asyncio.run(bd._handle(req, sess, "trailer, can't roll", "t")) == "started"
+    assert started["kind"] == "tire" and started["detail"] == "blew a tire"
+    sess = {"breakdown_pending": {"text": "I blew a tire", "kind": "tire", "detail": "blew a tire"}}
+    assert asyncio.run(bd._handle(req, sess, "never mind, take me to Reno", "t")) is None
+    assert "breakdown_pending" not in sess
 
 
 def test_wait_text():
@@ -195,7 +232,8 @@ def test_known_facts_never_claim_unknowns():
     p = prov("a", 3, mobile="unknown", open_now=None)
     p.update(name="A", shop_only=False)
     facts = " ".join(bd.known(p))
-    assert "24/7" not in facts and "mobile" not in facts and "$" not in facts
+    assert "open 24/7" not in facts and "mobile" not in facts and "$" not in facts
+    assert "NOT listed as 24/7" in facts
 
 
 def test_cheapest_needs_two_priced():

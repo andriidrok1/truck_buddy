@@ -78,7 +78,7 @@ export type ProviderFacts = {
   hours_24_7: boolean | "unknown";
   truck_focused: boolean;
   prices: PriceFact[];
-  wait_time?: { typical_min_low: number; typical_min_high: number; quote: string } | null;
+  wait_time?: { typical_min_low: number; typical_min_high: number; quote: string; source?: "review" | "website" } | null;
   payment: string[];
   red_flags: string[];
   praise: string[];

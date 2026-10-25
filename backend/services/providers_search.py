@@ -357,8 +357,8 @@ def clean_facts(raw: dict, reviews_text: str, website_text: str) -> dict:
         if int(lo) not in amounts and int(hi) not in amounts:
             continue  # the number must be the one written in the quote
         what = str(p.get("what") or "price")[:40]
-        if what.lower().startswith("other") and not SERVICE_PRICE.search(f"{what} {quote}"):
-            continue  # fuel, showers, food: not a repair price
+        if not SERVICE_PRICE.search(quote):
+            continue  # fuel, showers, food: the quote itself must be about a repair/tow/road call
         prices.append({"what": what, "amount_usd_low": lo, "amount_usd_high": hi,
                        "source": source, "quote": quote})
     out["prices"] = prices[:6]
@@ -367,9 +367,16 @@ def clean_facts(raw: dict, reviews_text: str, website_text: str) -> dict:
     # A wait time needs a number or "hour" in the quote ("showed up quick" is not a time).
     if isinstance(w, dict) and _quoted(wq, both) and re.search(r"\d|hour|half", wq, re.I):
         lo, hi = _num(w.get("typical_min_low")), _num(w.get("typical_min_high"))
+        nums = {int(n) for n in re.findall(r"\d+", wq)} or ({30, 60} if re.search(r"hour|half", wq, re.I) else set())
+        if lo is not None and hi is not None:
+            # Minutes or hours written in the quote bound the range ("usually 30 min" -> 30-30, not 30-45).
+            allowed = nums | {n * 60 for n in nums} | {0}
+            if int(lo) not in allowed or int(hi) not in allowed:
+                lo = hi = None
         if lo is not None and hi is not None and max(lo, hi) > 0:
+            in_site = _quoted(wq, src["website"]) and not _quoted(wq, src["review"])
             out["wait_time"] = {"typical_min_low": min(lo, hi), "typical_min_high": max(lo, hi),
-                                "quote": str(w["quote"])[:120]}
+                                "quote": str(w["quote"])[:120], "source": "website" if in_site else "review"}
     out["payment"] = [p for p in PAYMENTS if p in [str(x).lower() for x in raw.get("payment") or []]
                       and (p.replace("-", "") in both.replace("-", "") or p in ("card", "cash"))]
     out["red_flags"] = [str(x)[:60] for x in (raw.get("red_flags") or [])[:2] if str(x).strip()]

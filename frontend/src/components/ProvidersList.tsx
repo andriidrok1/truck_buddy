@@ -45,6 +45,7 @@ function Chip({ label, on, onPress, testID, colors }: { label: string; on: boole
     <Pressable
       testID={testID}
       onPress={onPress}
+      hitSlop={{ top: 6, bottom: 6 }}
       style={[styles.chip, { backgroundColor: on ? colors.brandPrimary : colors.surface, borderColor: on ? colors.brandPrimary : colors.border }]}
     >
       <Text style={[styles.chipText, { color: on ? colors.onBrandPrimary : colors.onSurface }]}>{label}</Text>
@@ -145,7 +146,7 @@ function ProviderCard({ p, index, onRoute }: { p: Provider; index: number; onRou
         {f.wait_time && (
           <Text testID={`provider-eta-${p.id}`} style={[styles.line, { color: colors.onSurface }]}>
             out within {f.wait_time.typical_min_low > 0 ? `${f.wait_time.typical_min_low}–` : ""}
-            {f.wait_time.typical_min_high} min by reviews
+            {f.wait_time.typical_min_high} min {f.wait_time.source === "website" ? "per website" : "by reviews"}
           </Text>
         )}
         {quote && (
@@ -242,7 +243,7 @@ export function ProvidersList({ data, onRoute }: { data: ProvidersResult; onRout
 
       <ScrollView style={{ maxHeight: height * 0.42 }} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
         {data.summary && (
-          <Text testID="providers-summary" style={[styles.summary, { color: colors.onSurface }]}>{data.summary}</Text>
+          <Text testID="providers-summary" numberOfLines={3} style={[styles.summary, { color: colors.onSurface }]}>{data.summary}</Text>
         )}
         {data.call_card && <TellThem card={data.call_card} />}
         {list.length === 0 && (

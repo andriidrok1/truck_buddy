@@ -21,10 +21,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   places: (category: Category, at: LatLng) =>
     request<PlacesResponse>(`/places?category=${category}&lat=${at.lat}&lng=${at.lng}`),
-  route: (from: LatLng, place: Place) =>
+  route: (from: LatLng, place: Place, skipParking = false) =>
     request<{ place: Place; route: RouteInfo; parking?: ParkingCheck | null }>(`/route`, {
       method: "POST",
-      body: JSON.stringify({ lat: from.lat, lng: from.lng, place, truck_profile: getTruckProfile() }),
+      body: JSON.stringify({ lat: from.lat, lng: from.lng, place, skip_parking: skipParking, truck_profile: getTruckProfile() }),
     }),
   parking: (place: Place, approach?: Approach | null) =>
     request<ParkingCheck>(`/parking`, { method: "POST", body: JSON.stringify({ place, approach }) }),
