@@ -93,3 +93,4 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - GET /api/breakdown/{id} long-poll; follow-ups (call/route cheapest/fastest/closest in code, Q&A from facts).
 - Frontend: ProvidersList (filters, sort, cards, call/route, tell-them card, share location SMS); provider routes skip parking check.
 - Backlog: hide parking row on provider route card; heading/exit in call card (needs HERE key); HERE fallback live test.
+- 2026-10-25: merged main 4c145cc into emergency (/route: instant reply + background check; skip_parking → no check, parking=None). tests/conftest.py: backend URL from frontend/.env, speech fixtures (/tmp/q.mp3 etc.) generated via /api/speak. Fixed /speak single-flight (pin inside the shared task). Agent context: straight-line distance to active place when the app sends no route numbers. Suite: 335 passed.
