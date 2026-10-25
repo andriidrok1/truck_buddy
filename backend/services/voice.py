@@ -36,10 +36,21 @@ _AUDIO_CACHE: "OrderedDict[str, bytes]" = OrderedDict()
 _CACHE_MAX = 50
 
 
+STT_MODEL = "gpt-4o-mini-transcribe"  # more accurate with accents/cab noise, faster; returns "" on silence
+
+
 async def transcribe(data: bytes, filename: str) -> str:
+    stt = OpenAISpeechToText(api_key=os.environ["EMERGENT_LLM_KEY"])
+    try:
+        buf = io.BytesIO(data)
+        buf.name = filename
+        res = await stt.transcribe(file=buf, model=STT_MODEL, response_format="json", language="en",
+                                   prompt=PROMPT, temperature=0.0)
+        return _clean((getattr(res, "text", "") or "").strip())
+    except Exception as e:  # noqa: BLE001 - fall back to Whisper with its confidence guard
+        logger.warning("stt %s failed, falling back to whisper-1: %s", STT_MODEL, e)
     buf = io.BytesIO(data)
     buf.name = filename
-    stt = OpenAISpeechToText(api_key=os.environ["EMERGENT_LLM_KEY"])
     res = await stt.transcribe(file=buf, model="whisper-1", response_format="verbose_json", language="en",
                                prompt=PROMPT)
     segments = getattr(res, "segments", None) or []
@@ -59,6 +70,10 @@ async def transcribe(data: bytes, filename: str) -> str:
         text = " ".join(kept).strip()
     else:
         text = (getattr(res, "text", "") or "").strip()
+    return _clean(text)
+
+
+def _clean(text: str) -> str:
     if NOISE_ONLY.fullmatch(text):
         if text:
             logger.info("stt dropped noise-only text %r", text)

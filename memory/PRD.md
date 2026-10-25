@@ -117,3 +117,8 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Drop truck_stop results named truck wash/scale/restaurant/taqueria/tacos/tech/office or with restaurant/cafe/car_wash/office primaryType; keep only truck_stop+fuel type or chain/truck-stop name (chain name always wins)
 - Dedupe: 60 m, or 500 m with the same name; curated MOCK_PLACES merged into Google results and preferred
 - Raw Google list (name, primaryType, types, km, drop reason) logged per search
+
+## Jun 2026 — Better speech understanding
+- STT model: gpt-4o-mini-transcribe (json, en, trucking prompt, temp 0); whisper-1 + confidence guard only as fallback on error
+- Agent prompt: words come from noisy-cab speech recognition; act on the corrected trucker meaning ("a few" = fuel, "the stars are out" = start the route), never invent destinations
+- Mic: pause also detected when the level drops 14 dB under the driver's average voice this turn (loud cab noise no longer keeps the mic open)

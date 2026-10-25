@@ -19,6 +19,7 @@ const SPEECH_OVER_FLOOR = 10; // dB above the calibrated noise floor
 const SILENCE_OVER_FLOOR = 4;
 const CALIBRATE_MS = 400; // the first part of each listen measures the cab noise
 const SUSTAIN_MS = 300; // speech only counts after this long above the threshold
+const DROP_FROM_VOICE_DB = 14; // this far under the driver's average voice = a pause, whatever the cab noise
 const POLL_MS = 100;
 const CHIME = require("../../assets/sounds/chime.mp3");
 
@@ -144,6 +145,8 @@ export function useVoice() {
       let spoke = false;
       let quietSince = 0;
       let loudSince = 0;
+      let voiceSum = 0; // the driver's speech level this turn (average)
+      let voiceN = 0;
       let hasMeter = false;
       const calib: number[] = [];
       let speechDb = SPEECH_DB;
@@ -181,10 +184,17 @@ export function useVoice() {
           if (db > speechDb) {
             loudSince = loudSince || now;
             if (now - loudSince >= SUSTAIN_MS) spoke = true;
+            if (spoke) {
+              voiceSum += db;
+              voiceN++;
+            }
             quietSince = 0;
           } else {
             loudSince = 0;
-            if (db < silenceDb && spoke) {
+            // Pause = below the floor-based level, or well under the driver's average voice (loud cab
+            // noise that never drops to the floor must not keep the mic open for 15 s).
+            const voiceDb = voiceN ? voiceSum / voiceN : -160;
+            if (spoke && (db < silenceDb || db < voiceDb - DROP_FROM_VOICE_DB)) {
               quietSince = quietSince || now;
               if (now - quietSince >= silenceMs) {
                 ended = "silence";
@@ -207,7 +217,7 @@ export function useVoice() {
         if (now - t0 > maxMs) break;
       }
       if (listenToken.current !== token) return "cancelled" as const;
-      console.log(`[voice] turn end=${ended} ms=${Date.now() - t0} peak=${peak.toFixed(1)} avg=${n ? (sum / n).toFixed(1) : "-"} speech>${speechDb.toFixed(1)} silence<${silenceDb.toFixed(1)} silenceMs=${silenceMs}`);
+      console.log(`[voice] turn end=${ended} ms=${Date.now() - t0} peak=${peak.toFixed(1)} voice=${voiceN ? (voiceSum / voiceN).toFixed(1) : "-"} avg=${n ? (sum / n).toFixed(1) : "-"} speech>${speechDb.toFixed(1)} silence<${silenceDb.toFixed(1)} silenceMs=${silenceMs}`);
       return (await stopRecording()) ?? ("silent" as const);
     },
     [recorder, startRecording, stopRecording, cancelRecording],
