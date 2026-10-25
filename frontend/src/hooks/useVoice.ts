@@ -143,12 +143,24 @@ export function useVoice() {
     [stopSpeaking],
   );
 
-  /** Plays and resolves when finished (or after maxMs, e.g. if autoplay is blocked). */
+  /**
+   * Plays and resolves when finished. `maxMs` only guards playback that never starts
+   * (e.g. autoplay blocked); once audio plays, it runs to the end (real duration + margin).
+   */
   const playAndWait = useCallback(
     (uri: string, maxMs: number) =>
       new Promise<void>((resolve) => {
         play(uri);
-        const timer = setTimeout(() => stopSpeaking(), maxMs);
+        const p = player.current;
+        let timer = setTimeout(() => stopSpeaking(), Math.max(maxMs, 6000));
+        let started = false;
+        p?.addListener("playbackStatusUpdate", (s) => {
+          if (started || player.current !== p || !s.playing) return;
+          started = true;
+          clearTimeout(timer);
+          const left = s.duration > 0 ? (s.duration - (s.currentTime || 0)) * 1000 : 60000;
+          timer = setTimeout(() => player.current === p && stopSpeaking(), left + 2500);
+        });
         playDone.current = () => {
           clearTimeout(timer);
           resolve();

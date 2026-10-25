@@ -79,3 +79,4 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - Driving mode: "Go" button on route card → map zooms/follows truck (native: tilted camera), top NavBanner (next turn arrow, distance, instruction, mute toggle), bottom arrival time + remaining time/miles
 - Turn-by-turn from HERE actions (RouteInfo.maneuvers, imperial). Spoken prompts ~1 mi / ~0.5 mi-500 ft / at turn when voice on
 - Voice guidance on/off: banner button (persisted) + agent intent "voice" (AgentResponse.voice_guidance)
+- Fix: speech cut-off — playAndWait safety timer now only guards never-started playback; after start waits real audio duration +2.5s. Turn prompts never interrupt the copilot.

@@ -271,7 +271,7 @@ export default function MapScreen() {
 
   // Turn-by-turn while driving; prompts stay quiet while the driver is talking to the copilot.
   const guidance = useGuidance(active, loc.coords, driving, voiceOn, (text) => {
-    if (phase === "listening" || phase === "thinking") return;
+    if (phase === "listening" || phase === "thinking" || voice.speaking) return; // never cut off the copilot
     setCaption({ reply: text });
     api
       .speak(text)
