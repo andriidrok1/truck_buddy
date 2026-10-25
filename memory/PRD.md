@@ -40,3 +40,10 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - User decisions: agent auto-routes to best place, others under "See N other options"; satellite check of 3 nearest before choosing, reply says how to enter + where to park (entry_tip, park_tip, E/P spots with lat/lng); category chips removed
 - Map layer files untouched (owned by the other agent); spots[] lat/lng ready for map pins
 - Backlog: show E/P spots on the main map (map agent), real routes, Google key, truck profile editor
+
+## 2026-06 — Truck routing to any destination
+- Voice "take me to <city/address/landmark>" → agent tool route_to_address → geocode (HERE Geocode+Discover, ORS, Nominatim; low-confidence rejected) → truck route
+- Routing: HERE v8 transportMode=truck (height/length/weight/hazmat) → ORS driving-hgv fallback → mock; friendly deduped notices; summary in h/min
+- Editable truck profile (/truck-profile; height ft/in, trailer ft, weight lb, hazmat) stored on device, sent with every request; chip in top bar + hazmat badge
+- Keys: HERE_API_KEY, ORS_API_KEY (backend)
+- Backlog: real places for stops (Google key), turn-by-turn guidance in app, E/P spots on map (map agent)

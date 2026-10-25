@@ -102,18 +102,28 @@ export function CopilotSheet(props: Props) {
         {navigating && active && (
           <View style={styles.navInfo}>
             <Text testID="route-summary" style={[styles.eta, { color: colors.onSurface }]}>
-              {active.route.duration_min} min · {active.route.distance_mi.toFixed(1)} mi
+              {active.route.summary}
             </Text>
+            {active.route.truck_aware === false && (
+              <Text testID="route-not-truck-checked" style={[styles.notice, { color: colors.warning }]}>
+                Estimated route · truck restrictions not checked
+              </Text>
+            )}
+            {!!active.route.notices?.length && (
+              <Text testID="route-notices" numberOfLines={2} style={[styles.notice, { color: colors.error }]}>
+                {active.route.notices.slice(0, 2).join(" · ")}
+              </Text>
+            )}
             <Text testID="route-place-name" numberOfLines={1} style={[styles.placeName, { color: colors.onSurface }]}>
               {active.place.name}
             </Text>
             <View style={styles.tagRow}>
               <Icon name={active.place.tags.length ? "truck" : "map-marker-outline"} size={18} color={colors.onSurfaceSecondary} />
               <Text testID="route-place-tags" numberOfLines={1} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
-                {active.place.tags.length ? active.place.tags.join(" · ") : active.place.address ?? "Address unknown"}
+                {active.place.tags.length ? active.place.tags.join(" · ") : active.place.address ?? (active.place.category === "destination" ? "Destination" : "Address unknown")}
               </Text>
             </View>
-            <ParkingStatus parking={active.parking} />
+            {active.place.category !== "destination" && <ParkingStatus parking={active.parking} />}
             {options.length > 0 && (
               <Pressable testID="other-options-button" onPress={onShowOptions} hitSlop={8} style={styles.otherBtn}>
                 <Text style={[styles.otherText, { color: colors.info }]}>
@@ -206,6 +216,7 @@ const styles = StyleSheet.create({
   placeName: { fontFamily: fonts.semibold, fontSize: 17, marginTop: 2 },
   tagRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.xs },
   tags: { fontFamily: fonts.medium, fontSize: 14, flexShrink: 1 },
+  notice: { fontFamily: fonts.medium, fontSize: 12 },
   otherBtn: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", minHeight: 44, gap: 2 },
   otherText: { fontFamily: fonts.bold, fontSize: 14 },
   actions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.sm },

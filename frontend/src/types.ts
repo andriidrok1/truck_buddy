@@ -1,6 +1,6 @@
 export type LatLng = { lat: number; lng: number };
 
-export type Category = "truck_stop" | "hotel" | "rest_area";
+export type Category = "truck_stop" | "hotel" | "rest_area" | "destination";
 
 export type Place = {
   id: string;
@@ -25,6 +25,8 @@ export type RouteInfo = {
   duration_min: number;
   summary: string;
   source: string;
+  notices?: string[];
+  truck_aware?: boolean;
 };
 
 export type PlacesResponse = {

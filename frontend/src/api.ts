@@ -1,4 +1,4 @@
-import { TRUCK_PROFILE } from "./constants";
+import { getTruckProfile } from "./hooks/useTruckProfile";
 import { uploadForm } from "./utils/upload";
 import type { AgentResponse, Category, LatLng, ParkingCheck, PlacesResponse, Place, RouteInfo } from "./types";
 
@@ -24,19 +24,20 @@ export const api = {
   route: (from: LatLng, place: Place) =>
     request<{ place: Place; route: RouteInfo; parking?: ParkingCheck | null }>(`/route`, {
       method: "POST",
-      body: JSON.stringify({ lat: from.lat, lng: from.lng, place }),
+      body: JSON.stringify({ lat: from.lat, lng: from.lng, place, truck_profile: getTruckProfile() }),
     }),
   parking: (place: Place) =>
     request<ParkingCheck>(`/parking`, { method: "POST", body: JSON.stringify({ place }) }),
   agent: (text: string, at: LatLng) =>
     request<AgentResponse>(`/agent`, {
       method: "POST",
-      body: JSON.stringify({ text, lat: at.lat, lng: at.lng, truck_profile: TRUCK_PROFILE }),
+      body: JSON.stringify({ text, lat: at.lat, lng: at.lng, truck_profile: getTruckProfile() }),
     }),
   voice: async (uri: string, at: LatLng, activePlace?: Place, signal?: AbortSignal) => {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
     const fields: Record<string, string> = { lat: String(at.lat), lng: String(at.lng) };
     if (activePlace) fields.active_place = JSON.stringify(activePlace);
+    fields.truck_profile = JSON.stringify(getTruckProfile());
     const res = await uploadForm(`${BASE}/voice`, {
       fields,
       files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },

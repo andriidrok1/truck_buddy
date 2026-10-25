@@ -14,6 +14,7 @@ from typing import Optional
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 from models import AgentRequest, AgentResponse, ParkingCheck, Place, RouteInfo
+from services.geocode import geocode
 from services.parking import check_parking
 from services.places import get_places_provider
 from services.routing import get_routing_provider
@@ -44,6 +45,19 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "route_to_address",
+            "description": "Build a truck-safe route (respecting the truck's height, length, weight and hazmat) "
+                           "to any US address, city, business or landmark the driver names.",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "Address or place, e.g. 'Reno, NV' or '1200 Main St, Dallas TX'"}},
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "set_route",
             "description": "Set the navigation route to a place returned by search_places. Returns the address, "
                            "distance and a satellite check of truck parking with entry and parking directions.",
@@ -57,7 +71,7 @@ TOOLS = [
 ]
 
 SYSTEM = """You are TruckBuddy, a hands-free voice copilot for a long-haul truck driver. The driver is driving, so be brief.
-Truck: {height}, {trailer}.
+Truck: {truck}.
 
 How to act:
 - If the driver needs a place, call search_places with the best category yourself, never ask which one:
@@ -66,6 +80,7 @@ How to act:
   rest_area = quick break, stretch, restroom, short nap, rest area.
 - Then pick the best result and call set_route with its id. The nearest results include a satellite parking check: prefer parking verdict "listed" or "likely" over "unclear", and never pick "unlikely" if another option is "listed"/"likely"/"unclear"; among equals pick the closest. Always set the route; don't ask for confirmation.
 - If search_places returns no places, reply exactly: "I couldn't find one nearby."
+- If the driver names a destination (a city, address, business or landmark: "take me to Reno", "go to 1200 Main St Dallas", "I need to get to the Port of Oakland"), call route_to_address with it. The route already accounts for the truck's height, length, weight and hazmat. Reply with the destination, total time and miles; mention any restriction notices briefly. Don't do a parking check for these.
 - If the driver asks something that is not a place request (e.g. "how far is it?", "where do I park?", "thanks"), answer briefly using the context and do NOT call any tool.
 - If the input is just a sound or noise label (siren, beeping, music) or is unintelligible, reply exactly: "Sorry, I didn't catch that. Try again."
 - Reply in English, spoken style, no markdown, no lists, at most 2 short sentences.
@@ -97,15 +112,14 @@ class LlmAgentProvider:
         context = f"Driver location: {req.lat:.5f}, {req.lng:.5f}."
         cur = req.active_place
         if cur:
-            r = await routing_p.route(req.lat, req.lng, cur.lat, cur.lng)
+            r = await routing_p.route(req.lat, req.lng, cur.lat, cur.lng, req.truck_profile)
             context += (f" Current route: {cur.name} ({cur.address or 'address unknown'}), "
                         f"{r.distance_mi:.1f} miles, about {r.duration_min} minutes.")
         else:
             context += " No route is active."
 
         chat = (LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"turn-{uuid.uuid4()}",
-                        system_message=SYSTEM.format(height=req.truck_profile.height,
-                                                     trailer=req.truck_profile.trailer_length))
+                        system_message=SYSTEM.format(truck=req.truck_profile.label))
                 .with_model(*MODEL)
                 .with_tools(TOOLS, tool_choice="auto"))
 
@@ -136,12 +150,23 @@ class LlmAgentProvider:
                         for b, c in zip(briefs, checks):
                             b["parking"] = {"verdict": c.verdict, "reason": c.reason}
                         result = {"widened": res.widened, "places": briefs}
+                    elif tc.name == "route_to_address" and str(args.get("query", "")).strip():
+                        matches = await geocode(str(args["query"]).strip(), req.lat, req.lng)
+                        if matches:
+                            chosen, parking = matches[0], None
+                            route = await routing_p.route(req.lat, req.lng, chosen.lat, chosen.lng, req.truck_profile)
+                            found = []
+                            result = {"ok": True, "destination": chosen.address or chosen.name,
+                                      "distance_mi": route.distance_mi, "duration": route.summary.split(" · ")[0],
+                                      "truck_safe_routing": route.truck_aware, "notices": route.notices[:3]}
+                        else:
+                            result = {"ok": False, "error": "address not found; ask the driver to repeat the destination"}
                     elif tc.name == "set_route":
                         place = candidates.get(str(args.get("place_id", "")))
                         if place:
                             chosen = place
                             route, parking = await asyncio.gather(
-                                routing_p.route(req.lat, req.lng, place.lat, place.lng),
+                                routing_p.route(req.lat, req.lng, place.lat, place.lng, req.truck_profile),
                                 check_parking(place),
                             )
                             result = {"ok": True, "name": place.name, "address": place.address,

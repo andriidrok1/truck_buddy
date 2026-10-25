@@ -1,17 +1,19 @@
 import { StyleSheet, Text, View } from "react-native";
 
-import { TRUCK_PROFILE_LABEL } from "../constants";
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
 
 type Props = {
   topInset: number;
+  truckLabel: string;
+  hazmat: boolean;
+  onTruckPress: () => void;
   isDemo: boolean;
   onLayout: (h: number) => void;
 };
 
-export function TopBar({ topInset, isDemo, onLayout }: Props) {
+export function TopBar({ topInset, truckLabel, hazmat, onTruckPress, isDemo, onLayout }: Props) {
   const { colors } = useTheme();
   const card = [styles.white, shadow(colors), { backgroundColor: colors.surface }];
 
@@ -26,12 +28,18 @@ export function TopBar({ topInset, isDemo, onLayout }: Props) {
           <Icon name="menu" size={24} color={colors.onSurface} />
         </PressableScale>
 
-        <View testID="truck-profile-chip" style={[card, styles.profile]}>
+        <PressableScale testID="truck-profile-chip" accessibilityLabel="Edit truck" onPress={onTruckPress} containerStyle={styles.profileWrap} style={[card, styles.profile]}>
           <Icon name="truck" size={20} color={colors.onSurface} />
           <Text style={[styles.profileText, { color: colors.onSurface }]} numberOfLines={1}>
-            {TRUCK_PROFILE_LABEL}
+            {truckLabel}
           </Text>
-        </View>
+          {hazmat && (
+            <View testID="truck-hazmat-badge" style={[styles.hazmat, { backgroundColor: colors.warning }]}>
+              <Icon name="biohazard" size={14} color={colors.onWarning} />
+            </View>
+          )}
+          <Icon name="pencil-outline" size={16} color={colors.muted} />
+        </PressableScale>
 
         <PressableScale testID="layers-button" accessibilityLabel="Map layers" style={[card, styles.circle]}>
           <Icon name="layers-outline" size={24} color={colors.onSurface} />
@@ -53,8 +61,9 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, gap: spacing.md },
   white: {},
   circle: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
+  profileWrap: { flex: 1 },
+  hazmat: { width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center" },
   profile: {
-    flex: 1,
     height: 48,
     borderRadius: radius.pill,
     flexDirection: "row",

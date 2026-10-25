@@ -14,7 +14,7 @@ from starlette.middleware.cors import CORSMiddleware
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-from models import AgentRequest, AgentResponse, Category, ParkingCheck, ParkingRequest, Place, PlacesResponse, RouteRequest, RouteResponse  # noqa: E402
+from models import AgentRequest, AgentResponse, Category, ParkingCheck, ParkingRequest, Place, PlacesResponse, RouteRequest, RouteResponse, TruckProfile  # noqa: E402
 from services.agent import get_agent_provider  # noqa: E402
 from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import check_parking, fetch_satellite  # noqa: E402
@@ -64,10 +64,10 @@ async def build_route(req: RouteRequest):
         place = await get_places_provider().get(req.place_id, req.lat, req.lng)
     if place is None:
         raise HTTPException(status_code=404, detail="Place not found")
-    route, parking = await asyncio.gather(
-        get_routing_provider().route(req.lat, req.lng, place.lat, place.lng),
-        check_parking(place),
-    )
+    route_task = get_routing_provider().route(req.lat, req.lng, place.lat, place.lng, req.truck_profile)
+    if place.category == "destination":  # addresses/cities: no parking check
+        return RouteResponse(place=place, route=await route_task, parking=None)
+    route, parking = await asyncio.gather(route_task, check_parking(place))
     return RouteResponse(place=place, route=route, parking=parking)
 
 
@@ -106,6 +106,7 @@ async def voice_turn(
     lat: float = Form(..., ge=-90, le=90),
     lng: float = Form(..., ge=-180, le=180),
     active_place: Optional[str] = Form(None),  # JSON of the current destination Place
+    truck_profile: Optional[str] = Form(None),  # JSON TruckProfile from the in-app editor
 ):
     data = await audio.read()
     if not data:
@@ -118,6 +119,10 @@ async def voice_turn(
             current = Place(**json.loads(active_place))
         except Exception:
             raise HTTPException(status_code=422, detail="Invalid active_place")
+    try:
+        truck = TruckProfile(**json.loads(truck_profile)) if truck_profile else TruckProfile()
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid truck_profile")
     name = audio.filename or "speech.m4a"
     if "." not in name:
         name += ".webm" if "webm" in (audio.content_type or "") else ".m4a"
@@ -127,7 +132,7 @@ async def voice_turn(
         logger.exception("transcription failed")
         text = ""
     logger.info("voice transcript=%r", text)
-    return await _run_agent(AgentRequest(text=text, lat=lat, lng=lng, active_place=current), speak=True)
+    return await _run_agent(AgentRequest(text=text, lat=lat, lng=lng, active_place=current, truck_profile=truck), speak=True)
 
 
 @api.get("/voice/audio/{audio_id}")

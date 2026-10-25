@@ -3,6 +3,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 Category = Literal["truck_stop", "hotel", "rest_area"]
+PlaceCategory = Literal["truck_stop", "hotel", "rest_area", "destination"]
 
 
 class LatLng(BaseModel):
@@ -13,7 +14,7 @@ class LatLng(BaseModel):
 class Place(BaseModel):
     id: str
     name: str
-    category: Category
+    category: PlaceCategory
     lat: float
     lng: float
     tags: List[str] = Field(default_factory=list)
@@ -39,8 +40,10 @@ class RouteInfo(BaseModel):
     duration_s: float
     distance_mi: float
     duration_min: int
-    summary: str  # "12 min · 6.2 mi"
-    source: str
+    summary: str  # "12 min · 6.2 mi" / "5 h 20 min · 312 mi"
+    source: str  # here | openrouteservice | mock
+    notices: List[str] = Field(default_factory=list)  # restriction warnings from the router
+    truck_aware: bool = False  # True when height/length/weight/hazmat were applied
 
 
 ParkingVerdict = Literal["listed", "likely", "unlikely", "unclear"]
@@ -65,11 +68,32 @@ class ParkingCheck(BaseModel):
     spots: List[ParkingSpot] = Field(default_factory=list)
 
 
+TRACTOR_FT = 20  # typical tractor length added to the trailer
+
+
+class TruckProfile(BaseModel):
+    height_in: int = Field(162, ge=60, le=203)  # 13 ft 6 in; max 16 ft 11 in
+    trailer_ft: int = Field(53, ge=10, le=65)
+    weight_lb: int = Field(80000, ge=5000, le=200000)
+    hazmat: bool = False
+
+    @property
+    def total_length_ft(self) -> int:
+        return self.trailer_ft + TRACTOR_FT
+
+    @property
+    def label(self) -> str:
+        h = f"{self.height_in // 12} ft {self.height_in % 12} in"
+        return (f"{h} tall, {self.trailer_ft} ft trailer (~{self.total_length_ft} ft total), "
+                f"{self.weight_lb:,} lb gross{', hazmat' if self.hazmat else ''}")
+
+
 class RouteRequest(BaseModel):
     lat: float
     lng: float
     place_id: Optional[str] = None
     place: Optional[Place] = None  # preferred: the place object from a previous search
+    truck_profile: TruckProfile = Field(default_factory=lambda: TruckProfile())
 
 
 class ParkingRequest(BaseModel):
@@ -80,11 +104,6 @@ class RouteResponse(BaseModel):
     place: Place
     route: RouteInfo
     parking: Optional[ParkingCheck] = None
-
-
-class TruckProfile(BaseModel):
-    height: str = "13 ft 6 in"
-    trailer_length: str = "53 ft trailer"
 
 
 class AgentRequest(BaseModel):
@@ -101,7 +120,7 @@ AgentStatus = Literal["options", "route_set", "chat", "no_results", "not_underst
 class AgentResponse(BaseModel):
     status: AgentStatus
     transcript: str
-    category: Optional[Category] = None
+    category: Optional[PlaceCategory] = None
     reply: str
     message: Optional[str] = None  # UI message for non-success statuses
     place: Optional[Place] = None

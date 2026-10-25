@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -13,6 +14,7 @@ import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
+import { truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { shadow, spacing, useTheme } from "@/src/theme";
 import type { ActiveRoute, AgentResponse, LatLng, ParkingState, Phase, Place } from "@/src/types";
@@ -28,6 +30,8 @@ export default function MapScreen() {
   const { colors } = useTheme();
   const loc = useDriverLocation();
   const voice = useVoice();
+  const truck = useTruckProfile();
+  const router = useRouter();
   const mapRef = useRef<MapLayerHandle>(null);
   const center = useRef<LatLng>(loc.coords);
 
@@ -142,7 +146,12 @@ export default function MapScreen() {
       sayReply(res);
     } catch (e) {
       if (myTurn !== turn.current) return;
-      const msg = String(e).includes("502") ? MESSAGES.placesUnavailable : MESSAGES.notUnderstood;
+      const err = String(e);
+      const msg = err.includes("422")
+        ? "Check your truck profile and try again."
+        : err.includes("502")
+          ? MESSAGES.placesUnavailable
+          : MESSAGES.notUnderstood;
       showToast(msg);
       setCaption({ reply: msg });
       backToIdle();
@@ -273,7 +282,14 @@ export default function MapScreen() {
         onPlacePress={onPlacePress}
       />
 
-      <TopBar topInset={insets.top} isDemo={loc.resolved && loc.isDemo} onLayout={setTopH} />
+      <TopBar
+        topInset={insets.top}
+        truckLabel={truckLabel(truck)}
+        hazmat={truck.hazmat}
+        onTruckPress={() => router.push("/truck-profile")}
+        isDemo={loc.resolved && loc.isDemo}
+        onLayout={setTopH}
+      />
 
       <PressableScale
         testID="recenter-button"
