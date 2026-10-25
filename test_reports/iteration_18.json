@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 27/28 review (towns, dialog session, controls, busy search, truck-editor reroute, find near). Backend: test_iter27 (unit + live) all passed; the new T1 flow tests passed 7/8. The 'find near' feature is FLAKY because of how the LLM classifies intent: 'where can I park close to my delivery in Stockton' worked only 5 of 10 times (4/10 got category=rest_area, giving 'I couldn't find a rest area near Stockton.', and 1/10 got intent=parking, giving 'Which place? Find one or set a route first.'). 'and a hotel there' once came back as intent=pick and returned Crossroads Inn in Sacramento instead of a hotel in Stockton, which failed test_iter28::test_near_town_delivery_and_follow_up_reuses_point. Town parking line, 'take the second one', all 8 control phrases with an active route, address find-near (4/4) and the failed-geocode read-back work. Frontend (390x844): (a) the busy toast works and the field keeps its text, (b) saving the truck editor reroutes silently (only /api/route is called, no speak or agent call, no caption) and the failure toast works, (c) 'take the second one' typed in the sheet routes to the 2nd option with the same session id.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/agent (find near, follow-up)", "issue": "'and a hotel there' after a find-near is sometimes classified as intent=pick with category=hotel. pick_place finds no hotel among sess.places, so the code falls back to self._find(req, category, ...) around the DRIVER and ignores sess['near'] (agent.py ~L496-502). Result: Crossroads Inn at lat 38.596 (Sacramento) instead of a Stockton hotel. Failed test_iter28::test_near_town_delivery_and_follow_up_reuses_point once; about 1 in 7 runs.", "priority": "HIGH"},
+      {"endpoint": "POST /api/agent (find near)", "issue": "'where can I park close to my delivery in Stockton' failed 5 of 10 runs: 4 of 10 the LLM picked category=rest_area and the rest-area search around Stockton returned nothing, giving status=no_results 'I couldn't find a rest area near Stockton.'; 1 of 10 it returned intent=parking with no active place, giving 'Which place? Find one or set a route first.'", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/agent (find near)", "issue": "When the chosen place is at the named address, the reply reads 'Sacramento 49er Travel Plaza, 0 miles from 2828 El Centro Rd, 5.5 miles from you.' '0 miles' sounds odd; say 'right at' or 'less than a mile from' instead."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "TopBar search (Where to?)", "issue": "index.tsx:890 adds 'Take me to ' in front of every search, so the caption reads 'You said: \"Take me to I need fuel\"'. It looks wrong for find-style queries; show the text the driver typed.", "testID": "search-input", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter27_errors_towns_controls.py",
+    "/app/backend/tests/test_iter28_find_near.py",
+    "/app/backend/tests/test_iter28_review_flows.py",
+    "/app/backend/tests/probe_find_near_flaky.py",
+    "/app/backend/tests/probe_controls_near.py",
+    "/app/test_reports/pytest/iter18_27_28.xml",
+    "/app/test_reports/pytest/iter18_review.xml"
+  ],
+  "action_items": [
+    "agent.py _handle pick branch: when pick_place returns nothing and the category differs from the last place (or the text matches there/near it/same area) while sess['near'] is set, call _find_near(req, category, sess['near']['query'], ...) instead of _find around the driver. Better: run the 'near' reuse regex before intent routing for both find and pick.",
+    "Find-near category: in the classify prompt, map park/parking/staging near a delivery or shipper to category=truck_stop (never rest_area). Also, when a rest_area search near a point returns nothing, fall back to truck_stop.",
+    "When intent=parking arrives with no active_place and no session places but the text names a point ('close to my delivery in X'), treat it as find truck_stop near X instead of returning 'Which place?'.",
+    "Minor: when from_point < 0.5 mi, reply '<name>, right at <where>, N miles from you' instead of '0 miles from'.",
+    "Minor: stop showing the 'Take me to' prefix in the caption for typed searches (index.tsx:890)."
+  ],
+  "critical_code_review_comments": [
+    "agent.py: the near-point reuse for 'there' only runs in the intent=='find' branch. The pick fallback (_find) and parking intents never see sess['near'].",
+    "agent.py _find_near: the 'where' wording ('your delivery' / 'the shipper') depends on a regex over the raw text, which is fine. The from_point distance is the place's distance to the point from the places provider, and is recomputed for the list, which is good.",
+    "index.tsx reroute(): if the truck-editor reroute fails, the old route (and its notices, e.g. the 14'6\" restriction warning) stays on screen. Acceptable, but the notices may not match the saved profile.",
+    "While a route is idle (not driving), the frontend made about 18 /api/speak calls within 25 s (guidance prefetch?). Check this is intended, because of the TTS quota."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter28_review_flows.py (new)",
+    "/app/backend/tests/probe_find_near_flaky.py (new)",
+    "/app/backend/tests/probe_controls_near.py (new)"
+  ],
+  "success_rate": {"backend": "93% (27/29 pytest; find-near Stockton flow only 5/10 in the probe)", "frontend": "100% (a, b incl. failure toast, c)"},
+  "seed_data_creation": "None. The test sessions use session_id prefixes T1-*, t28-* and dlg-*.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run the pytest files from /app/backend (rootdir pytest.ini uses xdist; running from tests/ breaks the 'models' import). conftest injects the Bearer token automatically. The probes are standalone python scripts (they get their own token): python tests/probe_find_near_flaky.py 10. For web: grant geolocation 38.58,-121.49, enter TRUCK2026 in access-code-input, then onboarding-skip-button.",
+  "rca_of_issue": "Find-near flakiness comes from the LLM's choice of intent and category. (1) 'and a hotel there' becomes intent=pick, which goes to pick_place (no match), then _find around the driver, so sess['near'] is ignored. (2) 'where can I park close to my delivery' becomes category=rest_area, so a rest-area search runs near Stockton, finds nothing and returns no_results; or it becomes intent=parking, giving 'Which place?'. Fix by reusing the near point in the pick fallback and by making the category deterministic (park near X means truck_stop) with a fallback."
+}
