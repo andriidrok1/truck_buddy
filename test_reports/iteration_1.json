@@ -1,0 +1,49 @@
+{
+  "summary": "Tested the real voice loop end to end on the backend and in the frontend. Backend: 30/30 pytest tests passed, and two more runs of the LLM intent tests passed with no flakes. /api/agent route_set works for fuel, hotel, 'I'm tired', 'need to sleep' and rest. 'how far is it?' with active_place_id returns chat with no place. Empty/numeric text returns not_understood. speak=true returns an audio_url that serves audio/mpeg. /api/voice transcribes /tmp/q.mp3 to 'I need fuel for my truck.' and sets a route. Empty audio returns 400, garbage audio returns not_understood, unknown audio id returns 404, and /api/places and /api/route still work. A /api/voice turn takes about 7s. Frontend: I faked the mic by overriding getUserMedia and streaming q.mp3 through WebAudio. The full UI loop works: avatar -> 'I'm listening' + waveform -> tap -> 'Thinking…' -> 'You said: “I need fuel for my truck.”' caption + Navigating card (Capitol Truck Plaza) + TTS playback. Silence leads to the 'Sorry, I didn't catch that' toast + caption and back to Ready. Close cancels while listening and while thinking (result is discarded). The mic-denied card works: Allow, then Open Settings, 'Not now' dismisses it, and the map/chips still work. Chips show pins, tapping a pin opens the Navigating card, and End route works. Main problem: non-speech noise (tone/hum) makes Whisper hallucinate a transcript, sometimes echoing its own prompt, so the user sees 'You said: …' plus status 'chat' instead of the not_understood path.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/voice (services/voice.py transcribe)", "issue": "Non-speech audio (constant tone, like engine hum or alarms) is not caught by the no_speech_prob<0.6 filter. Whisper returned the transcription PROMPT itself ('A truck driver talking to a voice copilot about truck stops, hotels and rest areas.'), or 'siren' or 'Beeping'. The agent then answers with status='chat' and an improvised 'I didn't catch that. What do you need?'. The spec says unrecognized speech should give the exact 'Sorry, I didn't catch that. Try again.' with status not_understood and a toast. Today the UI shows 'You said: “A truck driver talking to…”'. Reproduce with /app/backend/tests/voice_edge_probe.py.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/agent, POST /api/voice", "issue": "lat/lng are not range-validated (lat=999 returns 200 with route_set). /api/places uses ge/le, but AgentRequest and the voice Form fields do not."},
+      {"endpoint": "services/voice.py _AUDIO_CACHE", "issue": "TTS audio is kept in an in-process dict (max 50). It is lost on restart and won't work with multiple workers. This is acceptable for the MVP."},
+      {"endpoint": "agent no_results path", "issue": "Could not test: the mock places provider shifts mock data to the driver's location, so search never comes back empty. Only reviewed in code."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "MicPermissionCard 'Open Settings'", "issue": "On web, Linking.openSettings() throws an uncaught 'Linking.default.openSettings is not a function' page error. After that the 'Not now' click no longer closed the card in the same session, probably because the dev error overlay was blocking clicks. Guard with Platform.OS==='web' (or try/catch) and show a hint instead. Reference: /app/frontend/src/components/MicPermissionCard.tsx:41", "testID": "mic-permission-settings-button", "priority": "MEDIUM"},
+      {"component": "CopilotSheet side buttons", "issue": "Mute (listening/thinking), Speaker (navigating), Saved and Route have no onPress, so they do nothing. Speaker/Mute in particular look like they should mute TTS or the mic. Reference: /app/frontend/src/components/CopilotSheet.tsx:113-138", "testID": "mute-button, speaker-button", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Voice turn with noise/tone", "issue": "Comes from the backend Whisper hallucination. The UI shows 'You said: <hallucinated text>' and no not_understood toast, because status is 'chat'.", "affected_testIDs": ["agent-reply-caption", "heard-transcript", "toast-message"]},
+      {"flow": "Close during Thinking", "issue": "The result is correctly discarded, but the in-flight /api/voice request is not aborted (the AbortController is only used for the 45s timeout), so STT+LLM+TTS still runs on the server. Minor. Reference: /app/frontend/app/index.tsx:184-189"}
+    ],
+    "design_issues": [
+      {"screen": "Map top bar", "issues": ["Category chips (chip-truck-stops/hotels/rest-areas) are 36px tall, below the 44pt minimum touch target for in-cab use."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_truckbuddy.py", "/app/backend/tests/test_voice_agent.py", "/app/backend/tests/voice_edge_probe.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "HIGH: Harden STT in services/voice.py. Drop the transcript if it equals or contains the Whisper prompt text (or remove the prompt). Also drop segments with avg_logprob < -1.0 or compression_ratio > 2.4. And tell the agent that if the 'driver said' text is a sound or noise word (siren, beeping, [music]) or meaningless, it should reply exactly with NOT_UNDERSTOOD, then map that reply to status='not_understood'.",
+    "MEDIUM: In MicPermissionCard, guard Linking.openSettings() on web (Platform check + try/catch) so it doesn't throw an uncaught error.",
+    "LOW: Wire up or hide the no-op Mute/Speaker/Saved/Route buttons. The Speaker button could toggle TTS playback.",
+    "LOW: Add ge/le validation on lat/lng in AgentRequest and the /api/voice Form fields.",
+    "LOW: Abort the in-flight /api/voice fetch when Close is tapped during Thinking.",
+    "LOW: Increase the chip height to at least 44px."
+  ],
+  "critical_code_review_comments": [
+    "web expo-audio: getRecordingPermissionsAsync returns canAskAgain=true even when DENIED, so on web the 'Allow microphone' card always shows first and switches to 'Open Settings' only after a failed request. This is fine on native.",
+    "index.tsx: the watchdog setTimeout(submitTurn) captures a stale closure from that render. It works today because submitTurn mostly uses refs, but it is fragile.",
+    "No deprecated expo-av / expo-barcode-scanner usage. expo-audio is configured in app.json with NSMicrophoneUsageDescription and RECORD_AUDIO.",
+    "Map layer files were not modified, as requested."
+  ],
+  "updated_files": ["/app/backend/tests/test_truckbuddy.py (agent provider assertion 'mock'->'gpt-5.5', removed hardcoded default URL, timeout 60s)", "/app/backend/tests/test_voice_agent.py (new)", "/app/backend/tests/voice_edge_probe.py (new manual probe)"],
+  "success_rate": {"backend": "100% of pytest (30/30). One spec gap: noise/tone audio returns 'chat' instead of not_understood.", "frontend": "~92%: all core flows pass. Open Settings on web throws, and Mute/Speaker are no-ops."},
+  "seed_data_creation": "None. TTS-generated test audio is created in memory by voice_edge_probe.py.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run the tests with: export EXPO_PUBLIC_BACKEND_URL=$(grep EXPO_PUBLIC_BACKEND_URL /app/frontend/.env | cut -d= -f2); cd /app/backend && pytest tests/. pytest.ini forces -n 2. To fake mic speech in the browser_automation tool, use page.route('**/__fake/q.mp3') to fulfill with /tmp/q.mp3 bytes, then add_init_script to override navigator.mediaDevices.getUserMedia so it returns an AudioContext MediaStreamDestination playing the decoded mp3 on the 2nd call (the 1st call is the permission probe), then page.reload(). Do not fetch http://localhost from the page: Private Network Access blocks it. To simulate denial, override navigator.permissions.query to return 'denied' and make getUserMedia throw NotAllowedError.",
+  "rca_of_issue": "Noise hallucination RCA: voice.transcribe sends prompt='A truck driver talking to a voice copilot…'. On tonal, non-speech audio Whisper returns segments with no_speech_prob < 0.6 whose text is the prompt itself or a sound label ('siren', 'Beeping'). The agent's regex check ([a-zA-Z]{2,}) passes, the LLM writes its own 'didn't catch that' reply, and the agent returns status='chat'. Reproduce: python /app/backend/tests/voice_edge_probe.py (440Hz tone wav). Fix: post-filter the transcript and add an LLM fallback (see action_items)."
+}

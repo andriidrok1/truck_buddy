@@ -1,0 +1,128 @@
+{
+  "app_name": "TruckBuddy",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A highly legible, tactile in-cab navigation tool featuring a friendly AI copilot that doesn't distract from the primary map.",
+  "color": {
+    "surface": "#FFFFFF",
+    "onSurface": "#1C1C1E",
+    "surfaceSecondary": "#F2F2F7",
+    "onSurfaceSecondary": "#3A3A3C",
+    "surfaceTertiary": "#E5E5EA",
+    "onSurfaceTertiary": "#8E8E93",
+    "surfaceInverse": "#1C1C1E",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#1C1C1E",
+    "onBrand": "#FFFFFF",
+    "brandPrimary": "#1C1C1E",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#F2F2F7",
+    "onBrandSecondary": "#1C1C1E",
+    "brandTertiary": "#E5E5EA",
+    "onBrandTertiary": "#1C1C1E",
+    "success": "#34C759",
+    "onSuccess": "#FFFFFF",
+    "warning": "#FF9500",
+    "onWarning": "#FFFFFF",
+    "error": "#FF3B30",
+    "onError": "#FFFFFF",
+    "info": "#007AFF",
+    "onInfo": "#FFFFFF",
+    "border": "#E5E5EA",
+    "borderStrong": "#C7C7CC",
+    "divider": "#E5E5EA",
+    "muted": "#8E8E93",
+    "truckStop": "#007AFF",
+    "hotel": "#AF52DE",
+    "restArea": "#34C759",
+    "routeLine": "#007AFF",
+    "avatarGlow": "#007AFF"
+  },
+  "typography": {
+    "displayFontFamily": "Plus Jakarta Sans",
+    "textFontFamily": "Plus Jakarta Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Ensure touch targets are AT LEAST 56pt for in-cab use. Padding and margins should be generous to maintain clarity over the map.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 1,
+  "navigation": "stack_only",
+  "icon_set": "MaterialCommunityIcons",
+  "glassmorphism": {
+    "enabled": false,
+    "do's": [
+      "Use solid white with a subtle shadow (tier 1) for the bottom sheet and top chips to ensure legibility against the complex map background."
+    ],
+    "dont's": [
+      "Do not use heavy blur that reduces contrast.",
+      "Do not use glass on the primary bottom sheet background as the brief requests a solid 'white bottom sheet'."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "haptics": {
+    "events": {
+      "chip_press": "light",
+      "avatar_tap": "medium",
+      "state_change": "success",
+      "end_route": "heavy"
+    }
+  },
+  "screens": [
+    {
+      "name": "MapVoiceCopilot",
+      "purpose": "A single-screen map view containing category filters and an intelligent, conversational voice copilot bottom sheet.",
+      "states": {
+        "loading": "Map skeleton loading with a central spinner.",
+        "empty": "No active route - defaults to Ready state in the bottom sheet.",
+        "error": "Error message floating toast 'Connection lost' with a retry button."
+      },
+      "layout": "1. Map Layer: Full bleed map underneath all UI, with 'destination label pill' and teardrop pins (truckStop/blue, hotel/purple, restArea/green).\n2. Top UI overlay (Safe Area): Row 1 has a hamburger menu circle (left), truck profile pill (center), layers circle (right). Row 2 has horizontally scrollable filter chips (Truck stops, Hotels, Rest areas).\n3. Bottom Sheet (@gorhom/bottom-sheet): White background, elevated, with drag handle. Houses the dynamic voice assistant and navigation details based on the 4 states (Ready, Listening, Thinking, Navigating)."
+    }
+  ],
+  "images": {
+    "copilot_avatar": {
+      "url": "https://images.unsplash.com/photo-1740252117013-4fb21771e7ca?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2OTV8MHwxfHNlYXJjaHwxfHwzZCUyMGNsYXklMjBhdmF0YXIlMjBmYWNlfGVufDB8fHx8MTc5Mjg3NzUzNnww&ixlib=rb-4.1.0&q=85",
+      "alt": "Cute soft beige 3D clay character blob with black dot eyes"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Adhere strictly to 56px minimum touch targets for all interactive elements (chips, circle buttons, avatar, sheet actions) due to the in-cab trucker context.",
+    "Implement the single-screen layout with absolute positioned top rows and a @gorhom/bottom-sheet that handles 4 specific states: Ready, Listening, Thinking, Navigating.",
+    "Top row layout: space-between. Center truck pill '13 ft 6 in \u00b7 53 ft trailer' must sit cleanly between the hamburger (left) and layers (right) circular buttons.",
+    "Second row: chips must have colored circular icons per category (blue fuel/truck for Truck Stops, purple bed for Hotels, green trees for Rest Areas).",
+    "Avatar implementation: Build a circular container for the character. In Listening/Thinking states, use Reanimated to create a pulsing glow ring around it using the 'avatarGlow' color. Add a small blue microphone badge absolutely positioned at the bottom right of the avatar.",
+    "Bottom sheet 'Navigating' state: Ensure high typographic hierarchy for the ETA and distance ('12 min \u00b7 6.2 mi' bold). Include functional buttons for 'Open in Google Maps' and 'Open in Waze'. The End route button should be a prominent red circle.",
+    "Map elements: Render a blue route line, a user navigation arrow, and a destination label pill right next to the destination pin.",
+    "Do NOT use glass/blur for the primary overlay backgrounds (chips, bottom sheet); the brief requested 'white rounded chips' and 'white bottom sheet'. Solid white with subtle drop shadow (shadow tier 1) provides the necessary contrast over a light map."
+  ]
+}
