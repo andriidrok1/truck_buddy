@@ -21,7 +21,7 @@ from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.routing import get_routing_provider  # noqa: E402
-from services import onboarding, timing, voice  # noqa: E402
+from services import approach, approach_api, onboarding, timing, voice  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -67,16 +67,14 @@ async def build_route(req: RouteRequest):
         place = await get_places_provider().get(req.place_id, req.lat, req.lng)
     if place is None:
         raise HTTPException(status_code=404, detail="Place not found")
-    route_task = get_routing_provider().route(req.lat, req.lng, place.lat, place.lng, req.truck_profile)
-    if place.category == "destination":  # addresses/cities: no parking check
-        return RouteResponse(place=place, route=await route_task, parking=None)
+    route_task = get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile)
     route, parking = await asyncio.gather(route_task, check_parking(place))
     return RouteResponse(place=place, route=route, parking=parking)
 
 
 @api.post("/parking", response_model=ParkingCheck)
 async def parking_check(req: ParkingRequest):
-    return await check_parking(req.place)
+    return await check_parking(req.place, req.approach)
 
 
 @api.get("/satellite")
@@ -299,6 +297,7 @@ async def voice_audio(audio_id: str, request: Request):
 
 
 app.include_router(api)
+app.include_router(approach_api.router)
 
 
 @app.exception_handler(PlacesUnavailable)

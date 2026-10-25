@@ -15,8 +15,8 @@ from typing import Optional
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 
-from models import AgentRequest, AgentResponse, Place, RouteInfo, TruckProfile
-from services import controls
+from models import AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
+from services import approach, controls
 from services.geocode import geocode
 from services.parking import cached_parking, check_parking, listed_in_data
 from services.places import get_places_provider
@@ -41,7 +41,7 @@ Truck: {truck}.
 Driver preferences: {prefs}.
 
 Classify the driver's LAST utterance and answer with JSON only, no other text:
-{{"intent": "find"|"go"|"pick"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "query": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
+{{"intent": "find"|"go"|"pick"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "query": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
 
 - find: the driver needs a place. Pick the category yourself, never ask:
   truck_stop = fuel, diesel, DEF, food, showers, truck stop;
@@ -50,6 +50,7 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
 - go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV".
 - pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something closer"). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. If no earlier place fits, use find with the same category instead.
 {controls}
+{parking}
 - chat: a question or remark that is not a place request ("how far is it?", "where do I park?", "thanks"). reply = a brief answer using the context. For parking/entry questions use only the satellite parking check; if there is none, say you haven't checked parking there yet. Never invent parking details.
 - bye: goodbye or done ("bye", "that's all", "no, I'm good", "that's it"). reply = one short friendly line.
 - unclear: only a sound or noise label (siren, beeping, music) or unintelligible.
@@ -197,7 +198,7 @@ def _parse(raw: str) -> dict:
 async def classify(text: str, context: str, truck: TruckProfile) -> dict:
     chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"turn-{uuid.uuid4()}",
                    system_message=SYSTEM.format(truck=truck.label, prefs=truck.prefs_label,
-                                                controls=controls.PROMPT)).with_model(*MODEL)
+                                                controls=controls.PROMPT, parking=approach.PROMPT)).with_model(*MODEL)
     with stage("llm_round_1"):
         raw = await chat.send_message(UserMessage(text=f"[{context}]\nDriver said: {text}"))
     return _parse(raw)
@@ -226,7 +227,7 @@ class LlmAgentProvider:
             context += " Conversation so far: " + " | ".join(sess["history"][-MAX_HISTORY:]) + "."
         if sess["places"]:
             context += " Places found earlier: " + "; ".join(
-                f"{i}={p.name} ({p.category}) {p.distance_mi or 0:.1f} mi"
+                f"{i}={p.name} ({p.category}) {p.distance_mi or 0:.1f} mi: {approach.note(p)}"
                 + (" [current route]" if req.active_place and p.id == req.active_place.id else "")
                 for i, p in enumerate(sess["places"], 1)) + "."
         cur = req.active_place
@@ -237,14 +238,14 @@ class LlmAgentProvider:
             if req.active_duration_min is not None:
                 context += f", about {req.active_duration_min} minutes"
             context += "."
-            pk = cached_parking(cur) if cur.category != "destination" else None
+            pk = approach.best(cur)
             if pk:
                 context += f" Satellite parking check there: {pk.label}. {pk.reason}"
                 if pk.entry_tip:
                     context += f" Entry: {pk.entry_tip}."
                 if pk.park_tip:
                     context += f" Park: {pk.park_tip}."
-            elif cur.category != "destination":
+            else:
                 context += " Parking there has not been checked yet."
         else:
             context += " No route is active."
@@ -257,15 +258,29 @@ class LlmAgentProvider:
 
     async def _route_to(self, req: AgentRequest, place: Place, found: list[Place], text: str) -> AgentResponse:
         with stage("tools"):
-            route = await get_routing_provider().route(req.lat, req.lng, place.lat, place.lng, req.truck_profile)
+            route = await get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile)
+        _background(check_parking(place, route.approach))  # destinations too; entry tip relative to the approach
         others = [p for p in found if p.id != place.id][:MAX_OPTIONS]
         counter = _SESSIONS[req.session_id] if req.session_id in _SESSIONS else _turns
         n = counter.get("n", 0)
         counter["n"] = n + 1
         return AgentResponse(status="route_set", transcript=text, category=place.category,
                              reply=_route_reply(place, route, n, req.truck_profile.driver_name), place=place, route=route,
-                             parking=None if place.category == "destination" else cached_parking(place),
+                             parking=approach.best(place),
                              options=others, source=self.source)
+
+    def _parking(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
+        """Cached verdict -> answer now; otherwise "Let me look" and the app fetches /parking/answer."""
+        place = pick_place(d, sess["places"]) or req.active_place or (sess["places"][0] if sess["places"] else None)
+        if not place:
+            return AgentResponse(status="chat", transcript=text, reply="Which place? Find one or set a route first.",
+                                 source=self.source)
+        pk = approach.best(place)
+        if pk and (pk.relative or not approach.has_approach(place) or not pk.entry_tip):
+            return AgentResponse(status="chat", transcript=text, reply=approach.speech(pk), source=self.source)
+        _background(check_parking(place))
+        return AgentResponse(status="chat", transcript=text, reply=approach.LOOKING, source=self.source,
+                             actions=[AppAction(type="parking_followup", value=place.id)])
 
     async def _find(self, req: AgentRequest, category: str, text: str, exclude: set[str]) -> AgentResponse:
         with stage("tools"):
@@ -326,6 +341,8 @@ class LlmAgentProvider:
         except Exception:
             logger.exception("agent action failed")
             return _not_understood(text, self.source)
+        if intent == "parking":
+            return self._parking(req, d, sess, text)
         if intent == "control":
             acts, say, end = controls.apply_actions(d.get("actions"), req)
             if say:

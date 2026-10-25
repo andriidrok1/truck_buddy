@@ -5,7 +5,8 @@ import MapView, { Marker, Polyline } from "react-native-maps";
 import { useTheme } from "../theme";
 import type { LatLng } from "../types";
 import type { MapLayerHandle, MapLayerProps } from "./mapTypes";
-import { DestinationLabel, Pin, UserArrow } from "./Pin";
+import { DestinationLabel, EntryMarker, Pin, UserArrow } from "./Pin";
+import { entrySpot } from "../utils/entry";
 
 const toCoord = (p: LatLng) => ({ latitude: p.lat, longitude: p.lng });
 
@@ -110,6 +111,11 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
           <ViewMarker key={`label-${active.place.id}`} coordinate={toCoord(active.place)} anchor={{ x: 0, y: 1 }} zIndex={4}>
             <DestinationLabel name={active.place.name} />
           </ViewMarker>
+          {entrySpot(active.parking) && (
+            <ViewMarker key={`entry-${active.place.id}`} coordinate={toCoord(entrySpot(active.parking)!)} anchor={{ x: 0.5, y: 0.5 }} zIndex={6}>
+              <EntryMarker />
+            </ViewMarker>
+          )}
         </>
       )}
 

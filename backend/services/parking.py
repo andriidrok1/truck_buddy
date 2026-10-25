@@ -173,17 +173,26 @@ NEGATIVE_TIP = re.compile(
 )
 
 
-async def check_parking(place: Place) -> ParkingCheck:
-    """Single-flight wrapper: concurrent checks of the same place share one vision call."""
+async def check_parking(place: Place, approach=None) -> ParkingCheck:
+    """Single-flight wrapper: concurrent checks of the same place share one vision call.
+    With an approach (route set), the entry tip is rewritten relative to the driver."""
     k = _key(place.lat, place.lng) + (":listed" if listed_in_data(place) else "")
+    if approach is not None:
+        from services import approach as approach_mod  # lazy: approach imports this module
+        approach_mod.remember(place, approach)  # answers asked meanwhile use this approach too
     if k in _verdict_cache:
-        return _verdict_cache[k]
-    task = _pending.get(k)
-    if task is None:
-        task = asyncio.create_task(_check_parking(place))
-        _pending[k] = task
-        task.add_done_callback(lambda _t: _pending.pop(k, None))
-    return await asyncio.shield(task)
+        res = _verdict_cache[k]
+    else:
+        task = _pending.get(k)
+        if task is None:
+            task = asyncio.create_task(_check_parking(place))
+            _pending[k] = task
+            task.add_done_callback(lambda _t: _pending.pop(k, None))
+        res = await asyncio.shield(task)
+    if approach is None:
+        return res
+    from services import approach as approach_mod  # lazy: approach imports this module
+    return await approach_mod.relative(place, res, approach)
 
 
 async def _check_parking(place: Place) -> ParkingCheck:

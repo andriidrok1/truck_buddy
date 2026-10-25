@@ -38,7 +38,10 @@ export type RouteInfo = {
   truck_aware?: boolean;
   traffic?: { level: "slow" | "jam"; points: [number, number][] }[];
   maneuvers?: Maneuver[];
+  approach?: Approach | null;
 };
+
+export type Approach = { bearing: number; compass: string; street?: string | null };
 
 export type PlacesResponse = {
   category: Category;
@@ -59,6 +62,7 @@ export type ParkingCheck = {
   entry_tip?: string | null;
   park_tip?: string | null;
   spots?: ParkingSpot[];
+  relative?: boolean;
 };
 
 export type AgentResponse = {

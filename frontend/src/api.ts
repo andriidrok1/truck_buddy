@@ -1,6 +1,6 @@
 import { getTruckProfile } from "./hooks/useTruckProfile";
 import { uploadForm } from "./utils/upload";
-import type { ActiveRoute, AgentResponse, Category, LatLng, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
+import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
 
 const ORIGIN = process.env.EXPO_PUBLIC_BACKEND_URL;
 const BASE = `${ORIGIN}/api`;
@@ -26,8 +26,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ lat: from.lat, lng: from.lng, place, truck_profile: getTruckProfile() }),
     }),
-  parking: (place: Place) =>
-    request<ParkingCheck>(`/parking`, { method: "POST", body: JSON.stringify({ place }) }),
+  parking: (place: Place, approach?: Approach | null) =>
+    request<ParkingCheck>(`/parking`, { method: "POST", body: JSON.stringify({ place, approach }) }),
+  /** Spoken parking answer; waits up to `waitS` for a satellite check in flight. */
+  parkingAnswer: (place: Place, waitS: number) =>
+    request<{ status: "ready" | "pending"; reply: string; audio_url?: string | null; parking?: ParkingCheck | null }>(
+      `/parking/answer`,
+      { method: "POST", body: JSON.stringify({ place, wait_s: waitS }) },
+    ),
   agent: (text: string, at: LatLng) =>
     request<AgentResponse>(`/agent`, {
       method: "POST",

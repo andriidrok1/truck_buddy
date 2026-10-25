@@ -22,6 +22,8 @@ import { useWakeWord } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
 import type { ActiveRoute, AgentResponse, AppAction, LatLng, ParkingState, Phase, Place } from "@/src/types";
 import { storage } from "@/src/utils/storage";
+import { entrySpot, routeEndsAt } from "@/src/utils/entry";
+import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 
 const VOICE_GUIDANCE_KEY = "voice_guidance_v1";
 
@@ -55,6 +57,8 @@ export default function MapScreen() {
   const [topH, setTopH] = useState(140);
   const [sheetH, setSheetH] = useState(260);
   const [phase, setPhase] = useState<Phase>("ready");
+  const phaseRef = useRef<Phase>("ready");
+  phaseRef.current = phase;
   const [active, setActive] = useState<ActiveRoute | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -239,13 +243,16 @@ export default function MapScreen() {
   }, [loc.coords, loc.isDemo, loc.resolved, appActive, active]);
 
   /** Satellite parking check runs after the route is set; its directions are spoken when the reply ends. */
-  const followParking = async (place: Place, replyDone: Promise<void>, myTurn: number) => {
+  const followParking = async (place: Place, replyDone: Promise<void>, myTurn: number, approach = activeRef.current?.route.approach) => {
     try {
-      const pk = await api.parking(place);
+      const pk = await api.parking(place, approach);
       // The card always takes the result if it's still the same destination.
       setActive((a) => (a && a.place.id === place.id ? { ...a, parking: pk } : a));
+      const e = entrySpot(pk);
+      if (e && activeRef.current?.place.id === place.id && !routeEndsAt(activeRef.current.route, e)) reroute(myTurn); // route to E
       if (myTurn !== turn.current || activeRef.current?.place.id !== place.id) return;
-      const tips = [pk.entry_tip, pk.park_tip].filter(Boolean).join(". ");
+      const entry = pk.entry_tip && pk.relative ? `The truck entrance is ${pk.entry_tip.charAt(0).toLowerCase()}${pk.entry_tip.slice(1)}` : pk.entry_tip;
+      const tips = [entry, pk.park_tip].filter(Boolean).join(". ");
       const text =
         pk.verdict === "unlikely"
           ? "Heads up: from the satellite, parking there looks tight for a rig."
@@ -380,13 +387,27 @@ export default function MapScreen() {
         setPlaces([res.place, ...others]);
         startRoute({ place: res.place, route: res.route, parking: res.parking });
         const replyDone = speak();
-        if (res.place.category !== "destination") followParking(res.place, replyDone, myTurn);
+        followParking(res.place, replyDone, myTurn, res.route.approach);
         endDialog(); // route is set: stop listening until the driver taps the mic again
       } else {
         if (res.status !== "chat" && res.status !== "not_understood") showToast(res.message ?? MESSAGES.notUnderstood);
         backToIdle();
         if (res.actions?.length) runActions(res.actions, myTurn); // after backToIdle: actions may change the phase
-        continueDialog(myTurn, res, speak());
+        const spoken = speak();
+        const followup = res.actions?.find((a) => a.type === "parking_followup");
+        const fPlace = followup && [activeRef.current?.place, ...optionsRef.current, ...places].find((p) => p?.id === followup.value);
+        const answered = fPlace
+          ? parkingFollowup(fPlace, spoken, {
+              isCurrent: () => myTurn === turn.current,
+              busy: () => phaseRef.current === "listening" || phaseRef.current === "thinking",
+              say: async (text, url) => {
+                setCaption({ reply: text });
+                const a = toAudio(url);
+                if (a) await voice.playAndWait(a, 6000);
+              },
+            })
+          : spoken;
+        continueDialog(myTurn, res, answered);
       }
     } catch (e) {
       filler?.cancel();

@@ -48,6 +48,13 @@ class Maneuver(BaseModel):
     index: int  # point index in RouteInfo.geometry where the maneuver happens
 
 
+class Approach(BaseModel):
+    """How the driver arrives: heading over the last 300 m and the street of the last maneuver."""
+    bearing: int  # degrees, 0 = heading north
+    compass: str  # side the driver comes FROM, e.g. "south"
+    street: Optional[str] = None
+
+
 class RouteInfo(BaseModel):
     geometry: List[List[float]]  # [[lat, lng], ...]
     distance_m: float
@@ -60,6 +67,7 @@ class RouteInfo(BaseModel):
     truck_aware: bool = False  # True when height/length/weight/hazmat were applied
     traffic: List[TrafficSegment] = Field(default_factory=list)  # live slowdowns (HERE only)
     maneuvers: List[Maneuver] = Field(default_factory=list)  # turn-by-turn (HERE only)
+    approach: Optional[Approach] = None  # arrival direction, for entrance directions
 
 
 ParkingVerdict = Literal["listed", "likely", "unlikely", "unclear"]
@@ -82,6 +90,7 @@ class ParkingCheck(BaseModel):
     entry_tip: Optional[str] = None  # how to drive in
     park_tip: Optional[str] = None  # where to leave the truck
     spots: List[ParkingSpot] = Field(default_factory=list)
+    relative: bool = False  # entry_tip is relative to the driver's approach ("On your right ...")
 
 
 TRACTOR_FT = 20  # typical tractor length added to the trailer
@@ -135,6 +144,12 @@ class RouteRequest(BaseModel):
 
 class ParkingRequest(BaseModel):
     place: Place
+    approach: Optional[Approach] = None  # from RouteInfo.approach: entrance relative to the driver
+
+
+class ParkingAnswerRequest(BaseModel):
+    place: Place
+    wait_s: float = Field(15, ge=1, le=45)
 
 
 class RouteResponse(BaseModel):
