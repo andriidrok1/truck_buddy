@@ -27,6 +27,7 @@ export type RouteInfo = {
   source: string;
   notices?: string[];
   truck_aware?: boolean;
+  traffic?: { level: "slow" | "jam"; points: [number, number][] }[];
 };
 
 export type PlacesResponse = {

@@ -34,6 +34,11 @@ class PlacesResponse(BaseModel):
     source: str
 
 
+class TrafficSegment(BaseModel):
+    level: Literal["slow", "jam"]  # slow = yellow, jam = red
+    points: List[List[float]]  # [[lat, lng], ...]
+
+
 class RouteInfo(BaseModel):
     geometry: List[List[float]]  # [[lat, lng], ...]
     distance_m: float
@@ -44,6 +49,7 @@ class RouteInfo(BaseModel):
     source: str  # here | openrouteservice | mock
     notices: List[str] = Field(default_factory=list)  # restriction warnings from the router
     truck_aware: bool = False  # True when height/length/weight/hazmat were applied
+    traffic: List[TrafficSegment] = Field(default_factory=list)  # live slowdowns (HERE only)
 
 
 ParkingVerdict = Literal["listed", "likely", "unlikely", "unclear"]

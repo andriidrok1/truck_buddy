@@ -64,6 +64,15 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
         <>
           <Polyline coordinates={active.route.geometry.map(([lat, lng]) => ({ latitude: lat, longitude: lng }))} strokeColor={colors.routeCasing} strokeWidth={10} />
           <Polyline coordinates={active.route.geometry.map(([lat, lng]) => ({ latitude: lat, longitude: lng }))} strokeColor={colors.routeLine} strokeWidth={6} />
+          {(active.route.traffic ?? []).map((t, i) => (
+            <Polyline
+              key={`traffic-${i}`}
+              coordinates={t.points.map(([lat, lng]) => ({ latitude: lat, longitude: lng }))}
+              strokeColor={t.level === "jam" ? colors.trafficJam : colors.trafficSlow}
+              strokeWidth={6}
+              zIndex={2}
+            />
+          ))}
         </>
       )}
 

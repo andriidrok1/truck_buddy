@@ -51,6 +51,8 @@ const light = {
   onCategory: "#FFFFFF",
   routeLine: "#007AFF",
   routeCasing: "#FFFFFF",
+  trafficSlow: "#FFC400",
+  trafficJam: "#E53935",
   avatarGlow: "#007AFF",
   avatarGlowSoft: "rgba(0,122,255,0.16)",
   avatarBg: "#F7F2EA",

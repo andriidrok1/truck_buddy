@@ -65,12 +65,26 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
 
   const pan = useMemo(() => {
     let start = { x: 0, y: 0 };
+    let pinch: { dist: number; zoom: number } | null = null;
+    const touchDist = (t: readonly { pageX: number; pageY: number }[]) =>
+      Math.hypot(t[0].pageX - t[1].pageX, t[0].pageY - t[1].pageY);
     return PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) + Math.abs(g.dy) > 4,
+      onMoveShouldSetPanResponder: (e, g) => e.nativeEvent.touches.length === 2 || Math.abs(g.dx) + Math.abs(g.dy) > 4,
       onPanResponderGrant: () => {
         start = project(viewRef.current.center, viewRef.current.zoom);
+        pinch = null;
       },
-      onPanResponderMove: (_, g) => {
+      onPanResponderMove: (e, g) => {
+        const touches = e.nativeEvent.touches;
+        if (touches.length === 2) {
+          // Pinch: zoom around the current center (tiles need whole zoom levels).
+          const d = touchDist(touches);
+          if (!pinch) pinch = { dist: d, zoom: viewRef.current.zoom };
+          const z = Math.min(18, Math.max(3, Math.round(pinch.zoom + Math.log2(d / pinch.dist))));
+          if (z !== viewRef.current.zoom) setView({ zoom: z, center: viewRef.current.center });
+          return;
+        }
+        if (pinch) return; // ignore the leftover finger after a pinch
         const z = viewRef.current.zoom;
         setView({ zoom: z, center: unproject(start.x - g.dx, start.y - g.dy, z) });
       },
@@ -143,6 +157,10 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
       {tiles}
       {active && segments(active.route.geometry, 10, colors.routeCasing, "case")}
       {active && segments(active.route.geometry, 6, colors.routeLine, "line")}
+      {active &&
+        (active.route.traffic ?? []).map((t, i) =>
+          segments(t.points, 6, t.level === "jam" ? colors.trafficJam : colors.trafficSlow, `traffic-${i}`),
+        )}
 
       {places
         .filter((p) => p.id !== active?.place.id)

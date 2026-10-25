@@ -13,7 +13,7 @@ from typing import List, Optional
 import flexpolyline
 import httpx
 
-from models import RouteInfo, TruckProfile
+from models import RouteInfo, TrafficSegment, TruckProfile
 from services.geo import haversine_km, km_to_mi
 
 logger = logging.getLogger("truckbuddy.routing")
@@ -45,12 +45,42 @@ def _thin(points: List[List[float]]) -> List[List[float]]:
 
 
 def _info(geometry: List[List[float]], meters: float, seconds: float, source: str, notices: List[str],
-          truck_aware: bool) -> RouteInfo:
+          truck_aware: bool, traffic: Optional[List[TrafficSegment]] = None) -> RouteInfo:
     mi = km_to_mi(meters / 1000)
     minutes = max(1, round(seconds / 60))
     return RouteInfo(geometry=_thin(geometry), distance_m=round(meters), duration_s=round(seconds),
                      distance_mi=round(mi, 1), duration_min=minutes, summary=format_summary(minutes, mi),
-                     source=source, notices=notices, truck_aware=truck_aware)
+                     source=source, notices=notices, truck_aware=truck_aware, traffic=traffic or [])
+
+
+def _traffic_level(span: dict) -> Optional[str]:
+    info = span.get("dynamicSpeedInfo") or {}
+    base, now = info.get("baseSpeed"), info.get("trafficSpeed")
+    if not base or now is None:
+        return None
+    ratio = now / base
+    return "jam" if ratio < 0.5 else "slow" if ratio < 0.75 else None
+
+
+def _traffic(points: List[List[float]], spans: List[dict]) -> List[TrafficSegment]:
+    """Merge consecutive slow/jam spans of one section into polylines."""
+    out: List[TrafficSegment] = []
+    for i, sp in enumerate(spans):
+        level = _traffic_level(sp)
+        if not level:
+            continue
+        start = sp["offset"]
+        end = spans[i + 1]["offset"] if i + 1 < len(spans) else len(points) - 1
+        seg = points[start:end + 1]
+        if len(seg) < 2:
+            continue
+        if out and out[-1].level == level and out[-1].points[-1] == seg[0]:
+            out[-1].points += seg[1:]
+        else:
+            out.append(TrafficSegment(level=level, points=seg))
+    for t in out:
+        t.points = _thin(t.points)
+    return out
 
 
 async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile) -> RouteInfo:
@@ -59,6 +89,7 @@ async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile) -> 
         "origin": f"{fl},{fg}",
         "destination": f"{tl},{tg}",
         "return": "polyline,summary",
+        "spans": "dynamicSpeedInfo",
         "vehicle[height]": round(t.height_in * 2.54),  # cm
         "vehicle[length]": round(t.total_length_ft * 30.48),  # cm
         "vehicle[grossWeight]": round(t.weight_lb * 0.4536),  # kg
@@ -76,13 +107,15 @@ async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile) -> 
     routes = r.json().get("routes") or []
     if not routes or not routes[0].get("sections"):
         raise RuntimeError("HERE returned no truck route")
-    geometry, meters, seconds, raw = [], 0.0, 0.0, []
+    geometry, meters, seconds, raw, traffic = [], 0.0, 0.0, [], []
     for s in routes[0]["sections"]:
-        geometry += [[round(p[0], 6), round(p[1], 6)] for p in flexpolyline.decode(s["polyline"])]
+        pts = [[round(p[0], 6), round(p[1], 6)] for p in flexpolyline.decode(s["polyline"])]
+        geometry += pts
+        traffic += _traffic(pts, s.get("spans") or [])
         meters += s["summary"]["length"]
         seconds += s["summary"]["duration"]
         raw += [str(n.get("code") or n.get("title") or "") for n in s.get("notices", [])]
-    return _info(geometry, meters, seconds, "here", _friendly(raw), True)
+    return _info(geometry, meters, seconds, "here", _friendly(raw), True, traffic)
 
 
 def _friendly(codes: List[str]) -> List[str]:
