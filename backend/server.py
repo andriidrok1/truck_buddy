@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.responses import JSONResponse
@@ -216,6 +216,9 @@ async def voice_transcribe(audio: UploadFile = File(...)):
 
 class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=600)
+    # Optional, for comparing voices; the app always uses the default.
+    voice: Optional[Literal["alloy", "ash", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"]] = None
+    model: Literal["tts-1", "gpt-4o-mini-tts"] = "tts-1"
 
 
 _SPEAK_CACHE: dict[str, str] = {}
@@ -225,19 +228,20 @@ _SPEAK_PENDING: dict[str, "asyncio.Task[Optional[str]]"] = {}
 @api.post("/speak")
 async def speak(req: SpeakRequest):
     """TTS for fixed copilot lines (onboarding, reminders). Cached per text, one generation per text."""
-    audio_id = _SPEAK_CACHE.get(req.text)
+    key = f"{req.model}|{req.voice or ''}|{req.text}"
+    audio_id = _SPEAK_CACHE.get(key)
     if not audio_id or voice.get_audio(audio_id) is None:
-        task = _SPEAK_PENDING.get(req.text)
+        task = _SPEAK_PENDING.get(key)
         if task is None:
-            task = asyncio.create_task(voice.synthesize(req.text))
-            _SPEAK_PENDING[req.text] = task
-            task.add_done_callback(lambda _t: _SPEAK_PENDING.pop(req.text, None))
+            task = asyncio.create_task(voice.synthesize(req.text, req.voice, req.model))
+            _SPEAK_PENDING[key] = task
+            task.add_done_callback(lambda _t: _SPEAK_PENDING.pop(key, None))
         audio_id = await asyncio.shield(task)
         if not audio_id:
             raise HTTPException(status_code=502, detail="Voice unavailable")
         if len(_SPEAK_CACHE) >= 200:
             _SPEAK_CACHE.pop(next(iter(_SPEAK_CACHE)))
-        _SPEAK_CACHE[req.text] = audio_id
+        _SPEAK_CACHE[key] = audio_id
     return {"audio_url": f"/api/voice/audio/{audio_id}"}
 
 

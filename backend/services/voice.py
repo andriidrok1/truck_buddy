@@ -50,11 +50,18 @@ async def transcribe(data: bytes, filename: str) -> str:
     return text
 
 
-async def synthesize(text: str) -> Optional[str]:
+VOICES = ("alloy", "ash", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer")
+DEFAULT_VOICE = "coral"
+# gpt-4o-mini-tts takes a speaking-style instruction (tts-1 ignores it).
+INSTRUCTIONS = "Calm, warm, confident co-pilot talking to a truck driver on the road. Natural pace, clear and friendly."
+
+
+async def synthesize(text: str, voice: Optional[str] = None, model: str = "tts-1") -> Optional[str]:
     """Returns an id for GET /api/voice/audio/{id}, or None if TTS failed."""
     try:
         tts = OpenAITextToSpeech(api_key=os.environ["EMERGENT_LLM_KEY"])
-        audio = await tts.generate_speech(text=text[:4000], model="tts-1", voice="coral")
+        extra = {"instructions": INSTRUCTIONS} if model == "gpt-4o-mini-tts" else {}
+        audio = await tts.generate_speech(text=text[:4000], model=model, voice=voice or DEFAULT_VOICE, **extra)
     except Exception:
         logger.exception("TTS failed")
         return None
