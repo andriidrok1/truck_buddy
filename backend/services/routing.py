@@ -15,6 +15,7 @@ import flexpolyline
 from services.http import client
 
 from models import Maneuver, RouteInfo, TrafficSegment, TruckProfile
+from services.approach import from_route
 from services.geo import haversine_km, km_to_mi
 
 logger = logging.getLogger("truckbuddy.routing")
@@ -227,10 +228,14 @@ class TruckRoutingProvider:
             if not os.environ.get(key):
                 continue
             try:
-                return await fn(from_lat, from_lng, to_lat, to_lng, t)
+                info = await fn(from_lat, from_lng, to_lat, to_lng, t)
+                info.approach = from_route(info)
+                return info
             except Exception as e:  # noqa: BLE001 - fall through to the next provider
                 logger.warning("%s routing failed: %s", fn.__name__, e)
-        return _mock(from_lat, from_lng, to_lat, to_lng)
+        info = _mock(from_lat, from_lng, to_lat, to_lng)
+        info.approach = from_route(info)
+        return info
 
 
 _provider = TruckRoutingProvider()

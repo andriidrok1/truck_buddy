@@ -1,7 +1,7 @@
 """Breakdown dialog: "I'm stopped, find someone who can fix it".
 
 Only the driver starts it (no automatic stop detection, never calls 911). Flow:
-  1. intent breakdown (kind + the driver's own words) from a trigger phrase;
+  1. intent breakdown (kind + the driver's own words) from the agent's classification (PROMPT block);
   2. at most one clarifying question, only when it changes the search (tire, mechanic);
   3. "Give me a minute" -> research runs in the background (providers_search.research);
      the app fetches the result from GET /api/breakdown/{id};
@@ -39,14 +39,11 @@ QUESTIONS = {
 FOLLOWUP_TTL_S = 30 * 60
 RESULT_WAIT_S = 30
 
-TRIGGER = re.compile(
-    r"\b(blew|blown|blowout|flat|tire|tyre|won'?t start|wont start|doesn'?t start|no start|losing power|lost power|"
-    r"tow|wrecker|reefer|ran out of (fuel|diesel|gas)|out of fuel|out of diesel|brake light|abs light|"
-    r"check engine|engine light|landing gear|broke down|broken down|breakdown|break down|stranded|"
-    r"overheat\w*|air leak|leaking|alternator|battery dead|dead battery|"
-    r"who can fix|someone to fix|need a mechanic|mechanic|road ?service|roadside)\b",
-    re.I,
-)
+# Block for the agent's classification prompt (services/agent.py SYSTEM, same pattern as approach.PROMPT).
+PROMPT = """- breakdown: the truck or trailer is broken or stuck and the driver wants someone to fix it, tow it or bring fuel ("I blew a tire", "flat on the trailer", "truck won't start", "losing power", "need a tow", "reefer quit", "ran out of fuel", "brake light on", "landing gear stuck", "who can fix ... near me"). Use intent "breakdown" and also return
+  "kind": "tire"|"mechanic"|"tow"|"reefer"|"fuel"|"electrical"|"trailer" (tire = flat/blowout; tow = needs a tow or wrecker; reefer = refrigeration unit; fuel = out of fuel/DEF; electrical = lights, battery, alternator, wiring, brake/ABS light; trailer = landing gear, doors, air lines, trailer brakes; mechanic = engine, won't start, losing power, check engine, overheating, anything else),
+  "detail": the problem in the driver's own words (short), "mode": "mobile_needed" (can't move, needs them to come out) | "shop_ok" (still drives, can roll to a shop) | "unknown",
+  "tire_position": "steer"|"drive"|"trailer"|null, "tire_size": e.g. "295/75R22.5" or null. Only what the driver said; no safety lectures."""
 
 PARSE_SYSTEM = """A truck driver describes a mechanical problem. Return JSON only:
 {"breakdown": true|false, "kind": "tire"|"mechanic"|"tow"|"reefer"|"fuel"|"electrical"|"trailer"|null,
@@ -237,7 +234,6 @@ def cheapest_fastest(providers: list[dict]) -> tuple[Optional[str], Optional[str
 def _brief(providers: list[dict]) -> str:
     rows = []
     for i, p in enumerate(providers, 1):
-        f = p["facts"]
         rows.append(json.dumps({"i": i, "name": p["name"], "known": known(p), "phone": p.get("phone"),
                                 "review_snippets": _quotes(p)}))
     return "\n".join(rows)
@@ -385,8 +381,20 @@ async def followup(req: AgentRequest, sess: dict, text: str, source: str) -> Opt
 
 # ---------------------------------------------------------------- entry point
 
+async def from_intent(d: dict, req: AgentRequest, sess: dict, text: str, source: str) -> AgentResponse:
+    """intent=breakdown from the agent's classification: one question if it matters, else start the research."""
+    if d.get("kind") not in ps.KINDS:
+        d["kind"] = "mechanic"
+    q = needs_question(d)
+    if q:
+        sess["breakdown_pending"] = {"text": text, "kind": d["kind"], "detail": d.get("detail")}
+        return AgentResponse(status="chat", transcript=text, reply=q, breakdown_kind=d["kind"], source=source)
+    return start_research(d, req, sess, text, source)
+
+
 async def handle(req: AgentRequest, sess: dict, text: str, source: str) -> Optional[AgentResponse]:
-    """Breakdown turn, or None to let the normal agent handle the utterance."""
+    """Before classification: the answer to our clarifying question, or a follow-up about found providers.
+    Returns None to let the normal agent classify the utterance (a new breakdown comes back as intent=breakdown)."""
     try:
         return await _handle(req, sess, text, source)
     except Exception:  # noqa: BLE001 - never break the normal agent because of this scenario
@@ -407,16 +415,6 @@ async def _handle(req: AgentRequest, sess: dict, text: str, source: str) -> Opti
             d["kind"] = pending["kind"]
         d["detail"] = d.get("detail") or pending.get("detail")
         return start_research(d, req, sess, text, source)
-
-    if TRIGGER.search(text):
-        with stage("llm_round_1"):
-            d = await _llm(PARSE_SYSTEM, f"Driver said: {text}")
-        if d.get("breakdown") is True and d.get("kind") in ps.KINDS:
-            q = needs_question(d)
-            if q:
-                sess["breakdown_pending"] = {"text": text, "kind": d["kind"], "detail": d.get("detail")}
-                return AgentResponse(status="chat", transcript=text, reply=q, breakdown_kind=d["kind"], source=source)
-            return start_research(d, req, sess, text, source)
 
     if sess.get("providers") and time.monotonic() - sess.get("providers_at", 0) < FOLLOWUP_TTL_S:
         with stage("llm_round_1"):

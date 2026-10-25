@@ -150,16 +150,25 @@ def test_one_question_only_when_it_matters(d, q):
     assert bd.needs_question(d) == q
 
 
-@pytest.mark.parametrize("text", ["I blew a tire", "flat on the trailer", "truck won't start", "losing power",
-                                  "need a tow", "reefer quit", "ran out of fuel", "brake light on",
-                                  "landing gear stuck", "who can fix a check engine light near me"])
-def test_triggers(text):
-    assert bd.TRIGGER.search(text)
+def test_prompt_block_has_triggers_and_fields():
+    for phrase in ("I blew a tire", "flat on the trailer", "truck won't start", "losing power", "need a tow",
+                   "reefer quit", "ran out of fuel", "brake light on", "landing gear stuck", "who can fix"):
+        assert phrase in bd.PROMPT
+    for field in ('"kind"', '"detail"', '"mode"', '"tire_position"', '"tire_size"'):
+        assert field in bd.PROMPT
 
 
-def test_no_trigger_for_normal_requests():
-    for text in ("find me a truck stop", "take me to Reno", "I'm tired, find a hotel"):
-        assert not bd.TRIGGER.search(text)
+def test_system_prompt_includes_breakdown_block():
+    from services import agent
+    assert "{breakdown}" in agent.SYSTEM
+
+
+def test_from_intent_asks_once_then_skips():
+    from models import AgentRequest
+    req = AgentRequest(text="x", lat=38.58, lng=-121.49)
+    sess = {"history": [], "places": []}
+    r = asyncio.run(bd.from_intent({"kind": "tire", "mode": "unknown"}, req, sess, "I blew a tire", "t"))
+    assert r.status == "chat" and r.reply == bd.QUESTIONS["tire"] and sess["breakdown_pending"]["kind"] == "tire"
 
 
 def test_fit_spoken_cuts_whole_sentences():

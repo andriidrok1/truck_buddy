@@ -98,6 +98,11 @@ export function ParkingStatus({ parking, idSuffix = "" }: { parking?: ParkingChe
             {parking.reason}
           </Text>
         )}
+        {!!uri && (
+          <Text testID={`parking-imagery-note${idSuffix}`} style={[styles.reason, { color: colors.muted }]}>
+            Satellite imagery, may be dated
+          </Text>
+        )}
       </View>
 
       {uri && (

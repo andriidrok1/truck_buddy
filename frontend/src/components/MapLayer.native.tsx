@@ -5,7 +5,8 @@ import MapView, { Marker, Polyline } from "react-native-maps";
 import { useTheme } from "../theme";
 import type { LatLng } from "../types";
 import type { MapLayerHandle, MapLayerProps } from "./mapTypes";
-import { DestinationLabel, Pin, UserArrow } from "./Pin";
+import { DestinationLabel, EntryMarker, Pin, UserArrow } from "./Pin";
+import { entrySpot } from "../utils/entry";
 
 const toCoord = (p: LatLng) => ({ latitude: p.lat, longitude: p.lng });
 
@@ -44,7 +45,13 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
   const recenter = () =>
     mapRef.current?.animateToRegion({ ...toCoord(driver), latitudeDelta: 0.015, longitudeDelta: 0.015 }, 450);
 
-  useImperativeHandle(ref, () => ({ recenter }));
+  const zoomBy = async (delta: number) => {
+    const cam = await mapRef.current?.getCamera();
+    if (cam?.zoom != null) mapRef.current?.animateCamera({ zoom: Math.min(20, Math.max(3, cam.zoom + delta)) }, { duration: 350 });
+    else if (cam?.altitude != null) mapRef.current?.animateCamera({ altitude: cam.altitude / 2 ** delta }, { duration: 350 });
+  };
+
+  useImperativeHandle(ref, () => ({ recenter, zoomBy }));
 
   useEffect(() => {
     if (fitPoints.length > 1) {
@@ -104,6 +111,11 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
           <ViewMarker key={`label-${active.place.id}`} coordinate={toCoord(active.place)} anchor={{ x: 0, y: 1 }} zIndex={4}>
             <DestinationLabel name={active.place.name} />
           </ViewMarker>
+          {entrySpot(active.parking) && (
+            <ViewMarker key={`entry-${active.place.id}`} coordinate={toCoord(entrySpot(active.parking)!)} anchor={{ x: 0.5, y: 0.5 }} zIndex={6}>
+              <EntryMarker />
+            </ViewMarker>
+          )}
         </>
       )}
 

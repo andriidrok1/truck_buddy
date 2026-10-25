@@ -17,12 +17,14 @@ import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance } from "@/src/hooks/useGuidance";
-import { isOnboarded, truckLabel, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, truckLabel, useHandsFree, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { useWakeWord } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
-import type { ActiveRoute, AgentResponse, LatLng, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
+import type { ActiveRoute, AgentResponse, AppAction, LatLng, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
 import { storage } from "@/src/utils/storage";
+import { entrySpot, routeEndsAt } from "@/src/utils/entry";
+import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 
 const VOICE_GUIDANCE_KEY = "voice_guidance_v1";
 const RESEARCH_INTERIM = "Reading reviews now, almost there.";
@@ -36,15 +38,17 @@ const REQUEST_TIMEOUT_MS = 60000;
 const STAGES = ["Searching nearby…", "Setting route…"];
 const STAGE_MS = 3500;
 const WAKE_SLEEP_MS = 10 * 60 * 1000; // background without a route: turn the wake word off
+const FILLER_DELAY_MS = 300; // answer faster than this: no filler at all
+// Shortest first: scheduleFiller() picks from the top more often.
 const FILLERS = [
-  "Alright, let me look.",
+  "Hang on.",
+  "On it.",
+  "Checking.",
   "Okay, one sec.",
   "Got it, checking.",
-  "Hang on.",
-  "Let me see what's around.",
-  "On it.",
   "Sure, one moment.",
-  "Checking.",
+  "Alright, let me look.",
+  "Let me see what's around.",
 ];
 
 export default function MapScreen() {
@@ -60,6 +64,8 @@ export default function MapScreen() {
   const [topH, setTopH] = useState(140);
   const [sheetH, setSheetH] = useState(260);
   const [phase, setPhase] = useState<Phase>("ready");
+  const phaseRef = useRef<Phase>("ready");
+  phaseRef.current = phase;
   const [active, setActive] = useState<ActiveRoute | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -70,6 +76,13 @@ export default function MapScreen() {
   const [options, setOptions] = useState<Place[]>([]);
   const [parking, setParking] = useState<Record<string, ParkingState>>({});
   const [driving, setDriving] = useState(false);
+  const [overview, setOverview] = useState(false);
+  // Whole-route view while driving: back to following the truck after 15 s.
+  useEffect(() => {
+    if (!overview) return;
+    const t = setTimeout(() => setOverview(false), 15000);
+    return () => clearTimeout(t);
+  }, [overview]);
   const [voiceOn, setVoiceOnState] = useState(true);
   const [providers, setProviders] = useState<ProvidersResult | null>(null);
   const providersRef = useRef<ProvidersResult | null>(null);
@@ -162,11 +175,29 @@ export default function MapScreen() {
     const done = voice.playAndWait(absoluteUrl(res.audio_url), Math.min(20000, 1500 + first.length * 65));
     if (!res.audio_url_2) return done;
     const myTurn = turn.current;
-    return done.then(() =>
-      myTurn === turn.current
-        ? voice.playAndWait(absoluteUrl(res.audio_url_2!), Math.min(20000, 1500 + (rest || res.reply).length * 65))
-        : undefined,
-    );
+    // Buffer the second half while the first plays, so it starts right after it (<150 ms gap).
+    const url2 = absoluteUrl(res.audio_url_2);
+    const next = voice.preload(url2);
+    const available = fetch(url2, { headers: { Range: "bytes=0-0" } })
+      .then((r) => r.ok)
+      .catch(() => false);
+    return done.then(async () => {
+      if (myTurn !== turn.current) {
+        next.remove();
+        return;
+      }
+      if (!(await available)) {
+        console.warn(`[voice] second half unavailable (${url2}); showing the full text instead`);
+        next.remove();
+        setCaption({ reply: res.reply, heard: res.transcript || undefined });
+        return;
+      }
+      if (myTurn !== turn.current) {
+        next.remove();
+        return;
+      }
+      return voice.playAndWait(next, Math.min(20000, 1500 + (rest || res.reply).length * 65));
+    });
   };
 
   // Instant acknowledgement while the real answer is on its way (cached TTS, rotated).
@@ -177,14 +208,32 @@ export default function MapScreen() {
       fillers.current = all.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
     });
   }, []);
-  /** Random acknowledgement, never the same twice in a row; skipped one time in four. */
-  const playFiller = () => {
+  /**
+   * Acknowledgement that starts after FILLER_DELAY_MS unless the answer is already there.
+   * Short fillers (listed first) are picked more often; never the same twice in a row; skipped 1 in 4.
+   * Returns `cancel()` (true if the filler hadn't started) and `done` (resolves when it finished).
+   */
+  const scheduleFiller = () => {
     const n = fillers.current.length;
-    if (!n || Math.random() < 0.25) return;
-    let i = Math.floor(Math.random() * n);
-    if (n > 1 && i === lastFiller.current) i = (i + 1 + Math.floor(Math.random() * (n - 1))) % n;
-    lastFiller.current = i;
-    voice.play(fillers.current[i]);
+    if (!n || Math.random() < 0.25) return null;
+    let i = Math.floor(n * Math.random() ** 2); // biased towards the short ones at the top
+    if (n > 1 && i === lastFiller.current) i = (i + 1) % n;
+    let started = false;
+    let resolveDone: () => void = () => {};
+    const done = new Promise<void>((r) => (resolveDone = r));
+    const timer = setTimeout(() => {
+      started = true;
+      lastFiller.current = i;
+      voice.playAndWait(fillers.current[i], 4000).then(resolveDone);
+    }, FILLER_DELAY_MS);
+    return {
+      done,
+      cancel: () => {
+        clearTimeout(timer);
+        if (!started) resolveDone();
+        return !started;
+      },
+    };
   };
 
   // Warm Places + parking caches around the driver: app on screen, no active route,
@@ -204,13 +253,16 @@ export default function MapScreen() {
   }, [loc.coords, loc.isDemo, loc.resolved, appActive, active]);
 
   /** Satellite parking check runs after the route is set; its directions are spoken when the reply ends. */
-  const followParking = async (place: Place, replyDone: Promise<void>, myTurn: number) => {
+  const followParking = async (place: Place, replyDone: Promise<void>, myTurn: number, approach = activeRef.current?.route.approach) => {
     try {
-      const pk = await api.parking(place);
+      const pk = await api.parking(place, approach);
       // The card always takes the result if it's still the same destination.
       setActive((a) => (a && a.place.id === place.id ? { ...a, parking: pk } : a));
+      const e = entrySpot(pk);
+      if (e && activeRef.current?.place.id === place.id && !routeEndsAt(activeRef.current.route, e)) reroute(myTurn); // route to E
       if (myTurn !== turn.current || activeRef.current?.place.id !== place.id) return;
-      const tips = [pk.entry_tip, pk.park_tip].filter(Boolean).join(". ");
+      const entry = pk.entry_tip && pk.relative ? `The truck entrance is ${pk.entry_tip.charAt(0).toLowerCase()}${pk.entry_tip.slice(1)}` : pk.entry_tip;
+      const tips = [entry, pk.park_tip].filter(Boolean).join(". ");
       const text =
         pk.verdict === "unlikely"
           ? "Heads up: from the satellite, parking there looks tight for a rig."
@@ -314,6 +366,7 @@ export default function MapScreen() {
     const ctrl = new AbortController();
     inflight.current = ctrl;
     const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+    let filler: ReturnType<typeof scheduleFiller> = null;
     try {
       let transcript = typed ?? "";
       if (typed === undefined) {
@@ -323,13 +376,23 @@ export default function MapScreen() {
       }
       if (myTurn !== turn.current) return;
       if (transcript) {
-        if (typed === undefined) playFiller(); // only when the driver actually said something
+        if (typed === undefined) filler = scheduleFiller(); // only when the driver actually said something
         setCaption({ reply: "…", heard: transcript });
       }
-      const res = await api.agentSpeak(transcript, loc.coords, activeRef.current, ctrl.signal, dialog.current ?? undefined);
+      const res = await api.agentSpeak(transcript, loc.coords, activeRef.current, ctrl.signal, dialog.current ?? undefined, {
+        driving,
+        voice_guidance: voiceOn,
+        hands_free: handsFree,
+        options_count: optionsRef.current.length,
+      });
       if (myTurn !== turn.current) return;
+      // Fast answer: the filler never starts. Otherwise the answer waits for it to finish.
+      filler?.cancel();
+      const afterFiller = filler?.done ?? Promise.resolve();
+      const speak = () => afterFiller.then(() => (myTurn === turn.current ? sayReply(res) : undefined));
       if (res.dial_phone) dial(res.dial_phone);
       if (res.status === "researching" && res.research_id) {
+        await afterFiller;
         await runResearch(res, myTurn, ctrl.signal);
         return;
       }
@@ -339,16 +402,31 @@ export default function MapScreen() {
         setParking({});
         setPlaces([res.place, ...others]);
         startRoute({ place: res.place, route: res.route, parking: res.parking });
-        const replyDone = sayReply(res);
-        if (res.place.category !== "destination") followParking(res.place, replyDone, myTurn);
+        const replyDone = speak();
+        followParking(res.place, replyDone, myTurn, res.route.approach);
         endDialog(); // route is set: stop listening until the driver taps the mic again
       } else {
-        if (typeof res.voice_guidance === "boolean") setVoiceOn(res.voice_guidance);
         if (res.status !== "chat" && res.status !== "not_understood") showToast(res.message ?? MESSAGES.notUnderstood);
         backToIdle();
-        continueDialog(myTurn, res, sayReply(res));
+        if (res.actions?.length) runActions(res.actions, myTurn); // after backToIdle: actions may change the phase
+        const spoken = speak();
+        const followup = res.actions?.find((a) => a.type === "parking_followup");
+        const fPlace = followup && [activeRef.current?.place, ...optionsRef.current, ...places].find((p) => p?.id === followup.value);
+        const answered = fPlace
+          ? parkingFollowup(fPlace, spoken, {
+              isCurrent: () => myTurn === turn.current,
+              busy: () => phaseRef.current === "listening" || phaseRef.current === "thinking",
+              say: async (text, url) => {
+                setCaption({ reply: text });
+                const a = toAudio(url);
+                if (a) await voice.playAndWait(a, 6000);
+              },
+            })
+          : spoken;
+        continueDialog(myTurn, res, answered);
       }
     } catch (e) {
+      filler?.cancel();
       if (myTurn !== turn.current) return;
       const err = String(e);
       const msg = err.includes("422")
@@ -361,6 +439,7 @@ export default function MapScreen() {
       continueDialog(myTurn, null, wait(1200));
     } finally {
       clearTimeout(timer);
+      if (myTurn !== turn.current) filler?.cancel(); // turn abandoned: never start its filler
       if (myTurn === turn.current) clearTimers();
     }
   };
@@ -559,6 +638,11 @@ export default function MapScreen() {
     turn.current++;
     voice.cancelRecording().catch(() => {});
     voice.stopSpeaking();
+    clearRoute();
+  };
+
+  /** Route state reset without touching audio (used by the copilot so its reply isn't cut). */
+  const clearRoute = () => {
     routeStart.current = null;
     setDriving(false);
     setActive(null);
@@ -570,6 +654,109 @@ export default function MapScreen() {
     setPlaces(prov ? prov.providers.map(providerPlace) : []);
     setPhase(prov ? "providers" : "ready");
     setFit({ key: `end-${Date.now()}`, points: [loc.coords] });
+  };
+
+  /** Re-plans the active route with the current truck profile (after a voice change). */
+  const reroute = async (myTurn: number) => {
+    const cur = activeRef.current;
+    if (!cur) return;
+    try {
+      const res = await api.route(loc.coords, cur.place);
+      // Only the destination must still match: a newer turn shouldn't keep the old route on screen.
+      if (activeRef.current?.place.id === cur.place.id) {
+        setActive((a) => (a ? { ...a, route: res.route } : a));
+      }
+    } catch {
+      if (myTurn === turn.current) showToast("Couldn't update the route. Try again.");
+    }
+  };
+
+  /** Executes app controls the copilot returned (trip, sound, map, truck data, preferences). */
+  const runActions = (actions: AppAction[], myTurn: number) => {
+    let truckPatch: Partial<TruckProfile> = {};
+    for (const { type, value } of actions) {
+      switch (type) {
+        case "start_navigation":
+          if (activeRef.current) {
+            endDialog();
+            setDriving(true);
+          }
+          break;
+        case "end_route":
+          endDialog();
+          clearRoute();
+          break;
+        case "show_options":
+          if (optionsRef.current.length) setPhase("options");
+          break;
+        case "recenter":
+          setOverview(false);
+          mapRef.current?.recenter();
+          break;
+        case "overview":
+          if (activeRef.current) {
+            // Stay in driving mode; the camera stops following for a moment.
+            setOverview(true);
+            setFit({ key: `overview-${Date.now()}`, points: [loc.coords, activeRef.current.place] });
+          }
+          break;
+        case "zoom_in":
+          mapRef.current?.zoomBy(1);
+          break;
+        case "zoom_out":
+          mapRef.current?.zoomBy(-1);
+          break;
+        case "voice_guidance":
+          setVoiceOn(value === true);
+          break;
+        case "wake_word":
+          setHandsFree(value === true);
+          break;
+        case "stop_talking":
+          endDialog();
+          break;
+        case "set_height_in":
+          truckPatch.height_in = Number(value);
+          break;
+        case "set_trailer_ft":
+          truckPatch.trailer_ft = Number(value);
+          break;
+        case "set_weight_lb":
+          truckPatch.weight_lb = Number(value);
+          break;
+        case "set_hazmat":
+          truckPatch.hazmat = value === true;
+          break;
+        case "set_driver_name":
+          truckPatch.driver_name = String(value);
+          break;
+        case "avoid_tolls":
+          truckPatch.avoid_tolls = value === true;
+          break;
+        case "avoid_ferries_tunnels":
+          truckPatch.avoid_ferries_tunnels = value === true;
+          break;
+        case "add_favorite_chain": {
+          const list = truckPatch.favorite_chains ?? getTruckProfile().favorite_chains ?? [];
+          truckPatch.favorite_chains = [...list, String(value)];
+          break;
+        }
+        case "remove_favorite_chain": {
+          const list = truckPatch.favorite_chains ?? getTruckProfile().favorite_chains ?? [];
+          truckPatch.favorite_chains = list.filter((c) => c.toLowerCase() !== String(value).toLowerCase());
+          break;
+        }
+        case "set_break_hours":
+          truckPatch.break_hours = value == null ? null : Number(value);
+          break;
+        case "reroute":
+          // Save first so the new route uses the new profile.
+          saveTruckProfile({ ...getTruckProfile(), ...truckPatch }).then(() => reroute(myTurn));
+          truckPatch = {};
+          break;
+      }
+    }
+    if (Object.keys(truckPatch).length) saveTruckProfile({ ...getTruckProfile(), ...truckPatch });
   };
 
   const onPlacePress = async (p: Place) => {
@@ -609,7 +796,7 @@ export default function MapScreen() {
         fitPoints={fit.points}
         onCenterChange={(c) => (center.current = c)}
         onPlacePress={onPlacePress}
-        follow={driving}
+        follow={driving && !overview}
       />
 
       {driving && active ? (
@@ -636,7 +823,10 @@ export default function MapScreen() {
       <PressableScale
         testID="recenter-button"
         accessibilityLabel="Recenter"
-        onPress={() => mapRef.current?.recenter()}
+        onPress={() => {
+          setOverview(false);
+          mapRef.current?.recenter();
+        }}
         style={[styles.recenter, shadow(colors), { backgroundColor: colors.surface, bottom: sheetH + spacing.lg }]}
       >
         <Icon name="crosshairs-gps" size={24} color={colors.info} />

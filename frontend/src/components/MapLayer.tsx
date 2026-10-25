@@ -8,7 +8,8 @@ import { PanResponder, Pressable, StyleSheet, View, type LayoutChangeEvent } fro
 import { useTheme } from "../theme";
 import type { LatLng } from "../types";
 import type { MapLayerHandle, MapLayerProps } from "./mapTypes";
-import { DestinationLabel, Pin, PIN_H, PIN_W, USER_SIZE, UserArrow } from "./Pin";
+import { DestinationLabel, ENTRY_SIZE, EntryMarker, Pin, PIN_H, PIN_W, USER_SIZE, UserArrow } from "./Pin";
+import { entrySpot } from "../utils/entry";
 
 const TILE = 256;
 const DEFAULT_ZOOM = 15;
@@ -44,7 +45,9 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
   const fy = topInset + Math.max(80, size.h - topInset - bottomInset) / 2;
 
   const recenter = () => setView({ center: driver, zoom: DEFAULT_ZOOM });
-  useImperativeHandle(ref, () => ({ recenter }));
+  const zoomBy = (delta: number) =>
+    setView((v) => ({ center: v.center, zoom: Math.min(18, Math.max(3, v.zoom + delta)) }));
+  useImperativeHandle(ref, () => ({ recenter, zoomBy }));
 
   useEffect(() => {
     if (fitPoints.length === 0) return;
@@ -152,6 +155,8 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
 
   const me = toScreen(driver);
   const dest = active ? toScreen(active.place) : null;
+  const e = entrySpot(active?.parking);
+  const entry = e ? toScreen(e) : null;
 
   return (
     <View
@@ -194,6 +199,12 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
             <Pin category={active.place.category} selected />
           </View>
         </>
+      )}
+
+      {active && entry && (
+        <View style={{ position: "absolute", left: entry.x - ENTRY_SIZE / 2, top: entry.y - ENTRY_SIZE / 2 }} pointerEvents="none">
+          <EntryMarker />
+        </View>
       )}
 
       <View testID="map-user-arrow" style={{ position: "absolute", left: me.x - USER_SIZE / 2, top: me.y - USER_SIZE / 2 }} pointerEvents="none">

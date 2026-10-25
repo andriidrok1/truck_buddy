@@ -42,6 +42,17 @@ export function UserArrow({ heading }: { heading?: number | null }) {
 }
 
 export const USER_SIZE = 56;
+export const ENTRY_SIZE = 26;
+
+/** "E" marker: the truck entrance found on the satellite image (route ends here). */
+export function EntryMarker() {
+  const { colors } = useTheme();
+  return (
+    <View testID="map-entry-marker" style={[styles.entry, shadow(colors), { backgroundColor: colors.info, borderColor: colors.surface }]} pointerEvents="none">
+      <Text style={[styles.entryText, { color: colors.onInfo }]}>E</Text>
+    </View>
+  );
+}
 
 export function DestinationLabel({ name }: { name: string }) {
   const { colors } = useTheme();
@@ -80,4 +91,6 @@ const styles = StyleSheet.create({
   labelBox: { paddingLeft: 24, paddingBottom: 18 },
   label: { paddingHorizontal: 12, height: 32, borderRadius: radius.pill, justifyContent: "center", maxWidth: 200 },
   labelText: { fontFamily: fonts.semibold, fontSize: 13 },
+  entry: { width: ENTRY_SIZE, height: ENTRY_SIZE, borderRadius: ENTRY_SIZE / 2, borderWidth: 2, alignItems: "center", justifyContent: "center" },
+  entryText: { fontFamily: fonts.extrabold, fontSize: 13 },
 });
