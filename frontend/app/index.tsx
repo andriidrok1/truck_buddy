@@ -4,6 +4,7 @@ import { AppState, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { absoluteUrl, api } from "@/src/api";
+import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
 import { Icon } from "@/src/components/Icon";
 import MapLayer from "@/src/components/MapLayer";
@@ -16,6 +17,7 @@ import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
 import { isTester } from "@/src/auth";
+import { swapAlternative, switchedLine } from "@/src/geo/routeChoice";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
@@ -93,6 +95,8 @@ export default function MapScreen() {
   const [parking, setParking] = useState<Record<string, ParkingState>>({});
   const [driving, setDriving] = useState(false);
   const [overview, setOverview] = useState(false);
+  // The list of the other routes the engine offered (the "Routes (N)" chip, before "Go").
+  const [routesOpen, setRoutesOpen] = useState(false);
   // "Follow" button: the camera keeps the truck arrow in view until the driver drags the map.
   const [tracking, setTracking] = useState(false);
   const following = tracking || (driving && !overview);
@@ -458,6 +462,7 @@ export default function MapScreen() {
     pauseDialog();
     voice.stopSpeaking();
     setCaption(null);
+    setRoutesOpen(false);
     setDriving(true);
   };
 
@@ -760,6 +765,7 @@ export default function MapScreen() {
     routeStart.current = null;
     clearSpeech(); // queued maneuver calls belong to the route that just ended
     setDriving(false);
+    setRoutesOpen(false);
     setActive(null);
     setCaption(null);
     setOptions([]);
@@ -786,6 +792,49 @@ export default function MapScreen() {
     }
   };
 
+  /** "×" on a stop chip: re-plan through the remaining stops (plain /route when none are left). */
+  const onRemoveStop = async (stop: Place) => {
+    const cur = activeRef.current;
+    if (!cur) return;
+    const stops = (cur.stops ?? []).filter((s) => s.id !== stop.id);
+    const via = stops.map((s): [number, number] => [s.lat, s.lng]);
+    try {
+      const res = via.length
+        ? await api.reroute({
+            lat: loc.coords.lat,
+            lng: loc.coords.lng,
+            place: cur.place,
+            handle: null, // the old handle pins the old stops; a changed list must route fresh
+            heading: loc.heading ?? null,
+            section_index: 0,
+            traveled_m: 0,
+            via,
+          })
+        : await api.route(loc.coords, cur.place);
+      if (activeRef.current?.place.id === cur.place.id) {
+        setActive((a) => (a ? { ...a, route: res.route, stops } : a));
+      }
+    } catch {
+      showToast("Couldn't update the stops. Try again.");
+    }
+  };
+
+  /**
+   * A tap in the routes list: swap `active.route` for that alternative, no network. The old primary
+   * joins the alternatives so the driver can come back. A new route object resets the guidance
+   * (spoken set, matcher, off-route tracker all key on it); the queue is emptied of the old one's lines.
+   */
+  const onPickAlternative = (i: number) => {
+    const cur = activeRef.current;
+    if (!cur) return;
+    const { route } = swapAlternative(cur.route, i);
+    if (route === cur.route) return;
+    clearSpeech();
+    setActive({ ...cur, route });
+    setRoutesOpen(false);
+    say(switchedLine(route, i), { priority: PRIORITY.MANEUVER, kind: "system", key: "route-switch", ttlMs: 15000 });
+  };
+
   // Back from the truck editor with new dimensions: same reroute as the voice change, nothing spoken.
   useEffect(() => {
     if (focused && takeTruckReroute() && activeRef.current) {
@@ -810,6 +859,11 @@ export default function MapScreen() {
     if (patch.parking) setParking(patch.parking);
     if (patch.places) setPlaces(patch.places);
     if (patch.phase) setPhase(patch.phase);
+    if (patch.activeRoute) {
+      // Same destination, new route: the card, parking and dialog stay; only the line changes.
+      const { route, stops } = patch.activeRoute;
+      setActive((a) => (a && a.place.id === res.place?.id ? { ...a, route, stops } : a));
+    }
     let spoken: Promise<void> = Promise.resolve();
     for (const e of effects) {
       switch (e.type) {
@@ -1017,10 +1071,16 @@ export default function MapScreen() {
         onSubmitText={onSubmitText}
         onClose={onClose}
         onEndRoute={onEndRoute}
+        onRemoveStop={onRemoveStop}
+        onShowRoutes={() => setRoutesOpen(true)}
         onLayout={setSheetH}
         wakePhrase={wake.active ? wake.phrase : null}
         panel={providers ? <ProvidersList data={providers} onRoute={(p) => onPlacePress(providerPlace(p))} /> : null}
       />
+
+      {routesOpen && active && !driving && !!active.route.alternatives?.length && (
+        <AlternativesSheet primary={active.route} bottom={sheetH + spacing.lg} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
+      )}
 
       {micCard && (
         <MicPermissionCard
