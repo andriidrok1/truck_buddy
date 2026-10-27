@@ -1,11 +1,12 @@
 # T1 probe iter29: after a find-near dialog, does a plain "I need fuel" (category change) still search near the old point?
+import os
 import uuid
 
 import requests
 
 BASE_URL = [l.split("=", 1)[1].strip().strip('"') for l in open("/app/frontend/.env")
             if l.startswith("EXPO_PUBLIC_BACKEND_URL") or l.startswith("EXPO_BACKEND_URL")][0].rstrip("/")
-_tok = requests.post(f"{BASE_URL}/api/auth/access-code", json={"code": "TRUCK2026"}, timeout=30).json()["access_token"]
+_tok = requests.post(f"{BASE_URL}/api/auth/access-code", json={"code": os.environ["ACCESS_CODE"]}, timeout=30).json()["access_token"]
 H = {"Authorization": f"Bearer {_tok}"}
 SAC = {"lat": 38.58, "lng": -121.49}
 sid = f"T1-leak-{uuid.uuid4().hex[:6]}"

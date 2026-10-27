@@ -30,16 +30,17 @@ the Bearer token the app gets by redeeming the access code.
 
 | Variable | Purpose |
 | --- | --- |
+| `OPENAI_API_KEY` | Speech-to-text, the agent, satellite vision and TTS (required) |
+| `DATABASE_URL` | Postgres (Neon) for per-driver conversation memory; the app runs without it, memory off |
 | `JWT_SECRET` | Signs the device tokens (required) |
 | `ACCESS_CODE`, `TESTER_CODE` | Shared access codes; the tester code also unlocks simulated locations |
 | `GOOGLE_MAPS_API_KEY` | Places search and geocoding (mock places without it) |
 | `HERE_API_KEY`, `ORS_API_KEY` | Truck routing |
 | `ELEVENLABS_*` | Optional TTS provider (off by default) |
 | `CORS_ORIGINS` | Comma-separated origins for the web build (default `*`) |
-| `PARKING_CACHE_DIR`, `PARKING_WARM` | Satellite parking check cache and pre-warming |
-
-The LLM / speech key and the database settings are being moved to the production
-setup (Railway + Neon); see the app store submission PR for the current names.
+| `PARKING_CACHE_DIR`, `PARKING_WARM` | Satellite parking check cache; `PARKING_WARM=1` pre-checks the demo places at startup (off by default) |
+| `RATE_LIMIT_PER_MIN` | Requests per minute per driver on authenticated routes (default 40, `0` = off for test backends) |
+| `DEV_DOCS` | `1` enables Swagger at `/api/docs` (dev only) |
 
 ### Tests
 

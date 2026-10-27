@@ -1,18 +1,21 @@
 import { ScrollView, StyleSheet, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { isTester } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
 import { PressableScale } from "@/src/components/PressableScale";
 import { SCENARIOS, setSim, useSim } from "@/src/sim";
 import { fonts, radius, shadow, spacing, useTheme } from "@/src/theme";
 
-/** Tester screen (code test123): jump the truck to made-up spots to try scenarios. */
+/** Tester screen (TESTER_CODE login only): jump the truck to made-up spots to try scenarios. */
 export default function TesterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const sim = useSim();
+  // Drivers can reach this route by deep link (truckbuddy://tester); the simulated locations are for testers only.
+  if (!isTester()) return <Redirect href="/" />;
 
   return (
     <View style={[styles.root, { backgroundColor: colors.surfaceSecondary, paddingTop: insets.top }]}>

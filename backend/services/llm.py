@@ -10,7 +10,8 @@ _client: Optional[AsyncOpenAI] = None
 def client() -> AsyncOpenAI:
     global _client
     if _client is None:  # lazy: importing services (tests, tools) must not need the key
-        _client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        # SDK defaults are 600 s and 2 retries; a driver can't wait that long for any single call.
+        _client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=30.0, max_retries=1)
     return _client
 
 

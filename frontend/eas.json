@@ -10,11 +10,17 @@
     },
     "preview": {
       "distribution": "internal",
-      "channel": "preview"
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://SET-RAILWAY-DOMAIN.up.railway.app"
+      }
     },
     "production": {
       "autoIncrement": true,
-      "channel": "production"
+      "channel": "production",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://SET-RAILWAY-DOMAIN.up.railway.app"
+      }
     }
   },
   "submit": {

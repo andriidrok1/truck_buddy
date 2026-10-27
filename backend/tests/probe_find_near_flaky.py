@@ -1,4 +1,5 @@
 # T1 probe: flakiness rate of find-near (Stockton delivery) + "and a hotel there"
+import os
 import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -7,7 +8,7 @@ import requests
 
 BASE_URL = [l.split("=", 1)[1].strip().strip('"') for l in open("/app/frontend/.env")
             if l.startswith("EXPO_PUBLIC_BACKEND_URL") or l.startswith("EXPO_BACKEND_URL")][0].rstrip("/")
-_tok = requests.post(f"{BASE_URL}/api/auth/access-code", json={"code": "TRUCK2026"}, timeout=30).json()["access_token"]
+_tok = requests.post(f"{BASE_URL}/api/auth/access-code", json={"code": os.environ["ACCESS_CODE"]}, timeout=30).json()["access_token"]
 _orig = requests.post
 requests.post = lambda *a, **k: _orig(*a, headers={"Authorization": f"Bearer {_tok}"}, **k)
 

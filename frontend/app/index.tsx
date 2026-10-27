@@ -37,6 +37,8 @@ const providerPlace = (p: Provider): Place => ({
 
 const REQUEST_TIMEOUT_MS = 60000;
 const NO_CONNECTION = "I can't reach the server right now. Check your signal and try again.";
+const STT_SLOW = "Speech recognition is slow right now. Give it a moment and try again.";
+const RATE_LIMITED = "One second, let me catch up.";
 const STAGES = ["Searching nearby…", "Setting route…"];
 const STAGE_MS = 3500;
 const WAKE_SLEEP_MS = 10 * 60 * 1000; // background without a route: turn the wake word off
@@ -486,9 +488,13 @@ export default function MapScreen() {
         ? "Check your truck profile and try again."
         : err.includes("502")
           ? MESSAGES.placesUnavailable
-          : /abort|network|timed? ?out|failed to fetch/i.test(err)
-            ? NO_CONNECTION
-            : MESSAGES.notUnderstood;
+          : err.includes("504")
+            ? STT_SLOW
+            : err.includes("429")
+              ? RATE_LIMITED
+              : /abort|network|timed? ?out|failed to fetch/i.test(err)
+                ? NO_CONNECTION
+                : MESSAGES.notUnderstood;
       setCaption({ reply: msg });
       backToIdle();
       continueDialog(myTurn, null, wait(1200));
@@ -545,7 +551,7 @@ export default function MapScreen() {
     const myTurn = ++turn.current;
     let res: string;
     try {
-      res = await voice.listen({ silenceMs: 1100, chime: !fromWake }); // the wake word plays its own chime
+      res = await voice.listen({ chime: !fromWake }); // the wake word plays its own chime
     } catch {
       pauseDialog();
       showToast(MESSAGES.notUnderstood);
@@ -618,12 +624,14 @@ export default function MapScreen() {
   const idle = phase === "ready" || phase === "navigating" || phase === "options" || phase === "providers";
   // iOS v1 has no background audio mode: the wake word listens only while the app is on screen.
   const wakeArmed = wake.supported && handsFree && micOk && !asleep && (Platform.OS !== "ios" || appActive);
+  // Not while a reply plays: starting the wake engine switches the audio session under the player
+  // (iOS moves the voice to the earpiece mid-sentence, Porcupine can error out and stay dead).
   useEffect(() => {
     if (!wakeArmed) wake.shutdown();
-    else if (focused && idle) wake.start();
+    else if (focused && idle && !voice.speaking) wake.start();
     else wake.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wakeArmed, focused, idle]);
+  }, [wakeArmed, focused, idle, voice.speaking]);
   // Keep the recorder ready for an instant tap-to-talk, unless the wake word holds the mic.
   const { setPrewarm } = voice;
   useEffect(() => {

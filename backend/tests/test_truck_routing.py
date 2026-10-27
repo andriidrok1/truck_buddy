@@ -7,7 +7,7 @@ import sys
 import pytest
 import requests
 
-BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL").rstrip("/")
+BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "").rstrip("/")
 SAC = {"lat": 38.5816, "lng": -121.4944}
 DEFAULT_TP = {"height_in": 162, "trailer_ft": 53, "weight_lb": 80000, "hazmat": False}
 sys.path.insert(0, "/app/backend")
@@ -151,11 +151,20 @@ class TestFallbacks:
         r = asyncio.run(routing.get_routing_provider().route(38.5816, -121.4944, 39.5296, -119.8138, TruckProfile()))
         assert r.source == "openrouteservice"
 
-    def test_both_fail_mock(self, monkeypatch):
+    def test_both_fail_raises(self, monkeypatch):
+        """Keys configured but every provider down: an error, never a made-up line the driver would follow."""
         self._env()
         from services import routing
         monkeypatch.setenv("HERE_API_KEY", "INVALID")
         monkeypatch.setenv("ORS_API_KEY", "INVALID")
+        with pytest.raises(routing.RoutingUnavailable):
+            asyncio.run(routing.get_routing_provider().route(38.5816, -121.4944, 39.5296, -119.8138))
+
+    def test_no_keys_mock(self, monkeypatch):
+        """No routing key at all (local demo): the curved mock line, marked as such."""
+        from services import routing
+        monkeypatch.delenv("HERE_API_KEY", raising=False)
+        monkeypatch.delenv("ORS_API_KEY", raising=False)
         r = asyncio.run(routing.get_routing_provider().route(38.5816, -121.4944, 39.5296, -119.8138))
         assert r.source == "mock" and r.truck_aware is False
 

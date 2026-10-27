@@ -96,7 +96,7 @@ def city_of(query: str, place: Place) -> Optional[str]:
     return None
 MODEL = ("openai", "gpt-5.4-mini")
 MAX_OPTIONS = 4
-PRECHECK = 3  # nearest candidates satellite-checked in the background
+PRECHECK = 1  # nearest candidates satellite-checked in the background (each = one vision call)
 FAVORITE_EXTRA_MI = 5.0
 TRUCK_TAGS = ("truck parking", "53 ft", "truck lot", "hgv")
 
@@ -302,19 +302,16 @@ class LlmAgentProvider:
             req.session_id = f"{driver}:solo"[:64]  # typed turns outside a dialog still use memory
         if driver and req.session_id and req.session_id not in _SESSIONS:
             try:  # a new dialog starts with what the driver told the copilot in earlier ones
-                past = await memory.recent(driver, PAST_TURNS)
-            except Exception:  # noqa: BLE001
-                logger.exception("memory load failed")
+                past = await asyncio.wait_for(memory.recent(driver, PAST_TURNS), 3.0)
+            except Exception:  # noqa: BLE001 - a slow or down database must not delay the reply
+                logger.warning("memory load failed or timed out")
                 past = []
             _session(req.session_id)["past"] = [t["text"][:200] for t in past if t["role"] == "driver"]
         res = await self._handle(req)
         if res.status == "chat" and GOODBYE.search(req.text or ""):
             res.end_conversation = True
-        if driver and res.status != "not_understood":
-            try:
-                await memory.add(driver, [("driver", (req.text or "").strip()[:500]), ("copilot", res.reply[:500])])
-            except Exception:  # noqa: BLE001
-                logger.exception("memory save failed")
+        if driver and res.status != "not_understood":  # saved in the background: the reply (and TTS) never waits on the DB
+            memory.add_later(driver, [("driver", (req.text or "").strip()[:500]), ("copilot", res.reply[:500])])
         if req.session_id:
             sess = _session(req.session_id)
             if req.text:
