@@ -15,7 +15,7 @@ from typing import Optional
 import httpx
 
 from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
-from services import approach, breakdown, controls, fuel_index, llm, memory, reviews, weather
+from services import approach, breakdown, chains, controls, fuel_index, llm, memory, reviews, weather
 from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
@@ -482,13 +482,25 @@ class LlmAgentProvider:
         n = counter.get("n", 0)
         counter["n"] = n + 1
         self._remember_alternatives(req, place, route)
-        regional, weather_line = await asyncio.gather(self._regional_note(place), self._route_weather(route))
+        regional, weather_line, chain_line = await asyncio.gather(
+            self._regional_note(place), self._route_weather(route), self._route_chains(route))
         reply = _route_reply(place, route, n, req.truck_profile.driver_name, regional)
-        if weather_line:
-            reply = f"{reply} {weather_line}"
+        for line in (chain_line, weather_line):
+            if line:
+                reply = f"{reply} {line}"
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply,
                              place=place, route=route, parking=approach.best(place),
                              options=others, source=self.source)
+
+    @staticmethod
+    async def _route_chains(route: RouteInfo) -> str:
+        """Caltrans chain controls on a new route (California only), spoken once; bounded like the weather."""
+        try:
+            route.chain_controls = await asyncio.wait_for(chains.for_route(route.geometry), WEATHER_BUDGET_S)
+        except Exception as e:  # noqa: BLE001
+            logger.info("route chain controls skipped: %s", e)
+            route.chain_controls = []
+        return chains.speech(route.chain_controls)
 
     @staticmethod
     async def _route_weather(route: RouteInfo) -> str:
