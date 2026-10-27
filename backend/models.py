@@ -39,6 +39,13 @@ class Place(BaseModel):
     distance_km: Optional[float] = None
     distance_mi: Optional[float] = None
     reviews: List[Review] = Field(default_factory=list)  # up to 5 (Google), for the card and a spoken gist
+    # Truck parking at the place: live from a TPIMS sensor site (within 300 m) or capacity from the FHWA survey.
+    parking_available: Optional[int] = None  # open truck spaces right now (TPIMS), None when unknown
+    parking_capacity: Optional[int] = None  # truck spaces in total
+    parking_low: Optional[bool] = None  # TPIMS says "LOW" (a handful left, no exact count)
+    parking_trend: Optional[str] = None  # FILLING | CLEARING | STEADY
+    parking_updated: Optional[str] = None  # RFC 3339, time of the live report
+    parking_source: Optional[Literal["tpims", "ntad"]] = None
 
 
 class PlacesResponse(BaseModel):

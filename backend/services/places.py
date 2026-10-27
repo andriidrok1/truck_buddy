@@ -165,6 +165,8 @@ class MockPlacesProvider:
             radius, widened = WIDE_RADIUS_KM, True
             found = [p for p in candidates if p.distance_km <= radius]
         found.sort(key=lambda p: p.distance_km)
+        from services import tpims
+        tpims.attach(found)
         return PlacesResponse(category=category, radius_km=radius, widened=widened, places=found, source=self.source)
 
     async def get(self, place_id: str, lat: float, lng: float) -> Optional[Place]:

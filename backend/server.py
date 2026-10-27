@@ -22,7 +22,7 @@ from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import cached_parking, check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import approach, approach_api, auth, chains, memory, onboarding, parking_store, parking_warm, timing, voice, weather  # noqa: E402,E501
+from services import approach, approach_api, auth, chains, memory, onboarding, parking_store, parking_warm, timing, tpims, voice, weather  # noqa: E402,E501
 
 WEATHER_BUDGET_S = 2.5  # NWS alerts on /route may add at most this much; never the route itself
 from pydantic import BaseModel, Field  # noqa: E402
@@ -444,11 +444,13 @@ app.include_router(parking_warm.router)
 async def _memory_up():
     _bg(memory.warm())
     await chains.start()  # Caltrans chain-control poller (CHAIN_CONTROLS=0 to skip)
+    await tpims.start()  # live truck parking counts (TPIMS_ENABLED=0 to skip)
 
 
 @app.on_event("shutdown")
 async def _memory_down():
     await chains.stop()
+    await tpims.stop()
     await memory.close()
 
 
