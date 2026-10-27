@@ -94,6 +94,29 @@ _MINUTES = re.compile(r"\b(about\s+|around\s+)?(\d+)\s*min(?:utes?|s)?\b", re.I)
 _MILES = re.compile(r"\b(about\s+|around\s+)?(\d[\d,]*(?:\.\d+)?)\s*(?:mi|miles?)\b(?!-)", re.I)
 
 
+# Sentence boundary for speech: ". " before a capital, but not after St./Dr./U.S. abbreviations.
+SENTENCE_END = re.compile(r"(?<!\bSt\.)(?<!\bDr\.)(?<!U\.S\.)(?<=[.!?])\s+(?=[A-Z])")
+REPLY_MAX_SENTENCES = 2
+REPLY_MAX_CHARS = 220
+
+
+def fit_reply(text: str, max_sentences: int = REPLY_MAX_SENTENCES, max_chars: int = REPLY_MAX_CHARS) -> str:
+    """Keeps a free-form model reply short enough to listen to at the wheel: whole sentences only,
+    at most `max_sentences`, and never past `max_chars` (a sentence that would cross the cap is dropped,
+    unless it's the first one, which is kept whole). Templated replies never go through here."""
+    t = re.sub(r"\s+", " ", text or "").strip()
+    if not t:
+        return ""
+    parts = SENTENCE_END.split(t)
+    out: list[str] = []
+    for s in parts[:max_sentences]:
+        candidate = " ".join(out + [s])
+        if out and len(candidate) > max_chars:
+            break
+        out.append(s)
+    return " ".join(out)
+
+
 def spoken(text: str) -> str:
     t = text or ""
     for rx, rep in _RULES:
