@@ -1,0 +1,15 @@
+{
+ "_meta": {
+  "recorded_at": "hand-written 2026-10-27",
+  "provider": "motive",
+  "scenario": "GET /v1/available_time with a driver's personal API key; shaped after Motive's API reference"
+ },
+ "users": [
+  {
+   "user": {"id": 1, "first_name": "Test", "last_name": "Driver", "driver_company_id": "D1", "status": "active"},
+   "available_time": {"cycle": 151200, "shift": 32400, "drive": 15600, "break": 10800},
+   "recap": {"seconds_tomorrow": 0, "recap_days": []}
+  }
+ ],
+ "pagination": {"per_page": 25, "page_no": 1, "total": 1}
+}

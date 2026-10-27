@@ -292,6 +292,8 @@ class AgentRequest(BaseModel):
     active_duration_min: Optional[int] = Field(None, ge=0)
     active_speed_limit_mph: Optional[int] = Field(None, ge=0, le=100)  # posted limit where the driver is now
     ui: UiState = Field(default_factory=UiState)
+    # Set by the server from the X-Motive-Key header (never stored, never logged, never echoed back).
+    motive_key: Optional[str] = Field(None, max_length=200, exclude=True, repr=False)
 
 
 AgentStatus = Literal["options", "route_set", "chat", "no_results", "not_understood", "researching", "providers", "error"]
