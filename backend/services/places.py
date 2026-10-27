@@ -1,12 +1,17 @@
-"""Places provider. MOCK implementation: real places in the Bay Area, along I-80 and around Sacramento, CA.
-
-Real implementation to plug in later: OpenStreetMap Overpass (same interface).
+"""Places provider. MOCK implementation: real places in the Bay Area, along I-80 and around Sacramento, CA,
+plus nationwide data files for categories Google can't search well (backend/data/<category>.json,
+built by scripts/import_*.py): CAT scales, weigh stations.
 """
+import json
+import logging
 import os
+from pathlib import Path
 from typing import List, Optional, Protocol
 
 from models import Category, Place, PlacesResponse
 from services.geo import haversine_km, km_to_mi
+
+logger = logging.getLogger("truckbuddy.places")
 
 SACRAMENTO = (38.5816, -121.4944)
 SAN_FRANCISCO = (37.7749, -122.4194)
@@ -18,6 +23,57 @@ MIN_RESULTS = 3
 # there's nothing real to show: return no places (never shifted/fake pins).
 COVERAGE_KM = 150.0
 NO_PLACES = "No demo places here. Demo data covers the Bay Area and Sacramento."
+NO_DATA = "I don't have {what} data loaded yet."
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+# Categories served from a data file only (no Google text search: it returns junk for these).
+DATA_ONLY: tuple[Category, ...] = ("cat_scale", "weigh_station")
+DATA_RADII_KM = (50.0, 150.0, 400.0)  # these are sparse: widen until there's something to say
+_data_cache: dict[str, Optional[list[dict]]] = {}
+
+
+def data_rows(category: str) -> list[dict]:
+    """Rows of backend/data/<category>.json (cached); [] when the file is missing or broken."""
+    if category not in _data_cache:
+        path = DATA_DIR / f"{category}.json"
+        rows: Optional[list[dict]] = None
+        if path.exists():
+            try:
+                loaded = json.loads(path.read_text())
+                rows = [r for r in loaded if isinstance(r, dict)] if isinstance(loaded, list) else None
+            except (OSError, ValueError) as e:
+                logger.warning("places data %s unreadable: %s", path.name, e)
+        _data_cache[category] = rows
+    return _data_cache.get(category) or []
+
+
+def has_data(category: str) -> bool:
+    return bool(data_rows(category))
+
+
+def _with_distance(raw: dict, lat: float, lng: float) -> Place:
+    p = Place(**raw)  # never moved
+    km = haversine_km(lat, lng, p.lat, p.lng)
+    p.distance_km = round(km, 2)
+    p.distance_mi = round(km_to_mi(km), 1)
+    return p
+
+
+def search_data(category: Category, lat: float, lng: float, source: str) -> PlacesResponse:
+    """Nearest rows of a data-only category, widening the radius until a few are found."""
+    rows = data_rows(category)
+    if not rows:
+        return PlacesResponse(category=category, radius_km=0, widened=False, places=[], source=source,
+                              message=NO_DATA.format(what=category.replace("_", " ")))
+    places = sorted((_with_distance(r, lat, lng) for r in rows), key=lambda p: p.distance_km or 0)
+    radius, widened = DATA_RADII_KM[0], False
+    for radius in DATA_RADII_KM:
+        found = [p for p in places if (p.distance_km or 0) <= radius]
+        if len(found) >= MIN_RESULTS:
+            break
+        widened = True
+    return PlacesResponse(category=category, radius_km=radius, widened=widened, places=found[:10], source=source)
+
 
 # Real places (HERE Discover, addresses geocode in HERE). Coordinates are never moved:
 # the satellite parking check looks exactly here.
@@ -74,14 +130,7 @@ MOCK_PLACES = [
 
 
 def _all(lat: float, lng: float) -> List[Place]:
-    out = []
-    for raw in MOCK_PLACES:
-        p = Place(**raw)  # never moved
-        km = haversine_km(lat, lng, p.lat, p.lng)
-        p.distance_km = round(km, 2)
-        p.distance_mi = round(km_to_mi(km), 1)
-        out.append(p)
-    return out
+    return [_with_distance(raw, lat, lng) for raw in MOCK_PLACES]
 
 
 def curated(category: Category, lat: float, lng: float) -> List[Place]:
@@ -104,6 +153,8 @@ class MockPlacesProvider:
         return _all(lat, lng)
 
     async def search(self, category: Category, lat: float, lng: float) -> PlacesResponse:
+        if category in DATA_ONLY:
+            return search_data(category, lat, lng, "data")
         if min(haversine_km(lat, lng, *a) for a in ANCHORS) > COVERAGE_KM:
             return PlacesResponse(category=category, radius_km=0, widened=False, places=[], source=self.source,
                                   message=NO_PLACES)
@@ -117,7 +168,14 @@ class MockPlacesProvider:
         return PlacesResponse(category=category, radius_km=radius, widened=widened, places=found, source=self.source)
 
     async def get(self, place_id: str, lat: float, lng: float) -> Optional[Place]:
-        return next((p for p in self._all(lat, lng) if p.id == place_id), None)
+        hit = next((p for p in self._all(lat, lng) if p.id == place_id), None)
+        if hit:
+            return hit
+        for category in DATA_ONLY:
+            raw = next((r for r in data_rows(category) if r.get("id") == place_id), None)
+            if raw:
+                return _with_distance(raw, lat, lng)
+        return None
 
 
 _mock: PlacesProvider = MockPlacesProvider()
