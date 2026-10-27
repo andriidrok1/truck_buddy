@@ -59,7 +59,9 @@ def test_empty_or_broken_bodies_raise_not_crash():
         _here_parse(fixture_json("here/error_no_route")["body"])
 
 
-def test_here_params_unchanged():
+def test_here_params_unchanged(monkeypatch):
+    monkeypatch.setenv("ROUTE_SPEED_LIMITS", "0")
+    monkeypatch.setenv("ROUTE_INCIDENTS", "0")
     t = TruckProfile(height_in=162, trailer_ft=53, weight_lb=80000, hazmat=True, avoid_tolls=True)
     p = dict(routing._here_params(t, (38.5, -121.4), (39.5, -119.8)))
     assert p["transportMode"] == "truck" and p["origin"] == "38.5,-121.4" and p["destination"] == "39.5,-119.8"

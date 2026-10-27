@@ -215,12 +215,21 @@ NOTICES = (
     ("restricted", "Heads up, part of this route might be tight for your rig, so watch the signs."),
     ("ferry", "Heads up, there's a ferry on this one."),
 )
+CLOSURE = "Heads up, there's a road closure on this route: {description}."
 _turns: dict = {"n": 0}  # rotation when there's no dialog session
 
 
 def _notice(raw: str) -> str:
     low = raw.lower()
     return next((say for key, say in NOTICES if key in low), "Heads up, check this route for restrictions.")
+
+
+def _route_warning(route: RouteInfo) -> str:
+    """One spoken heads-up for a new route: a closure beats a router notice; nothing when there's neither."""
+    closed = next((i for i in route.incidents if i.closed), None)
+    if closed:
+        return CLOSURE.format(description=closed.description)
+    return _notice(route.notices[0]) if route.notices else ""
 
 
 def _diesel_note(p: Place) -> str:
@@ -252,7 +261,8 @@ def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[st
     first_name = (driver or "").split(" ")[0]
     out = f"{intro}, {first_name}. " if first_name and n % 3 == 2 else f"{intro}. "
     out += body.format(**vals) + _diesel_sentence(place)
-    return f"{out} {_notice(route.notices[0])}" if route.notices else out
+    warning = _route_warning(route)
+    return f"{out} {warning}" if warning else out
 
 
 def pick_place(d: dict, places: list[Place]) -> Optional[Place]:
@@ -361,6 +371,8 @@ class LlmAgentProvider:
             if req.active_duration_min is not None:
                 context += f", about {req.active_duration_min} minutes"
             context += "."
+            if req.active_speed_limit_mph:
+                context += f" Posted speed limit here: {req.active_speed_limit_mph} mph."
             pk = approach.best(cur)
             if is_town(cur):
                 context += " Destination is a town; no parking check."
