@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -15,13 +15,15 @@ import { dial, ProvidersList } from "@/src/components/ProvidersList";
 import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
+import { logAnnouncement } from "@/src/dev/announcements";
 import { isTester } from "@/src/auth";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
-import { useGuidance } from "@/src/hooks/useGuidance";
+import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
 import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, takeTruckReroute, truckLabel, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { WAKE_SUPPORTED, useWakeWord } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
+import { setActiveRoute } from "@/src/state/activeRoute";
 import { reduceAgentResponse } from "@/src/state/agentReducer";
 import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
 import { storage } from "@/src/utils/storage";
@@ -382,14 +384,75 @@ export default function MapScreen() {
     setPhase(activeRef.current ? "navigating" : providersRef.current ? "providers" : optionsRef.current.length ? "options" : "ready");
 
   // Turn-by-turn while driving; prompts stay quiet while the driver is talking to the copilot.
-  const guidance = useGuidance(active, loc.coords, driving, voiceOn, (text) => {
-    if (phase === "listening" || phase === "thinking" || voice.speaking) return; // never cut off the copilot
+  const say = (text: string, kind: "maneuver" | "reroute" = "maneuver") => {
+    if (phase === "listening" || phase === "thinking" || voice.speaking) {
+      if (__DEV__) logAnnouncement(text, "skipped"); // never cut off the copilot
+      return;
+    }
+    if (__DEV__) logAnnouncement(text, kind);
     setCaption({ reply: text });
     api
       .speak(text)
       .then((r) => voice.play(absoluteUrl(r.audio_url)))
       .catch(() => {});
-  });
+  };
+  // Dev tools (tester replay) read the active route from here.
+  useEffect(() => {
+    setActiveRoute(active);
+  }, [active]);
+
+  /**
+   * The tracker says the truck left the route: ask the engine to resume the plan from here
+   * (/reroute with the handle, section and metres into it), or plan afresh when that fails.
+   * One at a time; the new route only lands if the destination is still the same.
+   * Not for a tester parked on a fake spot (no trace = nothing moves) and not before "Go".
+   */
+  const rerouting = useRef(false);
+  const rerouteOffRoute = async (g: Guidance) => {
+    const cur = activeRef.current;
+    if (!cur || rerouting.current || !driving) return;
+    if (loc.sim && !loc.sim.trace) return;
+    rerouting.current = true;
+    const route = cur.route;
+    const starts = route.section_starts ?? [];
+    let sectionIndex = 0;
+    for (let i = 0; i < starts.length; i++) if (starts[i] <= g.matchedIndex) sectionIndex = i;
+    const sectionStart = starts[sectionIndex] ?? 0;
+    const traveledM = Math.max(0, g.alongM - (g.cum[sectionStart] ?? 0));
+    say("Rerouting.", "reroute");
+    try {
+      let res;
+      try {
+        res = await api.reroute({
+          lat: loc.coords.lat,
+          lng: loc.coords.lng,
+          place: cur.place,
+          handle: route.handle ?? null,
+          heading: loc.heading ?? null,
+          section_index: sectionIndex,
+          traveled_m: Math.round(traveledM),
+          via: route.via ?? [],
+        });
+      } catch (e) {
+        console.log(`[reroute] /reroute failed (${String(e)}), planning from scratch`);
+        res = await api.route(loc.coords, cur.place);
+      }
+      if (activeRef.current?.place.id === cur.place.id) {
+        setActive((a) => (a ? { ...a, route: res.route } : a));
+      }
+      g.resetOffRoute();
+    } catch {
+      showToast("Couldn't reroute. Follow the map for now.");
+    } finally {
+      rerouting.current = false;
+    }
+  };
+  // One object per GPS fix (not per render): useGuidance pushes each fix into the off-route tracker once.
+  const fix = useMemo(
+    () => ({ ...loc.coords, speed: loc.speed, accuracy: loc.accuracy, ts: loc.ts }),
+    [loc.coords, loc.speed, loc.accuracy, loc.ts],
+  );
+  const guidance = useGuidance(active, fix, driving, voiceOn, say, rerouteOffRoute);
 
   const onGo = () => {
     pauseDialog();

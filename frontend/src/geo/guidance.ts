@@ -1,7 +1,7 @@
 // Pure turn-by-turn maths, extracted from hooks/useGuidance.ts so it can be unit-tested
 // (and so off-route detection can build on the same route match). No React in here.
 
-import type { LatLng, Maneuver, RouteInfo } from "../types";
+import type { LatLng, Maneuver, RouteInfo, SpeedLimit } from "../types";
 
 const R = 6371000;
 const RAD = Math.PI / 180;
@@ -109,6 +109,16 @@ export function createRouteMatcher(geometry: readonly (readonly [number, number]
       return m;
     },
   };
+}
+
+/** Posted limit on the matched segment: the last `speed_limits` entry at or before it, null when unknown. */
+export function limitAt(speedLimits: readonly SpeedLimit[] | undefined, matchedIndex: number): number | null {
+  if (!speedLimits?.length || matchedIndex < 0) return null;
+  let best: SpeedLimit | null = null;
+  for (const s of speedLimits) {
+    if (s.index <= matchedIndex && (!best || s.index >= best.index)) best = s;
+  }
+  return best ? best.mph : null;
 }
 
 /** First maneuver still ahead of the matched segment (a maneuver at the segment's start vertex is behind). */

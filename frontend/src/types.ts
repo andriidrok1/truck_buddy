@@ -42,6 +42,46 @@ export type RouteInfo = {
   traffic?: { level: "slow" | "jam"; points: [number, number][] }[];
   maneuvers?: Maneuver[];
   approach?: Approach | null;
+  // Everything below is optional: older backends (and the fixtures) do not send it.
+  /** Server-side route handle, sent back on /api/reroute so the engine can resume this plan. */
+  handle?: string;
+  /** Posted limit from geometry index `index` until the next entry. */
+  speed_limits?: SpeedLimit[];
+  incidents?: Incident[];
+  weather?: WeatherAlert[];
+  chain_controls?: ChainControl[];
+  labels?: string[];
+  tolls_usd?: number | null;
+  alternatives?: RouteInfo[];
+  /** Via stops the driver asked for, echoed back on a reroute. */
+  via?: [number, number][];
+  /** Geometry index where each route section (between via stops) starts. */
+  section_starts?: number[];
+};
+
+export type SpeedLimit = { index: number; mph: number };
+
+export type Incident = { type: string; closed: boolean; description: string; index: number; criticality: string };
+
+export type WeatherAlert = {
+  id: string;
+  event: string;
+  severity: string;
+  headline: string;
+  area: string;
+  index: number;
+  ends?: string | null;
+};
+
+export type ChainControl = {
+  id: string;
+  route: string;
+  location: string;
+  status: string;
+  index: number;
+  lat: number;
+  lng: number;
+  description?: string;
 };
 
 export type Approach = { bearing: number; compass: string; street?: string | null };
