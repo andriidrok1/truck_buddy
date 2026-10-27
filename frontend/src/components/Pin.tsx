@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 
-import { CATEGORY_ICON, categoryColor } from "../constants";
+import { categoryColor, categoryIcon } from "../constants";
 import { fonts, radius, shadow, useTheme } from "../theme";
 import type { Category } from "../types";
 import { Icon } from "./Icon";
@@ -17,7 +17,7 @@ export function Pin({ category, selected }: { category: Category; selected?: boo
     <View style={[styles.box, { transform: [{ scale: s }] }]} pointerEvents="none">
       <View style={[styles.drop, shadow(colors), { backgroundColor: bg, borderColor: colors.surface }]}>
         <View style={styles.iconWrap}>
-          <Icon name={CATEGORY_ICON[category]} size={16} color={colors.onCategory} />
+          <Icon name={categoryIcon(category)} size={16} color={colors.onCategory} />
         </View>
       </View>
     </View>

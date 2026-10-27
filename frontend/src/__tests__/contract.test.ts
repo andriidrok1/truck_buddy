@@ -45,6 +45,10 @@ const CATEGORIES = Object.keys({
   rest_area: true,
   destination: true,
   service: true,
+  walmart: true,
+  cat_scale: true,
+  truck_wash: true,
+  weigh_station: true,
 } satisfies Record<Category, true>);
 
 describe("AgentResponse fixtures match src/types.ts", () => {
