@@ -21,11 +21,11 @@ def _lufs(mp3: bytes) -> tuple[float, float]:
 
 
 def test_openai_tts_boosted():
-    from emergentintegrations.llm.openai import OpenAITextToSpeech
+    from openai import AsyncOpenAI
     from services.voice import louder
 
-    raw = asyncio.run(OpenAITextToSpeech(api_key=os.environ["EMERGENT_LLM_KEY"]).generate_speech(
-        text="Alright, route to Reno is set, two hours and forty minutes.", model="tts-1", voice="sage"))
+    raw = asyncio.run(AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"]).audio.speech.create(
+        input="Alright, route to Reno is set, two hours and forty minutes.", model="tts-1", voice="sage")).content
     before, _ = _lufs(raw)
     after, peak = _lufs(asyncio.run(louder(raw)))
     assert after - before >= 9, (before, after)

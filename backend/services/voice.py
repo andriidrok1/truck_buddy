@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Optional
 
 import imageio_ffmpeg
-from emergentintegrations.llm.openai import OpenAISpeechToText, OpenAITextToSpeech
 
+from services import llm
 from services.http import client
 from services.speech_text import spoken
 
@@ -41,18 +41,18 @@ STT_MODEL = "gpt-4o-mini-transcribe"  # more accurate with accents/cab noise, fa
 
 
 async def transcribe(data: bytes, filename: str) -> str:
-    stt = OpenAISpeechToText(api_key=os.environ["EMERGENT_LLM_KEY"])
+    stt = llm.client().audio.transcriptions
     try:
         buf = io.BytesIO(data)
         buf.name = filename
-        res = await stt.transcribe(file=buf, model=STT_MODEL, response_format="json", language="en",
+        res = await stt.create(file=buf, model=STT_MODEL, response_format="json", language="en",
                                    prompt=PROMPT, temperature=0.0)
         return _clean((getattr(res, "text", "") or "").strip())
     except Exception as e:  # noqa: BLE001 - fall back to Whisper with its confidence guard
         logger.warning("stt %s failed, falling back to whisper-1: %s", STT_MODEL, e)
     buf = io.BytesIO(data)
     buf.name = filename
-    res = await stt.transcribe(file=buf, model="whisper-1", response_format="verbose_json", language="en",
+    res = await stt.create(file=buf, model="whisper-1", response_format="verbose_json", language="en",
                                prompt=PROMPT)
     segments = getattr(res, "segments", None) or []
     # Whisper invents text on silence/noise; drop segments that are most likely not speech.
@@ -221,9 +221,10 @@ async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str
     if audio is None:
         model = model or FALLBACK_MODEL
         try:
-            tts = OpenAITextToSpeech(api_key=os.environ["EMERGENT_LLM_KEY"])
             extra = {"instructions": INSTRUCTIONS} if model == "gpt-4o-mini-tts" else {}
-            audio = await tts.generate_speech(text=text, model=model, voice=voice or DEFAULT_VOICE, **extra)
+            res = await llm.client().audio.speech.create(input=text, model=model, voice=voice or DEFAULT_VOICE,
+                                                         response_format="mp3", **extra)
+            audio = res.content
         except Exception:
             logger.exception("TTS failed")
             return None

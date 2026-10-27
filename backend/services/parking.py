@@ -10,17 +10,14 @@ import base64
 import json
 import logging
 import math
-import os
 import re
 import time
-import uuid
 from typing import Optional
 
 from services.http import client
-from emergentintegrations.llm.chat import ImageContent, LlmChat, StreamDone, TextDelta, UserMessage
 
 from models import NearbyLot, ParkingCheck, ParkingSpot, Place
-from services import parking_store
+from services import llm, parking_store
 
 logger = logging.getLogger("truckbuddy.parking")
 
@@ -149,25 +146,14 @@ def _nearby(v) -> Optional[NearbyLot]:
 
 
 async def _ask_vision(img: bytes, place: Place) -> dict:
-    chat = LlmChat(
-        api_key=os.environ["EMERGENT_LLM_KEY"],
-        session_id=f"parking-{uuid.uuid4()}",
-        system_message=SYSTEM,
-    ).with_model("openai", "gpt-5.5")
     # Image only: the place name/type must not bias the verdict.
-    msg = UserMessage(
-        text="Judge ONLY from what is visible in this image. Can a 53 ft semi park at the center point? "
-             "Where should it enter and where should it park?",
-        file_contents=[ImageContent(image_base64=base64.b64encode(img).decode())],
+    out = await llm.complete(
+        SYSTEM,
+        "Judge ONLY from what is visible in this image. Can a 53 ft semi park at the center point? "
+        "Where should it enter and where should it park?",
+        "gpt-5.5",
+        image_b64=base64.b64encode(img).decode(),
     )
-    out = ""
-    async for ev in chat.stream_message(msg):
-        if isinstance(ev, TextDelta):
-            out += ev.content
-        elif isinstance(ev, StreamDone):
-            if not out and ev.content:
-                out = ev.content
-            break
     return _parse(out, place)
 
 

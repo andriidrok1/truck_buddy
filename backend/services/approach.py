@@ -11,15 +11,13 @@ answers to "how do I get in / where do I park / will I fit", and routing to the 
 import asyncio
 import logging
 import math
-import os
 import re
-import uuid
 from collections import OrderedDict
 from typing import Literal, Optional
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 from models import Approach, ParkingCheck, Place, RouteInfo
+from services import llm
 
 logger = logging.getLogger("truckbuddy.approach")
 
@@ -179,13 +177,11 @@ async def landmarks(tip: str) -> str:
         return _landmarks[tip]
     out = ""
     try:
-        chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"landmarks-{uuid.uuid4()}",
-                       system_message="You shorten driving notes.").with_model("openai", "gpt-5.4-mini")
-        raw = await asyncio.wait_for(chat.send_message(UserMessage(text=(
+        raw = await asyncio.wait_for(llm.complete("You shorten driving notes.", (
             "From this truck entrance note keep only the landmarks, as a short phrase (max 10 words) that "
             "continues a sentence, e.g. 'just after the landscaped island' or 'past the fuel canopy'. "
             "Never use north, south, east, west, right or left. If there is no landmark answer NONE.\n"
-            f"Note: {tip}"))), LANDMARK_TIMEOUT_S)
+            f"Note: {tip}")), LANDMARK_TIMEOUT_S)
         text = str(raw or "").strip().strip('"').split("\n")[0]
         out = "" if text.upper().startswith("NONE") else _clean(text)[:80]
     except Exception as e:  # noqa: BLE001 - no landmarks is fine

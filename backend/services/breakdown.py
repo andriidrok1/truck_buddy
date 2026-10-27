@@ -17,9 +17,9 @@ import time
 import uuid
 from typing import Optional
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 from models import AgentRequest, AgentResponse, CallCard, Place, Provider
+from services import llm
 from services import providers_search as ps
 from services.http import client
 from services.routing import get_routing_provider
@@ -96,9 +96,7 @@ def _parse(raw: str) -> dict:
 
 
 async def _llm(system: str, text: str, timeout: float = 25) -> dict:  # first call per process is a ~13 s cold start
-    chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"bd-{uuid.uuid4()}",
-                   system_message=system).with_model(*MODEL)
-    return _parse(await asyncio.wait_for(chat.send_message(UserMessage(text=text)), timeout=timeout))
+    return _parse(await asyncio.wait_for(llm.complete(system, text, MODEL[1]), timeout=timeout))
 
 
 def needs_question(d: dict) -> Optional[str]:

@@ -1,12 +1,11 @@
 """First-run onboarding: turn a spoken answer into profile fields (name, truck, preferences)."""
 import json
 import logging
-import os
 import re
-import uuid
 from typing import Literal
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from services import llm
+
 
 logger = logging.getLogger("truckbuddy.onboarding")
 
@@ -53,11 +52,9 @@ def _clean(data: dict) -> dict:
 async def extract(step: Step, text: str) -> dict:
     if not re.search(r"[a-zA-Z0-9]{2,}", text or ""):
         return {}
-    chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"onb-{uuid.uuid4()}",
-                   system_message="You extract structured data from a truck driver's spoken answer. Reply with JSON only.") \
-        .with_model("openai", "gpt-5.4-mini")
     try:
-        raw = await chat.send_message(UserMessage(text=f"{PROMPTS[step]}\n\nDriver said: {text}"))
+        raw = await llm.complete("You extract structured data from a truck driver's spoken answer. Reply with JSON only.",
+                                 f"{PROMPTS[step]}\n\nDriver said: {text}")
         m = re.search(r"\{.*\}", raw or "", re.S)
         return _clean(json.loads(m.group(0)) if m else {})
     except Exception:

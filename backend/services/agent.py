@@ -7,17 +7,14 @@ Route answers are templated (one sentence) and parking directions follow from th
 import asyncio
 import json
 import logging
-import os
 import re
-import uuid
 from collections import OrderedDict
 from typing import Optional
 
 import httpx
-from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 from models import AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
-from services import approach, breakdown, controls, memory
+from services import approach, breakdown, controls, llm, memory
 from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
@@ -290,12 +287,10 @@ def _parse(raw: str) -> dict:
 
 
 async def classify(text: str, context: str, truck: TruckProfile) -> dict:
-    chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"turn-{uuid.uuid4()}",
-                   system_message=SYSTEM.format(truck=truck.label, prefs=truck.prefs_label,
-                                                controls=controls.PROMPT, parking=approach.PROMPT,
-                                                breakdown=breakdown.PROMPT)).with_model(*MODEL)
+    system = SYSTEM.format(truck=truck.label, prefs=truck.prefs_label, controls=controls.PROMPT,
+                           parking=approach.PROMPT, breakdown=breakdown.PROMPT)
     with stage("llm_round_1"):
-        raw = await chat.send_message(UserMessage(text=f"[{context}]\nDriver said: {text}"))
+        raw = await llm.complete(system, f"[{context}]\nDriver said: {text}", MODEL[1])
     return _parse(raw)
 
 

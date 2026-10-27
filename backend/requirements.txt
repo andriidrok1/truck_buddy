@@ -19,7 +19,6 @@ distro==1.9.0
 dnspython==2.9.0
 ecdsa==0.19.2
 email-validator==2.3.0
-emergentintegrations==0.2.2
 execnet==2.1.2
 fastapi==0.110.1
 fastuuid==0.14.0
@@ -57,12 +56,11 @@ jq==1.13.0
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 librt==0.16.0
-litellm @ https://customer-assets.emergentagent.com/internal-asset/library/litellm-1.80.0-py3-none-any.whl#sha256=adf398c513273de9341f61822296c6b2145f7f2dc4a69daf3ac04829f5bde3f8
 markdown-it-py==4.2.0
 MarkupSafe==3.0.4
 mccabe==0.7.0
 mdurl==0.1.2
-motor==3.7.1
+asyncpg==0.30.0
 multidict==7.1.0
 mypy==2.4.0
 mypy_extensions==1.1.0
@@ -88,7 +86,6 @@ pydantic_core==2.50.1
 pyflakes==4.0.3
 Pygments==2.21.0
 PyJWT==2.15.1
-pymongo==4.18.2
 pyparsing==3.3.3
 pytest==9.1.1
 pytest-xdist==3.8.0

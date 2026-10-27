@@ -99,10 +99,10 @@ def test_louder_garbage_and_empty():
 
 # louder() latency on a typical clip
 def test_louder_latency():
-    from emergentintegrations.llm.openai import OpenAITextToSpeech
+    from openai import AsyncOpenAI
     from services.voice import louder
-    raw = asyncio.run(OpenAITextToSpeech(api_key=os.environ["EMERGENT_LLM_KEY"]).generate_speech(
-        text="Heads up, weigh station open in two miles, keep right.", model="tts-1", voice="sage"))
+    raw = asyncio.run(AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"]).audio.speech.create(
+        input="Heads up, weigh station open in two miles, keep right.", model="tts-1", voice="sage")).content
     t0 = time.time()
     out = asyncio.run(louder(raw))
     dt = time.time() - t0
