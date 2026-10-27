@@ -10,6 +10,15 @@ let loaded = false;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
+// The driver asked to type an access code (sign-out, or "I have a code"): show the code screen
+// instead of signing in automatically.
+let codeWanted = false;
+export const codeRequested = () => codeWanted;
+export function requestCode(on = true) {
+  codeWanted = on;
+  emit();
+}
+
 export const getToken = () => token;
 export const isTester = () => role === "tester";
 

@@ -50,6 +50,11 @@ async def access_code(req: AccessCodeRequest, request: Request):
     return {"access_token": token, "token_type": "bearer", "role": role}
 
 
+@public.post("/auth/device")
+async def auth_device(request: Request):
+    return {"access_token": auth.register_device(request), "token_type": "bearer", "role": "driver"}
+
+
 @api.get("/auth/check")
 async def auth_check():
     return {"ok": True}
