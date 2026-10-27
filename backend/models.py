@@ -95,6 +95,8 @@ class RouteInfo(BaseModel):
     tolls_usd: Optional[float] = None  # cheapest fare per toll, summed; None when HERE lists no USD tolls
     alternatives: List["RouteInfo"] = Field(default_factory=list)  # other truck routes, same destination
     handle: Optional[str] = None  # HERE routeHandle: lets the app re-route back onto this route after a deviation
+    via: List[List[float]] = Field(default_factory=list)  # stops on the way, [[lat, lng], ...], in order
+    section_starts: List[int] = Field(default_factory=list)  # geometry index where each HERE section begins
 
 
 RouteInfo.model_rebuild()
@@ -175,6 +177,9 @@ class TruckProfile(BaseModel):
         return "; ".join(p) or "none"
 
 
+MAX_VIA = 3  # stops the driver can add on the way (each is one more HERE section)
+
+
 class RouteRequest(BaseModel):
     lat: float
     lng: float
@@ -182,6 +187,7 @@ class RouteRequest(BaseModel):
     place: Optional[Place] = None  # preferred: the place object from a previous search
     skip_parking: bool = False  # breakdown providers: the driver needs the shop, not a parking check
     truck_profile: TruckProfile = Field(default_factory=lambda: TruckProfile())
+    via: List[List[float]] = Field(default_factory=list, max_length=MAX_VIA)  # stops on the way, [[lat, lng], ...]
 
 
 class RerouteRequest(BaseModel):
@@ -194,6 +200,7 @@ class RerouteRequest(BaseModel):
     section_index: int = Field(0, ge=0)  # HERE section the driver was on (0 without via stops)
     traveled_m: float = Field(0.0, ge=0)  # metres driven along that section
     truck_profile: TruckProfile = Field(default_factory=TruckProfile)
+    via: List[List[float]] = Field(default_factory=list, max_length=MAX_VIA)  # kept when routing fresh
 
 
 class ParkingRequest(BaseModel):

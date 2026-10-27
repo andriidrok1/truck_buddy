@@ -13,7 +13,7 @@ from typing import Optional
 
 import httpx
 
-from models import AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
+from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
 from services import approach, breakdown, controls, llm, memory
 from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode
@@ -117,7 +117,7 @@ makes sense for a trucker and act on the corrected meaning, e.g. "I need a few" 
 "these all". Only fix words that clearly don't fit; never invent a destination. If you can't tell, use "unclear".
 
 Classify the driver's LAST utterance and answer with JSON only, no other text:
-{{"intent": "find"|"go"|"pick"|"alternative"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "near": string|null, "query": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
+{{"intent": "find"|"go"|"pick"|"alternative"|"add_stop"|"clear_stops"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "near": string|null, "query": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
 
 - find: the driver needs a place. Pick the category yourself, never ask:
   truck_stop = fuel, diesel, DEF, food, showers, truck stop;
@@ -132,6 +132,8 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
 - go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV". Write numbers as digits ("2828 El Centro Rd, Sacramento"). If the driver gives only a street address and named a town earlier in the conversation, add that town to query.
 - pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something closer", "the cheapest diesel": lowest "diesel $" in the list). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. If no earlier place fits, use find with the same category instead.
 - alternative: a different road to the SAME destination ("another way", "different route", "is there a faster way", "can we skip the grade", "go around that"). Never a new place. Only meaningful while a route is active; otherwise answer as chat.
+- add_stop: a stop ON THE WAY to the current destination, keeping that destination ("stop at the Pilot in Fernley on the way", "swing by Love's first", "add a fuel stop", "I need a rest area before that"). query = the place or address named (digits for numbers), else category = the kind of stop (truck_stop for fuel/food/showers, rest_area, hotel); never both null. Only while a route is active; with no route it's a plain find or go.
+- clear_stops: drop the stops added on the way ("skip the stops", "forget the stop", "no stops, straight there").
 {controls}
 {parking}
 {breakdown}
@@ -221,6 +223,11 @@ CLOSURE = "Heads up, there's a road closure on this route: {description}."
 ALT_REPLY = "Here's another way{via}, {time}, {mi} miles{tolls}."
 NO_ALT = "That's the only truck route I've got."
 ALT_NO_ROUTE = "Set a route first and I'll look for other ways."
+VIA_ADDED = "Added {name}. New total {time}, {mi} miles."
+VIA_NO_ROUTE = "Set a route first, then I can add stops on the way."
+VIA_FULL = "I can only add three stops. Say 'clear the stops' to start over."
+VIA_CLEARED = "Stops cleared. Straight there, {time}, {mi} miles."
+VIA_NONE = "There are no stops on this route."
 
 
 def _alt_reply(route: RouteInfo) -> str:
@@ -388,6 +395,9 @@ class LlmAgentProvider:
             if alts and alts.get("place") == cur.id:
                 left = len(alts["routes"]) - alts["i"]
                 context += f" {left} alternative route{'s' if left != 1 else ''} not yet offered."
+            stops = self._stops(req, sess)
+            if stops:
+                context += " Stops on the way: " + ", ".join(s.name.split(",")[0] for s in stops) + "."
             pk = approach.best(cur)
             if is_town(cur):
                 context += " Destination is a town; no parking check."
@@ -427,9 +437,71 @@ class LlmAgentProvider:
 
     @staticmethod
     def _remember_alternatives(req: AgentRequest, place: Place, route: RouteInfo) -> None:
-        """"Another way?" later in this dialog walks through the alternatives HERE returned with this route."""
+        """A new primary route: its alternatives serve "another way?" later; any stops of the old route are gone."""
         if req.session_id in _SESSIONS:
-            _SESSIONS[req.session_id]["alternatives"] = {"place": place.id, "routes": list(route.alternatives), "i": 0}
+            sess = _SESSIONS[req.session_id]
+            sess["alternatives"] = {"place": place.id, "routes": list(route.alternatives), "i": 0}
+            sess.pop("via", None)
+
+    def _stops(self, req: AgentRequest, sess: dict) -> list[Place]:
+        """Stops added on the way to the active destination in this dialog (empty for any other route)."""
+        via = sess.get("via")
+        if not via or not req.active_place or via.get("place") != req.active_place.id:
+            return []
+        return list(via["stops"])
+
+    async def _resolve_stop(self, req: AgentRequest, d: dict, sess: dict) -> Optional[Place]:
+        """The place the driver wants to stop at: a named place/address, else the best place of a category."""
+        query = str(d.get("query") or "").strip()
+        if query:
+            with stage("tools"):
+                matches = await geocode(with_city(query, sess.get("city")), req.lat, req.lng)
+            return matches[0] if matches else None
+        category = d.get("category") if d.get("category") in CATEGORIES else "truck_stop"
+        with stage("tools"):
+            res = await get_places_provider().search(category, req.lat, req.lng)
+        found = sorted(res.places, key=lambda p: p.distance_mi or 0)
+        return choose_place(found, req.truck_profile, {req.active_place.id} if req.active_place else set())
+
+    async def _route_with_stops(self, req: AgentRequest, stops: list[Place]) -> RouteInfo:
+        with stage("tools"):
+            try:
+                route = await get_routing_provider().route(req.lat, req.lng, *approach.target(req.active_place),
+                                                           req.truck_profile, alternatives=0,
+                                                           via=[[s.lat, s.lng] for s in stops])
+            except Exception as e:  # noqa: BLE001
+                raise RouteFailed(f"{type(e).__name__}: {e}") from e
+        route.alternatives = []
+        return route
+
+    async def _add_stop(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
+        place = req.active_place
+        if not place:
+            return AgentResponse(status="chat", transcript=text, reply=VIA_NO_ROUTE, source=self.source)
+        stops = self._stops(req, sess)
+        if len(stops) >= MAX_VIA:
+            return AgentResponse(status="chat", transcript=text, reply=VIA_FULL, source=self.source)
+        stop = await self._resolve_stop(req, d, sess)
+        if not stop:
+            what = str(d.get("query") or CATEGORY_WORD.get(str(d.get("category")), "a stop")).strip()
+            return AgentResponse(status="chat", transcript=text, reply=heard_not_found(what), source=self.source)
+        stops = stops + [stop]
+        route = await self._route_with_stops(req, stops)
+        sess["via"] = {"place": place.id, "stops": stops}
+        reply = VIA_ADDED.format(name=stop.name.split(",")[0], time=route.summary.split(" · ")[0],
+                                 mi=_miles(route.distance_mi))
+        return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
+                             route=route, parking=approach.best(place), options=stops, source=self.source)
+
+    async def _clear_stops(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
+        place = req.active_place
+        if not place or not self._stops(req, sess):
+            return AgentResponse(status="chat", transcript=text, reply=VIA_NONE, source=self.source)
+        sess.pop("via", None)
+        route = await self._route_with_stops(req, [])
+        reply = VIA_CLEARED.format(time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi))
+        return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
+                             route=route, parking=approach.best(place), source=self.source)
 
     async def _alternative(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
         """Next unused alternative route to the active destination; fetched fresh when the dialog has none."""
@@ -584,6 +656,10 @@ class LlmAgentProvider:
                 return await breakdown.from_intent(d, req, sess, text, self.source)
             if intent == "alternative":
                 return await self._alternative(req, sess, text)
+            if intent == "add_stop":
+                return await self._add_stop(req, d, sess, text)
+            if intent == "clear_stops":
+                return await self._clear_stops(req, sess, text)
             if intent == "pick":
                 place = pick_place(d, sess["places"])
                 if place and place.id not in exclude:

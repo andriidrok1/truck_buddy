@@ -130,8 +130,13 @@ async def build_route(req: RouteRequest):
         raise HTTPException(status_code=404, detail="Place not found")
     _require_us(req.lat, req.lng)
     _require_us(place.lat, place.lng)
+    for stop in req.via:
+        if len(stop) != 2:
+            raise HTTPException(status_code=422, detail="via stops are [lat, lng] pairs")
+        _require_us(stop[0], stop[1])
     try:
-        route = await get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile)
+        route = await get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile,
+                                                   via=req.via)
     except RoutingUnavailable:
         raise HTTPException(status_code=503, detail="Truck routing is unavailable right now")
     if req.skip_parking:  # breakdown providers: the driver needs the shop, no parking check at all
@@ -146,10 +151,15 @@ async def reroute(req: RerouteRequest):
     No new satellite check (the destination hasn't changed); the cached parking verdict comes along."""
     _require_us(req.lat, req.lng)
     _require_us(req.place.lat, req.place.lng)
+    for stop in req.via:
+        if len(stop) != 2:
+            raise HTTPException(status_code=422, detail="via stops are [lat, lng] pairs")
+        _require_us(stop[0], stop[1])
     try:
         route = await get_routing_provider().reroute(req.handle, req.lat, req.lng, req.heading,
                                                      *approach.target(req.place), req.truck_profile,
-                                                     section_index=req.section_index, traveled_m=req.traveled_m)
+                                                     section_index=req.section_index, traveled_m=req.traveled_m,
+                                                     via=req.via)
     except RoutingUnavailable:
         raise HTTPException(status_code=503, detail="Truck routing is unavailable right now")
     return RouteResponse(place=req.place, route=route, parking=cached_parking(req.place))
