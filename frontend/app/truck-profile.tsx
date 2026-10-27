@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { setToken } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
 import { PressableScale } from "@/src/components/PressableScale";
+import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { DEFAULT_TRUCK, requestTruckReroute, saveTruckProfile, setHandsFree, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { setSim } from "@/src/sim";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
@@ -149,22 +150,25 @@ export default function TruckProfileScreen() {
           />
         </View>
 
-        <View style={[styles.switchRow, { backgroundColor: colors.surfaceSecondary }]}>
-          <View style={styles.flex}>
-            <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Hands-free</Text>
-            <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
-              Start the copilot by saying &quot;Hey Buddy&quot; (app build only)
-            </Text>
+        {/* Only where the wake word can actually run: a switch that does nothing is a review rejection. */}
+        {WAKE_SUPPORTED && (
+          <View style={[styles.switchRow, { backgroundColor: colors.surfaceSecondary }]}>
+            <View style={styles.flex}>
+              <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Hands-free</Text>
+              <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
+                Start the copilot with a wake word instead of a tap
+              </Text>
+            </View>
+            <Switch
+              testID="hands-free-switch"
+              value={handsFree}
+              onValueChange={setHandsFree}
+              trackColor={{ true: colors.brandPrimary, false: colors.surfaceTertiary }}
+              thumbColor={colors.surface}
+              {...(Platform.OS === "web" ? { activeThumbColor: colors.surface } : {})}
+            />
           </View>
-          <Switch
-            testID="hands-free-switch"
-            value={handsFree}
-            onValueChange={setHandsFree}
-            trackColor={{ true: colors.brandPrimary, false: colors.surfaceTertiary }}
-            thumbColor={colors.surface}
-            {...(Platform.OS === "web" ? { activeThumbColor: colors.surface } : {})}
-          />
-        </View>
+        )}
 
         {!valid && (
           <Text testID="truck-profile-error" style={[styles.error, { color: colors.error }]}>

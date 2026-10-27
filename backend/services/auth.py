@@ -31,6 +31,9 @@ def redeem(code: str, request: Request) -> tuple[str, str]:
     """Checks the code (5 tries per IP per 10 min); returns (device token, role).
     ACCESS_CODE -> "driver"; TESTER_CODE -> "tester" (same app plus the test-scenario screen)."""
     now = time.monotonic()
+    if len(_attempts) > 10_000:  # one entry per IP ever seen: drop the ones with no recent tries
+        for ip in [ip for ip, d in _attempts.items() if not d or now - d[-1] > WINDOW_S]:
+            del _attempts[ip]
     q = _attempts[_client_ip(request)]
     while q and now - q[0] > WINDOW_S:
         q.popleft()
