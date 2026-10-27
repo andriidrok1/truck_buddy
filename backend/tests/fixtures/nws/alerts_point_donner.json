@@ -1,0 +1,14 @@
+{
+ "_meta": {
+  "recorded_at": "2026-10-27",
+  "provider": "nws",
+  "scenario": "active alerts at Donner Pass (may be empty)"
+ },
+ "@context": {
+  "@version": "1.1"
+ },
+ "type": "FeatureCollection",
+ "features": [],
+ "title": "Current watches, warnings, and advisories for 39.3167 N, 120.3333 W",
+ "updated": "2026-10-27T21:46:56+00:00"
+}

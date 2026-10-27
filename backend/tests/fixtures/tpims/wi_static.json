@@ -1,0 +1,559 @@
+[
+ {
+  "Id": 1,
+  "siteId": "WI00039IS0011300SRSTARE11",
+  "timeStamp": "2020-07-31T18:57:57Z",
+  "relevantHighway": "I-39/90/94",
+  "referencePost": "113",
+  "exitID": "",
+  "directionOfTravel": "EB",
+  "name": "Portage Rest Area #11",
+  "location": {
+   "latitude": 43.428772,
+   "longitude": -89.483492,
+   "streetAdr": null,
+   "city": "Columbia County",
+   "state": "WI",
+   "zip": null,
+   "timeZone": "Central"
+  },
+  "ownershipType": "PU",
+  "capacity": 68,
+  "amenities": [
+   "Men's and women's restrooms",
+   "Family/assisted restroom",
+   "Handicapped accessible",
+   "Seasonal prairie walking paths",
+   "Children's play area",
+   "Drinking water",
+   "Vending machines",
+   "Travel/weather information",
+   "Telephones plus TTY",
+   "Picnic area and tables",
+   "Pet exercise area",
+   "Recycling areas",
+   "Diaper changing facilities"
+  ],
+  "images": [
+   ""
+  ],
+  "logos": [
+   ""
+  ]
+ },
+ {
+  "Id": 2,
+  "siteId": "WI00094IS0012400ERSTARE53",
+  "timeStamp": "2025-05-14T21:30:36Z",
+  "relevantHighway": "I-94",
+  "referencePost": "124",
+  "exitID": "",
+  "directionOfTravel": "EB",
+  "name": "Millston Rest Area #53",
+  "location": {
+   "latitude": 44.225922,
+   "longitude": -90.707871,
+   "streetAdr": null,
+   "city": "Jackson County",
+   "state": "WI",
+   "zip": null,
+   "timeZone": "Central"
+  },
+  "ownershipType": "PU",
+  "capacity": 39,
+  "amenities": [
+   "Men's and women's restrooms",
+   "Family/assisted restroom",
+   "Handicapped accessible",
+   "Diaper changing facilities",
+   "Drinking water",
+   "Vending machines",
+   "Travel/weather information",
+   "Telephones plus TTY",
+   "Picnic area and tables",
+   "Pet exercise area",
+   "Recycling areas"
+  ],
+  "images": [
+   ""
+  ],
+  "logos": [
+   ""
+  ]
+ },
+ {
+  "Id": 3,
+  "siteId": "WI00090IS0007400ERSTARE09",
+  "timeStamp": "2025-05-14T21:27:53Z",
+  "relevantHighway": "I-90/94",
+  "referencePost": "74",
+  "exitID": "",
+  "directionOfTravel": "EB",
+  "name": "Lyndon Station Rest Area #9",
+  "location": {
+   "latitude": 43.757483,
+   "longitude": -89.967377,
+   "streetAdr": null,
+   "city": "Juneau County",
+   "state": "WI",
+   "zip": null,
+   "timeZone": "Central"
+  },
+  "ownershipType": "PU",
+  "capacity": 26,
+  "amenities": [
+   "Diaper changing facilities",
+   "Drinking water",
+   "Family/assisted restroom",
+   "Handicapped accessible",
+   "Men's and women's restrooms",
+   "Pet exercise area",
+   "Picnic area and tables",
+   "Recycling areas",
+   "Telephones plus TTY",
+   "Travel/weather information",
+   "Vending machines"
+  ],
+  "images": [
+   ""
+  ],
+  "logos": [
+   ""
+  ]
+ },
+ {
+  "Id": 7,
+  "siteId": "WI00090IS0016800ERSTARE17",
+  "timeStamp": "2024-02-15T20:37:28Z",
+  "relevantHighway": "I-39/90",
+  "referencePost": "168",
+  "exitID": "",
+  "directionOfTravel": "SB",
+  "name": "Janesville Rest Area #17",
+  "location": {
+   "latitude": 42.768657,
+   "longitude": -89.006885,
+   "streetAdr": null,
+   "city": "Rock County",
+   "state": "WI",
+   "zip": null,
+   "timeZone": "Central"
+  },
+  "ownershipType": "PU",
+  "capacity": 76,
+  "amenities": [
+   "Men's and women's restrooms",
+   "Family/assisted restroom",
+   "Handicapped accessible",
+   "Diaper changing facilities",
+   "Drinking water",
+   "Vending machines",
+   "Travel/weather information",
+   "Telephones plus TTY",
+   "Picnic area and tables",
+   "Pet exercise area",
+   "Recycling areas"
+  ],
+  "images": [
+   ""
+  ],
+  "logos": [
+   ""
+  ]
+ },
+ {
+  "Id": 8,
+  "siteId": "WI00094IS0026100ERSTARE13",
+  "timeStamp": "2025-05-14T21:29:14Z",
+  "relevantHighway": "I-94",
+  "referencePost": "261",
+  "exitID": "",
+  "directionOfTravel": "EB",
+  "name": "Lake Mills Rest Area #13",
+  "location": {
+   "latitude": 43.085798,
+   "longitude": -88.8749,
+   "streetAdr": null,
+   "city": "Jefferson County",
+   "state": "WI",
+   "zip": null,
+   "timeZone": "Central"
+  },
+  "ownershipType": "PU",
+  "capacity": 28,
+  "amenities": [
+   "Men's and women's restrooms",
+   "Family/assisted restroom",
+   "Handicapped accessible",
+   "Diaper changing facilities",
+   "Drinking water",
+   "Vending machines",
+   "Travel/weather information",
+   "Telephones plus TTY",
+   "Picnic area and tables",
+   "Pet exercise area",
+   "Recycling areas"
+  ],
+  "images": [
+   ""
+  ],
+  "logos": [
+   ""
+  ]
+ },
+ {
+  "Id": 9,
+  "siteId": "WI00094IS0012100WRSTARE54",
+  "timeStamp": "2024-02-15T20:40:12Z",
+  "relevantHighway": "I-94",
+  "referencePost": "121",
+  "exitID": "",
+  "directionOfTravel": "WB",
+  "name": "Black River Falls Rest Area #54",
+  "location": {
+   "latitude": 44.247181,
+   "longitude": -90.738106,
+   "streetAdr": null,
+   "city": "Jackson County",
+   "state": "WI",
+   "zip": null,
+   "timeZone": "Central"
+  },
+  "ownershipType": "PU",
+  "capacity": 42,
+  "amenities": [
+   "Men's and women's restrooms",
+   "Family/assisted restroom",
+   "Handicapped accessible",
+   "Diaper changing facilities",
+   "Drinking water",
+   "Vending machines",
+   "Travel/weather information",
+   "Telephones plus TTY",
+   "Picnic area and tables",
+   "Pet exercise area",
+   "Recycling areas"
+  ],
+  "images": [
+   ""
+  ],
+  "logos": [
+   ""
+  ]
+ },
+ {
+  "Id": 10,
+  "siteId": "WI00090IS0007500WRSTARE10",
+  "timeStamp": "2025-05-14T21:28:34Z",
+  "relevantHighway": "I-90/94",
+  "referencePost": "75",
+  "exitID": "",
+  "directionOfTravel": "WB",
+  "name": "Mauston Rest Area #10",
+  "location": {
+   "latitude": 43.75089,
+   "longitude": -89.948882,
+   "streetAdr": null,
+   "city": "Juneau County",
+   "state": "WI",
+   "zip": null,
+   "timeZone": "Central"
+  },
+  "ownershipType": "PU",
+  "capacity": 27,
+  "amenities": [
+   "Men's and women's restrooms",
+   "Family/assisted restroom",
+   "Handicapped accessible",
+   "Diaper changing facilities",
+   "Drinking water",
+   "Vending machines",
+   "Travel/weather information",
+   "Telephones plus TTY",
+   "Picnic area and tables",
+   "Pet exercise area",
+   "Recycling areas"
+  ],
+  "images": [
+   ""
+  ],
+  "logos": [
+   ""
+  ]
+ },
+ {
+  "Id": 11,
+  "siteId": "WI00094IS0026300WRSTARE14",
+  "timeStamp": "2025-05-14T21:29:54Z",
+  "relevantHighway": "I-94",
+  "referencePost": "263",
+  "exitID": "",
+  "directionOfTravel": "WB",
+  "name": "Johnson Creek Rest Area #14",
+  "location": {
+   "latitude": 43.08734,
+   "longitude": -88.823425,
+   "streetAdr": null,
+   "city": "Jefferson County",
+   "state": "WI",
+   "zip": null,
+   "timeZone": "Central"
+  },
+  "ownershipType": "PU",
+  "capacity": 30,
+  "amenities": [
+   "Men's and women's restrooms",
+   "Family/assisted restroom",
+   "Handicapped accessible",
+   "Diaper changing facilities",
+   "Drinking water",
+   "Vending machines",
+   "Travel/weather information",
+   "Telephones plus TTY",
+   "Picnic area and tables",
+   "Pet exercise area",
+   "Recycling areas"
+  ],
+  "images": [
+   ""
+  ],
+  "logos": [
+   ""
+  ]
+ },
+ {
+  "Id": 12,
+  "siteId": "WI00090IS0011300WRSTARE12",
+  "timeStamp": "2020-07-31T18:58:57Z",
+  "relevantHighway": "I-39/90/94",
+  "referencePost": "113",
+  "exitID": "",
+  "directionOfTravel": "WB",
+  "name": "Poynette Rest Area # 12",
+  "location": {
+   "latitude": 43.425103,
+   "longitude": -89.476466,
+   "streetAdr": null,
+   "city": "Columbia County",
+   "state": "WI",
+   "zip": null,
+   "timeZone": "Central"
+  },
+  "ownershipType": "PU",
+  "capacity": 63,
+  "amenities": [
+   "Men's and women's restrooms",
+   "Family/assisted restroom",
+   "Handicapped accessible",
+   "Diaper changing facilities",
+   "Drinking water",
+   "Vending machines",
+   "Travel/weather information",
+   "Telephones plus TTY",
+   "Picnic area and tables",
+   "Pet exercise area",
+   "Recycling areas"
+  ],
+  "images": [
+   ""
+  ],
+  "logos": [
+   ""
+  ]
+ },
+ {
+  "Id": 19,
+  "siteId": "WI00094IS0004300WRSTARE62",
+  "timeStamp": "2024-02-15T20:41:04Z",
+  "relevantHighway": "I-94",
+  "referencePost": "43",
+  "exitID": "",
+  "directionOfTravel": "WB",
+  "name": "Menomonie Rest Area #62",
+  "location": {
+   "latitude": 44.908507,
+   "longitude": -91.908821,
+   "streetAdr": null,
+   "city": "Dunn County",
+   "state": "WI",
+   "zip": null,
+   "timeZone": "Central"
+  },
+  "ownershipType": "PU",
+  "capacity": 24,
+  "amenities": [
+   "Men's and women's restrooms",
+   "Family/assisted restroom",
+   "Handicapped accessible",
+   "Diaper changing facilities",
+   "Drinking water",
+   "Vending machines",
+   "Travel/weather information",
+   "Telephones plus TTY",
+   "Picnic area and tables",
+   "Pet exercise area",
+   "Recycling areas"
+  ],
+  "images": [
+   ""
+  ],
+  "logos": [
+   ""
+  ]
+ },
+ {
+  "Id": 20,
+  "siteId": "WI00090IS0018700WRSTARE22",
+  "timeStamp": "2024-02-15T20:39:17Z",
+  "relevantHighway": "I-39/90",
+  "referencePost": "187",
+  "exitID": "",
+  "directionOfTravel": "WB",
+  "name": "Beloit Rest Area #22",
+  "location": {
+   "latitude": 42.504537,
+   "longitude": -88.984003,
+   "streetAdr": null,
+   "city": "Rock County",
+   "state": "WI",
+   "zip": null,
+   "timeZone": "Central"
+  },
+  "ownershipType": "PU",
+  "capacity": 60,
+  "amenities": [
+   "Children's play area",
+   "Diaper changing facilities",
+   "Drinking water",
+   "Family/assisted restroom",
+   "Handicapped accessible",
+   "Men's and women's restrooms",
+   "Pet exercise area",
+   "Picnic area and tables",
+   "Prairie demonstration plot",
+   "Recycling areas",
+   "Telephones plus TTY",
+   "Travel/weather information",
+   "Vending machines"
+  ],
+  "images": [
+   ""
+  ],
+  "logos": [
+   ""
+  ]
+ },
+ {
+  "Id": 40,
+  "siteId": "WI00090IS0002200WHYPOIN16",
+  "timeStamp": "2025-12-02T22:08:36Z",
+  "relevantHighway": "I-90",
+  "referencePost": "22",
+  "exitID": "",
+  "directionOfTravel": "WB",
+  "name": "Sparta Rest Area #16",
+  "location": {
+   "latitude": 43.909972,
+   "longitude": -90.881,
+   "streetAdr": null,
+   "city": "Monroe County",
+   "state": "WI",
+   "zip": null,
+   "timeZone": "Central"
+  },
+  "ownershipType": "PU",
+  "capacity": 70,
+  "amenities": [
+   "42 car and 70 parking stalls",
+   "Mens and womens restrooms",
+   "Handicapped accessible",
+   "Diaper changing facilities",
+   "Drinking water",
+   "Vending machines",
+   "Travel information shelter",
+   "Picnic area and tables",
+   "Pet exercise area",
+   "Recycling areas"
+  ],
+  "images": [
+   ""
+  ],
+  "logos": [
+   ""
+  ]
+ },
+ {
+  "Id": 46,
+  "siteId": "WI00043IS0016800SRSTARE51",
+  "timeStamp": "2026-08-01T00:00:00Z",
+  "relevantHighway": "I-43",
+  "referencePost": "168",
+  "exitID": "",
+  "directionOfTravel": "SB",
+  "name": "Maribel Rest Area #51",
+  "location": {
+   "latitude": 44.318139,
+   "longitude": -87.815167,
+   "streetAdr": null,
+   "city": "Manitowoc County",
+   "state": "WI",
+   "zip": null,
+   "timeZone": "Central"
+  },
+  "ownershipType": "PU",
+  "capacity": 60,
+  "amenities": [
+   "Men's and women's restrooms",
+   "Handicapped accessible",
+   "Diaper changing facilities",
+   "Drinking water",
+   "Vending machines",
+   "Picnic area and tables",
+   "Pet exercise area",
+   "Recycling areas"
+  ],
+  "images": [
+   ""
+  ],
+  "logos": [
+   ""
+  ]
+ },
+ {
+  "Id": 48,
+  "siteId": "WI00043IS0016800NRSTARE52",
+  "timeStamp": "2026-08-01T00:00:00Z",
+  "relevantHighway": "I-43",
+  "referencePost": "168",
+  "exitID": "",
+  "directionOfTravel": "NB",
+  "name": "Denmark Rest Area #52",
+  "location": {
+   "latitude": 44.322639,
+   "longitude": -87.815417,
+   "streetAdr": null,
+   "city": "Manitowoc County",
+   "state": "WI",
+   "zip": null,
+   "timeZone": "Central"
+  },
+  "ownershipType": "PU",
+  "capacity": 60,
+  "amenities": [
+   "Men's and women's restrooms",
+   "Handicapped accessible",
+   "Diaper changing facilities",
+   "Drinking water",
+   "Vending machines",
+   "Picnic area and tables",
+   "Pet exercise area",
+   "Recycling areas"
+  ],
+  "images": [
+   ""
+  ],
+  "logos": [
+   ""
+  ]
+ }
+]

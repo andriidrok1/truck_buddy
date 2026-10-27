@@ -1,0 +1,262 @@
+[
+ {
+  "siteId": "KY00065IS0000020N65WELCOM",
+  "timeStamp": "2019-02-06T16:22:52Z",
+  "relevantHighway": "I-65",
+  "referencePost": "0.2",
+  "exitID": "",
+  "directionOfTravel": "N",
+  "name": "03) I-65 NB @ MP 0.2 Rest Area",
+  "location": {
+   "latitude": 36.643447,
+   "longitude": -86.568715,
+   "streetAdr": "",
+   "city": "",
+   "state": "KY",
+   "zip": "",
+   "timeZone": "Eastern"
+  },
+  "ownership": "PU",
+  "capacity": 21
+ },
+ {
+  "siteId": "KY00065IS000020NSMARATHON",
+  "timeStamp": "2019-02-06T16:23:07Z",
+  "relevantHighway": "I-65",
+  "referencePost": "2",
+  "exitID": "2",
+  "directionOfTravel": "NS",
+  "name": "01) I-65 Exit 2 Marathon",
+  "location": {
+   "latitude": 36.661213,
+   "longitude": -86.555265,
+   "streetAdr": null,
+   "city": null,
+   "state": "KY",
+   "zip": null,
+   "timeZone": "Eastern"
+  },
+  "ownership": "PR",
+  "capacity": 60
+ },
+ {
+  "siteId": "KY00065IS0000340NWEIGHS34",
+  "timeStamp": "2019-02-06T16:23:11Z",
+  "relevantHighway": "I-65",
+  "referencePost": "3.4",
+  "exitID": null,
+  "directionOfTravel": "N",
+  "name": "02) I-65 NB @ MP 3.4 Weigh Station",
+  "location": {
+   "latitude": 36.686819,
+   "longitude": -86.537856,
+   "streetAdr": null,
+   "city": null,
+   "state": "KY",
+   "zip": null,
+   "timeZone": "Eastern"
+  },
+  "ownership": "PU",
+  "capacity": 40
+ },
+ {
+  "siteId": "KY00065IS0011400S65SRA114",
+  "timeStamp": "2019-02-06T16:23:16Z",
+  "relevantHighway": "I-65",
+  "referencePost": "114",
+  "exitID": null,
+  "directionOfTravel": "S",
+  "name": "04) I-65 SB @ MP 114 Rest Area",
+  "location": {
+   "latitude": 37.946415,
+   "longitude": -85.690524,
+   "streetAdr": null,
+   "city": null,
+   "state": "KY",
+   "zip": null,
+   "timeZone": "Eastern"
+  },
+  "ownership": "PU",
+  "capacity": 26
+ },
+ {
+  "siteId": "KY00065IS0005900S65SRA059",
+  "timeStamp": "2019-02-06T16:23:19Z",
+  "relevantHighway": "I-65",
+  "referencePost": "59",
+  "exitID": null,
+  "directionOfTravel": "S",
+  "name": "05) I-65 SB @ MP 59 Rest Area",
+  "location": {
+   "latitude": 37.238978,
+   "longitude": -85.929661,
+   "streetAdr": null,
+   "city": null,
+   "state": "KY",
+   "zip": null,
+   "timeZone": "Eastern"
+  },
+  "ownership": "PU",
+  "capacity": 109
+ },
+ {
+  "siteId": "KY00065IS0005900N65NRA059",
+  "timeStamp": "2019-02-06T16:23:23Z",
+  "relevantHighway": "I-65",
+  "referencePost": "59",
+  "exitID": null,
+  "directionOfTravel": "N",
+  "name": "06) I-65 NB @ MP 59 Rest Area",
+  "location": {
+   "latitude": 37.238417,
+   "longitude": -85.927073,
+   "streetAdr": null,
+   "city": null,
+   "state": "KY",
+   "zip": null,
+   "timeZone": "Eastern"
+  },
+  "ownership": "PU",
+  "capacity": 113
+ },
+ {
+  "siteId": "KY00075IS0003300NWEIGHS33",
+  "timeStamp": "2019-02-06T16:23:33Z",
+  "relevantHighway": "I-75",
+  "referencePost": "33",
+  "exitID": null,
+  "directionOfTravel": "N",
+  "name": "08) I-75 NB @ MP 33 Weigh Station",
+  "location": {
+   "latitude": 37.042159,
+   "longitude": -84.09677,
+   "streetAdr": null,
+   "city": null,
+   "state": "KY",
+   "zip": null,
+   "timeZone": "Eastern"
+  },
+  "ownership": "PU",
+  "capacity": 50
+ },
+ {
+  "siteId": "KY00075IS0003400SWEIGHS34",
+  "timeStamp": "2019-02-06T16:23:39Z",
+  "relevantHighway": "I-75",
+  "referencePost": "34",
+  "exitID": null,
+  "directionOfTravel": "S",
+  "name": "07) I-75 SB @ MP 34 Weigh Station",
+  "location": {
+   "latitude": 37.047985,
+   "longitude": -84.09968,
+   "streetAdr": null,
+   "city": null,
+   "state": "KY",
+   "zip": null,
+   "timeZone": "Eastern"
+  },
+  "ownership": "PU",
+  "capacity": 40
+ },
+ {
+  "siteId": "KY00075IS0017700N75NRA177",
+  "timeStamp": "2019-02-06T16:23:45Z",
+  "relevantHighway": "I-75",
+  "referencePost": "177",
+  "exitID": null,
+  "directionOfTravel": "N",
+  "name": "12) I-75 NB @ MP 177 Rest Area",
+  "location": {
+   "latitude": 38.936957,
+   "longitude": -84.630935,
+   "streetAdr": null,
+   "city": null,
+   "state": "KY",
+   "zip": null,
+   "timeZone": "Eastern"
+  },
+  "ownership": "PU",
+  "capacity": 53
+ },
+ {
+  "siteId": "KY00075IS0007500SWALTONWS",
+  "timeStamp": "2019-02-06T16:23:51Z",
+  "relevantHighway": "I-75",
+  "referencePost": "75",
+  "exitID": null,
+  "directionOfTravel": "S",
+  "name": "10) I-71 SB @ MP 75 Weigh Station",
+  "location": {
+   "latitude": 38.865288,
+   "longitude": -84.64763,
+   "streetAdr": null,
+   "city": null,
+   "state": "KY",
+   "zip": null,
+   "timeZone": "Eastern"
+  },
+  "ownership": "PU",
+  "capacity": 45
+ },
+ {
+  "siteId": "KY00075IS0017700S75SRA177",
+  "timeStamp": "2019-02-06T16:23:56Z",
+  "relevantHighway": "I-75",
+  "referencePost": "177",
+  "exitID": null,
+  "directionOfTravel": "S",
+  "name": "13) I-75 SB @ MP 177 Rest Area",
+  "location": {
+   "latitude": 38.938802,
+   "longitude": -84.633924,
+   "streetAdr": null,
+   "city": null,
+   "state": "KY",
+   "zip": null,
+   "timeZone": "Eastern"
+  },
+  "ownership": "PU",
+  "capacity": 67
+ },
+ {
+  "siteId": "KY00075IS0016800SCRITENWS",
+  "timeStamp": "2019-02-06T16:24:01Z",
+  "relevantHighway": "I-75",
+  "referencePost": "168",
+  "exitID": null,
+  "directionOfTravel": "S",
+  "name": "11) I-75 SB @ MP 168 Weigh Station",
+  "location": {
+   "latitude": 38.819598,
+   "longitude": -84.601536,
+   "streetAdr": null,
+   "city": null,
+   "state": "KY",
+   "zip": null,
+   "timeZone": "Eastern"
+  },
+  "ownership": "PU",
+  "capacity": 39
+ },
+ {
+  "siteId": "KY00075IS0000100N75WELCOM",
+  "timeStamp": "2021-01-05T19:39:17Z",
+  "relevantHighway": "I-75",
+  "referencePost": "1.0",
+  "exitID": null,
+  "directionOfTravel": "N",
+  "name": "09) I-75 NB @ MP 1 Welcome Center",
+  "location": {
+   "latitude": 36.616171,
+   "longitude": -84.105415,
+   "streetAdr": null,
+   "city": null,
+   "state": "KY",
+   "zip": null,
+   "timeZone": "Eastern"
+  },
+  "ownership": "PU",
+  "capacity": 30
+ }
+]

@@ -1,0 +1,202 @@
+[
+ {
+  "siteId": "IL00074IW006200004",
+  "timeStamp": "2026-10-27T21:49:09Z",
+  "timeStampStatic": "2021-03-26T22:52:43Z",
+  "reportedAvailable": "10",
+  "trend": "CLEARING",
+  "open": true,
+  "trustData": true,
+  "capacity": 12
+ },
+ {
+  "siteId": "IL00074IE011400005",
+  "timeStamp": "2026-10-27T21:49:12Z",
+  "timeStampStatic": "2021-04-02T20:55:17Z",
+  "reportedAvailable": "22",
+  "trend": "STEADY",
+  "open": true,
+  "trustData": true,
+  "capacity": 25
+ },
+ {
+  "siteId": "IL00024IW003700010",
+  "timeStamp": "2026-10-27T21:49:26Z",
+  "timeStampStatic": "2024-08-01T19:46:36Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 0
+ },
+ {
+  "siteId": "IL00074IW002800020",
+  "timeStamp": "2026-10-27T21:49:26Z",
+  "timeStampStatic": "2024-08-01T19:46:36Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 15
+ },
+ {
+  "siteId": "IL00074IW020800052",
+  "timeStamp": "2026-10-27T21:49:26Z",
+  "timeStampStatic": "2026-07-07T17:32:48Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 0
+ },
+ {
+  "siteId": "IL00057IN022200048",
+  "timeStamp": "2026-10-27T21:49:26Z",
+  "timeStampStatic": "2026-07-07T17:27:39Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 0
+ },
+ {
+  "siteId": "IL00074IE002800030",
+  "timeStamp": "2026-10-27T21:49:26Z",
+  "timeStampStatic": "2024-08-01T19:46:36Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 14
+ },
+ {
+  "siteId": "IL00055IN019400031",
+  "timeStamp": "2026-10-27T21:49:26Z",
+  "timeStampStatic": "2024-08-01T19:46:36Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 36
+ },
+ {
+  "siteId": "IL00057IN007900034",
+  "timeStamp": "2026-10-27T21:49:26Z",
+  "timeStampStatic": "2024-08-01T19:46:37Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 0
+ },
+ {
+  "siteId": "IL00057IS026800022",
+  "timeStamp": "2026-10-27T21:49:26Z",
+  "timeStampStatic": "2024-08-01T19:46:36Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 27
+ },
+ {
+  "siteId": "IL00064IW008500012",
+  "timeStamp": "2026-10-27T21:49:27Z",
+  "timeStampStatic": "2024-08-01T19:46:36Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 0
+ },
+ {
+  "siteId": "IL00072IW015200014",
+  "timeStamp": "2026-10-27T21:49:27Z",
+  "timeStampStatic": "2024-08-01T19:46:36Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 17
+ },
+ {
+  "siteId": "IL00057IS033300046",
+  "timeStamp": "2026-10-27T21:49:27Z",
+  "timeStampStatic": "2026-07-07T17:27:39Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 0
+ },
+ {
+  "siteId": "IL00064IW002500011",
+  "timeStamp": "2026-10-27T21:49:27Z",
+  "timeStampStatic": "2024-08-01T19:46:36Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 0
+ },
+ {
+  "siteId": "IL00070IW002700015",
+  "timeStamp": "2026-10-27T21:49:27Z",
+  "timeStampStatic": "2024-08-01T19:46:36Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 0
+ },
+ {
+  "siteId": "IL00055IS019400021",
+  "timeStamp": "2026-10-27T21:49:27Z",
+  "timeStampStatic": "2024-08-01T19:46:36Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 29
+ },
+ {
+  "siteId": "IL00074IE015600037",
+  "timeStamp": "2026-10-27T21:49:27Z",
+  "timeStampStatic": "2024-08-01T19:46:37Z",
+  "reportedAvailable": "0",
+  "trend": "Unknown",
+  "open": false,
+  "trustData": false,
+  "capacity": 0
+ },
+ {
+  "siteId": "IL00080IE005100040",
+  "timeStamp": "2026-10-27T21:49:27Z",
+  "timeStampStatic": "2024-08-01T19:46:37Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 39
+ },
+ {
+  "siteId": "IL00070IE008600051",
+  "timeStamp": "2026-10-27T21:49:27Z",
+  "timeStampStatic": "2026-07-07T17:27:40Z",
+  "reportedAvailable": "0",
+  "trend": "Unknown",
+  "open": false,
+  "trustData": false,
+  "capacity": 0
+ },
+ {
+  "siteId": "IL00070IE002700042",
+  "timeStamp": "2026-10-27T21:49:27Z",
+  "timeStampStatic": "2024-08-01T19:46:37Z",
+  "reportedAvailable": "Unknown",
+  "trend": "Unknown",
+  "open": true,
+  "trustData": false,
+  "capacity": 0
+ }
+]

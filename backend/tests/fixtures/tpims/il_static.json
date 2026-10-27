@@ -1,0 +1,525 @@
+[
+ {
+  "siteId": "IL00074IW006200004",
+  "timeStamp": "2021-03-26T22:52:43Z",
+  "relevantHighway": "I-74",
+  "referencePost": "62.0",
+  "exitID": "",
+  "directionOfTravel": "W",
+  "name": "Spoon River",
+  "location": {
+   "latitude": 40.88021482983514,
+   "longitude": -90.08949009521503,
+   "streetAdr": "I-74",
+   "city": "Trenton Corners",
+   "state": "IL",
+   "zip": "61436",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 12,
+  "amenities": [
+   "Vending machine",
+   "Weather info available"
+  ],
+  "images": [
+   "https://cctv.travelmidwest.com/snapshots/TPIMS_17.jpg"
+  ]
+ },
+ {
+  "siteId": "IL00074IE011400005",
+  "timeStamp": "2021-04-02T20:55:17Z",
+  "relevantHighway": "I-74",
+  "referencePost": "114.0",
+  "exitID": "",
+  "directionOfTravel": "E",
+  "name": "Mackinaw Dells",
+  "location": {
+   "latitude": 40.612499794461826,
+   "longitude": -89.24503950234022,
+   "streetAdr": "Unknown",
+   "city": "Congerville",
+   "state": "IL",
+   "zip": "61729",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 25,
+  "amenities": [
+   "Vending machine",
+   "TTY Station",
+   "Weather info available"
+  ],
+  "images": [
+   "https://cctv.travelmidwest.com/snapshots/TPIMS_19.jpg"
+  ]
+ },
+ {
+  "siteId": "IL00024IW003700010",
+  "timeStamp": "2024-08-01T19:46:36Z",
+  "relevantHighway": "I-24",
+  "referencePost": "37.0",
+  "exitID": "",
+  "directionOfTravel": "W",
+  "name": "Fort Massac",
+  "location": {
+   "latitude": 37.1592629441244,
+   "longitude": -88.6797796445628,
+   "streetAdr": "",
+   "city": "",
+   "state": "IL",
+   "zip": "",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 0,
+  "amenities": [
+   "Vending machine",
+   "Welcome Center",
+   "TTY Station",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00074IW002800020",
+  "timeStamp": "2024-08-01T19:46:36Z",
+  "relevantHighway": "I-74",
+  "referencePost": "28.0",
+  "exitID": "",
+  "directionOfTravel": "W",
+  "name": "KrisdalaBaka",
+  "location": {
+   "latitude": 41.214082966658594,
+   "longitude": -90.3307513510407,
+   "streetAdr": "Unknown",
+   "city": "Unknown",
+   "state": "IL",
+   "zip": "00000",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 15,
+  "amenities": [
+   "Vending machine",
+   "TTY Station",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00074IW020800052",
+  "timeStamp": "2026-07-07T17:32:48Z",
+  "relevantHighway": "I-74",
+  "referencePost": "208.0",
+  "exitID": "",
+  "directionOfTravel": "W",
+  "name": "Salt Kettle",
+  "location": {
+   "latitude": 40.129832540829,
+   "longitude": -87.7440936185579,
+   "streetAdr": "",
+   "city": "",
+   "state": "IL",
+   "zip": "",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 0,
+  "amenities": [
+   "Vending machine",
+   "Rest room (assisted)",
+   "Welcome Center",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00057IN022200048",
+  "timeStamp": "2026-07-07T17:27:39Z",
+  "relevantHighway": "I-57",
+  "referencePost": "222.0",
+  "exitID": "",
+  "directionOfTravel": "N",
+  "name": "Illini Prairie",
+  "location": {
+   "latitude": 39.9218234743727,
+   "longitude": -88.2990027606876,
+   "streetAdr": "",
+   "city": "",
+   "state": "IL",
+   "zip": "",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 0,
+  "amenities": [
+   "Vending machine",
+   "Rest room (assisted)",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00074IE002800030",
+  "timeStamp": "2024-08-01T19:46:36Z",
+  "relevantHighway": "I-74",
+  "referencePost": "28.0",
+  "exitID": "",
+  "directionOfTravel": "E",
+  "name": "KrisdalaBaka",
+  "location": {
+   "latitude": 41.233415340768,
+   "longitude": -90.33298324956888,
+   "streetAdr": "Unknown",
+   "city": "Unknown",
+   "state": "IL",
+   "zip": "00000",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 14,
+  "amenities": [
+   "Vending machine",
+   "TTY Station",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00055IN019400031",
+  "timeStamp": "2024-08-01T19:46:36Z",
+  "relevantHighway": "I-55",
+  "referencePost": "194.0",
+  "exitID": "",
+  "directionOfTravel": "N",
+  "name": "Limestone",
+  "location": {
+   "latitude": 40.823397612806694,
+   "longitude": -88.6875369558886,
+   "streetAdr": "Unknown",
+   "city": "Unknown",
+   "state": "IL",
+   "zip": "00000",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 36,
+  "amenities": [
+   "Vending machine",
+   "TTY Station",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00057IN007900034",
+  "timeStamp": "2024-08-01T19:46:37Z",
+  "relevantHighway": "I-57",
+  "referencePost": "79.0",
+  "exitID": "",
+  "directionOfTravel": "N",
+  "name": "Rend Lake",
+  "location": {
+   "latitude": 38.0296773746404,
+   "longitude": -88.9203415529023,
+   "streetAdr": "",
+   "city": "",
+   "state": "IL",
+   "zip": "",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 0,
+  "amenities": [
+   "Vending machine",
+   "Welcome Center",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00057IS026800022",
+  "timeStamp": "2024-08-01T19:46:36Z",
+  "relevantHighway": "I-57",
+  "referencePost": "268.0",
+  "exitID": "",
+  "directionOfTravel": "S",
+  "name": "Main Line Station",
+  "location": {
+   "latitude": 40.561293600796795,
+   "longitude": -88.0615197498508,
+   "streetAdr": "Unknown",
+   "city": "Unknown",
+   "state": "IL",
+   "zip": "00000",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 27,
+  "amenities": [
+   "Vending machine",
+   "TTY Station",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00064IW008500012",
+  "timeStamp": "2024-08-01T19:46:36Z",
+  "relevantHighway": "I-64",
+  "referencePost": "85.0",
+  "exitID": "",
+  "directionOfTravel": "W",
+  "name": "Goshen Road",
+  "location": {
+   "latitude": 38.2765871484872,
+   "longitude": -88.8012297652879,
+   "streetAdr": "",
+   "city": "",
+   "state": "IL",
+   "zip": "",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 0,
+  "amenities": [
+   "Vending machine",
+   "Rest room (assisted)",
+   "TTY Station",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00072IW015200014",
+  "timeStamp": "2024-08-01T19:46:36Z",
+  "relevantHighway": "I-72",
+  "referencePost": "152.0",
+  "exitID": "",
+  "directionOfTravel": "W",
+  "name": "Pride of the Prairie",
+  "location": {
+   "latitude": 39.98882146039819,
+   "longitude": -88.78522232543429,
+   "streetAdr": "Unknown",
+   "city": "Unknown",
+   "state": "IL",
+   "zip": "00000",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 17,
+  "amenities": [
+   "Vending machine",
+   "Rest room (assisted)",
+   "TTY Station",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00057IS033300046",
+  "timeStamp": "2026-07-07T17:27:39Z",
+  "relevantHighway": "I-57",
+  "referencePost": "333.0",
+  "exitID": "",
+  "directionOfTravel": "S",
+  "name": "Prairie View",
+  "location": {
+   "latitude": 41.3918007617505,
+   "longitude": -87.7749257447173,
+   "streetAdr": "",
+   "city": "",
+   "state": "IL",
+   "zip": "",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 0,
+  "amenities": [
+   "Vending machine",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00064IW002500011",
+  "timeStamp": "2024-08-01T19:46:36Z",
+  "relevantHighway": "I-64",
+  "referencePost": "25.0",
+  "exitID": "",
+  "directionOfTravel": "W",
+  "name": "Gateway",
+  "location": {
+   "latitude": 38.5490951498096,
+   "longitude": -89.7633490599091,
+   "streetAdr": "",
+   "city": "",
+   "state": "IL",
+   "zip": "",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 0,
+  "amenities": [
+   "Vending machine",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00070IW002700015",
+  "timeStamp": "2024-08-01T19:46:36Z",
+  "relevantHighway": "I-70",
+  "referencePost": "27.0",
+  "exitID": "",
+  "directionOfTravel": "W",
+  "name": "Silver Lake",
+  "location": {
+   "latitude": 38.7883691971928,
+   "longitude": -89.6888750590369,
+   "streetAdr": "",
+   "city": "",
+   "state": "IL",
+   "zip": "",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 0,
+  "amenities": [
+   "Vending machine",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00055IS019400021",
+  "timeStamp": "2024-08-01T19:46:36Z",
+  "relevantHighway": "I-55",
+  "referencePost": "194.0",
+  "exitID": "",
+  "directionOfTravel": "S",
+  "name": "Limestone",
+  "location": {
+   "latitude": 40.837108615426985,
+   "longitude": -88.68333095597758,
+   "streetAdr": "Unknown",
+   "city": "Unknown",
+   "state": "IL",
+   "zip": "00000",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 29,
+  "amenities": [
+   "Vending machine",
+   "TTY Station",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00074IE015600037",
+  "timeStamp": "2024-08-01T19:46:37Z",
+  "relevantHighway": "I-74",
+  "referencePost": "156.0",
+  "exitID": "",
+  "directionOfTravel": "E",
+  "name": "Farm Land",
+  "location": {
+   "latitude": 40.2732225168317,
+   "longitude": -88.6762289011956,
+   "streetAdr": "",
+   "city": "",
+   "state": "IL",
+   "zip": "",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 0,
+  "amenities": [
+   "Vending machine",
+   "Rest room (assisted)",
+   "TTY Station",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00080IE005100040",
+  "timeStamp": "2024-08-01T19:46:37Z",
+  "relevantHighway": "I-80",
+  "referencePost": "51.0",
+  "exitID": "",
+  "directionOfTravel": "E",
+  "name": "Great Sauk Trail",
+  "location": {
+   "latitude": 41.39375266170119,
+   "longitude": -89.5664972655105,
+   "streetAdr": "Unknown",
+   "city": "Unknown",
+   "state": "IL",
+   "zip": "00000",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 39,
+  "amenities": [
+   "Vending machine",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00070IE008600051",
+  "timeStamp": "2026-07-07T17:27:40Z",
+  "relevantHighway": "I-70",
+  "referencePost": "86.0",
+  "exitID": "",
+  "directionOfTravel": "E",
+  "name": "National Trail",
+  "location": {
+   "latitude": 39.0651302999707,
+   "longitude": -88.6745067942143,
+   "streetAdr": "",
+   "city": "",
+   "state": "IL",
+   "zip": "",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 0,
+  "amenities": [
+   "Vending machine",
+   "TTY Station",
+   "Weather info available"
+  ],
+  "images": []
+ },
+ {
+  "siteId": "IL00070IE002700042",
+  "timeStamp": "2024-08-01T19:46:37Z",
+  "relevantHighway": "I-70",
+  "referencePost": "27.0",
+  "exitID": "",
+  "directionOfTravel": "E",
+  "name": "Silver Lake",
+  "location": {
+   "latitude": 38.7849071958717,
+   "longitude": -89.7023130625436,
+   "streetAdr": "",
+   "city": "",
+   "state": "IL",
+   "zip": "",
+   "timeZone": "Central"
+  },
+  "ownership": "PU",
+  "capacity": 0,
+  "amenities": [
+   "Vending machine",
+   "Weather info available"
+  ],
+  "images": []
+ }
+]

@@ -1,0 +1,32 @@
+name: backend tests
+
+on:
+  pull_request:
+    paths: ["backend/**", ".github/workflows/backend-tests.yml"]
+  push:
+    branches: [main]
+    paths: ["backend/**", ".github/workflows/backend-tests.yml"]
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: offline tests (no keys, no network)
+        env:
+          EXPO_PUBLIC_BACKEND_URL: ""
+        run: python -m pytest -n 0 -m "not live" -q
+      - name: style (advisory)
+        continue-on-error: true
+        run: |
+          black --check --line-length 120 services server.py models.py tests/offline scripts || true
+          flake8 --max-line-length 120 services server.py models.py tests/offline scripts || true

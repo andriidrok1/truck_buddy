@@ -1,0 +1,18 @@
+{
+ "_meta": {
+  "recorded_at": "2026-10-27",
+  "provider": "here",
+  "scenario": "origin/destination in the ocean"
+ },
+ "status": 200,
+ "body": {
+  "notices": [
+   {
+    "title": "Route calculation failed: Couldn't match origin.",
+    "code": "couldNotMatchOrigin",
+    "severity": "critical"
+   }
+  ],
+  "routes": []
+ }
+}

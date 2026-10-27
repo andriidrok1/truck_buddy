@@ -1,0 +1,202 @@
+{
+ "_meta": {
+  "recorded_at": "2026-10-27",
+  "provider": "eia",
+  "scenario": "weekly No 2 diesel retail, R50, last 12"
+ },
+ "warnings": [
+  {
+   "warning": "incomplete return",
+   "description": "The API can only return 5000 rows in JSON format.  Please consider constraining your request with facet, start, or end, or using offset to paginate results."
+  }
+ ],
+ "response": {
+  "total": "1702",
+  "dateFormat": "YYYY-MM-DD",
+  "frequency": "weekly",
+  "data": [
+   {
+    "period": "2026-10-26",
+    "duoarea": "R50",
+    "area-name": "PADD 5",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_R50_DPG",
+    "series-description": "West Coast No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "7.329",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-10-19",
+    "duoarea": "R50",
+    "area-name": "PADD 5",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_R50_DPG",
+    "series-description": "West Coast No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "7.394",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-10-12",
+    "duoarea": "R50",
+    "area-name": "PADD 5",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_R50_DPG",
+    "series-description": "West Coast No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "7.24",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-10-05",
+    "duoarea": "R50",
+    "area-name": "PADD 5",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_R50_DPG",
+    "series-description": "West Coast No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "7.229",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-09-28",
+    "duoarea": "R50",
+    "area-name": "PADD 5",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_R50_DPG",
+    "series-description": "West Coast No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "7.357",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-09-21",
+    "duoarea": "R50",
+    "area-name": "PADD 5",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_R50_DPG",
+    "series-description": "West Coast No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "7.456",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-09-14",
+    "duoarea": "R50",
+    "area-name": "PADD 5",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_R50_DPG",
+    "series-description": "West Coast No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "7.25",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-09-07",
+    "duoarea": "R50",
+    "area-name": "PADD 5",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_R50_DPG",
+    "series-description": "West Coast No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "6.987",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-08-31",
+    "duoarea": "R50",
+    "area-name": "PADD 5",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_R50_DPG",
+    "series-description": "West Coast No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "6.497",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-08-24",
+    "duoarea": "R50",
+    "area-name": "PADD 5",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_R50_DPG",
+    "series-description": "West Coast No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "6.407",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-08-17",
+    "duoarea": "R50",
+    "area-name": "PADD 5",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_R50_DPG",
+    "series-description": "West Coast No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "6.203",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-08-10",
+    "duoarea": "R50",
+    "area-name": "PADD 5",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_R50_DPG",
+    "series-description": "West Coast No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "6.033",
+    "units": "$/GAL"
+   }
+  ]
+ },
+ "request": {
+  "command": "/v2/petroleum/pri/gnd/data/",
+  "params": {
+   "frequency": "weekly",
+   "data": [
+    "value"
+   ],
+   "facets": {
+    "product": [
+     "EPD2D"
+    ],
+    "duoarea": [
+     "R50"
+    ]
+   },
+   "sort": [
+    {
+     "column": "period",
+     "direction": "desc"
+    }
+   ],
+   "length": "12"
+  }
+ },
+ "apiVersion": "2.1.14",
+ "ExcelAddInVersion": "2.1.0"
+}

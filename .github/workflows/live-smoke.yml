@@ -1,0 +1,31 @@
+name: live smoke
+
+# Nightly check of the deployed backend. Needs two repository secrets:
+#   SMOKE_BASE_URL    e.g. https://<railway-domain>
+#   SMOKE_ACCESS_CODE the backend's ACCESS_CODE (any code works with OPEN_ACCESS=1 as long as it exists)
+# Never blocks a PR; a red run means the deployment, not the code.
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    if: ${{ vars.SMOKE_ENABLED == 'true' }}
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - env:
+          EXPO_PUBLIC_BACKEND_URL: ${{ secrets.SMOKE_BASE_URL }}
+          ACCESS_CODE: ${{ secrets.SMOKE_ACCESS_CODE }}
+        run: python -m pytest -n 0 -m smoke tests/smoke -q
