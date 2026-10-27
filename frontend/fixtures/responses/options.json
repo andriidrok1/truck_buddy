@@ -1,0 +1,61 @@
+{
+  "status": "options",
+  "transcript": "find me a hotel",
+  "category": "hotel",
+  "reply": "I found three hotels with truck parking. Say one, two, or three.",
+  "message": null,
+  "place": null,
+  "route": null,
+  "parking": null,
+  "options": [
+    {
+      "id": "ChIJhotel-001",
+      "name": "Motel 6 Sacramento South",
+      "category": "hotel",
+      "lat": 38.4835,
+      "lng": -121.4262,
+      "tags": ["truck parking", "pet friendly"],
+      "address": "7850 Stockton Blvd, Sacramento, CA 95823",
+      "rating": 3.6,
+      "rating_count": 942,
+      "summary": "Big back lot, drivers report overnight parking is fine.",
+      "diesel_price": null,
+      "diesel_kind": null,
+      "diesel_updated": null,
+      "distance_km": 9.1,
+      "distance_mi": 5.7
+    },
+    {
+      "id": "ChIJhotel-002",
+      "name": "Quality Inn Elk Grove",
+      "category": "hotel",
+      "lat": 38.4088,
+      "lng": -121.3716,
+      "tags": ["breakfast", "truck parking"],
+      "address": "9240 W Stockton Blvd, Elk Grove, CA 95758",
+      "rating": 4.0,
+      "rating_count": 511,
+      "summary": null,
+      "distance_km": 19.4,
+      "distance_mi": 12.1
+    },
+    {
+      "id": "ChIJhotel-003",
+      "name": "Best Western Plus Rancho Cordova",
+      "category": "hotel",
+      "lat": 38.5891,
+      "lng": -121.3027,
+      "tags": ["pool"],
+      "address": "10713 White Rock Rd, Rancho Cordova, CA 95670",
+      "rating": 4.3,
+      "rating_count": 1204,
+      "distance_mi": 13.4
+    }
+  ],
+  "audio_url": "/api/audio/options_001.mp3",
+  "audio_url_2": null,
+  "timings": { "stt_ms": 380, "agent_ms": 1450, "tts_ms": 590 },
+  "end_conversation": false,
+  "actions": [],
+  "source": "agent"
+}

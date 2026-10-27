@@ -1,0 +1,17 @@
+{
+  "status": "chat",
+  "transcript": "how long can I drive before I need a break",
+  "category": null,
+  "reply": "Under FMCSA rules you need a 30 minute break after 8 hours of driving, and 11 hours is the daily driving limit.",
+  "message": null,
+  "place": null,
+  "route": null,
+  "parking": null,
+  "options": [],
+  "audio_url": "/api/audio/chat_001.mp3",
+  "audio_url_2": null,
+  "timings": { "stt_ms": 350, "agent_ms": 2210, "tts_ms": 880 },
+  "end_conversation": false,
+  "actions": [],
+  "source": "agent"
+}
