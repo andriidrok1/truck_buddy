@@ -15,7 +15,7 @@ from starlette.middleware.cors import CORSMiddleware
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-from models import AgentRequest, AgentResponse, Category, ParkingCheck, ParkingRequest, Place, PlacesResponse, RouteRequest, RouteResponse, TruckProfile  # noqa: E402
+from models import AgentRequest, AgentResponse, Category, ParkingCheck, ParkingRequest, Place, PlacesResponse, RerouteRequest, RouteRequest, RouteResponse, TruckProfile  # noqa: E402,E501
 from services.agent import get_agent_provider  # noqa: E402
 from services import breakdown  # noqa: E402
 from services.google_places import PlacesUnavailable  # noqa: E402
@@ -138,6 +138,21 @@ async def build_route(req: RouteRequest):
         return RouteResponse(place=place, route=route, parking=None)
     approach.background(check_parking(place, route.approach))  # don't wait for the satellite; app re-asks /parking
     return RouteResponse(place=place, route=route, parking=cached_parking(place))
+
+
+@api.post("/reroute", response_model=RouteResponse)
+async def reroute(req: RerouteRequest):
+    """The app detected the driver left the route: a new route from the current position to the same place.
+    No new satellite check (the destination hasn't changed); the cached parking verdict comes along."""
+    _require_us(req.lat, req.lng)
+    _require_us(req.place.lat, req.place.lng)
+    try:
+        route = await get_routing_provider().reroute(req.handle, req.lat, req.lng, req.heading,
+                                                     *approach.target(req.place), req.truck_profile,
+                                                     section_index=req.section_index, traveled_m=req.traveled_m)
+    except RoutingUnavailable:
+        raise HTTPException(status_code=503, detail="Truck routing is unavailable right now")
+    return RouteResponse(place=req.place, route=route, parking=cached_parking(req.place))
 
 
 @api.post("/parking", response_model=ParkingCheck)

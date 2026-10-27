@@ -94,6 +94,7 @@ class RouteInfo(BaseModel):
     labels: List[str] = Field(default_factory=list)  # main roads, e.g. ["I-80", "CA-89"] (HERE routeLabels)
     tolls_usd: Optional[float] = None  # cheapest fare per toll, summed; None when HERE lists no USD tolls
     alternatives: List["RouteInfo"] = Field(default_factory=list)  # other truck routes, same destination
+    handle: Optional[str] = None  # HERE routeHandle: lets the app re-route back onto this route after a deviation
 
 
 RouteInfo.model_rebuild()
@@ -181,6 +182,18 @@ class RouteRequest(BaseModel):
     place: Optional[Place] = None  # preferred: the place object from a previous search
     skip_parking: bool = False  # breakdown providers: the driver needs the shop, not a parking check
     truck_profile: TruckProfile = Field(default_factory=lambda: TruckProfile())
+
+
+class RerouteRequest(BaseModel):
+    """The driver left the active route: a new route from where they are, back onto the old one if possible."""
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    place: Place  # the active destination (unchanged)
+    handle: Optional[str] = Field(None, max_length=8192)  # RouteInfo.handle of the route being followed
+    heading: Optional[int] = Field(None, ge=0, le=359)  # course over ground, so HERE doesn't send a U-turn
+    section_index: int = Field(0, ge=0)  # HERE section the driver was on (0 without via stops)
+    traveled_m: float = Field(0.0, ge=0)  # metres driven along that section
+    truck_profile: TruckProfile = Field(default_factory=TruckProfile)
 
 
 class ParkingRequest(BaseModel):
