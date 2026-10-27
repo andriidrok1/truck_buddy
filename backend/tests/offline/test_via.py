@@ -155,7 +155,7 @@ def test_route_and_reroute_endpoints_accept_via(api_client, fake_http):
     body = {**SAC, "place": RENO.model_dump(), "skip_parking": True, "via": [[38.9, -121.08]]}
     r = api_client.post("/api/route", json=body)
     assert r.status_code == 200 and r.json()["route"]["via"] == [[38.9, -121.08]]
-    assert _vias(fake_http.calls[-1]) == ["38.9,-121.08!stopDuration=1800"]
+    assert _vias(fake_http.calls_to("router.hereapi.com")[-1]) == ["38.9,-121.08!stopDuration=1800"]
     r = api_client.post("/api/reroute", json={**SAC, "place": RENO.model_dump(), "via": [[38.9, -121.08]]})
     assert r.status_code == 200 and r.json()["route"]["via"] == [[38.9, -121.08]]
     assert api_client.post("/api/route", json={**body, "via": [[1, 2], [3, 4], [5, 6], [7, 8]]}).status_code == 422

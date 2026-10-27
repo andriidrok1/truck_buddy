@@ -15,7 +15,7 @@ from typing import Optional
 import httpx
 
 from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
-from services import approach, breakdown, controls, fuel_index, llm, memory, reviews
+from services import approach, breakdown, controls, fuel_index, llm, memory, reviews, weather
 from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
@@ -111,6 +111,7 @@ def city_of(query: str, place: Place) -> Optional[str]:
 MODEL = ("openai", "gpt-5.4-mini")
 MAX_OPTIONS = 4
 ALTERNATIVES_FRESH = 2  # when "another way?" comes with no cached alternatives: ask HERE for this many
+WEATHER_BUDGET_S = 2.0  # NWS lookups on a new route may add at most this much to the reply
 PRECHECK = 1  # nearest candidates satellite-checked in the background (each = one vision call)
 FAVORITE_EXTRA_MI = 5.0
 TRUCK_TAGS = ("truck parking", "53 ft", "truck lot", "hgv")
@@ -131,7 +132,7 @@ makes sense for a trucker and act on the corrected meaning, e.g. "I need a few" 
 "these all". Only fix words that clearly don't fit; never invent a destination. If you can't tell, use "unclear".
 
 Classify the driver's LAST utterance and answer with JSON only, no other text:
-{{"intent": "find"|"go"|"pick"|"alternative"|"add_stop"|"clear_stops"|"reviews"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|"walmart"|"cat_scale"|"truck_wash"|"weigh_station"|null, "near": string|null, "query": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
+{{"intent": "find"|"go"|"pick"|"alternative"|"add_stop"|"clear_stops"|"reviews"|"weather"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|"walmart"|"cat_scale"|"truck_wash"|"weigh_station"|null, "near": string|null, "query": string|null, "when": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
 
 - find: the driver needs a place. Pick the category yourself, never ask:
   truck_stop = fuel, diesel, DEF, food, showers, truck stop;
@@ -153,6 +154,7 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
 - add_stop: a stop ON THE WAY to the current destination, keeping that destination ("stop at the Pilot in Fernley on the way", "swing by Love's first", "add a fuel stop", "I need a rest area before that"). query = the place or address named (digits for numbers), else category = the kind of stop (truck_stop for fuel/food/showers, rest_area, hotel); never both null. Only while a route is active; with no route it's a plain find or go.
 - clear_stops: drop the stops added on the way ("skip the stops", "forget the stop", "no stops, straight there").
 - reviews: what other drivers say about a place ("what do drivers say about it", "is it any good", "reviews for the Pilot", "how are the showers there"). place_index = the place asked about from "Places found earlier", or null for the current route / the last one mentioned.
+- weather: the weather or wind at a place and time ("weather in Reno at 3pm", "how's the wind over Donner tonight", "is it snowing ahead", "what's it like at the destination"). query = the place named (null for here, or for the destination when they say there/ahead), when = the time words as said ("3pm", "tonight", "tomorrow morning", null for now).
 {controls}
 {parking}
 {breakdown}
@@ -480,11 +482,44 @@ class LlmAgentProvider:
         n = counter.get("n", 0)
         counter["n"] = n + 1
         self._remember_alternatives(req, place, route)
-        regional = await self._regional_note(place)
-        return AgentResponse(status="route_set", transcript=text, category=place.category,
-                             reply=_route_reply(place, route, n, req.truck_profile.driver_name, regional),
+        regional, weather_line = await asyncio.gather(self._regional_note(place), self._route_weather(route))
+        reply = _route_reply(place, route, n, req.truck_profile.driver_name, regional)
+        if weather_line:
+            reply = f"{reply} {weather_line}"
+        return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply,
                              place=place, route=route, parking=approach.best(place),
                              options=others, source=self.source)
+
+    @staticmethod
+    async def _route_weather(route: RouteInfo) -> str:
+        """NWS alerts along a new route, attached to it and spoken once; bounded so it never delays the reply."""
+        try:
+            route.weather = await asyncio.wait_for(weather.alerts_along(route.geometry), WEATHER_BUDGET_S)
+        except Exception as e:  # noqa: BLE001 - incl. timeout
+            logger.info("route weather skipped: %s", e)
+            route.weather = []
+        return weather.speech(route.weather)
+
+    async def _weather(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
+        """"Weather in Reno at 3 pm" / "what's the weather like ahead": hourly forecast at a place and time."""
+        query = str(d.get("query") or "").strip()
+        if query:
+            with stage("tools"):
+                matches = await geocode(with_city(query, sess.get("city")), req.lat, req.lng)
+            if not matches:
+                return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query), source=self.source)
+            name, lat, lng = matches[0].name.split(",")[0], matches[0].lat, matches[0].lng
+        elif req.active_place and re.search(r"\b(there|ahead|at the destination|when I get)\b", text, re.I):
+            name, lat, lng = req.active_place.name.split(",")[0], req.active_place.lat, req.active_place.lng
+        else:
+            name, lat, lng = "Here", req.lat, req.lng
+        with stage("tools"):
+            try:
+                reply = await asyncio.wait_for(weather.forecast_speech(name, lat, lng, d.get("when")), 8.0)
+            except Exception as e:  # noqa: BLE001
+                logger.info("weather answer failed: %s", e)
+                reply = weather.NO_FORECAST.format(place=name)
+        return AgentResponse(status="chat", transcript=text, reply=reply, source=self.source)
 
     @staticmethod
     async def _regional_note(place: Place) -> str:
@@ -745,6 +780,8 @@ class LlmAgentProvider:
                 return await self._clear_stops(req, sess, text)
             if intent == "reviews":
                 return await self._reviews(req, d, sess, text)
+            if intent == "weather":
+                return await self._weather(req, d, sess, text)
             if intent == "pick":
                 place = pick_place(d, sess["places"])
                 if place and place.id not in exclude:
