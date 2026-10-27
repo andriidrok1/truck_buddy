@@ -3,7 +3,18 @@ import { useEffect, useState } from "react";
 import type { LatLng } from "./types";
 
 /** Tester-only fake GPS: the app behaves as if the truck were at this spot. */
-export type SimLocation = { id: string; label: string; coords: LatLng; heading: number };
+export type SimLocation = {
+  id: string;
+  label: string;
+  coords: LatLng;
+  heading: number;
+  /** m/s; omitted = standing still (null). */
+  speed?: number | null;
+  /** metres; omitted = a tight 5 m fix. */
+  accuracy?: number | null;
+  /** epoch ms; setSim() stamps the moment the spot was chosen. */
+  ts?: number;
+};
 
 /** Made-up test spots. */
 export const SCENARIOS: (SimLocation & { title: string; hint: string; icon: string })[] = [
@@ -24,7 +35,7 @@ const listeners = new Set<() => void>();
 export const getSim = () => sim;
 
 export function setSim(s: SimLocation | null) {
-  sim = s;
+  sim = s ? { ts: Date.now(), ...s } : null;
   listeners.forEach((l) => l());
 }
 
