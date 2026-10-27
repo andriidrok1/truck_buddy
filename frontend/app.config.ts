@@ -1,5 +1,9 @@
-{
-  "expo": {
+// Expo config as code: identical to the former app.json except android.config.googleMaps.apiKey,
+// which comes from the GOOGLE_MAPS_ANDROID_KEY env var (an EAS secret) so the key is never committed.
+// Check the result with `npx expo config --type public`.
+import type { ExpoConfig } from "expo/config";
+
+const config: ExpoConfig = {
     "name": "TruckBuddy",
     "slug": "truckbuddy",
     "version": "1.0.0",
@@ -84,7 +88,12 @@
       "versionCode": 1,
       "blockedPermissions": [
         "android.permission.ACCESS_BACKGROUND_LOCATION"
-      ]
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": process.env.GOOGLE_MAPS_ANDROID_KEY
+        }
+      }
     },
     "web": {
       "bundler": "metro",
@@ -130,5 +139,6 @@
     "experiments": {
       "typedRoutes": true
     }
-  }
-}
+  };
+
+export default config;

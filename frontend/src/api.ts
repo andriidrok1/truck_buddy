@@ -1,4 +1,5 @@
 import { authHeader, requestCode, setToken } from "./auth";
+import { eldHeader } from "./eld";
 import { getTruckProfile } from "./hooks/useTruckProfile";
 import { uploadForm } from "./utils/upload";
 import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
@@ -160,6 +161,7 @@ export const api = {
     request<AgentResponse>(`/agent`, {
       method: "POST",
       timeoutMs: 65000,
+      headers: eldHeader(), // Motive key: the copilot reads hours of service
       body: JSON.stringify({ text, lat: at.lat, lng: at.lng, truck_profile: getTruckProfile() }),
     }),
   speak: (text: string) => request<{ audio_url: string }>(`/speak`, { method: "POST", body: JSON.stringify({ text }) }),
@@ -173,7 +175,7 @@ export const api = {
       const res = await uploadForm(`${BASE}/voice/transcribe`, {
         fields: {},
         files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
-        headers: authHeader(),
+        headers: { ...authHeader(), ...eldHeader() },
         signal: d.signal,
       });
       check(res as Response, "/voice/transcribe");
@@ -197,6 +199,7 @@ export const api = {
       method: "POST",
       signal,
       timeoutMs: 65000, // the map screen aborts the turn itself at 60 s
+      headers: eldHeader(), // Motive key: the copilot reads hours of service
       body: JSON.stringify({
         text,
         lat: at.lat,

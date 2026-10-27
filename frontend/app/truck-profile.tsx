@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/src/api";
 import { requestCode, setToken } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
+import { setEldToken, useEldToken } from "@/src/eld";
 import { PressableScale } from "@/src/components/PressableScale";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { DEFAULT_TRUCK, requestTruckReroute, saveTruckProfile, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts, useTruckProfile } from "@/src/hooks/useTruckProfile";
@@ -92,6 +93,9 @@ export default function TruckProfileScreen() {
   const truck = useTruckProfile();
   const handsFree = useHandsFree();
   const speedAlerts = useSpeedAlerts();
+  const eldToken = useEldToken();
+  const [eldDraft, setEldDraft] = useState("");
+  const eldConnected = !!eldToken;
 
   const [feet, setFeet] = useState(String(Math.floor(truck.height_in / 12)));
   const [inches, setInches] = useState(String(truck.height_in % 12));
@@ -214,6 +218,60 @@ export default function TruckProfileScreen() {
           />
         </View>
 
+        <Text style={[styles.section, { color: colors.onSurface }]}>Hours of service (Motive)</Text>
+        <View testID="eld-section" style={[styles.eldBox, { backgroundColor: colors.surfaceSecondary }]}>
+          <View style={styles.eldStatusRow}>
+            <Icon name={eldConnected ? "check-circle" : "link-variant-off"} size={18} color={eldConnected ? colors.success : colors.muted} />
+            <Text testID="eld-status" style={[styles.switchTitle, { color: colors.onSurface }]}>
+              {eldConnected ? "Connected" : "Not connected"}
+            </Text>
+          </View>
+          <View style={[styles.inputRow, { backgroundColor: colors.surface, borderColor: colors.surface }]}>
+            <TextInput
+              testID="eld-key-input"
+              value={eldDraft}
+              onChangeText={setEldDraft}
+              placeholder={eldConnected ? "Paste a new API key to replace" : "Motive API key"}
+              placeholderTextColor={colors.muted}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="off"
+              textContentType="none"
+              returnKeyType="done"
+              style={[styles.input, { color: colors.onSurface }]}
+            />
+          </View>
+          <View style={styles.row}>
+            <PressableScale
+              testID="eld-save-button"
+              disabled={!eldDraft.trim()}
+              onPress={async () => {
+                await setEldToken(eldDraft);
+                setEldDraft("");
+              }}
+              style={[styles.eldBtn, { backgroundColor: eldDraft.trim() ? colors.brandPrimary : colors.surfaceTertiary }]}
+            >
+              <Text style={[styles.eldBtnText, { color: eldDraft.trim() ? colors.onBrandPrimary : colors.muted }]}>Save</Text>
+            </PressableScale>
+            {eldConnected && (
+              <PressableScale
+                testID="eld-remove-button"
+                onPress={async () => {
+                  await setEldToken(null);
+                  setEldDraft("");
+                }}
+                style={[styles.eldBtn, { borderColor: colors.error, borderWidth: 1.5 }]}
+              >
+                <Text style={[styles.eldBtnText, { color: colors.error }]}>Remove</Text>
+              </PressableScale>
+            )}
+          </View>
+          <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
+            Your Motive API key stays in this phone&apos;s secure storage. It is sent only with your copilot requests so the copilot can read your hours, and is never stored on TruckBuddy servers. Remove it any time.
+          </Text>
+        </View>
+
         {!valid && (
           <Text testID="truck-profile-error" style={[styles.error, { color: colors.error }]}>
             Check the highlighted values: height 5–16 ft, trailer 10–65 ft, weight 5,000–200,000 lb.
@@ -296,6 +354,10 @@ const styles = StyleSheet.create({
   switchRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.md, padding: spacing.lg, marginTop: spacing.sm },
   switchTitle: { fontFamily: fonts.semibold, fontSize: 16 },
   switchSub: { fontFamily: fonts.regular, fontSize: 13, marginTop: 2 },
+  eldBox: { borderRadius: radius.md, padding: spacing.lg, gap: spacing.md },
+  eldStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  eldBtn: { flex: 1, height: 48, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
+  eldBtnText: { fontFamily: fonts.semibold, fontSize: 15 },
   error: { fontFamily: fonts.medium, fontSize: 13 },
   footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   save: { height: 56, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
