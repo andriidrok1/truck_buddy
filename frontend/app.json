@@ -17,9 +17,6 @@
         ],
         "NSLocationWhenInUseUsageDescription": "TruckBuddy uses your location to find truck-friendly parking, fuel and repair shops near you and to plan truck-safe routes.",
         "NSMicrophoneUsageDescription": "TruckBuddy listens when you say \"Hey Buddy\" or tap the copilot so you can ask for stops and directions hands-free while driving.",
-        "UIBackgroundModes": [
-          "audio"
-        ],
         "ITSAppUsesNonExemptEncryption": false
       },
       "buildNumber": "1",
@@ -87,7 +84,9 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "TruckBuddy listens when you say \"Hey Buddy\" or tap the copilot so you can ask for stops and directions hands-free while driving."
+          "microphonePermission": "TruckBuddy listens when you say \"Hey Buddy\" or tap the copilot so you can ask for stops and directions hands-free while driving.",
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false
         }
       ],
       "./plugins/withWakeWord"

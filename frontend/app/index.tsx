@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, StyleSheet, View } from "react-native";
+import { AppState, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { absoluteUrl, api } from "@/src/api";
@@ -609,7 +609,8 @@ export default function MapScreen() {
   }, [checkMic]);
 
   const idle = phase === "ready" || phase === "navigating" || phase === "options" || phase === "providers";
-  const wakeArmed = wake.supported && handsFree && micOk && !asleep;
+  // iOS v1 has no background audio mode: the wake word listens only while the app is on screen.
+  const wakeArmed = wake.supported && handsFree && micOk && !asleep && (Platform.OS !== "ios" || appActive);
   useEffect(() => {
     if (!wakeArmed) wake.shutdown();
     else if (focused && idle) wake.start();

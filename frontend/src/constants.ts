@@ -28,3 +28,5 @@ export const MESSAGES = {
   micNeeded: "Microphone access is needed to talk to your copilot",
   placesUnavailable: "Places are unavailable right now. Try again.",
 };
+
+export const PRIVACY_URL = "https://truckbuddy.io/privacy";
