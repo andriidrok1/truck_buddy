@@ -46,6 +46,8 @@ type Props = {
   speedMph?: number | null;
   /** What is ahead: chips under the banner. */
   advisories?: Advisory[];
+  /** No signal: "Return to the route: 0.4 mi NE" (off the route) or "No signal · on the loaded route". */
+  offlineLine?: string | null;
 };
 
 /** US speed-limit sign: white, black border, "SPEED LIMIT" over the number. */
@@ -71,7 +73,7 @@ function SpeedShield({ limitMph, speedMph }: { limitMph: number; speedMph: numbe
 }
 
 /** Driving mode top banner: next maneuver, distance to it, posted limit and the spoken-directions toggle. */
-export function NavBanner({ topInset, next, toNextM, voiceOn, onToggleVoice, onLayout, limitMph = null, speedMph = null, advisories = [] }: Props) {
+export function NavBanner({ topInset, next, toNextM, voiceOn, onToggleVoice, onLayout, limitMph = null, speedMph = null, advisories = [], offlineLine = null }: Props) {
   const { colors } = useTheme();
   return (
     <View
@@ -101,6 +103,14 @@ export function NavBanner({ topInset, next, toNextM, voiceOn, onToggleVoice, onL
           <Icon name={voiceOn ? "volume-high" : "volume-off"} size={24} color={voiceOn ? colors.onSurface : colors.onError} />
         </PressableScale>
       </Animated.View>
+      {!!offlineLine && (
+        <Animated.View entering={FadeInUp.duration(200)} testID="offline-line" style={[styles.offline, shadow(colors), { backgroundColor: colors.warning }]}>
+          <Icon name="signal-off" size={16} color={colors.onWarning} />
+          <Text numberOfLines={1} style={[styles.offlineText, { color: colors.onWarning }]}>
+            {offlineLine}
+          </Text>
+        </Animated.View>
+      )}
       <AdvisoryStrip advisories={advisories} />
     </View>
   );
@@ -119,4 +129,6 @@ const styles = StyleSheet.create({
   shieldLabel: { fontFamily: fonts.bold, fontSize: 7, lineHeight: 8, color: "#000000", letterSpacing: 0.2 },
   shieldNumber: { fontFamily: fonts.extrabold, fontSize: 18, lineHeight: 20, color: "#000000", marginTop: 1 },
   speedNow: { fontFamily: fonts.bold, fontSize: 12, fontVariant: ["tabular-nums"] },
+  offline: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginTop: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill },
+  offlineText: { fontFamily: fonts.semibold, fontSize: 13 },
 });

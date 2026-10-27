@@ -2026,6 +2026,11 @@
   dependencies:
     merge-options "^3.0.4"
 
+"@react-native-community/netinfo@12.0.1":
+  version "12.0.1"
+  resolved "https://registry.yarnpkg.com/@react-native-community/netinfo/-/netinfo-12.0.1.tgz#fec75f4093c27778479d8927b4f51f133b8a13a4"
+  integrity sha512-P/3caXIvfYSJG8AWJVefukg+ZGRPs+M4Lp3pNJtgcTYoJxCjWrKQGNnCkj/Cz//zWa/avGed0i/wzm0T8vV2IQ==
+
 "@react-native-masked-view/masked-view@^0.3.2":
   version "0.3.2"
   resolved "https://registry.yarnpkg.com/@react-native-masked-view/masked-view/-/masked-view-0.3.2.tgz#7064533a573e3539ec912f59c1f457371bf49dd9"
@@ -4293,6 +4298,11 @@ expo-server@^58.0.6:
   version "58.0.6"
   resolved "https://registry.yarnpkg.com/expo-server/-/expo-server-58.0.6.tgz#1bc9cdaa3843b7a33608e653dc8b1b8f88feaee8"
   integrity sha512-6DBlSZwxk3J0y1j2s4XebAWNiwGaMp32NcWX7b2kJC2+EFf1g+pCcVmx8ylawt2tyLmbDHswm4MHOfrd4bqfvA==
+
+expo-speech@~58.0.3:
+  version "58.0.3"
+  resolved "https://registry.yarnpkg.com/expo-speech/-/expo-speech-58.0.3.tgz#a9d20683f6d86f5829c2d3d2ffdf72eefa4a112f"
+  integrity sha512-jdMTqWL6ciDM8aVJe2/l2g6GTVaK7i/zBOVUhTq+l0Y+DOCz3Nh4HqNrMwmIKzXrlsxRv3ejmjSQPlX1lfOTOA==
 
 expo-splash-screen@58.0.11:
   version "58.0.11"
