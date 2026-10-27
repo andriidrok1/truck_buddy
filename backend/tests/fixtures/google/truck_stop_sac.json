@@ -1,0 +1,81 @@
+{
+ "_meta": {
+  "recorded_at": "hand-written 2026-10-27",
+  "provider": "google",
+  "scenario": "Text Search 'truck stop' near Sacramento, field mask incl. fuelOptions and reviews; shaped after the Places API (New) reference"
+ },
+ "places": [
+  {
+   "id": "ChIJ-pilot-west-sac",
+   "displayName": {"text": "Pilot Travel Center", "languageCode": "en"},
+   "rating": 4.1,
+   "userRatingCount": 1832,
+   "editorialSummary": {"text": "Truck stop with diesel lanes, showers and a Subway.", "languageCode": "en"},
+   "formattedAddress": "3645 W Capitol Ave, West Sacramento, CA 95691, USA",
+   "location": {"latitude": 38.5802, "longitude": -121.5574},
+   "types": ["truck_stop", "gas_station", "convenience_store", "point_of_interest", "establishment"],
+   "primaryType": "truck_stop",
+   "fuelOptions": {
+    "fuelPrices": [
+     {"type": "TRUCK_DIESEL", "price": {"currencyCode": "USD", "units": "5", "nanos": 390000000}, "updateTime": "2026-10-27T06:10:00Z"},
+     {"type": "REGULAR_UNLEADED", "price": {"currencyCode": "USD", "units": "4", "nanos": 590000000}, "updateTime": "2026-10-27T06:10:00Z"}
+    ]
+   },
+   "reviews": [
+    {
+     "name": "places/ChIJ-pilot-west-sac/reviews/r1",
+     "relativePublishTimeDescription": "2 weeks ago",
+     "rating": 5,
+     "text": {"text": "Plenty of truck parking out back even late at night. Showers were clean and the diesel lanes move fast.", "languageCode": "en"},
+     "authorAttribution": {"displayName": "Marcus T.", "uri": "https://www.google.com/maps/contrib/1001", "photoUri": "https://lh3.googleusercontent.com/a/1001"},
+     "publishTime": "2026-10-12T03:41:00Z",
+     "googleMapsUri": "https://www.google.com/maps/reviews/r1"
+    },
+    {
+     "name": "places/ChIJ-pilot-west-sac/reviews/r2",
+     "relativePublishTimeDescription": "a month ago",
+     "rating": 3,
+     "text": {"text": "Lot fills up by 7pm, had to park on the street. Food is fine, showers took 40 minutes.", "languageCode": "en"},
+     "authorAttribution": {"displayName": "Dee", "uri": "https://www.google.com/maps/contrib/1002"},
+     "publishTime": "2026-09-20T22:05:00Z",
+     "googleMapsUri": "https://www.google.com/maps/reviews/r2"
+    },
+    {
+     "name": "places/ChIJ-pilot-west-sac/reviews/r3",
+     "relativePublishTimeDescription": "a month ago",
+     "rating": 4,
+     "text": {"text": "   Decent stop. Scale on site.  ", "languageCode": "en"},
+     "authorAttribution": {"displayName": "J. Ramirez", "uri": "https://www.google.com/maps/contrib/1003"},
+     "publishTime": "2026-09-18T14:00:00Z"
+    },
+    {
+     "name": "places/ChIJ-pilot-west-sac/reviews/r4",
+     "rating": 1,
+     "text": {"text": "", "languageCode": "en"},
+     "authorAttribution": {"displayName": "Empty", "uri": "https://www.google.com/maps/contrib/1004"},
+     "publishTime": "2026-09-01T14:00:00Z"
+    }
+   ]
+  },
+  {
+   "id": "ChIJ-loves-sac",
+   "displayName": {"text": "Love's Travel Stop", "languageCode": "en"},
+   "rating": 4.4,
+   "userRatingCount": 902,
+   "formattedAddress": "8100 Elder Creek Rd, Sacramento, CA 95824, USA",
+   "location": {"latitude": 38.5213, "longitude": -121.4157},
+   "types": ["truck_stop", "gas_station", "point_of_interest", "establishment"],
+   "primaryType": "truck_stop"
+  },
+  {
+   "id": "ChIJ-far-reno-flyingj",
+   "displayName": {"text": "Flying J Travel Center", "languageCode": "en"},
+   "rating": 4.0,
+   "userRatingCount": 500,
+   "formattedAddress": "Reno, NV, USA",
+   "location": {"latitude": 39.52, "longitude": -119.81},
+   "types": ["truck_stop", "gas_station"],
+   "primaryType": "truck_stop"
+  }
+ ]
+}

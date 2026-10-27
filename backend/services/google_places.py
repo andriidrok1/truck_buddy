@@ -11,7 +11,8 @@ from typing import Optional
 
 from services.http import client
 
-from models import Category, Place, PlacesResponse
+from models import Category, Place, PlacesResponse, Review
+from services.flags import on
 from services.geo import haversine_km, km_to_mi
 
 logger = logging.getLogger("truckbuddy.google")
@@ -22,6 +23,37 @@ FIELD_MASK = (
     "places.editorialSummary,places.formattedAddress,places.location,places.types,places.primaryType,"
     "places.fuelOptions"  # same Enterprise + Atmosphere SKU as editorialSummary: no extra cost
 )
+REVIEW_TEXT_MAX = 300
+MAX_REVIEWS = 5
+
+
+def field_mask() -> str:
+    """Fields asked of Google; reviews are in the same SKU as editorialSummary (PLACE_REVIEWS flag)."""
+    return FIELD_MASK + (",places.reviews" if on("PLACE_REVIEWS") else "")
+
+
+def reviews_from(raw) -> list[Review]:
+    """Google `reviews[]` -> Review list (max 5), skipping anything without text."""
+    out: list[Review] = []
+    for r in raw if isinstance(raw, list) else []:
+        if not isinstance(r, dict):
+            continue
+        text = ((r.get("text") or {}).get("text") if isinstance(r.get("text"), dict) else r.get("text")) or ""
+        text = re.sub(r"\s+", " ", str(text)).strip()
+        if not text:
+            continue
+        if len(text) > REVIEW_TEXT_MAX:
+            text = text[:REVIEW_TEXT_MAX].rsplit(" ", 1)[0] + "…"
+        author = r.get("authorAttribution") or {}
+        rating = r.get("rating")
+        out.append(Review(author=str(author.get("displayName") or "A Google user"),
+                          rating=int(rating) if isinstance(rating, (int, float)) else None,
+                          text=text, uri=r.get("googleMapsUri") or author.get("uri"), time=r.get("publishTime")))
+        if len(out) >= MAX_REVIEWS:
+            break
+    return out
+
+
 DIESEL_MAX_AGE_S = 7 * 86400  # a price older than this is not worth saying out loud
 # Google fuel types that mean diesel, best first. TRUCK_DIESEL = the truck lanes; the rest = car pumps.
 DIESEL_TYPES = (("TRUCK_DIESEL", "truck"), ("DIESEL", "auto"), ("DIESEL_PLUS", "auto"), ("BIO_DIESEL", "auto"))
@@ -126,7 +158,7 @@ class GooglePlacesProvider:
         headers = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": os.environ["GOOGLE_MAPS_API_KEY"],
-            "X-Goog-FieldMask": FIELD_MASK,
+            "X-Goog-FieldMask": field_mask(),
         }
         r = await client().post(URL, headers=headers, json=body, timeout=15)
         if r.is_error:
@@ -169,6 +201,7 @@ class GooglePlacesProvider:
                 diesel_updated=diesel[2] if diesel else None,
                 distance_km=round(km, 2),
                 distance_mi=round(km_to_mi(km), 1),
+                reviews=reviews_from(p.get("reviews")),
             )
             self._remember(place)
             out.append(place)

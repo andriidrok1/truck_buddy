@@ -11,6 +11,15 @@ class LatLng(BaseModel):
     lng: float
 
 
+class Review(BaseModel):
+    """One Google review. Google's terms: show the author and link to the review when displayed."""
+    author: str
+    rating: Optional[int] = None  # 1..5
+    text: str  # capped for speech and the card
+    uri: Optional[str] = None  # the review on Google Maps (googleMapsUri), else the author's profile
+    time: Optional[str] = None  # RFC 3339 publishTime
+
+
 class Place(BaseModel):
     id: str
     name: str
@@ -27,6 +36,7 @@ class Place(BaseModel):
     diesel_updated: Optional[str] = None  # RFC 3339, when the price was last reported
     distance_km: Optional[float] = None
     distance_mi: Optional[float] = None
+    reviews: List[Review] = Field(default_factory=list)  # up to 5 (Google), for the card and a spoken gist
 
 
 class PlacesResponse(BaseModel):
