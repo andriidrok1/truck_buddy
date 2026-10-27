@@ -12,341 +12,449 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,1,0&display=block">
 <style>
-/* Layout: white sheets floating on a pale map ground, the way the app floats its search bar and copilot sheet over the map.
-   Colors and type come straight from frontend/src/theme.ts. Light only, like the app (owner's choice). */
+/* Layout: white sheets floating on a pale map ground (the app's own composition), one blue route line
+   running through the page, and a single night band for the driving story.
+   Colors and type come straight from frontend/src/theme.ts. The app is light only; the night band
+   borrows the app's dark driving banner (surfaceInverse). */
 :root {
   color-scheme: light;
-  /* surfaces */
   --paper: #FFFFFF;
   --paper-2: #F2F2F7;
   --paper-3: #E5E5EA;
   --map: #EEF1F4;
-  --cabin: #F7F2EA;          /* avatarBg: Buddy's beige disc */
-  /* ink */
-  --ink: #1C1C1E;            /* brand */
+  --cabin: #F7F2EA;
+  --ink: #1C1C1E;
   --ink-2: #3A3A3C;
-  --ink-3: #6C6C70;          /* darker than app muted, for body-size contrast on white */
+  --ink-3: #6C6C70;
   --muted: #8E8E93;
   --line: #E5E5EA;
-  --line-strong: #C7C7CC;
-  /* signal */
-  --blue: #007AFF;           /* routeLine, avatarGlow, info */
+  --blue: #007AFF;
+  --blue-deep: #0058B8;
   --blue-soft: rgba(0,122,255,0.16);
   --blue-halo: rgba(0,122,255,0.18);
   --hotel: #AF52DE;
   --rest: #34C759;
+  --rest-deep: #1E7B34;
   --amber: #FF9500;
+  --amber-deep: #A35A00;
   --red: #FF3B30;
   --on-color: #FFFFFF;
+  --night: #0D0D0F;
+  --night-2: #1C1C1E;
+  --night-3: #2C2C2E;
+  --night-line: rgba(255,255,255,0.09);
+  --night-text: #F2F2F7;
+  --night-muted: #A1A1A8;
 
   --font-ui: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-spec: "Space Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  --r-sm: 6px; --r-md: 12px; --r-lg: 20px; --r-xl: 32px; --pill: 999px;
+  --r-md: 12px; --r-lg: 20px; --r-xl: 32px; --pill: 999px;
   --shadow-1: 0 2px 8px rgba(0,0,0,0.12);
   --shadow-2: 0 6px 16px rgba(0,0,0,0.18);
   --shadow-soft: 0 1px 2px rgba(0,0,0,0.04), 0 12px 40px rgba(28,28,30,0.08);
+  --ease-out: cubic-bezier(.2,.8,.2,1);
+  --ease-spring: cubic-bezier(.3,.7,.4,1.4);
 
   --step--1: 0.875rem;
   --step-0: 1.0625rem;
   --step-1: 1.25rem;
-  --step-2: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);
   --step-3: clamp(2rem, 1.4rem + 2.6vw, 3.25rem);
-  --step-4: clamp(2.75rem, 1.6rem + 5vw, 5.5rem);
+  --step-4: clamp(2.75rem, 1.5rem + 5.2vw, 5.75rem);
   --wrap: 1180px;
 }
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
-  margin: 0;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-ui);
-  font-size: var(--step-0);
-  line-height: 1.55;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  margin: 0; background: var(--paper); color: var(--ink);
+  font-family: var(--font-ui); font-size: var(--step-0); line-height: 1.55;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  overflow-x: clip;
 }
 img { max-width: 100%; display: block; }
 h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.025em; line-height: 1.05; }
 p { margin: 0; }
 a { color: inherit; }
-:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; border-radius: 8px; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; border-radius: 10px; }
+::selection { background: var(--blue); color: var(--on-color); }
 
 .ms {
-  font-family: "Material Symbols Rounded";
-  font-weight: normal; font-style: normal;
-  font-size: 22px; line-height: 1; letter-spacing: normal;
-  display: inline-block; white-space: nowrap; direction: ltr;
-  -webkit-font-feature-settings: "liga"; font-feature-settings: "liga";
-  font-variation-settings: "FILL" 1, "wght" 500, "GRAD" 0, "opsz" 24;
-  user-select: none;
+  font-family: "Material Symbols Rounded"; font-weight: normal; font-style: normal;
+  font-size: 22px; line-height: 1; letter-spacing: normal; display: inline-block; white-space: nowrap; direction: ltr;
+  font-feature-settings: "liga"; font-variation-settings: "FILL" 1, "wght" 500, "GRAD" 0, "opsz" 24; user-select: none;
 }
 
 .wrap {
-  width: 100%;
-  max-width: calc(var(--wrap) + 2 * 24px);
-  margin-inline: auto;
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  width: 100%; max-width: calc(var(--wrap) + 48px); margin-inline: auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
-@media (min-width: 720px) {
-  .wrap { padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); }
-}
+@media (min-width: 720px) { .wrap { padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); } }
 
-.eyebrow {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--blue);
-}
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--blue); }
 .lede { font-size: var(--step-1); color: var(--ink-2); max-width: 36ch; line-height: 1.5; }
 .body-copy { color: var(--ink-3); max-width: 58ch; }
 .spec { font-family: var(--font-spec); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 
-/* ---------- buttons & chips (app PressableScale + chip shapes) ---------- */
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
-  min-height: 56px; padding: 0 26px; border-radius: var(--pill);
-  font: 700 1rem/1 var(--font-ui); text-decoration: none; border: 0; cursor: pointer;
-  transition: transform .18s cubic-bezier(.3,.7,.4,1.4), box-shadow .2s, background-color .2s;
+/* ---------- Buddy: body + separate eyes that look and blink ---------- */
+.buddy { position: relative; display: block; aspect-ratio: 1; --ex: 0; --ey: 0; }
+.buddy img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.buddy .eyes {
+  transform-origin: 49.6% 46.2%;
+  translate: calc(var(--ex) * 2.6%) calc(var(--ey) * 2.2%);
+  filter: drop-shadow(0 1.5% 1% rgba(110, 36, 0, 0.35));
+  transition: translate .18s ease-out, scale .12s ease-in;
 }
+.buddy.blink .eyes { scale: 1 0.12; }
+.buddy-bob { animation: bob 3.2s ease-in-out infinite; }
+@keyframes bob { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-3%) rotate(-2deg); } }
+
+/* ---------- buttons & chips ---------- */
+.btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 56px; padding: 0 26px; border-radius: var(--pill);
+  font: 700 1rem/1 var(--font-ui); text-decoration: none; border: 0; cursor: pointer; isolation: isolate; overflow: hidden;
+  transition: transform .2s var(--ease-spring), box-shadow .25s, background-color .2s;
+}
+.btn:hover { transform: translateY(-2px); }
 .btn:active { transform: scale(0.96); }
 .btn-ink { background: var(--ink); color: var(--paper); }
-.btn-ink:hover { background: #000; }
 .btn-blue { background: var(--blue); color: var(--on-color); box-shadow: 0 8px 24px rgba(0,122,255,0.28); }
-.btn-blue:hover { box-shadow: 0 10px 28px rgba(0,122,255,0.38); }
+.btn-blue:hover { box-shadow: 0 14px 32px rgba(0,122,255,0.4); }
+.btn-blue::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; translate: -120% 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.35) 50%, transparent 70%);
+}
+.btn-blue:hover::after { translate: 120% 0; transition: translate .8s var(--ease-out); }
 .btn-ghost { background: var(--paper); color: var(--ink); box-shadow: var(--shadow-1); }
 .btn .ms { font-size: 22px; }
 
-.chip {
-  display: inline-flex; align-items: center; gap: 8px;
-  height: 40px; padding: 0 16px 0 12px; border-radius: var(--pill);
-  background: var(--paper); box-shadow: var(--shadow-1);
-  font-weight: 600; font-size: 0.9375rem; color: var(--ink); white-space: nowrap;
-}
-.dot { width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; color: var(--on-color); }
+.dot { width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; color: var(--on-color); flex: none; }
 .dot .ms { font-size: 14px; }
 .dot.stop { background: var(--blue); } .dot.hotel { background: var(--hotel); } .dot.rest { background: var(--rest); } .dot.svc { background: var(--ink); }
 
-/* ---------- header ---------- */
+/* ---------- header with route-line scroll progress ---------- */
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: rgba(255,255,255,0.86); }
 .site-head {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 9;
-  background: rgba(255,255,255,0.82);
-  -webkit-backdrop-filter: saturate(180%) blur(16px); backdrop-filter: saturate(180%) blur(16px);
-  border-bottom: 1px solid transparent; transition: border-color .2s;
+  background: rgba(255,255,255,0.8); -webkit-backdrop-filter: saturate(180%) blur(18px); backdrop-filter: saturate(180%) blur(18px);
+  --p: 0;
 }
-.site-head.scrolled { border-bottom-color: var(--line); }
+.site-head::after {
+  content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 100%;
+  background: var(--blue); transform-origin: left; transform: scaleX(var(--p)); border-radius: 0 2px 2px 0;
+}
 .head-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 68px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 800; font-size: 1.125rem; letter-spacing: -0.02em; }
-.brand-disc { width: 38px; height: 38px; border-radius: 50%; background: var(--cabin); display: grid; place-items: center; box-shadow: 0 0 0 4px var(--blue-soft); }
-.brand-disc img { width: 30px; height: 30px; }
+.brand-disc { width: 38px; height: 38px; border-radius: 50%; background: var(--cabin); display: grid; place-items: center; box-shadow: 0 0 0 4px var(--blue-soft); transition: box-shadow .3s; }
+.brand:hover .brand-disc { box-shadow: 0 0 0 7px var(--blue-soft); }
+.brand-disc .buddy { width: 30px; }
 .nav { display: flex; align-items: center; gap: 4px; }
-.nav a.link { text-decoration: none; font-weight: 600; font-size: 0.9375rem; color: var(--ink-2); padding: 10px 14px; border-radius: var(--pill); }
+.nav a.link { text-decoration: none; font-weight: 600; font-size: 0.9375rem; color: var(--ink-2); padding: 10px 14px; border-radius: var(--pill); transition: background-color .2s, color .2s; }
 .nav a.link:hover { background: var(--paper-2); color: var(--ink); }
 .nav .btn { min-height: 44px; padding: 0 18px; font-size: 0.9375rem; margin-left: 8px; }
 @media (max-width: 860px) { .nav a.link { display: none; } }
 
 /* ---------- hero ---------- */
-.hero { position: relative; overflow: hidden; background: var(--paper); }
-.hero::before {
-  /* the map ground the app's sheets float on */
+.hero { position: relative; overflow: hidden; }
+.hero-bg { position: absolute; inset: 0; pointer-events: none; }
+.hero-bg::before {
   content: ""; position: absolute; inset: 0;
-  background:
-    radial-gradient(1200px 600px at 78% 40%, var(--map) 0%, rgba(238,241,244,0) 70%),
-    linear-gradient(180deg, var(--paper) 0%, var(--paper) 100%);
+  background-image: radial-gradient(circle at 1px 1px, rgba(28,28,30,0.09) 1px, transparent 1.4px);
+  background-size: 26px 26px;
+  -webkit-mask-image: radial-gradient(900px 560px at 72% 46%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(900px 560px at 72% 46%, #000 20%, transparent 75%);
 }
+.hero-bg svg { position: absolute; right: -4%; top: 4%; width: 78%; height: 96%; }
+.hero-bg .bg-route { stroke-dasharray: 2200; animation: draw-long 3.2s .3s var(--ease-out) both; }
+@keyframes draw-long { from { stroke-dashoffset: 2200; } to { stroke-dashoffset: 0; } }
 .hero-grid {
-  position: relative;
-  display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  gap: 48px; align-items: center;
-  padding-block: 56px 88px;
+  position: relative; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 48px; align-items: center; padding-block: 56px 96px;
 }
-.hero-copy { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+.hero-copy { display: flex; flex-direction: column; gap: 28px; min-width: 0; container-type: inline-size; }
 .wake-pill {
-  align-self: flex-start;
-  display: inline-flex; align-items: center; gap: 10px;
-  height: 40px; padding: 0 16px 0 6px; border-radius: var(--pill);
-  background: var(--paper); box-shadow: var(--shadow-1);
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 10px;
+  height: 40px; padding: 0 16px 0 6px; border-radius: var(--pill); background: var(--paper); box-shadow: var(--shadow-1);
   font-weight: 600; font-size: 0.9375rem; color: var(--ink-2);
 }
-.wake-pill .mic { width: 28px; height: 28px; border-radius: 50%; background: var(--blue); color: var(--on-color); display: grid; place-items: center; }
+.wake-pill .mic { width: 28px; height: 28px; border-radius: 50%; background: var(--blue); color: var(--on-color); display: grid; place-items: center; position: relative; }
+.wake-pill .mic::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--blue); animation: ripple 2s ease-out infinite; }
 .wake-pill .mic .ms { font-size: 16px; }
 .wake-pill b { color: var(--ink); font-weight: 700; }
 .privacy-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rest); box-shadow: 0 0 0 3px rgba(52,199,89,0.2); }
 
-.hero h1 { font-size: var(--step-4); font-weight: 800; letter-spacing: -0.045em; line-height: 0.98; }
-.hero h1 .say { color: var(--blue); }
+.hero h1 { font-size: min(5.75rem, calc(100cqi / 8.35)); font-weight: 800; letter-spacing: -0.048em; line-height: 0.97; }
+.hero h1 .ln { display: block; animation: line-up .8s var(--ease-out) both; }
+.hero h1 .ln:nth-child(2) { animation-delay: .08s; } .hero h1 .ln:nth-child(3) { animation-delay: .16s; }
+@keyframes line-up { from { transform: translateY(0.35em); opacity: 0.001; } to { transform: none; opacity: 1; } }
+.hero h1 .say { color: var(--blue); white-space: nowrap; }
+.h1-wave { display: inline-flex; align-items: center; gap: 0.045em; height: 0.62em; margin-left: 0.12em; vertical-align: 0.04em; }
+.h1-wave i { width: 0.07em; border-radius: 0.04em; background: var(--blue); height: 35%; animation: bar 1.1s ease-in-out infinite; }
+.h1-wave i:nth-child(2) { animation-delay: .12s } .h1-wave i:nth-child(3) { animation-delay: .24s } .h1-wave i:nth-child(4) { animation-delay: .36s } .h1-wave i:nth-child(5) { animation-delay: .48s }
 .hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.store-note { font-size: var(--step--1); color: var(--ink-3); }
-.rig-line { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--ink-3); font-size: var(--step--1); font-weight: 600; }
-.rig-line span { display: inline-flex; align-items: center; gap: 6px; }
-.rig-line .ms { font-size: 18px; color: var(--ink-2); }
+
+.try { display: flex; flex-direction: column; gap: 12px; }
+.try-label { font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.try-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.try-chip {
+  display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 16px 0 10px; border-radius: var(--pill);
+  background: var(--paper); box-shadow: var(--shadow-1); border: 0; cursor: pointer;
+  font-weight: 600; font-size: 0.9375rem; color: var(--ink);
+  transition: transform .2s var(--ease-spring), background-color .2s, color .2s, box-shadow .2s;
+}
+.try-chip:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); }
+.try-chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.try-chip[aria-pressed="true"] .dot { box-shadow: 0 0 0 2px var(--ink); }
 
 @media (max-width: 960px) {
-  .hero-grid { grid-template-columns: minmax(0, 1fr); gap: 40px; padding-block: 32px 64px; }
+  .hero-grid { grid-template-columns: minmax(0, 1fr); gap: 40px; padding-block: 32px 72px; }
   .hero-stage { justify-self: center; }
+  .hero-bg svg { width: 140%; right: -40%; top: 40%; height: 70%; }
 }
 
-/* ---------- phone mockup (built from the app's real components) ---------- */
+/* ---------- phone (rebuilt from the app's TopBar, Pin, CopilotSheet) ---------- */
 .hero-stage { position: relative; display: grid; place-items: center; min-width: 0; }
 .phone {
-  --w: 312px;
-  position: relative; width: var(--w); max-width: 100%; aspect-ratio: 312 / 676;
+  position: relative; width: 312px; max-width: 100%; aspect-ratio: 312 / 676;
   border-radius: 52px; background: var(--ink); padding: 11px;
-  box-shadow: 0 40px 80px -24px rgba(28,28,30,0.45), 0 0 0 1px rgba(0,0,0,0.6), inset 0 0 0 2px #3A3A3C;
-  animation: rise .9s cubic-bezier(.2,.8,.2,1) both;
+  box-shadow: 0 50px 90px -30px rgba(28,28,30,0.5), 0 0 0 1px rgba(0,0,0,0.6), inset 0 0 0 2px #3A3A3C;
+  animation: rise 1s .1s var(--ease-out) both;
+  transition: transform .5s var(--ease-out);
 }
-@keyframes rise { from { transform: translateY(28px); } to { transform: none; } }
-.screen { position: relative; width: 100%; height: 100%; border-radius: 42px; overflow: hidden; background: var(--map); container-type: inline-size; }
+@keyframes rise { from { translate: 0 36px; rotate: 1.5deg; } to { translate: 0 0; rotate: 0deg; } }
+.screen { position: relative; width: 100%; height: 100%; border-radius: 42px; overflow: hidden; background: var(--map); }
 .island { position: absolute; top: 10px; left: 50%; translate: -50% 0; width: 92px; height: 26px; border-radius: 20px; background: #000; z-index: 6; }
 .map-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.route-draw { stroke-dasharray: 170; stroke-dashoffset: 0; animation: draw 2.2s .5s cubic-bezier(.6,0,.2,1) both; }
-@keyframes draw { from { stroke-dashoffset: 170; } to { stroke-dashoffset: 0; } }
+.route-draw { stroke-dasharray: 220; stroke-dashoffset: 0; }
+.route-draw.go { animation: draw 1.4s var(--ease-out) both; }
+@keyframes draw { from { stroke-dashoffset: 220; } to { stroke-dashoffset: 0; } }
 
 .m-top { position: absolute; top: 46px; left: 12px; right: 12px; display: flex; gap: 8px; z-index: 3; }
-.m-search {
-  flex: 1; min-width: 0; height: 44px; border-radius: var(--pill); background: var(--paper); box-shadow: var(--shadow-1);
-  display: flex; align-items: center; gap: 8px; padding: 0 14px; font-weight: 600; font-size: 13.5px; color: var(--ink);
-  white-space: nowrap; overflow: hidden;
-}
+.m-search { flex: 1; min-width: 0; height: 44px; border-radius: var(--pill); background: var(--paper); box-shadow: var(--shadow-1); display: flex; align-items: center; gap: 8px; padding: 0 14px; font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; }
 .m-search .ms { font-size: 20px; color: var(--muted); }
 .m-search span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .m-circle { width: 44px; height: 44px; border-radius: 50%; background: var(--paper); box-shadow: var(--shadow-1); display: grid; place-items: center; flex: none; }
-.m-circle .ms { font-size: 22px; }
 
 .pin { position: absolute; width: 30px; height: 30px; translate: -50% -100%; z-index: 2; }
-.pin i {
-  position: absolute; inset: 0; border-radius: 15px 15px 0 15px; rotate: 45deg; border: 2.5px solid var(--paper);
-  box-shadow: var(--shadow-1); display: grid; place-items: center;
-}
+.pin i { position: absolute; inset: 0; border-radius: 15px 15px 0 15px; rotate: 45deg; border: 2.5px solid var(--paper); box-shadow: var(--shadow-1); display: grid; place-items: center; transition: background-color .3s; }
 .pin i .ms { rotate: -45deg; font-size: 14px; color: var(--on-color); }
-.pin.hotel i { background: var(--hotel); } .pin.stop i { background: var(--blue); } .pin.rest i { background: var(--rest); }
-.pin.sel { width: 36px; height: 36px; } .pin.sel i { border-radius: 18px 18px 0 18px; }
-.pin.sel i .ms { font-size: 17px; }
+.pin.hotel i { background: var(--hotel); } .pin.stop i { background: var(--blue); } .pin.rest i { background: var(--rest); } .pin.svc i { background: var(--ink); }
+.pin.sel { width: 36px; height: 36px; } .pin.sel i { border-radius: 18px 18px 0 18px; } .pin.sel i .ms { font-size: 17px; }
+.pin.pop { animation: pop .5s var(--ease-spring); transform-origin: 50% 100%; }
+@keyframes pop { 0% { scale: 0.4; } 100% { scale: 1; } }
 .m-label { position: absolute; z-index: 2; height: 28px; padding: 0 11px; border-radius: var(--pill); background: var(--paper); box-shadow: var(--shadow-1); font-weight: 600; font-size: 12px; display: flex; align-items: center; white-space: nowrap; }
-.m-entry { position: absolute; z-index: 2; width: 20px; height: 20px; translate: -50% -50%; border-radius: 50%; background: var(--blue); border: 2px solid var(--paper); color: var(--on-color); font-weight: 800; font-size: 10.5px; display: grid; place-items: center; box-shadow: var(--shadow-1); }
+.m-entry { position: absolute; z-index: 2; width: 20px; height: 20px; translate: -50% -50%; border-radius: 50%; background: var(--blue); border: 2px solid var(--paper); color: var(--on-color); font-weight: 800; font-size: 10.5px; display: grid; place-items: center; box-shadow: var(--shadow-1); transition: opacity .3s; }
 .m-user { position: absolute; z-index: 2; width: 46px; height: 46px; translate: -50% -50%; border-radius: 50%; background: var(--blue-halo); display: grid; place-items: center; }
-.m-user b { width: 28px; height: 28px; border-radius: 50%; background: var(--paper); box-shadow: var(--shadow-1); display: grid; place-items: center; }
+.m-user::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--blue-halo); animation: halo 2.4s ease-out infinite; }
+@keyframes halo { from { transform: scale(1); opacity: 1; } to { transform: scale(1.8); opacity: 0; } }
+.m-user b { position: relative; width: 28px; height: 28px; border-radius: 50%; background: var(--paper); box-shadow: var(--shadow-1); display: grid; place-items: center; }
 .m-user .ms { font-size: 18px; color: var(--blue); }
 
 .m-bubble {
   position: absolute; left: 12px; right: 12px; top: 100px; z-index: 4;
   background: var(--paper); border-radius: 18px; box-shadow: var(--shadow-2);
-  padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start;
-  transition: opacity .3s, transform .3s;
+  padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start; min-height: 62px;
+  transition: opacity .25s, transform .25s var(--ease-out);
 }
-.m-bubble.swap { opacity: 0; transform: translateY(6px); }
+.m-bubble.swap { opacity: 0; transform: translateY(-6px) scale(0.98); }
 .m-bubble .who { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.m-bubble .said { font-size: 12.5px; font-weight: 600; line-height: 1.35; color: var(--ink); }
-.m-bubble .mini { width: 34px; height: 34px; flex: none; border-radius: 50%; background: var(--cabin); display: grid; place-items: center; box-shadow: 0 0 0 3px var(--blue-soft); }
-.m-bubble .mini img { width: 26px; height: 26px; }
-.m-bubble .mini.you { background: var(--paper-2); box-shadow: none; }
-.m-bubble .mini.you .ms { font-size: 18px; color: var(--ink-2); }
+.m-bubble .said { font-size: 12.5px; font-weight: 600; line-height: 1.35; }
+.m-bubble .said.typing::after { content: ""; display: inline-block; width: 2px; height: 1em; background: var(--blue); margin-left: 2px; vertical-align: -2px; animation: caret .8s steps(1) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
+.m-bubble .face { width: 34px; height: 34px; flex: none; border-radius: 50%; background: var(--cabin); display: grid; place-items: center; box-shadow: 0 0 0 3px var(--blue-soft); }
+.m-bubble .face .buddy { width: 26px; }
+.m-bubble .face.you { background: var(--paper-2); box-shadow: none; }
+.m-bubble .face .you-ic { display: none; font-size: 18px; color: var(--ink-2); }
+.m-bubble .face.you .you-ic { display: inline-block; }
+.m-bubble .face.you .buddy { display: none; }
 
 .m-sheet {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 5;
   background: var(--paper); border-radius: 26px 26px 0 0; box-shadow: 0 -6px 16px rgba(0,0,0,0.12);
-  padding: 8px 18px 22px; display: flex; flex-direction: column; gap: 6px;
+  padding: 8px 18px 22px;
 }
-.m-handle { width: 38px; height: 5px; border-radius: 3px; background: var(--paper-3); align-self: center; margin-bottom: 6px; }
+.m-handle { width: 38px; height: 5px; border-radius: 3px; background: var(--paper-3); margin: 0 auto 12px; }
+.nav-layer { display: flex; flex-direction: column; gap: 6px; transition: opacity .3s; }
+.talk-layer {
+  position: absolute; inset: 25px 18px 22px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  background: var(--paper); opacity: 0; pointer-events: none; transition: opacity .3s;
+}
+.phone[data-state="listening"] .talk-layer, .phone[data-state="thinking"] .talk-layer { opacity: 1; }
+.phone[data-state="listening"] .nav-layer, .phone[data-state="thinking"] .nav-layer { opacity: 0; }
+.talk-title { font-weight: 800; font-size: 19px; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; }
+.talk-cap { font-size: 12.5px; font-weight: 600; color: var(--ink-3); }
+.talk-wave { display: none; align-items: center; gap: 3px; height: 22px; }
+.phone[data-state="listening"] .talk-wave { display: inline-flex; }
+.talk-wave i { width: 3.5px; border-radius: 2px; background: var(--blue); height: 30%; animation: bar .9s ease-in-out infinite; }
+.talk-wave i:nth-child(2) { animation-delay: .1s } .talk-wave i:nth-child(3) { animation-delay: .2s } .talk-wave i:nth-child(4) { animation-delay: .3s } .talk-wave i:nth-child(5) { animation-delay: .4s }
+.big-av { position: relative; width: 104px; height: 104px; border-radius: 50%; background: var(--cabin); display: grid; place-items: center; box-shadow: 0 0 0 10px var(--blue-soft), var(--shadow-1); }
+.big-av .buddy { width: 80px; }
+.big-av::before, .big-av::after { content: ""; position: absolute; inset: -10px; border-radius: 50%; border: 3px solid var(--blue); opacity: 0; }
+.phone[data-state="listening"] .big-av::before, .phone[data-state="listening"] .big-av::after { animation: ripple 1.3s ease-out infinite; }
+.phone[data-state="listening"] .big-av::after { animation-delay: .65s; }
+.phone[data-state="thinking"] .big-av { animation: think 1.3s ease-in-out infinite; }
+@keyframes think { 50% { transform: scale(1.06); } }
+.big-av .badge { position: absolute; right: -2px; bottom: -2px; width: 30px; height: 30px; border-radius: 50%; background: var(--blue); border: 2.5px solid var(--paper); color: var(--on-color); display: grid; place-items: center; }
+.big-av .badge .ms { font-size: 16px; }
+
 .m-eta { font-weight: 800; font-size: 23px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-.m-entry-row { display: flex; align-items: center; gap: 5px; color: var(--blue); font-weight: 600; font-size: 12.5px; }
+.m-entry-row { display: flex; align-items: center; gap: 5px; color: var(--blue); font-weight: 600; font-size: 12.5px; min-height: 18px; }
 .m-entry-row .ms { font-size: 16px; }
-.m-place { font-weight: 700; font-size: 15px; margin-top: 4px; }
-.m-tags { display: flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 12.5px; font-weight: 500; }
-.m-tags .ms { font-size: 16px; }
-.m-park { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding: 7px 10px; border-radius: var(--r-md); background: rgba(52,199,89,0.12); color: #1E7B34; font-size: 12px; font-weight: 700; }
+.m-place { font-weight: 700; font-size: 15px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-park { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding: 7px 10px; border-radius: var(--r-md); background: rgba(52,199,89,0.12); color: var(--rest-deep); font-size: 12px; font-weight: 700; min-height: 38px; }
 .m-park .ms { font-size: 16px; color: var(--rest); }
-.m-park .sat { margin-left: auto; width: 34px; height: 24px; border-radius: 6px; background: linear-gradient(135deg, #59626A, #3C454C); position: relative; overflow: hidden; }
+.m-park.info { background: rgba(0,122,255,0.1); color: var(--blue-deep); }
+.m-park.info .ms { color: var(--blue); }
+.m-park .sat { margin-left: auto; width: 34px; height: 24px; border-radius: 6px; background: linear-gradient(135deg, #59626A, #3C454C); position: relative; overflow: hidden; flex: none; }
 .m-park .sat::after { content: ""; position: absolute; left: 6px; top: 6px; width: 22px; height: 3px; background: rgba(255,255,255,0.7); box-shadow: 0 6px 0 rgba(255,255,255,0.7); }
+.m-park.info .sat { display: none; }
 .m-actions { display: flex; gap: 10px; margin-top: 10px; align-items: center; }
-.m-go { flex: 1; height: 48px; border-radius: var(--pill); background: var(--blue); color: var(--on-color); font-weight: 800; font-size: 16px; display: grid; place-items: center; }
+.m-go { flex: 1; height: 48px; border-radius: var(--pill); background: var(--blue); color: var(--on-color); font-weight: 800; font-size: 16px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background-color .3s; }
+.m-go .ms { font-size: 20px; }
+.m-go.call { background: var(--rest); }
 .m-av { position: relative; width: 52px; height: 52px; flex: none; border-radius: 50%; background: var(--cabin); display: grid; place-items: center; box-shadow: 0 0 0 6px var(--blue-soft), var(--shadow-1); }
-.m-av img { width: 40px; height: 40px; }
-.m-av::before, .m-av::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid var(--blue); opacity: 0; animation: ripple 1.6s ease-out infinite; }
-.m-av::after { animation-delay: .8s; }
-@keyframes ripple { 0% { opacity: .55; transform: scale(1); } 100% { opacity: 0; transform: scale(1.35); } }
+.m-av .buddy { width: 40px; }
+.phone[data-state="answer"] .m-av::before, .phone[data-state="answer"] .m-av::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid var(--blue); opacity: 0; animation: ripple 1.6s ease-out 3; }
+.phone[data-state="answer"] .m-av::after { animation-delay: .8s; }
+@keyframes ripple { 0% { opacity: .55; transform: scale(1); } 100% { opacity: 0; transform: scale(1.4); } }
+@keyframes bar { 0%, 100% { height: 30%; } 50% { height: 100%; } }
 
 .float-card {
-  position: absolute; z-index: 7; background: var(--paper); border-radius: var(--r-lg); box-shadow: var(--shadow-soft), 0 0 0 1px var(--line);
+  position: absolute; z-index: 7; background: rgba(255,255,255,0.92); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-soft), 0 0 0 1px var(--line);
   padding: 12px 14px; display: flex; align-items: center; gap: 12px; font-size: 0.875rem;
+  animation: drift 6s 1.5s ease-in-out infinite;
 }
+@keyframes drift { 50% { transform: translateY(-8px); } }
 .float-card .k { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .float-card .v { font-weight: 700; }
 .fc-truck { left: -8%; top: 44%; }
 .fc-truck .ic { width: 40px; height: 40px; border-radius: 50%; background: var(--paper-2); display: grid; place-items: center; }
-.fc-wave { right: -6%; bottom: 34%; }
-.wave { display: flex; align-items: center; gap: 3px; height: 26px; }
-.wave i { width: 4px; border-radius: 2px; background: var(--blue); height: 30%; animation: bar 1s ease-in-out infinite; }
-.wave i:nth-child(2) { animation-delay: .1s } .wave i:nth-child(3) { animation-delay: .2s } .wave i:nth-child(4) { animation-delay: .3s }
-.wave i:nth-child(5) { animation-delay: .4s } .wave i:nth-child(6) { animation-delay: .5s } .wave i:nth-child(7) { animation-delay: .6s }
-@keyframes bar { 0%, 100% { height: 30%; } 50% { height: 100%; } }
-@media (max-width: 1120px) { .fc-truck { left: -2%; } .fc-wave { right: -2%; } }
+.fc-safe { right: -7%; top: 71%; animation-delay: 2.5s; }
+.fc-safe .ic { width: 40px; height: 40px; border-radius: 50%; background: rgba(52,199,89,0.14); color: var(--rest); display: grid; place-items: center; }
+@media (max-width: 1120px) { .fc-truck { left: -3%; } .fc-safe { right: -3%; } }
 @media (max-width: 560px) { .float-card { display: none; } }
 
-/* ---------- section scaffolding ---------- */
+/* ---------- sections ---------- */
 section { scroll-margin-top: 80px; }
-.band { padding-block: 104px; }
+.band { padding-block: 112px; position: relative; }
 .band.tint { background: var(--paper-2); }
 .band.map { background: var(--map); }
 .sec-head { display: flex; flex-direction: column; gap: 16px; max-width: 760px; margin-bottom: 56px; }
-.sec-head h2 { font-size: var(--step-3); font-weight: 800; letter-spacing: -0.04em; }
-@media (max-width: 720px) { .band { padding-block: 72px; } .sec-head { margin-bottom: 40px; } }
+.sec-head h2, .split-copy h2 { font-size: var(--step-3); font-weight: 800; letter-spacing: -0.042em; }
+@media (max-width: 720px) { .band { padding-block: 76px; } .sec-head { margin-bottom: 40px; } }
 
-/* ---------- phrasebook ---------- */
+/* scroll-linked rise, only where the browser ties it to scroll; otherwise everything is simply visible */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { animation: reveal linear both; animation-timeline: view(); animation-range: entry 0% entry 45%; }
+    @keyframes reveal { from { translate: 0 40px; } to { translate: 0 0; } }
+  }
+}
+
+/* ---------- phrasebook (hover to hear it, click to play it on the phone) ---------- */
 .phrasebook { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; }
 .phrase {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px;
-  padding: 18px 20px; border-radius: var(--r-lg); background: var(--paper);
-  border: 1px solid var(--line);
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px;
+  padding: 18px 20px; border-radius: var(--r-lg); background: var(--paper); border: 1px solid var(--line);
+  text-align: left; cursor: pointer; width: 100%; overflow: hidden;
+  transition: transform .25s var(--ease-spring), box-shadow .25s, border-color .25s;
 }
-.phrase q { quotes: "\201C" "\201D"; font-size: 1.1875rem; font-weight: 700; letter-spacing: -0.015em; color: var(--ink); min-width: 0; }
-.phrase .does { display: inline-flex; align-items: center; gap: 8px; font-size: 0.875rem; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.phrase:hover { transform: translateY(-3px); box-shadow: var(--shadow-soft); border-color: transparent; }
+.phrase q { quotes: "\201C" "\201D"; font-size: 1.1875rem; font-weight: 700; letter-spacing: -0.015em; min-width: 0; }
+.phrase .does { position: relative; display: inline-flex; align-items: center; font-size: 0.875rem; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.phrase .lbl { display: inline-flex; align-items: center; gap: 8px; }
+.phrase .lbl, .phrase .play { transition: opacity .2s, transform .25s var(--ease-out); }
+.phrase .play { position: absolute; right: 0; display: inline-flex; align-items: center; gap: 8px; color: var(--blue); opacity: 0; transform: translateY(8px); }
+.mini-wave { display: inline-flex; gap: 2px; align-items: center; height: 16px; }
+.mini-wave i { width: 3px; height: 30%; border-radius: 2px; background: var(--blue); }
+.phrase:hover .mini-wave i { animation: bar .8s ease-in-out infinite; }
+.mini-wave i:nth-child(2) { animation-delay: .1s } .mini-wave i:nth-child(3) { animation-delay: .2s } .mini-wave i:nth-child(4) { animation-delay: .3s }
+.phrase:hover .lbl, .phrase:focus-visible .lbl { opacity: 0; transform: translateY(-8px); }
+.phrase:hover .play, .phrase:focus-visible .play { opacity: 1; transform: none; }
+.phrase::after {
+  content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: var(--blue);
+  transform: scaleX(0); transform-origin: left; transition: transform .6s var(--ease-out);
+}
+.phrase:hover::after { transform: scaleX(1); }
+.book-note { margin-top: 20px; font-size: 0.9375rem; color: var(--ink-3); display: flex; align-items: center; gap: 8px; }
+.book-note .ms { font-size: 18px; color: var(--blue); }
 @media (max-width: 860px) { .phrasebook { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 480px) { .phrase { grid-template-columns: minmax(0, 1fr); gap: 10px; } }
+@media (max-width: 480px) { .phrase { grid-template-columns: minmax(0, 1fr); gap: 10px; } .phrase .play { right: auto; left: 0; } }
 
-/* ---------- steps ---------- */
-.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; counter-reset: step; position: relative; }
-.step { position: relative; display: flex; flex-direction: column; gap: 14px; padding-top: 72px; min-width: 0; }
-.step::before {
-  counter-increment: step; content: counter(step);
-  position: absolute; top: 0; left: 0; width: 48px; height: 48px; border-radius: 50%;
-  background: var(--paper); border: 3px solid var(--blue); color: var(--blue);
-  font-weight: 800; font-size: 1.125rem; display: grid; place-items: center; z-index: 1;
+/* ---------- steps with hover-played illustrations ---------- */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.step { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.step .ill {
+  position: relative; height: 188px; border-radius: var(--r-lg); background: var(--paper-2); overflow: hidden;
+  display: grid; place-items: center; transition: transform .35s var(--ease-spring), box-shadow .35s;
 }
-.steps::before {
-  /* the route line connecting each stop */
-  content: ""; position: absolute; top: 22px; left: 24px; right: 24px; height: 4px; border-radius: 2px;
-  background: var(--blue); box-shadow: 0 0 0 2px var(--paper);
-}
-.step:last-child::before { background: var(--blue); color: var(--on-color); border-color: var(--blue); }
-.step h3 { font-size: 1.3125rem; font-weight: 700; letter-spacing: -0.02em; }
+.step:hover .ill { transform: translateY(-4px); box-shadow: var(--shadow-soft); }
+.step .num { font-family: var(--font-spec); font-size: 0.8125rem; color: var(--blue); font-weight: 700; display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.step .num::after { content: ""; flex: 1; height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--blue), rgba(0,122,255,0.12)); }
+.step h3 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
 .step p { color: var(--ink-3); font-size: 1rem; }
-.step .said { font-family: var(--font-spec); font-size: 0.8125rem; color: var(--ink-2); background: var(--paper-2); padding: 8px 10px; border-radius: var(--r-md); align-self: flex-start; }
-@media (max-width: 900px) {
-  .steps { grid-template-columns: minmax(0, 1fr); gap: 32px; }
-  .steps::before { top: 24px; bottom: 24px; left: 22px; right: auto; width: 4px; height: auto; }
-  .step { padding-top: 0; padding-left: 72px; }
-}
+.ill-wake .av { position: relative; width: 84px; height: 84px; border-radius: 50%; background: var(--cabin); display: grid; place-items: center; box-shadow: 0 0 0 8px var(--blue-soft); margin-top: 26px; }
+.ill-wake .av .buddy { width: 64px; }
+.ill-wake .av::before, .ill-wake .av::after { content: ""; position: absolute; inset: -8px; border-radius: 50%; border: 3px solid var(--blue); opacity: 0; }
+.step:hover .ill-wake .av::before, .step:hover .ill-wake .av::after { animation: ripple 1.2s ease-out infinite; }
+.step:hover .ill-wake .av::after { animation-delay: .6s; }
+.ill-wake .hey { position: absolute; top: 18px; left: 50%; translate: -50% 0; font-weight: 800; font-size: 0.9375rem; background: var(--paper); padding: 6px 12px; border-radius: var(--pill); box-shadow: var(--shadow-1); white-space: nowrap; transition: transform .4s var(--ease-spring); }
+.step:hover .ill-wake .hey { transform: translateY(-4px) scale(1.05); }
+.ill-said { padding: 18px; }
+.ill-said .card { background: var(--paper); border-radius: 16px; box-shadow: var(--shadow-1); padding: 12px 14px; width: 100%; min-width: 0; }
+.ill-said .k { font-size: 0.6875rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.ill-said .typed { font-weight: 700; font-size: 0.9375rem; display: block; overflow: hidden; white-space: nowrap; text-overflow: clip; border-right: 2px solid transparent; }
+.step:hover .ill-said .typed { animation: type 1.6s steps(28) both, caretb .8s steps(1) 3; }
+@keyframes type { from { width: 0; } to { width: 100%; } }
+@keyframes caretb { 50% { border-color: var(--blue); } }
+.ill-said .wave { display: flex; gap: 3px; align-items: center; height: 20px; margin-top: 10px; }
+.ill-said .wave i { width: 4px; height: 30%; border-radius: 2px; background: var(--blue); opacity: .5; }
+.step:hover .ill-said .wave i { animation: bar .8s ease-in-out infinite; opacity: 1; }
+.ill-said .wave i:nth-child(2n) { animation-delay: .15s } .ill-said .wave i:nth-child(3n) { animation-delay: .3s }
+.ill-route svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ill-route .r { stroke-dasharray: 300; stroke-dashoffset: 0; }
+.step:hover .ill-route .r { animation: draw-r 1.3s var(--ease-out) both; }
+@keyframes draw-r { from { stroke-dashoffset: 300; } to { stroke-dashoffset: 0; } }
+.ill-route .tag { position: absolute; right: 14px; bottom: 14px; background: var(--paper); border-radius: var(--pill); padding: 6px 12px; font-weight: 800; font-size: 0.875rem; box-shadow: var(--shadow-1); }
+.ill-go { display: flex !important; flex-direction: column; justify-content: center; gap: 10px; padding: 18px; }
+.ill-go .go { width: 100%; height: 52px; border-radius: var(--pill); background: var(--blue); color: var(--on-color); font-weight: 800; display: grid; place-items: center; }
+.step:hover .ill-go .go { animation: press 1.4s ease-in-out infinite; }
+@keyframes press { 0%, 60%, 100% { transform: scale(1); } 70% { transform: scale(0.94); } }
+.ill-go .hand { display: flex; gap: 8px; width: 100%; }
+.ill-go .hand span { flex: 1; height: 40px; border-radius: var(--pill); background: var(--paper); box-shadow: var(--shadow-1); display: grid; place-items: center; font-weight: 700; font-size: 0.8125rem; transition: transform .35s var(--ease-spring); }
+.step:hover .ill-go .hand span:first-child { transform: translateY(-3px); transition-delay: .05s; }
+.step:hover .ill-go .hand span:last-child { transform: translateY(-3px); transition-delay: .12s; }
+@media (max-width: 960px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 16px; } }
+@media (max-width: 560px) { .steps { grid-template-columns: minmax(0, 1fr); } }
 
-/* ---------- feature splits ---------- */
+/* ---------- splits ---------- */
 .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; align-items: center; }
 .split.flip > :first-child { order: 2; }
 .split-copy { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
-.split-copy h2 { font-size: var(--step-3); font-weight: 800; letter-spacing: -0.04em; }
-.ticks { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 12px; }
-.ticks li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; color: var(--ink-2); font-weight: 500; }
-.ticks .ms { font-size: 22px; color: var(--blue); margin-top: 1px; }
-.quote-line { font-weight: 700; font-size: 1.125rem; color: var(--ink); padding-left: 16px; border-left: 3px solid var(--blue); max-width: 40ch; }
+.quote-line { font-weight: 700; font-size: 1.125rem; padding-left: 16px; border-left: 3px solid var(--blue); max-width: 40ch; }
 @media (max-width: 900px) { .split { grid-template-columns: minmax(0, 1fr); gap: 40px; } .split.flip > :first-child { order: 0; } }
 
-/* satellite lot */
-.sat-card { position: relative; border-radius: var(--r-xl); overflow: hidden; box-shadow: var(--shadow-soft); background: #4A535A; aspect-ratio: 5 / 4; max-width: 100%; }
+/* satellite scan */
+.sat-card { position: relative; border-radius: var(--r-xl); overflow: hidden; box-shadow: 0 30px 60px -30px rgba(28,28,30,0.5); background: #4A535A; aspect-ratio: 5 / 4; max-width: 100%; }
 .sat-card svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.scan { position: absolute; left: 0; right: 0; top: 0; height: 34%; pointer-events: none; z-index: 1;
+  background: linear-gradient(180deg, rgba(0,122,255,0) 0%, rgba(0,122,255,0.22) 85%, rgba(120,190,255,0.9) 100%);
+  border-bottom: 2px solid rgba(160,210,255,0.95); animation: scan 4.5s cubic-bezier(.45,0,.55,1) infinite; }
+@keyframes scan { 0% { transform: translateY(-100%); } 60%, 100% { transform: translateY(300%); } }
+.det rect { fill: rgba(52,199,89,0.12); stroke: #34C759; stroke-width: 2; }
+.det text { font-family: "Space Mono", monospace; font-size: 11px; font-weight: 700; fill: #FFFFFF; }
+.det .lbl-bg { fill: #34C759; stroke: none; }
+.det { animation: det 4.5s ease-out infinite; }
+.det.d2 { animation-delay: .25s; } .det.d3 { animation-delay: .5s; } .det.d4 { animation-delay: .75s; }
+@keyframes det { 0%, 22% { opacity: .35; } 34%, 100% { opacity: 1; } }
+.e-pulse { transform-box: fill-box; transform-origin: center; animation: epulse 2s ease-out infinite; }
+@keyframes epulse { from { transform: scale(1); opacity: .6; } to { transform: scale(2.6); opacity: 0; } }
 .sat-chip { position: absolute; z-index: 2; }
-.sat-chip.a { left: 16px; top: 16px; }
+.sat-chip.a { left: 16px; top: 16px; display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px 0 14px; border-radius: var(--pill); background: var(--paper); box-shadow: var(--shadow-1); font-weight: 600; font-size: 0.9375rem; }
+.sat-chip.a .rec { width: 8px; height: 8px; border-radius: 50%; background: var(--red); animation: caret 1.2s steps(1) infinite; }
 .sat-chip.b { right: 16px; bottom: 16px; left: 16px; display: flex; flex-direction: column; gap: 4px; background: var(--paper); border-radius: var(--r-lg); padding: 14px 16px; box-shadow: var(--shadow-2); }
 .sat-chip.b .row { display: flex; align-items: center; gap: 8px; font-weight: 700; }
 .sat-chip.b .row .ms { color: var(--rest); }
@@ -354,37 +462,59 @@ section { scroll-margin-top: 80px; }
 .verdicts { display: flex; flex-wrap: wrap; gap: 8px; }
 .verdict { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: var(--pill); font-size: 0.8125rem; font-weight: 700; }
 .verdict .ms { font-size: 16px; }
-.verdict.ok { background: rgba(52,199,89,0.14); color: #1E7B34; }
-.verdict.listed { background: rgba(0,122,255,0.1); color: #0058B8; }
-.verdict.maybe { background: rgba(255,149,0,0.14); color: #A35A00; }
+.verdict.ok { background: rgba(52,199,89,0.14); color: var(--rest-deep); }
+.verdict.listed { background: rgba(0,122,255,0.1); color: var(--blue-deep); }
+.verdict.maybe { background: rgba(255,149,0,0.14); color: var(--amber-deep); }
 
-/* truck profile card */
-.profile { background: var(--paper); border-radius: var(--r-xl); box-shadow: var(--shadow-soft); padding: 28px; display: flex; flex-direction: column; gap: 4px; max-width: 480px; width: 100%; justify-self: center; }
-.profile-head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
-.profile-head .ic { width: 52px; height: 52px; border-radius: 50%; background: var(--paper-2); display: grid; place-items: center; }
-.profile-head .ic .ms { font-size: 28px; }
-.profile-head h3 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
+/* truck profile, live */
+.profile { background: var(--paper); border-radius: var(--r-xl); box-shadow: var(--shadow-soft); padding: 24px; display: flex; flex-direction: column; max-width: 480px; width: 100%; justify-self: center; }
+.mini-map { position: relative; height: 150px; border-radius: var(--r-lg); background: var(--map); overflow: hidden; margin-bottom: 16px; }
+.mini-map svg { width: 100%; height: 100%; display: block; }
+.mini-map .alt { stroke-dasharray: 420; transition: stroke-dashoffset .9s var(--ease-out), opacity .4s; }
+.mini-map .direct { transition: opacity .4s; }
+.mini-map .note { position: absolute; left: 12px; top: 12px; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--pill); background: var(--paper); box-shadow: var(--shadow-1); font-size: 0.8125rem; font-weight: 700; }
+.mini-map .note .ms { font-size: 16px; }
+.profile[data-tall="false"] .mini-map .alt { stroke-dashoffset: 420; opacity: 0; }
+.profile[data-tall="false"] .mini-map .direct { opacity: 1; }
+.profile[data-tall="true"] .mini-map .alt { stroke-dashoffset: 0; opacity: 1; }
+.profile[data-tall="true"] .mini-map .direct { opacity: .15; }
+.profile[data-tall="false"] .t-tall, .profile[data-tall="true"] .t-short { display: none; }
+.t-tall .ms { color: var(--red); } .t-short .ms { color: var(--rest); }
+.t-tall, .t-short { display: inline-flex; align-items: center; gap: 6px; }
+.profile-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+.profile-head .ic { width: 48px; height: 48px; border-radius: 50%; background: var(--paper-2); display: grid; place-items: center; flex: none; }
+.profile-head h3 { font-size: 1.1875rem; font-weight: 700; letter-spacing: -0.02em; }
 .profile-head p { font-size: 0.875rem; color: var(--ink-3); }
 .p-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 56px; border-top: 1px solid var(--line); }
 .p-row .k { color: var(--ink-2); font-weight: 600; }
 .p-row .v { font-family: var(--font-spec); font-weight: 700; font-size: 1.0625rem; font-variant-numeric: tabular-nums; }
-.toggle { width: 51px; height: 31px; border-radius: 16px; background: var(--paper-3); position: relative; flex: none; }
-.toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: var(--paper); box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-.toggle.on { background: var(--rest); }
-.toggle.on::after { left: 22px; }
-.notice { margin-top: 14px; display: flex; gap: 8px; align-items: center; font-size: 0.875rem; font-weight: 600; color: #A35A00; background: rgba(255,149,0,0.12); padding: 10px 12px; border-radius: var(--r-md); }
+.seg { display: inline-flex; background: var(--paper-2); border-radius: var(--pill); padding: 3px; gap: 2px; flex: none; }
+.seg button { border: 0; background: transparent; height: 36px; padding: 0 10px; border-radius: var(--pill); cursor: pointer; font-family: var(--font-spec); font-weight: 700; font-size: 0.8125rem; color: var(--ink-3); transition: background-color .2s, color .2s, box-shadow .2s; }
+.seg button[aria-pressed="true"] { background: var(--paper); color: var(--ink); box-shadow: var(--shadow-1); }
+.toggle { width: 51px; height: 31px; border-radius: 16px; background: var(--paper-3); position: relative; flex: none; border: 0; cursor: pointer; transition: background-color .25s; padding: 0; }
+.toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: var(--paper); box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: left .3s var(--ease-spring); }
+.toggle[aria-checked="true"] { background: var(--rest); }
+.toggle[aria-checked="true"]::after { left: 22px; }
+.notice { display: flex; gap: 8px; align-items: center; font-size: 0.875rem; font-weight: 600; color: var(--amber-deep); background: rgba(255,149,0,0.12); padding: 10px 12px; border-radius: var(--r-md); }
 .notice .ms { font-size: 18px; color: var(--amber); }
 .voice-set { display: flex; gap: 12px; align-items: flex-start; background: var(--paper); border-radius: var(--r-lg); padding: 14px 16px; border: 1px solid var(--line); }
-.voice-set .mini { width: 40px; height: 40px; flex: none; border-radius: 50%; background: var(--cabin); display: grid; place-items: center; box-shadow: 0 0 0 4px var(--blue-soft); }
-.voice-set .mini img { width: 30px; height: 30px; }
+.voice-set .face { width: 40px; height: 40px; flex: none; border-radius: 50%; background: var(--cabin); display: grid; place-items: center; box-shadow: 0 0 0 4px var(--blue-soft); }
+.voice-set .face .buddy { width: 30px; }
 .voice-set p { font-weight: 600; }
 .voice-set .who { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 
 /* breakdown */
 .bd { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 24px; align-items: start; }
+.research { display: flex; align-items: center; gap: 10px; font-size: 0.875rem; font-weight: 600; color: var(--ink-2); margin-bottom: 12px; }
+.research .bar { flex: 1; height: 4px; border-radius: 2px; background: var(--paper-3); overflow: hidden; position: relative; }
+.research .bar::after { content: ""; position: absolute; inset: 0; width: 40%; border-radius: 2px; background: var(--blue); animation: research 2.2s ease-in-out infinite; }
+@keyframes research { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 .prov-list { display: grid; gap: 12px; }
-.prov { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 14px; align-items: center; background: var(--paper); border-radius: var(--r-lg); padding: 16px; box-shadow: var(--shadow-1); }
+.prov { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 14px; align-items: center; background: var(--paper); border-radius: var(--r-lg); padding: 16px; box-shadow: var(--shadow-1); transition: transform .25s var(--ease-spring), box-shadow .25s; }
+.prov:hover { transform: translateX(6px); box-shadow: var(--shadow-soft); }
 .prov .ic { width: 44px; height: 44px; border-radius: 50%; background: var(--ink); color: var(--on-color); display: grid; place-items: center; }
+.prov:hover .ic .ms { animation: wrench .6s ease-in-out; }
+@keyframes wrench { 25% { rotate: -25deg; } 75% { rotate: 20deg; } }
 .prov .name { font-weight: 700; }
 .prov .meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.8125rem; color: var(--ink-3); font-weight: 500; }
 .prov .price { text-align: right; }
@@ -398,51 +528,101 @@ section { scroll-margin-top: 80px; }
 .tell dt { font-size: 0.8125rem; color: rgba(255,255,255,0.6); font-weight: 600; }
 .tell dd { margin: 2px 0 0; font-weight: 600; }
 .tell .call { display: flex; align-items: center; justify-content: center; gap: 8px; height: 52px; border-radius: var(--pill); background: var(--rest); color: var(--on-color); font-weight: 800; }
+.tell .call .ms { animation: ring 2.4s ease-in-out infinite; }
+@keyframes ring { 0%, 70%, 100% { rotate: 0deg; } 75% { rotate: -14deg; } 80% { rotate: 12deg; } 85% { rotate: -8deg; } 90% { rotate: 5deg; } }
 .example-note { font-size: 0.8125rem; color: var(--muted); margin-top: 16px; }
 @media (max-width: 900px) { .bd { grid-template-columns: minmax(0, 1fr); } }
 
-/* nav banner + cab grid */
-.navbanner { display: flex; align-items: center; gap: 14px; background: var(--ink); border-radius: var(--r-lg); padding: 14px; box-shadow: var(--shadow-2); max-width: 560px; }
-.navbanner .arrow { width: 64px; height: 64px; border-radius: 16px; background: var(--blue); display: grid; place-items: center; color: var(--on-color); flex: none; }
-.navbanner .arrow .ms { font-size: 40px; }
-.navbanner .txt { flex: 1; min-width: 0; color: var(--paper); }
+/* ---------- night band ---------- */
+.night { background: var(--night); color: var(--night-text); overflow: hidden; }
+.night::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(800px 420px at 80% 0%, rgba(0,122,255,0.22), transparent 70%), radial-gradient(600px 400px at 0% 100%, rgba(0,122,255,0.1), transparent 70%); }
+.night .eyebrow { color: #4DA2FF; }
+.night .body-copy { color: var(--night-muted); }
+.night h2 { color: var(--night-text); }
+.night .wrap { position: relative; }
+.road { position: relative; border-radius: var(--r-xl); overflow: hidden; background: #141417; border: 1px solid var(--night-line); aspect-ratio: 16 / 11; max-width: 100%; }
+.road canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.road .navbanner { position: absolute; left: 16px; right: 16px; top: 16px; }
+.road .drive { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--paper); color: var(--ink); border-radius: var(--r-lg); padding: 14px 16px; box-shadow: var(--shadow-2); }
+.drive .eta { font-weight: 800; font-size: 1.5rem; color: var(--rest); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.drive .rest { color: var(--ink-2); font-weight: 600; font-size: 0.875rem; }
+.drive .end { height: 40px; padding: 0 16px; border-radius: var(--pill); background: rgba(255,59,48,0.1); color: var(--red); font-weight: 700; font-size: 0.875rem; display: grid; place-items: center; flex: none; }
+.navbanner { display: flex; align-items: center; gap: 14px; background: var(--night-2); border-radius: var(--r-lg); padding: 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid var(--night-line); }
+.navbanner .arrow { width: 60px; height: 60px; border-radius: 16px; background: var(--blue); display: grid; place-items: center; color: var(--on-color); flex: none; }
+.navbanner .arrow .ms { font-size: 38px; }
+.navbanner .txt { flex: 1; min-width: 0; color: var(--night-text); }
 .navbanner .dist { font-weight: 800; font-size: 1.75rem; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .navbanner .instr { font-weight: 600; font-size: 1rem; }
-.navbanner .vol { width: 48px; height: 48px; border-radius: 50%; background: var(--paper); color: var(--ink); display: grid; place-items: center; flex: none; }
-.drive-strip { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; margin-top: 14px; padding: 0 4px; }
-.drive-strip .eta { font-weight: 800; font-size: 1.5rem; color: var(--rest); font-variant-numeric: tabular-nums; }
-.drive-strip .rest { color: var(--ink-2); font-weight: 600; }
+.navbanner .vol { width: 48px; height: 48px; border-radius: 50%; background: var(--paper); color: var(--ink); display: grid; place-items: center; flex: none; border: 0; cursor: pointer; transition: background-color .2s, color .2s; }
+.navbanner .vol[aria-pressed="false"] { background: var(--red); color: var(--on-color); }
+@media (max-width: 480px) { .navbanner .dist { font-size: 1.375rem; } .navbanner .instr { font-size: 0.875rem; } .navbanner .arrow { width: 48px; height: 48px; } .navbanner .arrow .ms { font-size: 30px; } .road { aspect-ratio: 4 / 5; } }
 
-.cab-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 64px; }
-.cab { background: var(--paper); border-radius: var(--r-lg); padding: 24px; display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--line); min-width: 0; }
-.cab .ic { width: 48px; height: 48px; border-radius: 50%; background: var(--paper-2); display: grid; place-items: center; margin-bottom: 6px; }
-.cab .ic .ms { font-size: 24px; color: var(--ink); }
-.cab h3 { font-size: 1.125rem; font-weight: 700; letter-spacing: -0.015em; }
-.cab p { color: var(--ink-3); font-size: 0.96875rem; }
-.cab .fig { font-family: var(--font-spec); font-weight: 700; color: var(--blue); }
+.figures { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin-top: 80px; background: var(--night-line); border-radius: var(--r-xl); overflow: hidden; border: 1px solid var(--night-line); }
+.figure { background: var(--night); padding: 28px 24px; display: flex; flex-direction: column; gap: 10px; min-width: 0; transition: background-color .3s; }
+.figure:hover { background: #121216; }
+.figure .n { font-family: var(--font-spec); font-weight: 700; font-size: clamp(2.25rem, 1.6rem + 2vw, 3.25rem); letter-spacing: -0.04em; line-height: 1; color: var(--night-text); font-variant-numeric: tabular-nums; }
+.figure .n small { font-size: 0.42em; color: #4DA2FF; margin-left: 4px; letter-spacing: 0; }
+.figure p { color: var(--night-muted); font-size: 0.9375rem; }
+@media (max-width: 900px) { .figures { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.cab-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+.cab { background: var(--night-2); border-radius: var(--r-lg); padding: 24px; display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--night-line); min-width: 0; position: relative; overflow: hidden; transition: transform .3s var(--ease-spring), border-color .3s; }
+.cab::before { content: ""; position: absolute; inset: 0; background: radial-gradient(300px 160px at var(--mx, 50%) var(--my, 0%), rgba(0,122,255,0.2), transparent 70%); opacity: 0; transition: opacity .3s; pointer-events: none; }
+.cab:hover { transform: translateY(-4px); border-color: rgba(0,122,255,0.4); }
+.cab:hover::before { opacity: 1; }
+.cab .ic { width: 52px; height: 52px; border-radius: 16px; background: var(--night-3); display: grid; place-items: center; margin-bottom: 6px; position: relative; }
+.cab .ic .ms { font-size: 26px; color: var(--night-text); }
+.cab h3 { font-size: 1.125rem; font-weight: 700; letter-spacing: -0.015em; position: relative; }
+.cab p { color: var(--night-muted); font-size: 0.96875rem; position: relative; }
+.cab .fig { font-family: var(--font-spec); font-weight: 700; color: #4DA2FF; }
+.cab:hover .a-tap .ms { animation: tap .7s var(--ease-spring); }
+@keyframes tap { 40% { transform: scale(0.8) translateY(2px); } }
+.cab .a-tap::after { content: ""; position: absolute; inset: 0; border-radius: 16px; border: 2px solid var(--blue); opacity: 0; }
+.cab:hover .a-tap::after { animation: ripple .9s ease-out; }
+.cab:hover .a-cc .ms { animation: cc .5s steps(1) 4; }
+@keyframes cc { 50% { color: #4DA2FF; } }
+.cab:hover .a-lock .ms { animation: lock .6s var(--ease-spring); }
+@keyframes lock { 30% { transform: translateY(-4px) rotate(-8deg); } 60% { transform: rotate(6deg); } }
+.cab:hover .a-mem .ms { animation: spinback .8s var(--ease-out); }
+@keyframes spinback { from { rotate: 0deg; } to { rotate: -360deg; } }
+.cab:hover .a-map .ms { animation: hop .7s var(--ease-spring); }
+@keyframes hop { 40% { transform: translate(4px, -6px); } }
+.cab:hover .a-talk .ms { animation: talk .25s ease-in-out 4 alternate; }
+@keyframes talk { to { transform: scale(1.18); } }
 @media (max-width: 900px) { .cab-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .cab-grid { grid-template-columns: minmax(0, 1fr); } }
 
-/* closing */
-.closing { background: var(--map); padding-block: 112px; text-align: center; position: relative; overflow: hidden; }
-.closing .inner { display: flex; flex-direction: column; align-items: center; gap: 24px; }
-.big-buddy { position: relative; width: 184px; height: 184px; display: grid; place-items: center; margin-bottom: 8px; }
-.big-buddy .glow { position: absolute; inset: 0; border-radius: 50%; background: var(--blue-soft); }
-.big-buddy .ring { position: absolute; inset: 0; border-radius: 50%; border: 3px solid var(--blue); opacity: 0; animation: ripple 1.8s ease-out infinite; }
-.big-buddy .ring.r2 { animation-delay: .9s; border-width: 2px; }
-.big-buddy .disc { position: relative; width: 156px; height: 156px; border-radius: 50%; background: var(--cabin); display: grid; place-items: center; box-shadow: var(--shadow-1); animation: breathe 2.6s ease-in-out infinite; }
-.big-buddy .disc img { width: 122px; height: 122px; }
-.big-buddy .badge { position: absolute; right: 18px; bottom: 18px; width: 44px; height: 44px; border-radius: 50%; background: var(--blue); border: 3px solid var(--paper); color: var(--on-color); display: grid; place-items: center; box-shadow: var(--shadow-1); }
-@keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+/* ---------- closing ---------- */
+.closing { background: var(--map); padding-block: 120px; text-align: center; position: relative; overflow: hidden; }
+.closing::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: radial-gradient(circle at 1px 1px, rgba(28,28,30,0.08) 1px, transparent 1.4px); background-size: 26px 26px;
+  -webkit-mask-image: radial-gradient(600px 400px at 50% 40%, #000 10%, transparent 75%); mask-image: radial-gradient(600px 400px at 50% 40%, #000 10%, transparent 75%); }
+.closing .inner { position: relative; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+.big-buddy { position: relative; width: 220px; height: 220px; display: grid; place-items: center; border: 0; background: none; padding: 0; cursor: pointer; border-radius: 50%; }
+.big-buddy .glow { position: absolute; inset: 0; border-radius: 50%; background: var(--blue-soft); transition: transform .4s var(--ease-spring); }
+.big-buddy:hover .glow { transform: scale(1.06); }
+.big-buddy .ring { position: absolute; inset: 0; border-radius: 50%; border: 3px solid var(--blue); opacity: 0; animation: ripple 2.2s ease-out infinite; }
+.big-buddy .ring.r2 { animation-delay: 1.1s; border-width: 2px; }
+.big-buddy.listening .ring { animation-duration: 1s; }
+.big-buddy.listening .ring.r2 { animation-delay: .5s; }
+.big-buddy .disc { position: relative; width: 186px; height: 186px; border-radius: 50%; background: var(--cabin); display: grid; place-items: center; box-shadow: var(--shadow-1); transition: transform .3s var(--ease-spring); }
+.big-buddy:active .disc { transform: scale(0.96); }
+.big-buddy .disc .buddy { width: 146px; }
+.big-buddy .badge { position: absolute; right: 22px; bottom: 22px; width: 48px; height: 48px; border-radius: 50%; background: var(--blue); border: 3px solid var(--paper); color: var(--on-color); display: grid; place-items: center; box-shadow: var(--shadow-1); }
+.say-back { min-height: 1.6em; font-weight: 700; color: var(--blue); font-size: 1.0625rem; }
 .closing h2 { font-size: var(--step-4); font-weight: 800; letter-spacing: -0.05em; }
-.closing p { font-size: var(--step-1); color: var(--ink-2); max-width: 34ch; }
+.closing p.sub { font-size: var(--step-1); color: var(--ink-2); max-width: 34ch; }
 .stores { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
 .store { display: inline-flex; align-items: center; gap: 10px; min-height: 56px; padding: 0 22px; border-radius: var(--pill); background: var(--paper); box-shadow: var(--shadow-1); font-weight: 700; }
 .store small { display: block; font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); line-height: 1.2; }
 .store span.t { line-height: 1.2; text-align: left; }
 
-footer { background: var(--paper); border-top: 1px solid var(--line); padding-block: 32px; }
-.foot-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; color: var(--ink-3); font-size: 0.875rem; }
+footer { background: var(--paper); border-top: 1px solid var(--line); padding-block: 40px; }
+.foot-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; color: var(--ink-3); font-size: 0.875rem; }
+.foot-links { display: flex; flex-wrap: wrap; gap: 6px 20px; }
+.foot-links a { text-decoration: none; font-weight: 600; color: var(--ink-2); }
+.foot-links a:hover { color: var(--blue); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -455,7 +635,7 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
 <header class="site-head" id="top">
   <div class="wrap head-row">
     <a class="brand" href="#top" aria-label="Truck Buddy home">
-      <span class="brand-disc"><img src="assets/buddy.webp" alt="" width="30" height="30"></span>
+      <span class="brand-disc"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span></span>
       Truck Buddy
     </a>
     <nav class="nav" aria-label="Main">
@@ -471,24 +651,34 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
 <main>
   <!-- HERO -->
   <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-bg" aria-hidden="true">
+      <svg viewBox="0 0 900 700" preserveAspectRatio="xMidYMid meet" fill="none">
+        <path d="M-40 640 C 160 620, 210 470, 380 450 S 600 520, 700 360 S 820 120, 960 80" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round"/>
+        <path class="bg-route" d="M-40 640 C 160 620, 210 470, 380 450 S 600 520, 700 360 S 820 120, 960 80" stroke="#007AFF" stroke-opacity="0.16" stroke-width="12" stroke-linecap="round"/>
+      </svg>
+    </div>
     <div class="wrap hero-grid">
       <div class="hero-copy">
         <span class="wake-pill"><span class="mic"><span class="ms" aria-hidden="true">mic</span></span> Say <b>&ldquo;Hey Buddy&rdquo;</b> <span class="privacy-dot" aria-hidden="true"></span></span>
-        <h1 id="hero-title">Just <span class="say">say it.</span><br>Buddy finds a spot your rig fits.</h1>
+        <h1 id="hero-title"><span class="ln">Just <span class="say">say it.<span class="h1-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></span></span><span class="ln">Buddy finds a spot</span><span class="ln">your rig fits.</span></h1>
         <p class="lede">Truck Buddy is the hands-free voice copilot for truck drivers. Ask for parking, a hotel, fuel or a mechanic, and it picks a place that fits your truck and sets the route.</p>
         <div class="hero-ctas">
           <a class="btn btn-blue" href="#get"><span class="ms" aria-hidden="true">mic</span>Get Truck Buddy</a>
           <a class="btn btn-ghost" href="#how">See how it works</a>
         </div>
-        <div class="rig-line" aria-label="Built around your truck">
-          <span><span class="ms" aria-hidden="true">local_shipping</span><span class="spec">13 ft 6 in · 53 ft trailer</span></span>
-          <span><span class="ms" aria-hidden="true">pan_tool</span>Hands on the wheel</span>
-          <span><span class="ms" aria-hidden="true">closed_caption</span>Every answer captioned</span>
+        <div class="try">
+          <span class="try-label" id="try-label"><span class="ms" aria-hidden="true" style="font-size:18px;color:var(--blue)">touch_app</span>Try it on the phone</span>
+          <div class="try-row" role="group" aria-labelledby="try-label">
+            <button class="try-chip" type="button" data-play="hotel" aria-pressed="true"><span class="dot hotel"><span class="ms">bed</span></span>I&rsquo;m tired</button>
+            <button class="try-chip" type="button" data-play="fuel" aria-pressed="false"><span class="dot stop"><span class="ms">local_gas_station</span></span>Need fuel</button>
+            <button class="try-chip" type="button" data-play="rest" aria-pressed="false"><span class="dot rest"><span class="ms">park</span></span>Need to sleep</button>
+            <button class="try-chip" type="button" data-play="flat" aria-pressed="false"><span class="dot svc"><span class="ms">build</span></span>Got a flat</button>
+          </div>
         </div>
       </div>
 
       <div class="hero-stage">
-        <div class="phone" role="img" aria-label="Truck Buddy on a phone: a route to Motel 6 with truck parking, 9 minutes away, ending at the truck entrance">
+        <div class="phone" id="phone" data-state="answer" role="img" aria-label="Truck Buddy on a phone, answering a driver's voice request with a route">
           <div class="screen">
             <div class="island"></div>
             <svg class="map-svg" viewBox="0 0 290 654" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
@@ -497,35 +687,34 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
               <rect x="18" y="300" width="84" height="70" rx="10" fill="#D8EFD9"/>
               <rect x="196" y="420" width="80" height="90" rx="10" fill="#D8EFD9"/>
               <g fill="#E3E7EC">
-                <rect x="120" y="140" width="56" height="44" rx="4"/><rect x="190" y="120" width="70" height="40" rx="4"/>
+                <rect x="120" y="140" width="56" height="44" rx="4"/><rect x="200" y="120" width="70" height="40" rx="4"/>
                 <rect x="30" y="180" width="70" height="56" rx="4"/><rect x="120" y="262" width="60" height="30" rx="4"/>
                 <rect x="200" y="262" width="70" height="50" rx="4"/><rect x="130" y="330" width="50" height="60" rx="4"/>
                 <rect x="30" y="420" width="70" height="60" rx="4"/><rect x="120" y="520" width="60" height="60" rx="4"/>
               </g>
               <g stroke="#FFFFFF" stroke-width="9" fill="none" stroke-linecap="round">
-                <path d="M0 250 H290"/><path d="M0 400 H290"/><path d="M110 120 V628"/><path d="M190 100 V628"/><path d="M0 300 H110"/><path d="M190 320 H290"/>
+                <path d="M0 250 H290"/><path d="M0 400 H290"/><path d="M110 120 V654"/><path d="M190 100 V654"/><path d="M0 300 H110"/><path d="M190 320 H290"/>
               </g>
               <path d="M-10 520 C 80 500, 170 470, 300 380" stroke="#F7D774" stroke-width="13" fill="none"/>
               <path d="M-10 520 C 80 500, 170 470, 300 380" stroke="#FFE9A8" stroke-width="8" fill="none"/>
-              <!-- route: casing then line -->
               <path d="M190 362 V226 Q190 218 198 218 H210" stroke="#FFFFFF" stroke-width="11" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-              <path class="route-draw" d="M190 362 V226 Q190 218 198 218 H210" stroke="#007AFF" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              <path id="route" class="route-draw go" d="M190 362 V226 Q190 218 198 218 H210" stroke="#007AFF" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
 
             <div class="m-top">
-              <div class="m-search"><span class="ms" aria-hidden="true">search</span><span>To: Motel 6 Sacramento</span></div>
+              <div class="m-search"><span class="ms" aria-hidden="true">search</span><span id="m-search">To: Motel 6 Sacramento</span></div>
               <div class="m-circle"><span class="ms" aria-hidden="true">local_shipping</span></div>
             </div>
 
             <span class="pin stop" style="left:150px; top:300px"><i><span class="ms">local_gas_station</span></i></span>
             <span class="pin rest" style="left:252px; top:340px"><i><span class="ms">park</span></i></span>
-            <span class="pin hotel sel" style="left:234px; top:214px"><i><span class="ms">bed</span></i></span>
-            <span class="m-label" style="left:196px; top:228px">Motel 6</span>
-            <span class="m-entry" style="left:210px; top:218px">E</span>
+            <span class="pin hotel sel" id="m-pin" style="left:234px; top:214px"><i><span class="ms" id="m-pin-ic">bed</span></i></span>
+            <span class="m-label" id="m-label" style="left:196px; top:228px">Motel 6</span>
+            <span class="m-entry" id="m-entry" style="left:210px; top:218px">E</span>
             <span class="m-user" style="left:190px; top:362px"><b><span class="ms">navigation</span></b></span>
 
             <div class="m-bubble" id="bubble" aria-live="polite">
-              <span class="mini" id="bubble-face"><img src="assets/buddy.webp" alt=""></span>
+              <span class="face" id="bubble-face"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span><span class="ms you-ic" aria-hidden="true">person</span></span>
               <div>
                 <div class="who" id="bubble-who">Buddy</div>
                 <div class="said" id="bubble-text">Found Motel 6 with truck parking, about 4 miles away. Route is set.</div>
@@ -534,13 +723,20 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
 
             <div class="m-sheet">
               <div class="m-handle"></div>
-              <div class="m-eta">9 min · 4.1 mi</div>
-              <div class="m-entry-row"><span class="ms" aria-hidden="true">login</span>Route ends at truck entrance</div>
-              <div class="m-place">Motel 6 Sacramento North</div>
-              <div class="m-park"><span class="ms" aria-hidden="true">check_circle</span>Fits a 53 ft trailer<span class="sat" aria-hidden="true"></span></div>
-              <div class="m-actions">
-                <div class="m-go">Go</div>
-                <div class="m-av"><img src="assets/buddy.webp" alt=""></div>
+              <div class="nav-layer">
+                <div class="m-eta" id="m-eta">9 min · 4.1 mi</div>
+                <div class="m-entry-row" id="m-entry-row"><span class="ms" aria-hidden="true">login</span><span>Route ends at truck entrance</span></div>
+                <div class="m-place" id="m-place">Motel 6 Sacramento North</div>
+                <div class="m-park" id="m-park"><span class="ms" aria-hidden="true" id="m-park-ic">check_circle</span><span id="m-park-t">Fits a 53 ft trailer</span><span class="sat" aria-hidden="true"></span></div>
+                <div class="m-actions">
+                  <div class="m-go" id="m-go">Go</div>
+                  <div class="m-av"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span></div>
+                </div>
+              </div>
+              <div class="talk-layer" aria-hidden="true">
+                <div class="big-av"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span><span class="badge"><span class="ms" id="talk-badge">stop</span></span></div>
+                <div class="talk-title"><span id="talk-title">I&rsquo;m listening</span><span class="talk-wave"><i></i><i></i><i></i><i></i><i></i></span></div>
+                <div class="talk-cap" id="talk-cap">Tap to stop</div>
               </div>
             </div>
           </div>
@@ -550,9 +746,9 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
           <span class="ic"><span class="ms">local_shipping</span></span>
           <div><div class="k">Your rig</div><div class="v spec">13′6″ · 53′ · 80,000 lb</div></div>
         </div>
-        <div class="float-card fc-wave" aria-hidden="true">
-          <div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-          <div><div class="k">Listening</div><div class="v">&ldquo;I&rsquo;m tired&hellip;&rdquo;</div></div>
+        <div class="float-card fc-safe" aria-hidden="true">
+          <span class="ic"><span class="ms">satellite_alt</span></span>
+          <div><div class="k">Parking checked</div><div class="v">From satellite</div></div>
         </div>
       </div>
     </div>
@@ -561,48 +757,74 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
   <!-- PHRASEBOOK -->
   <section class="band tint" aria-labelledby="say-title">
     <div class="wrap">
-      <div class="sec-head">
+      <div class="sec-head reveal">
         <span class="eyebrow">Talk like a driver</span>
         <h2 id="say-title">Say it the way you&rsquo;d say it to dispatch.</h2>
         <p class="body-copy">No menus and no magic words. Buddy turns everyday phrases into the right search, and only asks a follow-up when it really changes the answer.</p>
       </div>
       <div class="phrasebook">
-        <div class="phrase"><q>I&rsquo;m tired, find me a hotel where I can park my rig</q><span class="does"><span class="dot hotel"><span class="ms">bed</span></span>Hotel with truck parking</span></div>
-        <div class="phrase"><q>Need fuel</q><span class="does"><span class="dot stop"><span class="ms">local_gas_station</span></span>Nearest truck stop</span></div>
-        <div class="phrase"><q>Find a truck stop near Reno</q><span class="does"><span class="dot stop"><span class="ms">search</span></span>Search near a town</span></div>
-        <div class="phrase"><q>I need to sleep</q><span class="does"><span class="dot rest"><span class="ms">park</span></span>Rest area</span></div>
-        <div class="phrase"><q>How do I get in?</q><span class="does"><span class="dot stop"><span class="ms">login</span></span>Truck entrance, your side</span></div>
-        <div class="phrase"><q>Not that one, something closer</q><span class="does"><span class="dot svc"><span class="ms">forum</span></span>Remembers the conversation</span></div>
-        <div class="phrase"><q>I&rsquo;ve got a flat, find someone who can fix it</q><span class="does"><span class="dot svc"><span class="ms">build</span></span>Mobile tire service</span></div>
-        <div class="phrase"><q>Mute directions</q><span class="does"><span class="dot svc"><span class="ms">volume_off</span></span>Controls the app</span></div>
+        <button class="phrase reveal" type="button" data-play="hotel"><q>I&rsquo;m tired, find me a hotel where I can park my rig</q><span class="does"><span class="lbl"><span class="dot hotel"><span class="ms">bed</span></span>Hotel with truck parking</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
+        <button class="phrase reveal" type="button" data-play="fuel"><q>Need fuel</q><span class="does"><span class="lbl"><span class="dot stop"><span class="ms">local_gas_station</span></span>Nearest truck stop</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
+        <button class="phrase reveal" type="button" data-play="near"><q>Find a truck stop near Reno</q><span class="does"><span class="lbl"><span class="dot stop"><span class="ms">search</span></span>Search near a town</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
+        <button class="phrase reveal" type="button" data-play="rest"><q>I need to sleep</q><span class="does"><span class="lbl"><span class="dot rest"><span class="ms">park</span></span>Rest area</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
+        <button class="phrase reveal" type="button" data-play="getin"><q>How do I get in?</q><span class="does"><span class="lbl"><span class="dot stop"><span class="ms">login</span></span>Truck entrance, your side</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
+        <button class="phrase reveal" type="button" data-play="closer"><q>Not that one, something closer</q><span class="does"><span class="lbl"><span class="dot svc"><span class="ms">forum</span></span>Remembers the conversation</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
+        <button class="phrase reveal" type="button" data-play="flat"><q>I&rsquo;ve got a flat, find someone who can fix it</q><span class="does"><span class="lbl"><span class="dot svc"><span class="ms">build</span></span>Mobile tire service</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
+        <button class="phrase reveal" type="button" data-play="mute"><q>Mute directions</q><span class="does"><span class="lbl"><span class="dot svc"><span class="ms">volume_off</span></span>Controls the app</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
       </div>
+      <p class="book-note"><span class="ms" aria-hidden="true">touch_app</span>Tap any phrase to see how Buddy handles it on the phone above.</p>
     </div>
   </section>
 
   <!-- HOW IT WORKS -->
   <section class="band" id="how" aria-labelledby="how-title">
     <div class="wrap">
-      <div class="sec-head">
+      <div class="sec-head reveal">
         <span class="eyebrow">How it works</span>
         <h2 id="how-title">From &ldquo;Hey Buddy&rdquo; to a route in one breath.</h2>
       </div>
-      <ol class="steps" style="list-style:none; margin:0; padding:0">
-        <li class="step">
+      <ol class="steps">
+        <li class="step reveal">
+          <div class="ill ill-wake" aria-hidden="true">
+            <span class="hey">&ldquo;Hey Buddy&rdquo;</span>
+            <span class="av"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span></span>
+          </div>
+          <span class="num">01</span>
           <h3>Wake it up</h3>
-          <p>Say &ldquo;Hey Buddy&rdquo; or tap the avatar. The wake word is heard on the phone, so nothing leaves it until you speak to Buddy.</p>
+          <p>Say &ldquo;Hey Buddy&rdquo; or tap the avatar. The wake word is heard on the phone, so nothing leaves it until you talk to Buddy.</p>
         </li>
-        <li class="step">
+        <li class="step reveal">
+          <div class="ill ill-said" aria-hidden="true">
+            <div class="card"><div class="k">You said</div><span class="typed">need a truck stop with showers</span><div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+          </div>
+          <span class="num">02</span>
           <h3>Talk normally</h3>
           <p>Buddy shows what it heard, so you know it got you right before it acts.</p>
-          <span class="said">You said: need a truck stop with showers</span>
         </li>
-        <li class="step">
+        <li class="step reveal">
+          <div class="ill ill-route" aria-hidden="true">
+            <svg viewBox="0 0 260 188" preserveAspectRatio="xMidYMid slice">
+              <rect width="260" height="188" fill="#EEF1F4"/>
+              <g stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"><path d="M0 70 H260"/><path d="M0 140 H260"/><path d="M70 0 V188"/><path d="M180 0 V188"/></g>
+              <path d="M40 160 Q70 160 70 140 V78 Q70 70 78 70 H172 Q180 70 180 62 V40" stroke="#FFFFFF" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              <path class="r" d="M40 160 Q70 160 70 140 V78 Q70 70 78 70 H172 Q180 70 180 62 V40" stroke="#007AFF" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="40" cy="160" r="9" fill="#FFFFFF"/><circle cx="40" cy="160" r="5" fill="#007AFF"/>
+              <g transform="translate(180 30) rotate(45)"><rect x="-12" y="-12" width="24" height="24" rx="12" fill="#AF52DE" stroke="#FFFFFF" stroke-width="2.5"/></g>
+            </svg>
+            <span class="tag">9 min</span>
+          </div>
+          <span class="num">03</span>
           <h3>Buddy picks and routes</h3>
-          <p>It weighs your truck, the distance and the parking, picks one place and sets the route. It answers in a sentence or two, out loud and on screen.</p>
+          <p>It weighs your truck, the distance and the parking, picks one place and sets the route. The answer is a sentence or two, out loud and on screen.</p>
         </li>
-        <li class="step">
+        <li class="step reveal">
+          <div class="ill ill-go" aria-hidden="true">
+            <span class="go">Go</span>
+            <span class="hand"><span>Spoken turns</span><span>Live ETA</span></span>
+          </div>
+          <span class="num">04</span>
           <h3>Tap Go</h3>
-          <p>Drive with spoken turn-by-turn, or hand the trip to Google Maps or Waze.</p>
+          <p>Driving mode takes over: big turn-by-turn, spoken out loud, with your arrival time always in view.</p>
         </li>
       </ol>
     </div>
@@ -611,42 +833,52 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
   <!-- PARKING -->
   <section class="band map" id="parking" aria-labelledby="parking-title">
     <div class="wrap split">
-      <div class="sat-card" role="img" aria-label="Satellite view of a truck lot with the truck entrance marked E and the route ending there">
+      <div class="sat-card reveal" role="img" aria-label="Satellite view of a truck lot being scanned: four trailers detected, truck entrance marked E, the route ending there">
         <svg viewBox="0 0 500 400" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <defs>
+            <filter id="grain" x="0" y="0" width="100%" height="100%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="7" result="n"/>
+              <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.55 0"/>
+            </filter>
+            <filter id="grass" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="3" seed="3"/><feColorMatrix type="matrix" values="0 0 0 0 0.25  0 0 0 0 0.33  0 0 0 0 0.2  0 0 0 1.4 -0.2"/></filter>
+          </defs>
           <rect width="500" height="400" fill="#4E575E"/>
           <rect x="0" y="0" width="500" height="64" fill="#5D6A58"/>
+          <rect x="0" y="0" width="500" height="64" filter="url(#grass)" opacity=".7"/>
           <rect x="0" y="330" width="500" height="70" fill="#56604F"/>
+          <rect x="0" y="330" width="500" height="70" filter="url(#grass)" opacity=".7"/>
           <rect x="0" y="64" width="500" height="34" fill="#6E767C"/>
           <g stroke="#D9DCDF" stroke-width="2" stroke-dasharray="14 12" opacity=".7"><path d="M0 81 H500"/></g>
           <rect x="40" y="118" width="420" height="196" rx="6" fill="#3F474D"/>
-          <g fill="#2F363B"><rect x="64" y="138" width="120" height="70" rx="3"/></g>
+          <rect x="64" y="138" width="120" height="70" rx="3" fill="#2F363B" stroke="#555E65" stroke-width="2"/>
           <g stroke="#E8EAEC" stroke-width="1.5" opacity=".55">
             <path d="M210 140 V300"/><path d="M240 140 V300"/><path d="M270 140 V300"/><path d="M300 140 V300"/><path d="M330 140 V300"/><path d="M360 140 V300"/><path d="M390 140 V300"/><path d="M420 140 V300"/>
           </g>
-          <g fill="#E9ECEE">
-            <rect x="214" y="150" width="22" height="132" rx="2"/><rect x="274" y="160" width="22" height="122" rx="2"/>
-            <rect x="334" y="150" width="22" height="132" rx="2"/><rect x="394" y="156" width="22" height="126" rx="2"/>
-          </g>
-          <g fill="#B8C2CA">
-            <rect x="214" y="150" width="22" height="22" rx="2"/><rect x="274" y="160" width="22" height="22" rx="2"/>
-            <rect x="334" y="150" width="22" height="22" rx="2"/><rect x="394" y="156" width="22" height="22" rx="2"/>
-          </g>
-          <g fill="#6F8F5F"><circle cx="70" cy="40" r="16"/><circle cx="110" cy="30" r="12"/><circle cx="430" cy="360" r="18"/><circle cx="470" cy="350" r="12"/></g>
+          <g fill="#E9ECEE"><rect x="214" y="150" width="22" height="132" rx="2"/><rect x="274" y="160" width="22" height="122" rx="2"/><rect x="334" y="150" width="22" height="132" rx="2"/><rect x="394" y="156" width="22" height="126" rx="2"/></g>
+          <g fill="#B8C2CA"><rect x="214" y="150" width="22" height="22" rx="2"/><rect x="274" y="160" width="22" height="22" rx="2"/><rect x="334" y="150" width="22" height="22" rx="2"/><rect x="394" y="156" width="22" height="22" rx="2"/></g>
+          <g fill="#4A6B3E"><circle cx="70" cy="40" r="16"/><circle cx="110" cy="30" r="12"/><circle cx="430" cy="360" r="18"/><circle cx="470" cy="350" r="12"/><circle cx="30" cy="370" r="14"/></g>
+          <rect width="500" height="400" fill="#000000" filter="url(#grain)" opacity=".3"/>
+          <g class="det"><rect x="208" y="144" width="34" height="144" rx="4"/><rect class="lbl-bg" x="208" y="125" width="40" height="17" rx="4"/><text x="213" y="137.5">53′</text></g>
+          <g class="det d2"><rect x="268" y="154" width="34" height="134" rx="4"/></g>
+          <g class="det d3"><rect x="328" y="144" width="34" height="144" rx="4"/></g>
+          <g class="det d4"><rect x="388" y="150" width="34" height="138" rx="4"/></g>
           <path d="M-10 81 H140 Q150 81 150 92 V122" stroke="#FFFFFF" stroke-width="12" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
           <path d="M-10 81 H140 Q150 81 150 92 V122" stroke="#007AFF" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle class="e-pulse" cx="150" cy="124" r="15" fill="#007AFF"/>
           <circle cx="150" cy="124" r="15" fill="#007AFF" stroke="#FFFFFF" stroke-width="3"/>
           <text x="150" y="129.5" text-anchor="middle" font-family="Plus Jakarta Sans, sans-serif" font-weight="800" font-size="15" fill="#FFFFFF">E</text>
         </svg>
-        <span class="chip sat-chip a"><span class="dot stop"><span class="ms">satellite_alt</span></span>Checked from satellite</span>
+        <div class="scan" aria-hidden="true"></div>
+        <span class="sat-chip a"><span class="rec" aria-hidden="true"></span>Checking the lot from above</span>
         <div class="sat-chip b">
           <div class="row"><span class="ms" aria-hidden="true">check_circle</span>Fits a 53 ft trailer</div>
           <div class="sub">On your right, off Richards Blvd, past the fuel island.</div>
         </div>
       </div>
-      <div class="split-copy">
+      <div class="split-copy reveal">
         <span class="eyebrow">Truck parking</span>
         <h2 id="parking-title">It looks at the lot before you take the exit.</h2>
-        <p class="body-copy">A listing saying &ldquo;truck parking&rdquo; isn&rsquo;t the same as room for 70 feet of rig. Buddy checks satellite imagery of the place to judge whether a 53 ft tractor-trailer can park there, finds the truck entrance, and ends your route at it.</p>
+        <p class="body-copy">A listing saying &ldquo;truck parking&rdquo; isn&rsquo;t the same as room for 70 feet of rig. Buddy checks a 300 m satellite view around the place to judge whether a 53 ft tractor-trailer can park there, finds the truck entrance, and ends your route at it.</p>
         <div class="verdicts" aria-label="Parking verdicts Buddy can give">
           <span class="verdict listed"><span class="ms" aria-hidden="true">verified</span>Truck parking listed</span>
           <span class="verdict ok"><span class="ms" aria-hidden="true">check_circle</span>Fits a 53 ft trailer</span>
@@ -660,24 +892,43 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
   <!-- TRUCK PROFILE -->
   <section class="band" id="profile" aria-labelledby="profile-title">
     <div class="wrap split flip">
-      <div class="profile" aria-label="Example truck profile">
+      <div class="profile reveal" id="profile-card" data-tall="true" aria-label="Truck profile you can try">
+        <div class="mini-map" aria-hidden="true">
+          <svg viewBox="0 0 440 150" preserveAspectRatio="xMidYMid meet">
+            <rect width="440" height="150" fill="#EEF1F4"/>
+            <path d="M0 40 C 120 50, 160 20, 260 30 S 400 60, 440 50" stroke="#CFE3F5" stroke-width="18" fill="none"/>
+            <g stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" fill="none"><path d="M30 100 H410"/><path d="M220 0 V150"/><path d="M30 100 Q 120 145 220 138 T 410 100"/></g>
+            <path class="direct" d="M30 100 H410" stroke="#007AFF" stroke-width="5" stroke-linecap="round" fill="none"/>
+            <path class="alt" d="M30 100 Q 120 145 220 138 T 410 100" stroke="#007AFF" stroke-width="5" stroke-linecap="round" fill="none"/>
+            <rect x="200" y="88" width="40" height="24" rx="5" fill="#FF3B30" stroke="#FFFFFF" stroke-width="2"/>
+            <text x="220" y="104" text-anchor="middle" font-family="Space Mono, monospace" font-weight="700" font-size="10" fill="#FFFFFF">12′8″</text>
+            <circle cx="30" cy="100" r="8" fill="#FFFFFF"/><circle cx="30" cy="100" r="4.5" fill="#007AFF"/>
+            <circle cx="410" cy="100" r="8" fill="#FFFFFF"/><circle cx="410" cy="100" r="4.5" fill="#1C1C1E"/>
+          </svg>
+          <span class="note"><span class="t-tall"><span class="ms" aria-hidden="true">alt_route</span>Rerouted around a 12′ 8″ bridge</span><span class="t-short"><span class="ms" aria-hidden="true">check_circle</span>Fits under the 12′ 8″ bridge</span></span>
+        </div>
         <div class="profile-head">
           <span class="ic"><span class="ms" aria-hidden="true">local_shipping</span></span>
-          <div><h3>Your truck</h3><p>Every route is built around it</p></div>
+          <div><h3>Your truck</h3><p>Try it: change the height and watch the route</p></div>
         </div>
-        <div class="p-row"><span class="k">Height</span><span class="v">13 ft 6 in</span></div>
+        <div class="p-row"><span class="k" id="h-label">Height</span>
+          <span class="seg" role="group" aria-labelledby="h-label">
+            <button type="button" data-h="12" aria-pressed="false">12′ 0″</button>
+            <button type="button" data-h="13.5" aria-pressed="true">13′ 6″</button>
+            <button type="button" data-h="14" aria-pressed="false">14′ 0″</button>
+          </span>
+        </div>
         <div class="p-row"><span class="k">Trailer length</span><span class="v">53 ft</span></div>
         <div class="p-row"><span class="k">Gross weight</span><span class="v">80,000 lb</span></div>
-        <div class="p-row"><span class="k">Hazardous materials</span><span class="toggle" role="img" aria-label="Off"></span></div>
-        <div class="p-row"><span class="k">Avoid toll roads</span><span class="toggle on" role="img" aria-label="On"></span></div>
-        <div class="p-row"><span class="k">Avoid ferries and tunnels</span><span class="toggle" role="img" aria-label="Off"></span></div>
+        <div class="p-row"><span class="k" id="hz">Hazardous materials</span><button class="toggle" type="button" role="switch" aria-checked="false" aria-labelledby="hz"></button></div>
+        <div class="p-row"><span class="k" id="tl">Avoid toll roads</span><button class="toggle" type="button" role="switch" aria-checked="true" aria-labelledby="tl"></button></div>
       </div>
-      <div class="split-copy">
+      <div class="split-copy reveal">
         <span class="eyebrow">Built around your rig</span>
         <h2 id="profile-title">Tell it your truck once. Every route respects it.</h2>
-        <p class="body-copy">Set up takes one sentence. Height, trailer length, weight and hazmat all shape the route, so Buddy steers you clear of low bridges and roads your truck shouldn&rsquo;t be on. Change it any time by voice.</p>
+        <p class="body-copy">Setup takes one sentence. Height, trailer length, weight and hazmat all shape the route, so Buddy steers you clear of low bridges and roads your truck shouldn&rsquo;t be on. Change it any time by voice.</p>
         <div class="voice-set">
-          <span class="mini"><img src="assets/buddy.webp" alt=""></span>
+          <span class="face"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span></span>
           <div><div class="who">Say it like</div><p>&ldquo;13 foot 6, 53 foot trailer, 80,000 pounds, no hazmat.&rdquo;</p></div>
         </div>
         <div class="notice"><span class="ms" aria-hidden="true">warning</span>Estimated route · truck restrictions not checked</div>
@@ -689,13 +940,14 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
   <!-- BREAKDOWN -->
   <section class="band tint" id="breakdown" aria-labelledby="bd-title">
     <div class="wrap">
-      <div class="sec-head">
+      <div class="sec-head reveal">
         <span class="eyebrow">Breakdown help</span>
         <h2 id="bd-title">Stopped on the shoulder? Say so. Buddy does the calling around.</h2>
         <p class="body-copy">Tell Buddy what happened. It asks at most one question, then reads reviews, hours and payment options while you deal with the truck. You get a short spoken comparison and the exact details to give on the phone. You start it, and Buddy never calls anyone on its own.</p>
       </div>
       <div class="bd">
-        <div>
+        <div class="reveal">
+          <div class="research"><span class="ms" aria-hidden="true" style="font-size:18px;color:var(--blue)">travel_explore</span>Reading reviews&hellip;<span class="bar" aria-hidden="true"></span></div>
           <div class="prov-list" aria-label="Example providers">
             <div class="prov best">
               <span class="ic"><span class="ms" aria-hidden="true">build</span></span>
@@ -715,7 +967,7 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
           </div>
           <p class="example-note">Example results. Names and prices are illustrative.</p>
         </div>
-        <div class="tell">
+        <div class="tell reveal">
           <div class="k">What to tell them</div>
           <dl>
             <div><dt>Where you are</dt><dd>I-80 eastbound, past exit 86, right shoulder</dd></div>
@@ -729,32 +981,43 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
     </div>
   </section>
 
-  <!-- DRIVING / CAB -->
-  <section class="band" aria-labelledby="cab-title">
+  <!-- NIGHT -->
+  <section class="band night" aria-labelledby="night-title">
     <div class="wrap">
       <div class="split">
-        <div class="split-copy">
+        <div class="split-copy reveal">
           <span class="eyebrow">Made for the cab</span>
-          <h2 id="cab-title">Readable at a glance. Usable with one thumb.</h2>
-          <p class="body-copy">Phone on the mount, eyes on the road. Turn-by-turn is spoken and shown big, arrival time sits where you expect it, and one word mutes it all.</p>
+          <h2 id="night-title">Built for the 2&nbsp;AM stretch.</h2>
+          <p class="body-copy">Phone on the mount, eyes on the road. Turn-by-turn is spoken and shown big, your arrival time sits where you expect it, and one word mutes it all.</p>
         </div>
-        <div>
-          <div class="navbanner" aria-label="Example driving banner">
-            <span class="arrow"><span class="ms" aria-hidden="true">turn_right</span></span>
-            <div class="txt"><div class="dist">0.4 mi</div><div class="instr">Take exit 86 toward Richards Blvd</div></div>
-            <span class="vol"><span class="ms" aria-hidden="true">volume_up</span></span>
+        <div class="road reveal">
+          <canvas id="road" aria-hidden="true"></canvas>
+          <div class="navbanner">
+            <span class="arrow"><span class="ms" aria-hidden="true" id="nb-ic">turn_right</span></span>
+            <div class="txt"><div class="dist" id="nb-dist">0.4 mi</div><div class="instr" id="nb-instr">Take exit 86 toward Richards Blvd</div></div>
+            <button class="vol" id="nb-vol" type="button" aria-pressed="true" aria-label="Mute directions"><span class="ms" aria-hidden="true">volume_up</span></button>
           </div>
-          <div class="drive-strip"><span class="eta">8:42 PM</span><span class="rest">9 min · 4.1 mi · Motel 6 Sacramento North</span></div>
+          <div class="drive">
+            <div><div class="eta">8:42 PM</div><div class="rest">9 min · 4.1 mi · Motel 6</div></div>
+            <span class="end">End route</span>
+          </div>
         </div>
       </div>
 
+      <div class="figures reveal">
+        <div class="figure"><div class="n">56<small>px</small></div><p>The smallest button in the app, sized for a bumpy cab.</p></div>
+        <div class="figure"><div class="n">300<small>m</small></div><p>Satellite square Buddy checks around a stop for truck parking.</p></div>
+        <div class="figure"><div class="n">1&ndash;2</div><p>Sentences per spoken answer. The place and the distance, then quiet.</p></div>
+        <div class="figure"><div class="n">0<small>sec</small></div><p>Audio that leaves the phone before you say &ldquo;Hey Buddy&rdquo;.</p></div>
+      </div>
+
       <div class="cab-grid">
-        <div class="cab"><span class="ic"><span class="ms" aria-hidden="true">touch_app</span></span><h3>Big targets</h3><p>Every button is at least <span class="fig">56 px</span>, sized for a bumpy cab and a gloved thumb.</p></div>
-        <div class="cab"><span class="ic"><span class="ms" aria-hidden="true">closed_caption</span></span><h3>Captioned, always</h3><p>What you said and what Buddy answered are always on screen, so it works with the radio up.</p></div>
-        <div class="cab"><span class="ic"><span class="ms" aria-hidden="true">lock</span></span><h3>Wake word on the phone</h3><p>&ldquo;Hey Buddy&rdquo; is detected on the device. Nothing is recorded or sent until you start talking to it.</p></div>
-        <div class="cab"><span class="ic"><span class="ms" aria-hidden="true">history</span></span><h3>Remembers the trip</h3><p>Say &ldquo;not that one&rdquo; and Buddy knows what you mean. Clear its memory whenever you like.</p></div>
-        <div class="cab"><span class="ic"><span class="ms" aria-hidden="true">map</span></span><h3>Your maps, too</h3><p>Hand any route to Google Maps or Waze with one tap if that&rsquo;s what you drive with.</p></div>
-        <div class="cab"><span class="ic"><span class="ms" aria-hidden="true">record_voice_over</span></span><h3>Short answers</h3><p>One or two sentences: the place and the distance. Buddy keeps the talking to what you need.</p></div>
+        <div class="cab reveal"><span class="ic a-tap"><span class="ms" aria-hidden="true">touch_app</span></span><h3>Big targets</h3><p>Every button is at least <span class="fig">56px</span>, easy to hit with a thumb over road noise.</p></div>
+        <div class="cab reveal"><span class="ic a-cc"><span class="ms" aria-hidden="true">closed_caption</span></span><h3>Captioned, always</h3><p>What you said and what Buddy answered are always on screen, so it works with the radio up.</p></div>
+        <div class="cab reveal"><span class="ic a-lock"><span class="ms" aria-hidden="true">lock</span></span><h3>Wake word on the phone</h3><p>&ldquo;Hey Buddy&rdquo; is detected on the device. Nothing is recorded or sent until you start talking to it.</p></div>
+        <div class="cab reveal"><span class="ic a-mem"><span class="ms" aria-hidden="true">history</span></span><h3>Remembers the trip</h3><p>Say &ldquo;not that one&rdquo; and Buddy knows what you mean. Clear its memory whenever you like.</p></div>
+        <div class="cab reveal"><span class="ic a-map"><span class="ms" aria-hidden="true">streetview</span></span><h3>See it before you arrive</h3><p>From the satellite view, open the lot in Google Street View and check the entrance before you commit.</p></div>
+        <div class="cab reveal"><span class="ic a-talk"><span class="ms" aria-hidden="true">record_voice_over</span></span><h3>Short answers</h3><p>One or two sentences: the place and the distance. Buddy keeps the talking to what you need.</p></div>
       </div>
     </div>
   </section>
@@ -762,13 +1025,14 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
   <!-- CLOSING -->
   <section class="closing" id="get" aria-labelledby="get-title">
     <div class="wrap inner">
-      <div class="big-buddy" aria-hidden="true">
+      <button class="big-buddy" id="big-buddy" type="button" aria-label="Talk to Buddy">
         <span class="glow"></span><span class="ring"></span><span class="ring r2"></span>
-        <span class="disc"><img src="assets/buddy.webp" alt="" width="122" height="122"></span>
-        <span class="badge"><span class="ms">mic</span></span>
-      </div>
+        <span class="disc"><span class="buddy buddy-bob" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span></span>
+        <span class="badge"><span class="ms" aria-hidden="true">mic</span></span>
+      </button>
+      <div class="say-back" id="say-back" aria-live="polite">Tap me.</div>
       <h2 id="get-title">Hey Buddy.</h2>
-      <p>Your copilot for the next stop, the next exit and the long night in between.</p>
+      <p class="sub">Your copilot for the next stop, the next exit and the long night in between.</p>
       <div class="stores">
         <span class="store"><span class="ms" aria-hidden="true">phone_iphone</span><span class="t"><small>Coming soon</small>iPhone</span></span>
         <span class="store"><span class="ms" aria-hidden="true">android</span><span class="t"><small>Coming soon</small>Android</span></span>
@@ -779,47 +1043,235 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
 
 <footer>
   <div class="wrap foot-row">
-    <a class="brand" href="#top"><span class="brand-disc"><img src="assets/buddy.webp" alt="" width="30" height="30"></span>Truck Buddy</a>
+    <a class="brand" href="#top"><span class="brand-disc"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span></span>Truck Buddy</a>
+    <nav class="foot-links" aria-label="Footer">
+      <a href="#how">How it works</a><a href="#parking">Parking</a><a href="#profile">Your rig</a><a href="#breakdown">Breakdowns</a><a href="privacy/">Privacy</a><a href="support/">Support</a>
+    </nav>
     <span>Voice copilot for truck drivers. © 2026 Truck Buddy</span>
   </div>
 </footer>
 
 <script>
 (function () {
-  var head = document.querySelector(".site-head");
-  var onScroll = function () { head.classList.toggle("scrolled", window.scrollY > 8); };
-  window.addEventListener("scroll", onScroll, { passive: true });
-  onScroll();
-
-  // Hero bubble replays the app's dialog: driver speaks, Buddy thinks, Buddy answers (the resting frame).
   var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (reduce) return;
-  var bubble = document.getElementById("bubble");
-  var who = document.getElementById("bubble-who");
-  var text = document.getElementById("bubble-text");
-  var face = document.getElementById("bubble-face");
-  var buddyFace = face.innerHTML;
-  var youFace = '<span class="ms" aria-hidden="true">person</span>';
-  var beats = [
-    { who: "You said", text: "I’m tired, find me a hotel where I can park my rig", you: true, ms: 3200 },
-    { who: "Buddy", text: "Finding the best spot…", you: false, ms: 1800 },
-    { who: "Buddy", text: "Found Motel 6 with truck parking, about 4 miles away. Route is set.", you: false, ms: 5200 }
-  ];
-  var i = 2;
-  function next() {
-    i = (i + 1) % beats.length;
-    var b = beats[i];
-    bubble.classList.add("swap");
-    setTimeout(function () {
-      who.textContent = b.who;
-      text.textContent = b.text;
-      face.className = "mini" + (b.you ? " you" : "");
-      face.innerHTML = b.you ? youFace : buddyFace;
-      bubble.classList.remove("swap");
-    }, 300);
-    setTimeout(next, b.ms);
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* header route-line progress */
+  var head = document.querySelector(".site-head");
+  function onScroll() {
+    var max = document.documentElement.scrollHeight - innerHeight;
+    head.style.setProperty("--p", max > 0 ? Math.min(1, scrollY / max).toFixed(4) : 0);
   }
-  setTimeout(next, 4200);
+  addEventListener("scroll", onScroll, { passive: true }); onScroll();
+
+  /* Buddy's eyes follow the pointer and blink */
+  var buddies = [].slice.call(document.querySelectorAll("[data-buddy]"));
+  var px = innerWidth / 2, py = innerHeight / 3, raf = 0;
+  function look() {
+    raf = 0;
+    buddies.forEach(function (b) {
+      var r = b.getBoundingClientRect();
+      if (!r.width || r.bottom < -50 || r.top > innerHeight + 50) return;
+      var dx = px - (r.left + r.width / 2), dy = py - (r.top + r.height * 0.46);
+      var d = Math.max(1, Math.hypot(dx, dy)), k = Math.min(1, d / 260);
+      b.style.setProperty("--ex", (dx / d * k).toFixed(3));
+      b.style.setProperty("--ey", (dy / d * k).toFixed(3));
+    });
+  }
+  if (!reduce) {
+    addEventListener("pointermove", function (e) { px = e.clientX; py = e.clientY; if (!raf) raf = requestAnimationFrame(look); }, { passive: true });
+    addEventListener("scroll", function () { if (!raf) raf = requestAnimationFrame(look); }, { passive: true });
+    look();
+    (function blink() {
+      setTimeout(function () {
+        buddies.forEach(function (b) { b.classList.add("blink"); });
+        setTimeout(function () { buddies.forEach(function (b) { b.classList.remove("blink"); }); }, 140);
+        blink();
+      }, 2600 + Math.random() * 3200);
+    })();
+  }
+
+  /* hero phone: the copilot dialog, one scenario at a time */
+  var S = {
+    hotel: { said: "I’m tired, find me a hotel where I can park my rig", filler: "Got it, checking.", reply: "Found Motel 6 with truck parking, about 4 miles away. Route is set.",
+      search: "To: Motel 6 Sacramento", eta: "9 min · 4.1 mi", entry: true, place: "Motel 6 Sacramento North", park: "Fits a 53 ft trailer", ok: true, cat: "hotel", icon: "bed", label: "Motel 6", call: false },
+    fuel: { said: "Need fuel", filler: "Sure, one moment.", reply: "Sierra Truck Plaza, 6 miles up on I-80. Diesel and truck parking. Route is set.",
+      search: "To: Sierra Truck Plaza", eta: "8 min · 6.2 mi", entry: true, place: "Sierra Truck Plaza", park: "Truck parking listed", ok: false, pic: "verified", cat: "stop", icon: "local_gas_station", label: "Sierra Plaza", call: false },
+    near: { said: "Find a truck stop near Reno", filler: "Alright, let me look.", reply: "Closest one to Reno is Mustang Truck Stop, about 2 hours away. Route is set.",
+      search: "To: Mustang Truck Stop", eta: "2 h 10 min · 132 mi", entry: true, place: "Mustang Truck Stop, Reno", park: "Fits a 53 ft trailer", ok: true, cat: "stop", icon: "local_gas_station", label: "Mustang", call: false },
+    rest: { said: "I need to sleep", filler: "Let me see what’s around.", reply: "Elk Grove Rest Area, about 11 miles south on I-5. Route is set.",
+      search: "To: Elk Grove Rest Area", eta: "12 min · 11 mi", entry: false, place: "Elk Grove Rest Area", park: "Fits a 53 ft trailer", ok: true, cat: "rest", icon: "park", label: "Rest area", call: false },
+    getin: { said: "How do I get in?", filler: "Got it, checking.", reply: "The truck entrance is on your right, off Richards Blvd, past the fuel island.",
+      search: "To: Motel 6 Sacramento", eta: "9 min · 4.1 mi", entry: true, place: "Motel 6 Sacramento North", park: "Entrance on your right", ok: false, pic: "login", cat: "hotel", icon: "bed", label: "Motel 6", call: false },
+    closer: { said: "Not that one, something closer", filler: "Sure, one moment.", reply: "Travel Inn has truck parking too, 2 miles away. Route is set.",
+      search: "To: Travel Inn", eta: "5 min · 2.0 mi", entry: true, place: "Travel Inn Sacramento", park: "Fits a 53 ft trailer", ok: true, cat: "hotel", icon: "bed", label: "Travel Inn", call: false },
+    flat: { said: "I’ve got a flat, find someone who can fix it", filler: "Checking who’s around…", reply: "Valley Mobile Truck Tire can be there in about 25 minutes and takes Comchek.",
+      search: "Breakdown help", eta: "25 min out · mobile", entry: false, place: "Valley Mobile Truck Tire", park: "Open 24 h · Takes Comchek", ok: false, pic: "payments", cat: "svc", icon: "build", label: "Valley Mobile", call: true },
+    mute: { said: "Mute directions", filler: "", reply: "Directions are muted. Say “turn directions on” when you want them back.",
+      search: "To: Motel 6 Sacramento", eta: "9 min · 4.1 mi", entry: true, place: "Motel 6 Sacramento North", park: "Directions muted", ok: false, pic: "volume_off", cat: "hotel", icon: "bed", label: "Motel 6", call: false }
+  };
+  var phone = $("phone"), bubble = $("bubble"), face = $("bubble-face"), who = $("bubble-who"), text = $("bubble-text");
+  var talkTitle = $("talk-title"), talkCap = $("talk-cap"), talkBadge = $("talk-badge");
+  var chips = [].slice.call(document.querySelectorAll(".try-chip"));
+  var token = 0, autoOrder = ["hotel", "fuel", "rest", "flat"];
+
+  function later(ms, t) { return new Promise(function (res, rej) { setTimeout(function () { t === token ? res() : rej(); }, ms); }); }
+  function setBubble(isYou, w, t) {
+    bubble.classList.add("swap");
+    return new Promise(function (res) {
+      setTimeout(function () {
+        face.className = "face" + (isYou ? " you" : ""); who.textContent = w; text.textContent = t;
+        bubble.classList.remove("swap"); res();
+      }, 220);
+    });
+  }
+  function typeOut(str, t) {
+    text.textContent = ""; text.classList.add("typing");
+    var i = 0;
+    return new Promise(function (res, rej) {
+      (function step() {
+        if (t !== token) { text.classList.remove("typing"); return rej(); }
+        i++; text.textContent = str.slice(0, i);
+        if (i < str.length) setTimeout(step, 26 + Math.random() * 30); else { text.classList.remove("typing"); res(); }
+      })();
+    });
+  }
+  function fillSheet(s) {
+    $("m-search").textContent = s.search; $("m-eta").textContent = s.eta; $("m-place").textContent = s.place;
+    $("m-entry-row").style.visibility = s.entry ? "visible" : "hidden";
+    $("m-entry").style.opacity = s.entry ? 1 : 0;
+    $("m-park").className = "m-park" + (s.ok ? "" : " info");
+    $("m-park-ic").textContent = s.ok ? "check_circle" : s.pic;
+    $("m-park-t").textContent = s.park;
+    var go = $("m-go"); go.className = "m-go" + (s.call ? " call" : "");
+    go.innerHTML = s.call ? '<span class="ms" aria-hidden="true">call</span>Call' : "Go";
+    var pin = $("m-pin"); pin.className = "pin sel " + s.cat; $("m-pin-ic").textContent = s.icon;
+    void pin.offsetWidth; pin.classList.add("pop");
+    $("m-label").textContent = s.label;
+    var r = $("route"); r.classList.remove("go"); void r.getBoundingClientRect(); r.classList.add("go");
+  }
+  function play(key, fromUser) {
+    var s = S[key]; if (!s) return;
+    var t = ++token;
+    chips.forEach(function (c) { c.setAttribute("aria-pressed", c.dataset.play === key ? "true" : "false"); });
+    if (reduce) { fillSheet(s); phone.dataset.state = "answer"; face.className = "face"; who.textContent = "Buddy"; text.textContent = s.reply; return; }
+    phone.dataset.state = "listening"; talkTitle.textContent = "I’m listening"; talkCap.textContent = "Tap to stop"; talkBadge.textContent = "stop";
+    setBubble(true, "You said", "")
+      .then(function () { return later(350, t); })
+      .then(function () { return typeOut(s.said, t); })
+      .then(function () { return later(450, t); })
+      .then(function () {
+        phone.dataset.state = "thinking"; talkTitle.textContent = "Finding the best spot…"; talkCap.textContent = "Thinking…"; talkBadge.textContent = "more_horiz";
+        return s.filler ? setBubble(false, "Buddy", s.filler) : null;
+      })
+      .then(function () { return later(1300, t); })
+      .then(function () { fillSheet(s); phone.dataset.state = "answer"; return setBubble(false, "Buddy", s.reply); })
+      .then(function () { return later(fromUser ? 9000 : 6200, t); })
+      .then(function () { var i = autoOrder.indexOf(key); play(autoOrder[(i + 1) % autoOrder.length], false); })
+      .catch(function () {});
+  }
+  [].forEach.call(document.querySelectorAll("[data-play]"), function (el) {
+    el.addEventListener("click", function () {
+      if (el.classList.contains("phrase")) {
+        var top = phone.getBoundingClientRect().top + scrollY - 90;
+        scrollTo({ top: top, behavior: reduce ? "auto" : "smooth" });
+      }
+      play(el.dataset.play, true);
+    });
+  });
+  if (!reduce) setTimeout(function () { if (token === 0) play("fuel", false); }, 4800);
+
+  /* subtle phone tilt toward the pointer */
+  var stage = document.querySelector(".hero-stage");
+  if (!reduce && matchMedia("(hover: hover)").matches) {
+    stage.addEventListener("pointermove", function (e) {
+      var r = stage.getBoundingClientRect();
+      var x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+      phone.style.transform = "perspective(1200px) rotateY(" + (x * 8).toFixed(2) + "deg) rotateX(" + (-y * 6).toFixed(2) + "deg)";
+    });
+    stage.addEventListener("pointerleave", function () { phone.style.transform = ""; });
+  }
+
+  /* truck profile: height decides whether the route clears the 12'8" bridge */
+  var card = $("profile-card");
+  [].forEach.call(card.querySelectorAll(".seg button"), function (b) {
+    b.addEventListener("click", function () {
+      [].forEach.call(card.querySelectorAll(".seg button"), function (o) { o.setAttribute("aria-pressed", o === b ? "true" : "false"); });
+      card.dataset.tall = parseFloat(b.dataset.h) > 12.67 ? "true" : "false";
+    });
+  });
+  [].forEach.call(document.querySelectorAll(".toggle"), function (t) {
+    t.addEventListener("click", function () { t.setAttribute("aria-checked", t.getAttribute("aria-checked") === "true" ? "false" : "true"); });
+  });
+
+  /* cab cards: glow follows the pointer */
+  [].forEach.call(document.querySelectorAll(".cab"), function (c) {
+    c.addEventListener("pointermove", function (e) {
+      var r = c.getBoundingClientRect();
+      c.style.setProperty("--mx", (e.clientX - r.left) + "px"); c.style.setProperty("--my", (e.clientY - r.top) + "px");
+    });
+  });
+
+  /* night drive: canvas road with moving lane dashes, distance counting down */
+  var cv = $("road"), ctx = cv.getContext("2d"), dpr = Math.min(2, window.devicePixelRatio || 1), off = 0, visible = true;
+  function size() { var r = cv.getBoundingClientRect(); cv.width = Math.max(1, r.width * dpr); cv.height = Math.max(1, r.height * dpr); }
+  function draw() {
+    var w = cv.width, h = cv.height; ctx.clearRect(0, 0, w, h);
+    var g = ctx.createLinearGradient(0, 0, 0, h); g.addColorStop(0, "#0B0B0D"); g.addColorStop(1, "#1A1A1E"); ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    var hx = w * 0.5, hy = h * 0.3;
+    var glow = ctx.createRadialGradient(hx, hy, 0, hx, hy, w * 0.5); glow.addColorStop(0, "rgba(0,122,255,0.18)"); glow.addColorStop(1, "rgba(0,122,255,0)");
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#232328"; ctx.beginPath(); ctx.moveTo(hx - w * 0.02, hy); ctx.lineTo(hx + w * 0.02, hy); ctx.lineTo(w * 1.05, h); ctx.lineTo(-w * 0.05, h); ctx.closePath(); ctx.fill();
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(0,122,255,0.25)"; ctx.lineWidth = 26 * dpr;
+    ctx.beginPath(); ctx.moveTo(hx + w * 0.006, hy + 4); ctx.quadraticCurveTo(hx + w * 0.07, h * 0.62, w * 0.64, h); ctx.stroke();
+    ctx.strokeStyle = "rgba(0,122,255,0.95)"; ctx.lineWidth = 9 * dpr; ctx.stroke();
+    for (var i = 0; i < 16; i++) {
+      var t = ((i / 16) + off) % 1, p = t * t;
+      var y = hy + (h - hy) * p, len = (4 + 46 * p) * dpr, wid = (1 + 6 * p) * dpr;
+      for (var side = -1; side <= 1; side += 2) {
+        var x = hx + side * (w * 0.006 + (w * 0.2) * p);
+        ctx.fillStyle = "rgba(242,242,247," + (0.12 + 0.6 * p).toFixed(3) + ")";
+        ctx.fillRect(x - wid / 2, y, wid, len);
+      }
+    }
+    ctx.lineWidth = 3 * dpr;
+    ctx.strokeStyle = "rgba(255,196,0,0.6)"; ctx.beginPath(); ctx.moveTo(hx - w * 0.02, hy); ctx.lineTo(-w * 0.05, h); ctx.stroke();
+    ctx.strokeStyle = "rgba(242,242,247,0.45)"; ctx.beginPath(); ctx.moveTo(hx + w * 0.02, hy); ctx.lineTo(w * 1.05, h); ctx.stroke();
+  }
+  size(); draw();
+  addEventListener("resize", function () { size(); draw(); });
+  if ("IntersectionObserver" in window) new IntersectionObserver(function (es) { visible = es[0].isIntersecting; }).observe(cv);
+  var last = 0, dist = 0.4, acc = 0, si = 0;
+  var steps = [["turn_right", "Take exit 86 toward Richards Blvd", 0.4], ["turn_slight_right", "Keep right onto Richards Blvd", 0.3], ["flag", "Motel 6 is on your right", 0.2]];
+  function loop(ts) {
+    var dt = Math.min(0.05, (ts - last) / 1000 || 0); last = ts;
+    if (visible) {
+      off = (off + dt * 0.45) % 1; draw();
+      acc += dt;
+      if (acc > 1.3) {
+        acc = 0; dist = Math.round((dist - 0.1) * 10) / 10;
+        if (dist < 0.1) { si = (si + 1) % steps.length; dist = steps[si][2]; $("nb-ic").textContent = steps[si][0]; $("nb-instr").textContent = steps[si][1]; }
+        $("nb-dist").textContent = dist.toFixed(1) + " mi";
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+  if (!reduce) requestAnimationFrame(loop);
+  var vol = $("nb-vol");
+  vol.addEventListener("click", function () {
+    var on = vol.getAttribute("aria-pressed") !== "true";
+    vol.setAttribute("aria-pressed", on ? "true" : "false");
+    vol.setAttribute("aria-label", on ? "Mute directions" : "Unmute directions");
+    vol.firstElementChild.textContent = on ? "volume_up" : "volume_off";
+  });
+
+  /* closing Buddy answers when tapped */
+  var bb = $("big-buddy"), back = $("say-back"), lines = ["I’m listening.", "Where to next?", "Need a spot for the night?", "I’ll keep it short. Promise."], li = 0, bt;
+  bb.addEventListener("click", function () {
+    bb.classList.add("listening"); back.textContent = lines[li++ % lines.length];
+    clearTimeout(bt); bt = setTimeout(function () { bb.classList.remove("listening"); }, 2400);
+  });
 })();
 </script>
 </body>

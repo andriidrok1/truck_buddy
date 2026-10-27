@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Truck Buddy Privacy</title>
+<meta name="description" content="What the Truck Buddy app collects, why, and who it is shared with.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+/* Same tokens as index.html (from frontend/src/theme.ts): a plain reading page. */
+:root { color-scheme: light; --paper: #FFFFFF; --paper-2: #F2F2F7; --map: #EEF1F4; --cabin: #F7F2EA; --ink: #1C1C1E; --ink-2: #3A3A3C; --ink-3: #6C6C70; --line: #E5E5EA; --blue: #007AFF; --blue-soft: rgba(0,122,255,0.16); --font-ui: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-ui); font-size: 1.0625rem; line-height: 1.65; -webkit-font-smoothing: antialiased; }
+a { color: var(--blue); }
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; border-radius: 8px; }
+.wrap { max-width: 760px; margin-inline: auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header { border-bottom: 1px solid var(--line); }
+.head-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 68px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); font-weight: 800; font-size: 1.125rem; letter-spacing: -0.02em; }
+.brand-disc { width: 38px; height: 38px; border-radius: 50%; background: var(--cabin); display: grid; place-items: center; box-shadow: 0 0 0 4px var(--blue-soft); }
+.brand-disc img { width: 30px; height: 30px; }
+.head-row nav { display: flex; gap: 6px 18px; flex-wrap: wrap; }
+.head-row nav a { text-decoration: none; font-weight: 600; font-size: 0.9375rem; color: var(--ink-2); }
+.head-row nav a[aria-current="page"] { color: var(--blue); }
+.intro { background: var(--map); padding-block: 56px 48px; }
+.eyebrow { font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--blue); }
+h1 { font-size: clamp(2.25rem, 1.6rem + 2.6vw, 3.5rem); font-weight: 800; letter-spacing: -0.04em; line-height: 1.05; margin: 12px 0 12px; text-wrap: balance; }
+.intro p { color: var(--ink-2); max-width: 60ch; margin: 0; }
+.updated { font-size: 0.875rem; color: var(--ink-3); margin-top: 16px !important; }
+main.doc { padding-block: 48px 96px; }
+.doc h2 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.025em; margin: 48px 0 12px; }
+.doc h2:first-child { margin-top: 0; }
+.doc p, .doc li { color: var(--ink-2); max-width: 65ch; }
+.doc ul { padding-left: 1.2em; margin: 0 0 12px; display: grid; gap: 10px; }
+.doc strong { color: var(--ink); }
+.contact { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; background: var(--paper-2); border-radius: 20px; padding: 20px 24px; margin-top: 16px; }
+.contact b { font-size: 1.125rem; }
+.copy { height: 40px; padding: 0 16px; border-radius: 999px; border: 0; background: var(--ink); color: var(--paper); font: 700 0.875rem var(--font-ui); cursor: pointer; }
+details { border-top: 1px solid var(--line); padding-block: 4px; }
+details:last-of-type { border-bottom: 1px solid var(--line); }
+summary { cursor: pointer; font-weight: 700; padding-block: 16px; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; color: var(--blue); font-weight: 800; font-size: 1.25rem; line-height: 1; transition: transform .2s; }
+details[open] summary::after { transform: rotate(45deg); }
+details p { margin: 0 0 16px; }
+footer { border-top: 1px solid var(--line); padding-block: 32px; color: var(--ink-3); font-size: 0.875rem; }
+footer .row { display: flex; flex-wrap: wrap; gap: 12px 20px; justify-content: space-between; }
+footer a { color: var(--ink-2); font-weight: 600; text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap head-row">
+    <a class="brand" href="../"><span class="brand-disc"><img src="../assets/favicon.png" alt=""></span>Truck Buddy</a>
+    <nav aria-label="Main"><a href="../">Home</a><a href="../privacy/" aria-current="page">Privacy</a><a href="../support/">Support</a></nav>
+  </div>
+</header>
+<section class="intro">
+  <div class="wrap">
+    <span class="eyebrow">Privacy policy</span>
+    <h1>TruckBuddy Privacy Policy</h1>
+    <p>TruckBuddy is a voice copilot for truck drivers. This policy explains what the app collects, why, and who it is shared with.</p>
+    <p class="updated">Last updated: October 27, 2026</p>
+  </div>
+</section>
+<main class="doc wrap">
+  <h2>What we collect</h2>
+  <ul>
+    <li><strong>Location.</strong> While you use the app, your GPS position is used to find truck-friendly parking, fuel, repair shops and routes near you.</li>
+    <li><strong>Voice.</strong> When you tap the copilot or say the wake word, TruckBuddy records what you say and sends it to our server to understand your request. Wake-word detection runs on your phone (Picovoice); audio leaves your phone only after the wake word or a tap.</li>
+    <li><strong>Truck profile and preferences.</strong> Height, trailer length, weight, hazmat, your first name and route preferences you enter. These are stored on your phone and sent with each request so routes fit your truck.</li>
+    <li><strong>Conversation history.</strong> Recent things you said and the copilot&rsquo;s replies are stored on our server, linked to a random ID issued when you enter your access code, so the copilot can remember context. You can clear it in the app (Conversation memory &rarr; Clear memory).</li>
+  </ul>
+  <p>We do not collect your contacts, photos, or advertising identifiers, and we do not track you across other apps or websites.</p>
+
+  <h2>Who we share it with</h2>
+  <p>We share data only with services that process your request:</p>
+  <ul>
+    <li><strong>OpenAI</strong> receives your voice recordings and transcripts to transcribe speech, understand requests and generate spoken replies. Satellite images of a destination may be sent to OpenAI to check truck parking.</li>
+    <li><strong>HERE, OpenRouteService, Google Maps Platform and OpenStreetMap (Nominatim)</strong> receive locations and truck dimensions to search places, geocode addresses and plan truck routes.</li>
+  </ul>
+  <p>These providers process data under their own terms and are not allowed by them to use API data for advertising. We do not sell your data.</p>
+
+  <h2>How long we keep it</h2>
+  <ul>
+    <li>Voice audio is processed and not kept after the reply is generated (generated reply audio is cached briefly).</li>
+    <li>Conversation history is kept until you clear it.</li>
+  </ul>
+
+  <h2>Your choices</h2>
+  <ul>
+    <li>You can deny location or microphone access in your phone&rsquo;s settings.</li>
+    <li>You can turn off hands-free (wake word) in the app.</li>
+    <li>To delete your conversation history, use Clear memory on the Conversation memory screen, or email us.</li>
+  </ul>
+
+  <h2>Children</h2>
+  <p>TruckBuddy is meant for professional drivers and is not directed at children under 13.</p>
+
+  <h2>Contact</h2>
+  <p>Questions or deletion requests: <a href="mailto:support@truckbuddy.io">support@truckbuddy.io</a></p>
+</main>
+<footer>
+  <div class="wrap row"><span>© 2026 Truck Buddy</span><span><a href="../privacy/">Privacy</a> · <a href="../support/">Support</a> · support@truckbuddy.io</span></div>
+</footer>
+
+</body>
+</html>
