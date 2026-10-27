@@ -21,6 +21,40 @@ Legend: `[x]` we have it · `[ ]` we don't · `[-]` we are not going to copy it 
 
 Apple keeps 15% under the Small Business Program, so a $14.99 tier nets $12.74 per driver per month. Our per-session cost (find → route → parking) is about $0.12; a chat-heavy driver at the 10-min/day cap costs up to $15–18/mo (see the unit-economics note).
 
+## Trucker Path as a company (the benchmark)
+
+Phoenix, founded 2013, owned by Moatable Inc. (NYSE: MTBL, formerly Renren) since Dec 2017, ~95 staff. Public company, so the numbers are real (Moatable 10-Q, Q3 2025):
+
+| | Q3 2025 | YoY |
+|---|---|---|
+| Trucker Path revenue | $10.3M | +39% |
+| Paying subscriptions | ~152k | +30% |
+| Gross margin | 70% | |
+
+Run-rate about $41M/yr. With 1M+ MAU, roughly 15% pay. Revenue per paying sub is $22.6/mo, but that includes the load board and fleet seats; a single driver typically pays the annual Gold rate, $12.50/mo.
+
+Product lines and what each costs:
+
+1. Driver app. Free with ads: map, crowd check-ins for parking and weigh stations (100M+/mo), diesel prices, reviews. Gold $9.99–19.99/mo or $149.99/yr: navigation, no ads. Diamond $29.99/mo or $249.99/yr, 7-day trial: parking predictions, offline maps, multi-stop, CarPlay, Via/Avoid, 511 and weather. Parking reservations since June 2026: 50k+ spots, ~$20 average per booking, partner Realize Mobility. Diesel discounts via 10-4 by WEX, free to the driver.
+2. TruckLoads load board. Search is free. Starter $29.99/mo ($239.88/yr), Professional $49.99/mo ($399.99/yr): broker credit score and days-to-pay, 1/7/15-day rate check, AI load search, document scanner (rate con, BOL → Excel), and voice requests for parking and cheapest diesel on a route. 150k loads/day, 800+ brokers, 100k carriers.
+3. Fleets (Nav Pro). Individual Driver $29.99/mo (1–2 trucks), Starter $79/mo (1 operator + 3 drivers, extra operator $50, driver $15), Business $199/mo (1 + 11, driver $12), 101+ on request, 7-day trial. 2,800+ fleets, 45k vehicles, 30+ ELDs, McLeod, a 36-endpoint API. Fleet Fuel and Reserved Parking sold separately.
+4. ELD via Geotab hardware; no public price any more (once "free hardware, from $8.30/mo"); ELD compliance only from the Starter fleet tier.
+5. Insurance agency (2025): auto liability, physical damage, cargo, NTL, workers' comp; ~$7M book of premiums. Deals: partner offers (ATBS, Lendio, pharmacy card, telehealth, Realize parking).
+
+Dead: InstaPay factoring, sold to Flexible Funding in 2018.
+
+What it means for us:
+
+- The free tier is the funnel: 1M MAU, 15% convert. We need a free mode capped by voice minutes per day, not a paywall at the door.
+- Voice is a premium feature inside their paid load board. For us voice is the base; say so on the store page.
+- Parking reservations at ~$20 with a cut is their first per-transaction revenue in the driver app. Same move for us through Realize or TruckParkingClub, no infrastructure of our own.
+- $12.50/mo is the ceiling for "another truck app". A $14.99 tier has to sit next to the Diamond feature set, not Gold.
+- Subscriptions growing 30%/yr means drivers pay for software.
+
+They have no conversational interface, no satellite interpretation, no breakdown triage with providers. Their moat is the check-ins; we don't replicate it, we go around it with state data (TPIMS) and chain data (Love's).
+
+Sources: truckerpath.com (pricing, fleet, truckloads, deals, insurance), App Store id782746890, Wikipedia, yespress.io/trucker-path, Moatable 10-Q Q3 2025, ttnews.com and thetrucker.com (parking reservations, June 2026), trucknews.com (Acapela voices), tech.co (ELD).
+
 ## Trucker Path
 
 Source: truckerpath.com (pricing, compare, trucker-path-app, truck-gps, faq) and App Store id782746890, version 7.1.7 (2026-10-10).
