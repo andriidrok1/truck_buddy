@@ -15,10 +15,10 @@ import { dial, ProvidersList } from "@/src/components/ProvidersList";
 import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
-import { logAnnouncement } from "@/src/dev/announcements";
 import { isTester } from "@/src/auth";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
+import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
 import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, takeTruckReroute, truckLabel, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { WAKE_SUPPORTED, useWakeWord } from "@/src/hooks/useWakeWord";
@@ -27,6 +27,7 @@ import { setActiveRoute } from "@/src/state/activeRoute";
 import { reduceAgentResponse } from "@/src/state/agentReducer";
 import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
 import { storage } from "@/src/utils/storage";
+import { PRIORITY } from "@/src/voice/queue";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 
@@ -130,6 +131,15 @@ export default function MapScreen() {
     setToast({ id: Date.now(), text, kind });
   }, []);
 
+  // Everything the copilot says on its own (maneuvers, reroutes, reminders) goes through one
+  // queue: it waits while the driver is talking to the copilot or a reply plays (never cuts it
+  // off), and orders by urgency. The caption follows whatever line is on air.
+  const { say, clear: clearSpeech } = useSpeechQueue(
+    voice,
+    () => phaseRef.current === "listening" || phaseRef.current === "thinking",
+    (item) => setCaption({ reply: item.text }),
+  );
+
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 3200);
@@ -161,11 +171,7 @@ export default function MapScreen() {
       const who = truck.driver_name ? `Hey ${truck.driver_name}, ` : "";
       const hrs = truck.break_hours === 1 ? "an hour" : `${truck.break_hours} hours`;
       const text = `${who}you've been driving for ${hrs}. Want me to find a rest area?`;
-      setCaption({ reply: text });
-      api
-        .speak(text)
-        .then((r) => voice.play(absoluteUrl(r.audio_url)))
-        .catch(() => {});
+      say(text, { priority: PRIORITY.WEATHER, kind: "ambient", key: "break", ttlMs: 10 * 60 * 1000 });
     }, 60000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -383,19 +389,6 @@ export default function MapScreen() {
   const backToIdle = () =>
     setPhase(activeRef.current ? "navigating" : providersRef.current ? "providers" : optionsRef.current.length ? "options" : "ready");
 
-  // Turn-by-turn while driving; prompts stay quiet while the driver is talking to the copilot.
-  const say = (text: string, kind: "maneuver" | "reroute" = "maneuver") => {
-    if (phase === "listening" || phase === "thinking" || voice.speaking) {
-      if (__DEV__) logAnnouncement(text, "skipped"); // never cut off the copilot
-      return;
-    }
-    if (__DEV__) logAnnouncement(text, kind);
-    setCaption({ reply: text });
-    api
-      .speak(text)
-      .then((r) => voice.play(absoluteUrl(r.audio_url)))
-      .catch(() => {});
-  };
   // Dev tools (tester replay) read the active route from here.
   useEffect(() => {
     setActiveRoute(active);
@@ -419,7 +412,7 @@ export default function MapScreen() {
     for (let i = 0; i < starts.length; i++) if (starts[i] <= g.matchedIndex) sectionIndex = i;
     const sectionStart = starts[sectionIndex] ?? 0;
     const traveledM = Math.max(0, g.alongM - (g.cum[sectionStart] ?? 0));
-    say("Rerouting.", "reroute");
+    say("Rerouting.", { priority: PRIORITY.MANEUVER, kind: "system", key: "reroute", ttlMs: 20000 });
     try {
       let res;
       try {
@@ -757,6 +750,7 @@ export default function MapScreen() {
   /** Route state reset without touching audio (used by the copilot so its reply isn't cut). */
   const clearRoute = () => {
     routeStart.current = null;
+    clearSpeech(); // queued maneuver calls belong to the route that just ended
     setDriving(false);
     setActive(null);
     setCaption(null);

@@ -76,9 +76,12 @@ export function useVoice() {
   // that sees a newer generation after any await gives up.
   const prepared = useRef(false);
   const prewarm = useRef(false);
+  // The speech queue holds the playback session between its lines: without the hold every clip
+  // end re-arms the recorder (RECORD_MODE) and the next clip switches back (PLAYBACK_MODE).
+  const playbackHold = useRef(false);
   const audioGen = useRef(0);
   const prepareIdle = useCallback(async () => {
-    if (Platform.OS === "web" || !prewarm.current || prepared.current || recorder.isRecording || player.current) return;
+    if (Platform.OS === "web" || !prewarm.current || playbackHold.current || prepared.current || recorder.isRecording || player.current) return;
     const gen = audioGen.current;
     const stale = () => gen !== audioGen.current || player.current !== null || recorder.isRecording;
     try {
@@ -116,6 +119,19 @@ export function useVoice() {
     },
     [prepareIdle],
   );
+  /** Keep the playback session after the current clip ends (more clips follow); releasing re-arms the mic. */
+  const holdPlayback = useCallback(
+    (on: boolean) => {
+      if (playbackHold.current === on) return;
+      playbackHold.current = on;
+      if (!on) prepareIdle();
+    },
+    [prepareIdle],
+  );
+  /** A clip is on air right now (ref-based, for callbacks; `speaking` is the render-time state). */
+  const isSpeaking = useCallback(() => player.current !== null, []);
+  /** The mic is open (a clip starting now would flip the session under the recording). */
+  const isRecording = useCallback(() => recorder.isRecording, [recorder]);
 
   const startRecording = useCallback(async () => {
     stopSpeaking();
@@ -327,6 +343,9 @@ export function useVoice() {
     cancelRecording,
     listen,
     setPrewarm,
+    holdPlayback,
+    isSpeaking,
+    isRecording,
     finishListening,
     play,
     preload,

@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef } from "react";
 import { announcement, createRouteMatcher, limitAt, markSpoken, nextManeuver, stageFor } from "../geo/guidance";
 import { createOffRouteTracker, thresholdM } from "../geo/offroute";
 import type { ActiveRoute, LatLng, Maneuver } from "../types";
+import { PRIORITY } from "../voice/queue";
+import type { SayOptions } from "./useSpeechQueue";
 
 export { formatDistance } from "../geo/guidance";
 
@@ -52,7 +54,7 @@ export function useGuidance(
   driver: DriverFix,
   driving: boolean,
   voiceOn: boolean,
-  say: (text: string) => void,
+  say: (text: string, opts: SayOptions) => void,
   /** Called once per off-route verdict with the guidance state of that fix (the map screen reroutes). */
   onOffRoute?: (g: Guidance) => void,
 ): Guidance {
@@ -99,7 +101,13 @@ export function useGuidance(
     const stage = stageFor(toNextM, next.index, spoken.current);
     if (!stage) return;
     markSpoken(spoken.current, next.index, stage);
-    say(announcement(next, stage, toNextM));
+    // A due turn beats everything and is stale after 8 s; far/near calls share a key, so an
+    // unplayed far call is replaced by the near one instead of playing late.
+    const opts: SayOptions =
+      stage === "now"
+        ? { priority: PRIORITY.MANEUVER_NOW, ttlMs: 8000, key: `m-${next.index}-now`, kind: "maneuver" }
+        : { priority: PRIORITY.MANEUVER, ttlMs: 30000, key: `m-${next.index}`, kind: "maneuver" };
+    say(announcement(next, stage, toNextM), opts);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, driving, voiceOn]);
 
