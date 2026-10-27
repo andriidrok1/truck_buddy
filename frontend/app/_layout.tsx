@@ -4,7 +4,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { LogBox, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { KeyboardProvider } from "react-native-keyboard-controller";
+import { KeyboardProvider } from "@/src/keyboard";
 
 import { useAuthState } from "@/src/auth";
 import { ConsentGate } from "@/src/components/ConsentGate";

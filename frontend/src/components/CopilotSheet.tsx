@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
+import { KeyboardStickyView } from "@/src/keyboard";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 
 import { fonts, shadow, spacing, useTheme } from "../theme";

@@ -361,7 +361,7 @@ class LlmAgentProvider:
         ui = req.ui
         context += (f" App: {'driving (navigation started)' if ui.driving else 'not driving yet'};"
                     f" spoken turn directions {'on' if ui.voice_guidance else 'off'};"
-                    f" Hey Buddy wake word {'on' if ui.hands_free else 'off'};"
+                    f" hands-free wake word {'on' if ui.hands_free else 'off (the driver taps the copilot to talk)'};"
                     f" {ui.options_count} other options available.")
         return context
 

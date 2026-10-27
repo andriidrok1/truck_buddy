@@ -1,7 +1,6 @@
 # TruckBuddy
 
-Hands-free voice copilot for truck drivers. The driver taps the avatar (or says the
-wake word) and asks for a truck stop, hotel, rest area, a destination or roadside help;
+Voice copilot for truck drivers. The driver taps the avatar and asks for a truck stop, hotel, rest area, a destination or roadside help;
 the copilot finds a truck-friendly place, builds a truck route, checks the parking lot
 on satellite imagery and talks the driver in.
 

@@ -22,6 +22,20 @@ function check(res: Response, path: string) {
   if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
 }
 
+/**
+ * A sleeping or crashed host answers 200 with an HTML page; parsing it as JSON used to surface as
+ * "Sorry, I didn't catch that". Treat anything that is not JSON as a dead connection instead.
+ */
+async function json<T>(res: Response, path: string): Promise<T> {
+  const type = res.headers.get("content-type") ?? "";
+  if (!/json/i.test(type)) throw new Error(`${path} failed: network (unexpected ${type || "empty"} response)`);
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new Error(`${path} failed: network (malformed JSON)`);
+  }
+}
+
 const DEFAULT_TIMEOUT_MS = 30000;
 
 /** Aborts after `ms`, or as soon as the caller's own signal aborts (no AbortSignal.any on Hermes). */
@@ -51,7 +65,7 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
       headers: { "Content-Type": "application/json", ...authHeader(), ...(rest.headers ?? {}) },
     });
     check(res, path);
-    return (await res.json()) as T;
+    return json<T>(res, path);
   } finally {
     d.done();
   }
@@ -96,7 +110,7 @@ export async function redeemAccessCode(code: string) {
   if (res.status === 429) throw new Error("Too many tries. Wait a few minutes and try again.");
   if (res.status === 401) throw new Error("That code isn't right. Check it and try again.");
   if (!res.ok) throw new Error("Something went wrong. Try again.");
-  const data = (await res.json()) as { access_token: string; role?: "driver" | "tester" };
+  const data = await json<{ access_token: string; role?: "driver" | "tester" }>(res, "/auth");
   await setToken(data.access_token, data.role === "tester" ? "tester" : "driver");
   requestCode(false);
 }
@@ -140,7 +154,7 @@ export const api = {
         signal: d.signal,
       });
       check(res as Response, "/voice/transcribe");
-      return (await res.json()) as { transcript: string; timings?: Record<string, number> };
+      return json<{ transcript: string; timings?: Record<string, number> }>(res, "/voice/transcribe");
     } finally {
       d.done();
     }
@@ -177,7 +191,7 @@ export const api = {
         signal: d.signal,
       });
       check(res as Response, "/onboarding/parse");
-      return (await res.json()) as { transcript: string; updates: Record<string, unknown> };
+      return json<{ transcript: string; updates: Record<string, unknown> }>(res, "/onboarding/parse");
     } finally {
       d.done();
     }
