@@ -18,6 +18,7 @@ import { MESSAGES } from "@/src/constants";
 import { isTester } from "@/src/auth";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
+import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
 import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, takeTruckReroute, truckLabel, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
@@ -446,6 +447,12 @@ export default function MapScreen() {
     [loc.coords, loc.speed, loc.accuracy, loc.ts],
   );
   const guidance = useGuidance(active, fix, driving, voiceOn, say, rerouteOffRoute);
+  // Closures, weather, chains and speed alerts while driving; the shield and chips on the banner.
+  const advisories = useRouteAdvisories(driving ? active : null, guidance, driving ? loc.speed : null, say);
+  const limitRef = useRef<number | null>(null);
+  useEffect(() => {
+    limitRef.current = advisories.limitMph;
+  }, [advisories.limitMph]);
 
   const onGo = () => {
     pauseDialog();
@@ -504,6 +511,7 @@ export default function MapScreen() {
           options_count: optionsRef.current.length,
         },
         loc.heading ?? null,
+        limitRef.current,
       );
       if (myTurn !== turn.current) return;
       // Fast answer: the filler never starts. Otherwise the answer waits for it to finish.
@@ -945,6 +953,9 @@ export default function MapScreen() {
           voiceOn={voiceOn}
           onToggleVoice={() => setVoiceOn(!voiceOn)}
           onLayout={setTopH}
+          limitMph={advisories.limitMph}
+          speedMph={advisories.speedMph}
+          advisories={advisories.advisories}
         />
       ) : (
       <TopBar

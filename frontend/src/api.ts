@@ -191,6 +191,7 @@ export const api = {
     sessionId?: string,
     ui?: UiState,
     heading: number | null = null, // degrees from the GPS fix, null when the truck is standing still
+    activeSpeedLimitMph: number | null = null, // posted limit where the truck is, when the route knows it
   ) =>
     request<AgentResponse>(`/agent?speak=true`, {
       method: "POST",
@@ -201,6 +202,7 @@ export const api = {
         lat: at.lat,
         lng: at.lng,
         heading,
+        active_speed_limit_mph: activeSpeedLimitMph,
         truck_profile: getTruckProfile(),
         session_id: sessionId,
         active_place: active?.place,

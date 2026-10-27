@@ -9,7 +9,7 @@ import { requestCode, setToken } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
 import { PressableScale } from "@/src/components/PressableScale";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
-import { DEFAULT_TRUCK, requestTruckReroute, saveTruckProfile, setHandsFree, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { DEFAULT_TRUCK, requestTruckReroute, saveTruckProfile, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { setSim } from "@/src/sim";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
 
@@ -91,6 +91,7 @@ export default function TruckProfileScreen() {
   const { colors } = useTheme();
   const truck = useTruckProfile();
   const handsFree = useHandsFree();
+  const speedAlerts = useSpeedAlerts();
 
   const [feet, setFeet] = useState(String(Math.floor(truck.height_in / 12)));
   const [inches, setInches] = useState(String(truck.height_in % 12));
@@ -197,6 +198,21 @@ export default function TruckProfileScreen() {
             />
           </View>
         )}
+
+        <View style={[styles.switchRow, { backgroundColor: colors.surfaceSecondary }]}>
+          <View style={styles.flex}>
+            <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Speed limit alerts</Text>
+            <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>Say so after 10 s more than 5 mph over the posted limit</Text>
+          </View>
+          <Switch
+            testID="speed-alerts-switch"
+            value={speedAlerts}
+            onValueChange={setSpeedAlerts}
+            trackColor={{ true: colors.brandPrimary, false: colors.surfaceTertiary }}
+            thumbColor={colors.surface}
+            {...(Platform.OS === "web" ? { activeThumbColor: colors.surface } : {})}
+          />
+        </View>
 
         {!valid && (
           <Text testID="truck-profile-error" style={[styles.error, { color: colors.error }]}>
