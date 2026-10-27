@@ -76,14 +76,6 @@ def take_token(driver: str, now: float, per_min: int = RATE_PER_MIN) -> bool:
     return True
 
 
-def rate_limited(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:
-    """require_driver plus the per-driver budget; 429 with a line the app can speak."""
-    driver = require_driver(credentials)
-    if not take_token(driver, time.monotonic()):
-        raise HTTPException(status_code=429, detail="Slow down a little.")
-    return driver
-
-
 def require_driver(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:
     """Driver id from the Bearer token; 401 when missing or invalid."""
     if not credentials or credentials.scheme.lower() != "bearer":
@@ -94,3 +86,11 @@ def require_driver(credentials: HTTPAuthorizationCredentials | None = Depends(_b
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return claims["sub"]
+
+
+def rate_limited(driver: str = Depends(require_driver)) -> str:
+    """require_driver (resolved once per request by FastAPI, so any check inside it runs once even when an
+    endpoint also declares Depends(require_driver)) plus the per-driver budget; 429 with a line the app can speak."""
+    if not take_token(driver, time.monotonic()):
+        raise HTTPException(status_code=429, detail="Slow down a little.")
+    return driver
