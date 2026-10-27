@@ -1,4 +1,4 @@
-import { authHeader, setToken } from "./auth";
+import { authHeader, requestCode, setToken } from "./auth";
 import { getTruckProfile } from "./hooks/useTruckProfile";
 import { uploadForm } from "./utils/upload";
 import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
@@ -57,6 +57,27 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
   }
 }
 
+/** Thrown when the server has open sign-up turned off: the driver needs an access code. */
+export class CodeRequiredError extends Error {}
+
+/** Open sign-up: a device token without a code. */
+export async function registerDevice() {
+  let res: Response;
+  const d = deadline(DEFAULT_TIMEOUT_MS);
+  try {
+    res = await fetch(`${BASE}/auth/device`, { method: "POST", signal: d.signal });
+  } catch {
+    throw new Error("No connection. Check your internet and try again.");
+  } finally {
+    d.done();
+  }
+  if (res.status === 403) throw new CodeRequiredError("Access code required");
+  if (res.status === 429) throw new Error("Too many tries. Wait a few minutes and try again.");
+  if (!res.ok) throw new Error("Something went wrong. Try again.");
+  const data = (await res.json()) as { access_token: string };
+  await setToken(data.access_token, "driver");
+}
+
 export async function redeemAccessCode(code: string) {
   let res: Response;
   const d = deadline(15000);
@@ -77,6 +98,7 @@ export async function redeemAccessCode(code: string) {
   if (!res.ok) throw new Error("Something went wrong. Try again.");
   const data = (await res.json()) as { access_token: string; role?: "driver" | "tester" };
   await setToken(data.access_token, data.role === "tester" ? "tester" : "driver");
+  requestCode(false);
 }
 
 export const api = {

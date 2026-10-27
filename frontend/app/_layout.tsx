@@ -7,8 +7,8 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { useAuthState } from "@/src/auth";
-import { AccessGate } from "@/src/components/AccessGate";
 import { ConsentGate } from "@/src/components/ConsentGate";
+import { DeviceGate } from "@/src/components/DeviceGate";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { useConsent } from "@/src/consent";
 import { queryClient } from "@/src/query-client";
@@ -41,7 +41,7 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <KeyboardProvider>
             <StatusBar style="dark" />
-            {auth !== "in" ? <AccessGate /> : consent === "yes" ? <Stack screenOptions={{ headerShown: false }} /> : <ConsentGate />}
+            {consent !== "yes" ? <ConsentGate /> : auth !== "in" ? <DeviceGate /> : <Stack screenOptions={{ headerShown: false }} />}
           </KeyboardProvider>
         </QueryClientProvider>
       </ErrorBoundary>

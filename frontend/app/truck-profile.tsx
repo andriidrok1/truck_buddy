@@ -4,7 +4,7 @@ import { Platform, StyleSheet, Switch, Text, TextInput, View } from "react-nativ
 import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { setToken } from "@/src/auth";
+import { requestCode, setToken } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
 import { PressableScale } from "@/src/components/PressableScale";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
@@ -181,7 +181,8 @@ export default function TruckProfileScreen() {
           accessibilityLabel="Sign out"
           onPress={async () => {
             setSim(null);
-            await setToken(null); // back to the access-code screen
+            requestCode(); // back to the access-code screen, not an automatic sign-in
+            await setToken(null);
           }}
           style={[styles.signOut, { borderColor: colors.error }]}
         >
