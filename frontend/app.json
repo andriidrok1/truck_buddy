@@ -1,33 +1,45 @@
 {
   "expo": {
     "name": "TruckBuddy",
-    "slug": "mobile",
+    "slug": "truckbuddy",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
+    "scheme": "truckbuddy",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.haulmateai.f6befm",
+      "supportsTablet": false,
+      "bundleIdentifier": "io.truckbuddy.app",
       "infoPlist": {
         "LSApplicationQueriesSchemes": [
           "comgooglemaps",
           "waze"
         ],
-        "NSLocationWhenInUseUsageDescription": "Find truck-friendly stops near you",
-        "NSMicrophoneUsageDescription": "Talk to your copilot hands-free",
-        "UIBackgroundModes": [
-          "audio"
+        "NSLocationWhenInUseUsageDescription": "TruckBuddy uses your location to find truck-friendly parking, fuel and repair shops near you and to plan truck-safe routes.",
+        "NSMicrophoneUsageDescription": "TruckBuddy listens when you say \"Hey Buddy\" or tap the copilot so you can ask for stops and directions hands-free while driving.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
+          }
         ]
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#F7F2EA"
       },
-      "package": "com.emergent.haulmateai.f6befm",
+      "package": "io.truckbuddy.app",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -35,6 +47,10 @@
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_MICROPHONE",
         "POST_NOTIFICATIONS"
+      ],
+      "versionCode": 1,
+      "blockedPermissions": [
+        "android.permission.ACCESS_BACKGROUND_LOCATION"
       ]
     },
     "web": {
@@ -47,10 +63,10 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-image.png",
+          "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000000"
+          "backgroundColor": "#F7F2EA"
         }
       ],
       "expo-font",
@@ -62,13 +78,15 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Find truck-friendly stops near you"
+          "locationWhenInUsePermission": "TruckBuddy uses your location to find truck-friendly parking, fuel and repair shops near you and to plan truck-safe routes."
         }
       ],
       [
         "expo-audio",
         {
-          "microphonePermission": "Talk to your copilot hands-free"
+          "microphonePermission": "TruckBuddy listens when you say \"Hey Buddy\" or tap the copilot so you can ask for stops and directions hands-free while driving.",
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false
         }
       ],
       "./plugins/withWakeWord"

@@ -1,7 +1,7 @@
 """Breakdown scenario unit tests: car-only filter, fact extraction guard, ranking in both modes.
 
 Deterministic tests need no network. test_live_extraction_* call gpt-5.4-mini on fixture reviews
-(skipped without EMERGENT_LLM_KEY).
+(skipped without OPENAI_API_KEY).
 """
 import asyncio
 import os
@@ -272,7 +272,7 @@ def test_cheapest_needs_two_priced():
 
 # ---------------------------------------------------------------- live extraction (LLM)
 
-live = pytest.mark.skipif(not os.environ.get("EMERGENT_LLM_KEY"), reason="no LLM key")
+live = pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"), reason="no LLM key")
 _LOOP = asyncio.new_event_loop()  # one loop for all live LLM calls (the LLM client is bound to its first loop)
 
 

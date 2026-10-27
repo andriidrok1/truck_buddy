@@ -16,14 +16,13 @@ import math
 import os
 import re
 import time
-import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import urljoin, urlparse
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 from services.geo import haversine_km, km_to_mi
+from services import llm
 from services.http import client
 
 logger = logging.getLogger("truckbuddy.providers")
@@ -408,11 +407,9 @@ async def extract_facts(c: dict, website: str, budget: Budget) -> dict:
     if not reviews.strip() and not site.strip():
         return dict(EMPTY_FACTS)  # nothing to read: everything stays unknown, no LLM call
     prompt = f"Business: {c['name']}\nREVIEWS:\n{reviews or '(none)'}\nWEBSITE TEXT:\n{site or '(none)'}"
-    chat = LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=f"facts-{uuid.uuid4()}",
-                   system_message=EXTRACT_SYSTEM).with_model(*EXTRACT_MODEL)
     budget.llm_calls += 1
     budget.llm_in_chars += len(EXTRACT_SYSTEM) + len(prompt)
-    raw = await asyncio.wait_for(chat.send_message(UserMessage(text=prompt)), timeout=budget.left(1.5))
+    raw = await asyncio.wait_for(llm.complete(EXTRACT_SYSTEM, prompt, EXTRACT_MODEL[1]), timeout=budget.left(1.5))
     budget.llm_out_chars += len(raw or "")
     facts = clean_facts(_parse_json(raw), reviews, site)
     if not facts["last_review_date"]:

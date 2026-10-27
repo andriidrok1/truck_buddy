@@ -15,10 +15,10 @@ BASE = os.environ["EXPO_PUBLIC_BACKEND_URL"].rstrip("/")
 async def raw(text):
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-    from emergentintegrations.llm.openai import OpenAITextToSpeech
+    from openai import AsyncOpenAI
     from services.voice import louder
     t0 = time.time()
-    a = await OpenAITextToSpeech(api_key=os.environ["EMERGENT_LLM_KEY"]).generate_speech(text=text, model="tts-1", voice="sage")
+    a = (await AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"]).audio.speech.create(input=text, model="tts-1", voice="sage")).content
     t1 = time.time()
     await louder(a)
     return t1 - t0, time.time() - t1

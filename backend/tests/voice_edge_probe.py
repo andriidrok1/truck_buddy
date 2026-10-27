@@ -10,7 +10,7 @@ import requests
 from dotenv import load_dotenv
 
 load_dotenv("/app/backend/.env")
-from emergentintegrations.llm.openai import OpenAITextToSpeech  # noqa: E402
+from openai import AsyncOpenAI  # noqa: E402
 
 URL = os.environ["EXPO_PUBLIC_BACKEND_URL"].rstrip("/") + "/api/voice"
 
@@ -36,10 +36,10 @@ async def main():
     for i in range(2):
         post(f"tone{i}.wav", wav("tone"), "audio/wav")
     post("silence.wav", wav("silence"), "audio/wav")
-    tts = OpenAITextToSpeech(api_key=os.environ["EMERGENT_LLM_KEY"])
+    tts = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"]).audio.speech
     for phrase, extra in [("How far is it?", {"active_place_id": "ts-49er"}), ("Thanks a lot", {}),
                           ("I'm tired, I need to sleep", {})]:
-        audio = await tts.generate_speech(text=phrase, model="tts-1", voice="alloy")
+        audio = (await tts.create(input=phrase, model="tts-1", voice="alloy")).content
         post(phrase[:16] + ".mp3", audio, "audio/mpeg", **extra)
 
 
