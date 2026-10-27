@@ -56,6 +56,11 @@ function OptionCard({ place, state, onParking, onRoute, index }: { place: Place;
             {place.distance_mi != null && (
               <Text style={[styles.meta, { color: colors.onSurfaceSecondary }]}>· {place.distance_mi.toFixed(1)} mi</Text>
             )}
+            {place.diesel_price != null && (
+              <Text testID={`option-diesel-${place.id}`} style={[styles.meta, { color: colors.onSurface }]}>
+                · Diesel ${place.diesel_price.toFixed(2)}{place.diesel_kind === "auto" ? " (car pumps)" : ""}
+              </Text>
+            )}
           </View>
         </View>
       </View>

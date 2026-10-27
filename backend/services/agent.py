@@ -129,7 +129,7 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
   "park near X" / "where can I park close to my delivery in X" / "staging near X" = find truck_stop with near X
   (never rest_area or parking for these).
 - go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV". Write numbers as digits ("2828 El Centro Rd, Sacramento"). If the driver gives only a street address and named a town earlier in the conversation, add that town to query.
-- pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something closer"). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. If no earlier place fits, use find with the same category instead.
+- pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something closer", "the cheapest diesel": lowest "diesel $" in the list). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. If no earlier place fits, use find with the same category instead.
 {controls}
 {parking}
 {breakdown}
@@ -223,6 +223,22 @@ def _notice(raw: str) -> str:
     return next((say for key, say in NOTICES if key in low), "Heads up, check this route for restrictions.")
 
 
+def _diesel_note(p: Place) -> str:
+    """Price tag for the model's place list, so "the cheapest diesel" resolves to a place_index."""
+    if p.diesel_price is None:
+        return ""
+    return f", diesel ${p.diesel_price:.2f}" + ("" if p.diesel_kind == "truck" else " (car pumps)")
+
+
+def _diesel_sentence(place: Place) -> str:
+    """Spoken price for a fuel-type place; nothing when Google has no fresh diesel price."""
+    if place.diesel_price is None or place.category != "truck_stop":
+        return ""
+    if place.diesel_kind == "truck":
+        return f" Diesel's ${place.diesel_price:.2f} there."
+    return f" Diesel's ${place.diesel_price:.2f} at the car pumps, truck lanes may differ."
+
+
 def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[str] = None) -> str:
     """Conversational intro + one line with the place, a landmark and the distance; then a notice, if any.
     The driver's name is used about every third answer."""
@@ -235,7 +251,7 @@ def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[st
     intro = intro.format(**vals)
     first_name = (driver or "").split(" ")[0]
     out = f"{intro}, {first_name}. " if first_name and n % 3 == 2 else f"{intro}. "
-    out += body.format(**vals)
+    out += body.format(**vals) + _diesel_sentence(place)
     return f"{out} {_notice(route.notices[0])}" if route.notices else out
 
 
@@ -331,7 +347,7 @@ class LlmAgentProvider:
             context += " Conversation so far: " + " | ".join(sess["history"][-MAX_HISTORY:]) + "."
         if sess["places"]:
             context += " Places found earlier: " + "; ".join(
-                f"{i}={p.name} ({p.category}) {p.distance_mi or 0:.1f} mi: {approach.note(p)}"
+                f"{i}={p.name} ({p.category}) {p.distance_mi or 0:.1f} mi{_diesel_note(p)}: {approach.note(p)}"
                 + (" [current route]" if req.active_place and p.id == req.active_place.id else "")
                 for i, p in enumerate(sess["places"], 1)) + "."
         cur = req.active_place
