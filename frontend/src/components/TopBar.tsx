@@ -22,11 +22,13 @@ type Props = {
   simLabel?: string | null;
   onTesterPress: () => void;
   isDemo: boolean;
+  /** Tap on the "Location off" tag: ask for location again (or open Settings). */
+  onLocationPress: () => void;
   onLayout: (h: number) => void;
 };
 
 /** Google-Maps-style top: "Where to?" search bar, truck settings on the right, memory below it. */
-export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, onTruckPress, onHistoryPress, tester, simLabel, onTesterPress, isDemo, onLayout }: Props) {
+export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, onTruckPress, onHistoryPress, tester, simLabel, onTesterPress, isDemo, onLocationPress, onLayout }: Props) {
   const { colors } = useTheme();
   const card = [shadow(colors), { backgroundColor: colors.surface }];
   const [text, setText] = useState("");
@@ -78,10 +80,17 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, on
             <Text style={[styles.demoText, { color: colors.onSurfaceSecondary }]} numberOfLines={1}>{simLabel}</Text>
           </PressableScale>
         ) : isDemo ? (
-          <View testID="demo-location-tag" style={[card, styles.demo]}>
+          <PressableScale
+            testID="demo-location-tag"
+            accessibilityLabel="Location is off. Turn on location"
+            onPress={onLocationPress}
+            style={[card, styles.demo]}
+          >
             <View style={[styles.demoDot, { backgroundColor: colors.warning }]} />
-            <Text style={[styles.demoText, { color: colors.onSurfaceSecondary }]}>Demo location</Text>
-          </View>
+            <Text style={[styles.demoText, { color: colors.onSurfaceSecondary }]} numberOfLines={1}>
+              Location off · Sample area
+            </Text>
+          </PressableScale>
         ) : (
           <View />
         )}

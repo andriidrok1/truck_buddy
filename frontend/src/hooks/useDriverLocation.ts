@@ -1,5 +1,6 @@
 import * as Location from "expo-location";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState, Linking } from "react-native";
 
 import { DEMO_LOCATION } from "../constants";
 import { useSim } from "../sim";
@@ -12,16 +13,21 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 /** Live GPS with Sacramento fallback when permission is denied or no fix arrives.
+ *  Coming back to the app (e.g. after turning location on in Settings) tries again.
  *  A tester's simulated spot (src/sim.ts) overrides both. */
 export function useDriverLocation() {
   const [state, setState] = useState<State>({ coords: DEMO_LOCATION, heading: null, isDemo: true, resolved: false });
   const sim = useSim();
+  const sub = useRef<Location.LocationSubscription | null>(null);
+  const starting = useRef(false);
+  const unmounted = useRef(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    let sub: Location.LocationSubscription | null = null;
+  /** Asks for permission (only if the OS still allows asking) and starts watching the position. */
+  const start = useCallback(async () => {
+    if (sub.current || starting.current || unmounted.current) return;
+    starting.current = true;
     const apply = (loc: Location.LocationObject) => {
-      if (cancelled) return;
+      if (unmounted.current) return;
       setState({
         coords: { lat: loc.coords.latitude, lng: loc.coords.longitude },
         heading: loc.coords.heading ?? null,
@@ -29,31 +35,50 @@ export function useDriverLocation() {
         resolved: true,
       });
     };
-
-    (async () => {
-      try {
-        let perm = await withTimeout(Location.getForegroundPermissionsAsync(), 5000);
-        if (perm.status !== "granted" && perm.canAskAgain) {
-          perm = await Location.requestForegroundPermissionsAsync();
-        }
-        if (perm.status !== "granted") throw new Error("denied");
-        const last = await Location.getLastKnownPositionAsync().catch(() => null);
-        if (last) apply(last);
-        const cur = await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), 10000);
-        apply(cur);
-        sub = await Location.watchPositionAsync({ accuracy: Location.Accuracy.High, distanceInterval: 20 }, apply);
-        if (cancelled) sub.remove();
-      } catch {
-        if (!cancelled) setState((s) => (s.isDemo ? { ...s, resolved: true } : s));
+    try {
+      let perm = await withTimeout(Location.getForegroundPermissionsAsync(), 5000);
+      if (perm.status !== "granted" && perm.canAskAgain) {
+        perm = await Location.requestForegroundPermissionsAsync();
       }
-    })();
-
-    return () => {
-      cancelled = true;
-      sub?.remove();
-    };
+      if (perm.status !== "granted") throw new Error("denied");
+      const last = await Location.getLastKnownPositionAsync().catch(() => null);
+      if (last) apply(last);
+      const watch = await Location.watchPositionAsync({ accuracy: Location.Accuracy.High, distanceInterval: 20 }, apply);
+      if (unmounted.current) watch.remove();
+      else sub.current = watch;
+      // A first fix right away; the watch keeps it fresh. No fix (e.g. indoors) keeps the last known one.
+      if (!last) apply(await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), 10000));
+    } catch {
+      if (!unmounted.current) setState((s) => (s.isDemo ? { ...s, resolved: true } : s));
+    } finally {
+      starting.current = false;
+    }
   }, []);
 
-  if (sim) return { coords: sim.coords, heading: sim.heading, isDemo: false, resolved: true, sim };
-  return { ...state, sim: null };
+  useEffect(() => {
+    unmounted.current = false;
+    start();
+    const appSub = AppState.addEventListener("change", (s) => {
+      if (s === "active") start();
+    });
+    return () => {
+      unmounted.current = true;
+      appSub.remove();
+      sub.current?.remove();
+      sub.current = null;
+    };
+  }, [start]);
+
+  /** "Location off" tag: ask again, or open Settings once the OS won't show the prompt anymore. */
+  const enable = useCallback(async () => {
+    const perm = await Location.getForegroundPermissionsAsync().catch(() => null);
+    if (perm && perm.status !== "granted" && !perm.canAskAgain) {
+      Linking.openSettings?.()?.catch(() => {});
+      return;
+    }
+    start();
+  }, [start]);
+
+  if (sim) return { coords: sim.coords, heading: sim.heading, isDemo: false, resolved: true, sim, enable };
+  return { ...state, sim: null, enable };
 }

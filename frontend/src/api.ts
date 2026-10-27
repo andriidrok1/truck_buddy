@@ -18,13 +18,39 @@ function check(res: Response, path: string) {
   if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...authHeader(), ...(init?.headers ?? {}) },
-  });
-  check(res, path);
-  return (await res.json()) as T;
+const DEFAULT_TIMEOUT_MS = 30000;
+
+/** Aborts after `ms`, or as soon as the caller's own signal aborts (no AbortSignal.any on Hermes). */
+function deadline(ms: number, outer?: AbortSignal | null) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  const onAbort = () => ctrl.abort();
+  if (outer?.aborted) ctrl.abort();
+  else outer?.addEventListener("abort", onAbort);
+  return {
+    signal: ctrl.signal,
+    done: () => {
+      clearTimeout(timer);
+      outer?.removeEventListener("abort", onAbort);
+    },
+  };
+}
+
+/** A stalled cell connection must never leave a screen spinning forever: every call has a deadline. */
+async function request<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, ...rest } = init ?? {};
+  const d = deadline(timeoutMs, rest.signal);
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      ...rest,
+      signal: d.signal,
+      headers: { "Content-Type": "application/json", ...authHeader(), ...(rest.headers ?? {}) },
+    });
+    check(res, path);
+    return (await res.json()) as T;
+  } finally {
+    d.done();
+  }
 }
 
 export async function redeemAccessCode(code: string) {
@@ -56,16 +82,17 @@ export const api = {
       body: JSON.stringify({ lat: from.lat, lng: from.lng, place, skip_parking: skipParking, truck_profile: getTruckProfile() }),
     }),
   parking: (place: Place, approach?: Approach | null) =>
-    request<ParkingCheck>(`/parking`, { method: "POST", body: JSON.stringify({ place, approach }) }),
+    request<ParkingCheck>(`/parking`, { method: "POST", body: JSON.stringify({ place, approach }), timeoutMs: 60000 }),
   /** Spoken parking answer; waits up to `waitS` for a satellite check in flight. */
   parkingAnswer: (place: Place, waitS: number) =>
     request<{ status: "ready" | "pending"; reply: string; audio_url?: string | null; parking?: ParkingCheck | null }>(
       `/parking/answer`,
-      { method: "POST", body: JSON.stringify({ place, wait_s: waitS }) },
+      { method: "POST", body: JSON.stringify({ place, wait_s: waitS }), timeoutMs: waitS * 1000 + 30000 },
     ),
   agent: (text: string, at: LatLng) =>
     request<AgentResponse>(`/agent`, {
       method: "POST",
+      timeoutMs: 65000,
       body: JSON.stringify({ text, lat: at.lat, lng: at.lng, truck_profile: getTruckProfile() }),
     }),
   speak: (text: string) => request<{ audio_url: string }>(`/speak`, { method: "POST", body: JSON.stringify({ text }) }),
@@ -88,6 +115,7 @@ export const api = {
     request<AgentResponse>(`/agent?speak=true`, {
       method: "POST",
       signal,
+      timeoutMs: 65000, // the map screen aborts the turn itself at 60 s
       body: JSON.stringify({
         text,
         lat: at.lat,
@@ -102,7 +130,7 @@ export const api = {
     }),
   /** Breakdown research result (long-poll: waits until the research is done). */
   breakdownResult: (id: string, signal?: AbortSignal) =>
-    request<AgentResponse>(`/breakdown/${id}?speak=true`, { signal }),
+    request<AgentResponse>(`/breakdown/${id}?speak=true`, { signal, timeoutMs: 120000 }),
   onboardingParse: async (uri: string, step: "name" | "truck" | "prefs") => {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
     const res = await uploadForm(`${BASE}/onboarding/parse`, {

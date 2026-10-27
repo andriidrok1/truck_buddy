@@ -36,6 +36,7 @@ const providerPlace = (p: Provider): Place => ({
 });
 
 const REQUEST_TIMEOUT_MS = 60000;
+const NO_CONNECTION = "I can't reach the server right now. Check your signal and try again.";
 const STAGES = ["Searching nearby…", "Setting route…"];
 const STAGE_MS = 3500;
 const WAKE_SLEEP_MS = 10 * 60 * 1000; // background without a route: turn the wake word off
@@ -485,7 +486,9 @@ export default function MapScreen() {
         ? "Check your truck profile and try again."
         : err.includes("502")
           ? MESSAGES.placesUnavailable
-          : MESSAGES.notUnderstood;
+          : /abort|network|timed? ?out|failed to fetch/i.test(err)
+            ? NO_CONNECTION
+            : MESSAGES.notUnderstood;
       setCaption({ reply: msg });
       backToIdle();
       continueDialog(myTurn, null, wait(1200));
@@ -512,9 +515,13 @@ export default function MapScreen() {
         if (a && !done && myTurn === turn.current) await voice.playAndWait(absoluteUrl(a.audio_url), 4000);
       });
     }, RESEARCH_INTERIM_MS);
-    const out = await api.breakdownResult(res.research_id!, signal);
-    done = true;
-    clearTimeout(interim);
+    let out: AgentResponse;
+    try {
+      out = await api.breakdownResult(res.research_id!, signal);
+    } finally {
+      done = true; // a failed research must not play "Reading reviews" afterwards
+      clearTimeout(interim);
+    }
     if (myTurn !== turn.current) return;
     await intro;
     await interimPlayed;
@@ -897,6 +904,7 @@ export default function MapScreen() {
         simLabel={loc.sim?.label ?? null}
         onTesterPress={() => router.push("/tester")}
         isDemo={loc.resolved && loc.isDemo}
+        onLocationPress={loc.enable}
         onLayout={setTopH}
       />
       )}

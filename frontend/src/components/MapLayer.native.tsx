@@ -10,13 +10,19 @@ import { entrySpot } from "../utils/entry";
 
 const toCoord = (p: LatLng) => ({ latitude: p.lat, longitude: p.lng });
 
-/** Custom-view marker that stops tracking view changes once its icon has rendered. */
-export function ViewMarker({ children, ...rest }: React.ComponentProps<typeof Marker> & { children: ReactNode }) {
+/** Custom-view marker that stops tracking view changes once its icon has rendered.
+ *  A new `redraw` value re-renders the icon (Android otherwise keeps the first snapshot). */
+export function ViewMarker({ children, redraw, ...rest }: React.ComponentProps<typeof Marker> & { children: ReactNode; redraw?: string | number }) {
   const [tracks, setTracks] = useState(true);
+  const [drawn, setDrawn] = useState(redraw);
+  if (drawn !== redraw) {
+    setDrawn(redraw);
+    setTracks(true);
+  }
   useEffect(() => {
     const t = setTimeout(() => setTracks(false), 800);
     return () => clearTimeout(t);
-  }, []);
+  }, [redraw]);
   return (
     <Marker tracksViewChanges={tracks} {...rest}>
       {children}
@@ -120,7 +126,7 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
         </>
       )}
 
-      <ViewMarker key="driver" coordinate={toCoord(driver)} anchor={{ x: 0.5, y: 0.5 }} zIndex={10}>
+      <ViewMarker key="driver" coordinate={toCoord(driver)} anchor={{ x: 0.5, y: 0.5 }} zIndex={10} redraw={follow ? 0 : Math.round((heading ?? 0) / 10)}>
         <UserArrow heading={follow ? 0 : heading} />
       </ViewMarker>
     </MapView>
