@@ -91,7 +91,12 @@ class RouteInfo(BaseModel):
     approach: Optional[Approach] = None  # arrival direction, for entrance directions
     speed_limits: List[SpeedLimit] = Field(default_factory=list)  # posted limits along the route (HERE only)
     incidents: List[Incident] = Field(default_factory=list)  # closures, construction, accidents (HERE only)
+    labels: List[str] = Field(default_factory=list)  # main roads, e.g. ["I-80", "CA-89"] (HERE routeLabels)
+    tolls_usd: Optional[float] = None  # cheapest fare per toll, summed; None when HERE lists no USD tolls
+    alternatives: List["RouteInfo"] = Field(default_factory=list)  # other truck routes, same destination
 
+
+RouteInfo.model_rebuild()
 
 ParkingVerdict = Literal["listed", "likely", "unlikely", "unclear"]
 
