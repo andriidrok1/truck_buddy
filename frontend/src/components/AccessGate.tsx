@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ActivityIndicator, Image, Platform, StyleSheet, Text, TextInput, View } from "react-native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
+import { KeyboardAwareScrollView } from "@/src/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { redeemAccessCode } from "../api";

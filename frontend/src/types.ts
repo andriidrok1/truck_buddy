@@ -13,6 +13,9 @@ export type Place = {
   rating?: number | null;
   rating_count?: number | null;
   summary?: string | null;
+  diesel_price?: number | null;
+  diesel_kind?: "truck" | "auto" | null;
+  diesel_updated?: string | null;
   distance_km?: number | null;
   distance_mi?: number | null;
 };

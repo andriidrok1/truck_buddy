@@ -1,7 +1,7 @@
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
-import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
+import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 

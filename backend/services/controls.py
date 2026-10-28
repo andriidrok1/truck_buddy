@@ -12,7 +12,7 @@ from models import AgentRequest, AppAction
 PROMPT = """- control: the driver wants the app to DO something or CHANGE a setting. actions = list of {"type": ..., "value": ...}:
   start_navigation (start the ride / "let's go" / "start driving" with a route already set), end_route, show_options (other places found),
   recenter (map back on the truck), overview (show the whole route), zoom_in, zoom_out,
-  voice_guidance value=true|false (spoken turn directions), wake_word value=true|false ("Hey Buddy" listening), stop_talking (be quiet now),
+  voice_guidance value=true|false (spoken turn directions), wake_word value=true|false (hands-free wake-word listening), stop_talking (be quiet now),
   set_height_in value=total inches (13 ft 6 in = 162), set_trailer_ft value=feet, set_weight_lb value=pounds (70k = 70000), set_hazmat value=true|false,
   set_driver_name value=name, avoid_tolls value=true|false, avoid_ferries_tunnels value=true|false,
   add_favorite_chain value=chain name, remove_favorite_chain value=chain name, set_break_hours value=hours or null to turn reminders off.
@@ -89,8 +89,9 @@ def apply_actions(raw: Any, req: AgentRequest) -> Tuple[List[AppAction], str, bo
         elif kind == "voice_guidance" and b is not None:
             ok(kind, b, "Okay, I'll call out the turns" if b else "Okay, turn directions are muted")
         elif kind == "wake_word" and b is not None:
-            ok(kind, b, "Okay, just say Hey Buddy when you need me" if b
-               else "Okay, I stopped listening for Hey Buddy. Tap the mic when you need me")
+            # Wake-word listening is not in this app version: stay honest about how to start a turn.
+            ok(kind, b, "Hands-free listening isn't available in this version yet. Tap the copilot when you need me" if b
+               else "Okay. Tap the copilot when you need me")
         elif kind == "stop_talking":
             ok(kind, say="Okay")
             end = True

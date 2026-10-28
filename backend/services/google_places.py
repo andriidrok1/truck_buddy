@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+from datetime import datetime
 from typing import Optional
 
 from services.http import client
@@ -18,8 +19,12 @@ logger = logging.getLogger("truckbuddy.google")
 URL = "https://places.googleapis.com/v1/places:searchText"
 FIELD_MASK = (
     "places.id,places.displayName,places.rating,places.userRatingCount,"
-    "places.editorialSummary,places.formattedAddress,places.location,places.types,places.primaryType"
+    "places.editorialSummary,places.formattedAddress,places.location,places.types,places.primaryType,"
+    "places.fuelOptions"  # same Enterprise + Atmosphere SKU as editorialSummary: no extra cost
 )
+DIESEL_MAX_AGE_S = 7 * 86400  # a price older than this is not worth saying out loud
+# Google fuel types that mean diesel, best first. TRUCK_DIESEL = the truck lanes; the rest = car pumps.
+DIESEL_TYPES = (("TRUCK_DIESEL", "truck"), ("DIESEL", "auto"), ("DIESEL_PLUS", "auto"), ("BIO_DIESEL", "auto"))
 # Names that mark a real truck stop (vs. an ordinary gas station Google tags as truck_stop).
 TRUCK_STOP_NAME = re.compile(
     r"\b(?:love'?s|pilot|flying j|ta|petro|sapp bros|roady'?s|truck ?stop|travel (?:center|centre|plaza))\b", re.I)
@@ -45,6 +50,30 @@ CACHE_MAX = 200
 
 class PlacesUnavailable(Exception):
     pass
+
+
+def diesel_from_fuel_options(fuel: Optional[dict], now: Optional[float] = None) -> Optional[tuple[float, str, str]]:
+    """(price_usd_per_gal, kind, update_time) from a Google `fuelOptions` object, or None.
+    Prefers the truck-lane price; skips prices older than DIESEL_MAX_AGE_S or not in USD."""
+    prices = (fuel or {}).get("fuelPrices") or []
+    now = time.time() if now is None else now
+    for want, kind in DIESEL_TYPES:
+        for fp in prices:
+            if fp.get("type") != want:
+                continue
+            money = fp.get("price") or {}
+            if money.get("currencyCode", "USD") != "USD":
+                continue
+            try:
+                price = int(money.get("units", 0)) + int(money.get("nanos", 0)) / 1e9
+                updated = fp.get("updateTime") or ""
+                age = now - datetime.fromisoformat(updated.replace("Z", "+00:00")).timestamp() if updated else 0.0
+            except (TypeError, ValueError):
+                continue
+            if price <= 0 or age > DIESEL_MAX_AGE_S:
+                continue
+            return round(price, 3), kind, updated
+    return None
 
 
 def truck_stop_reject(name: str, types: list[str], primary: str = "") -> Optional[str]:
@@ -124,6 +153,7 @@ class GooglePlacesProvider:
             if key in dedupe:
                 continue
             dedupe.add(key)
+            diesel = diesel_from_fuel_options(p.get("fuelOptions"))
             place = Place(
                 id=p["id"],
                 name=name,
@@ -134,6 +164,9 @@ class GooglePlacesProvider:
                 rating=p.get("rating"),
                 rating_count=p.get("userRatingCount"),
                 summary=(p.get("editorialSummary") or {}).get("text"),
+                diesel_price=diesel[0] if diesel else None,
+                diesel_kind=diesel[1] if diesel else None,
+                diesel_updated=diesel[2] if diesel else None,
                 distance_km=round(km, 2),
                 distance_mi=round(km_to_mi(km), 1),
             )

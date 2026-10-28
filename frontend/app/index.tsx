@@ -20,7 +20,7 @@ import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance } from "@/src/hooks/useGuidance";
 import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, takeTruckReroute, truckLabel, useHandsFree, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
-import { useWakeWord } from "@/src/hooks/useWakeWord";
+import { WAKE_SUPPORTED, useWakeWord } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
 import type { ActiveRoute, AgentResponse, AppAction, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
 import { storage } from "@/src/utils/storage";
@@ -437,7 +437,7 @@ export default function MapScreen() {
       const res = await api.agentSpeak(transcript, loc.coords, activeRef.current, ctrl.signal, dialog.current ?? undefined, {
         driving,
         voice_guidance: voiceOn,
-        hands_free: handsFree,
+        hands_free: handsFree && WAKE_SUPPORTED,
         options_count: optionsRef.current.length,
       });
       if (myTurn !== turn.current) return;

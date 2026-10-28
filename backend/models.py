@@ -22,6 +22,9 @@ class Place(BaseModel):
     rating: Optional[float] = None
     rating_count: Optional[int] = None
     summary: Optional[str] = None
+    diesel_price: Optional[float] = None  # USD per gallon, last known (Google fuelOptions)
+    diesel_kind: Optional[Literal["truck", "auto"]] = None  # truck = TRUCK_DIESEL lane price, auto = car-pump diesel
+    diesel_updated: Optional[str] = None  # RFC 3339, when the price was last reported
     distance_km: Optional[float] = None
     distance_mi: Optional[float] = None
 
