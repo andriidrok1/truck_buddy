@@ -10,6 +10,24 @@ export { absoluteUrl, apiUrl } from "./url";
 
 export type MemoryTurn = { role: "driver" | "copilot"; text: string; at: string };
 
+export type RouteResult = { place: Place; route: RouteInfo; parking?: ParkingCheck | null };
+
+/** POST /api/reroute (truck_profile is added by the client). */
+export type RerouteBody = {
+  lat: number;
+  lng: number;
+  place: Place;
+  /** RouteInfo.handle of the route being left; null when the backend never sent one. */
+  handle?: string | null;
+  /** Degrees 0..359 from the GPS fix; null when standing still / unknown. */
+  heading?: number | null;
+  /** Index into RouteInfo.section_starts of the section the truck was in (0 without sections). */
+  section_index: number;
+  /** Metres driven into that section. */
+  traveled_m: number;
+  via?: [number, number][];
+};
+
 /** A rejected token (expired / code changed) sends the driver back to the access-code screen. */
 function check(res: Response, path: string) {
   if (res.status === 401) setToken(null);
@@ -115,9 +133,21 @@ export const api = {
   places: (category: Category, at: LatLng) =>
     request<PlacesResponse>(`/places?category=${category}&lat=${at.lat}&lng=${at.lng}`),
   route: (from: LatLng, place: Place, skipParking = false) =>
-    request<{ place: Place; route: RouteInfo; parking?: ParkingCheck | null }>(`/route`, {
+    request<RouteResult>(`/route`, {
       method: "POST",
       body: JSON.stringify({ lat: from.lat, lng: from.lng, place, skip_parking: skipParking, truck_profile: getTruckProfile() }),
+    }),
+  /**
+   * Off-route reroute: the engine resumes the server-side plan (`handle`, section, metres into it)
+   * instead of planning from scratch. Same shape back as /route, with a new `handle`.
+   * 503 = routing down, 422 = outside the US; the caller falls back to /route on any failure.
+   * 15 s: longer than that and the driver has long passed the next turn anyway.
+   */
+  reroute: (body: RerouteBody) =>
+    request<RouteResult>(`/reroute`, {
+      method: "POST",
+      timeoutMs: 15000,
+      body: JSON.stringify({ ...body, truck_profile: getTruckProfile() }),
     }),
   parking: (place: Place, approach?: Approach | null) =>
     request<ParkingCheck>(`/parking`, { method: "POST", body: JSON.stringify({ place, approach }), timeoutMs: 60000 }),
