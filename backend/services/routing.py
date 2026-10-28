@@ -136,6 +136,8 @@ def _here_params(t: TruckProfile, origin: tuple[float, float], dest: tuple[float
     if on("ROUTE_ALTERNATIVES"):
         ret.append("routeLabels")
         ret.append("tolls")
+    if on("REROUTE_ENABLED"):
+        ret.append("routeHandle")
     params: list[tuple[str, str]] = [
         ("transportMode", "truck"),
         ("origin", f"{origin[0]},{origin[1]}"),
@@ -214,7 +216,42 @@ def _parse_route(route: dict) -> RouteInfo:
     info.incidents = [_incident(_thin_index(off, n), inc) for off, inc in incidents]
     info.labels = _labels(route)
     info.tolls_usd = _tolls_usd(sections)
+    handle = route.get("routeHandle")
+    info.handle = handle if isinstance(handle, str) and handle else None
     return info
+
+
+# Keys the HERE "route by handle" endpoint rejects or that make no sense for a re-route.
+_REROUTE_DROP = {"destination", "alternatives", "currency"}
+_REROUTE_RETURN_DROP = {"routeLabels", "tolls"}
+
+
+def _reroute_params(t: TruckProfile, origin: tuple[float, float], heading: Optional[int],
+                    section_index: int, traveled_m: float) -> list[tuple[str, str]]:
+    """Query for GET /v8/routes/{handle}: same truck and return options, origin with course, rerouting hints."""
+    out: list[tuple[str, str]] = []
+    for k, v in _here_params(t, origin, origin, alternatives=0):
+        if k in _REROUTE_DROP:
+            continue
+        if k == "return":
+            v = ",".join(x for x in v.split(",") if x not in _REROUTE_RETURN_DROP)
+        if k == "origin" and heading is not None:
+            v = f"{v};course={int(heading)}"
+        out.append((k, v))
+    out += [("rerouting[mode]", "returnToRoute"),
+            ("rerouting[lastTraveledSectionIndex]", str(max(0, int(section_index)))),
+            ("rerouting[traveledDistanceOnLastSection]", str(max(0, int(traveled_m))))]
+    return out
+
+
+async def _here_by_handle(handle: str, lat: float, lng: float, heading: Optional[int], t: TruckProfile,
+                          section_index: int, traveled_m: float) -> RouteInfo:
+    params = _reroute_params(t, (lat, lng), heading, section_index, traveled_m)
+    params.append(("apiKey", os.environ["HERE_API_KEY"]))
+    r = await client().get(f"{HERE_URL}/{handle}", params=params, timeout=20)
+    if r.is_error:
+        raise RuntimeError(f"HERE handle {r.status_code}: {r.text[:200]}")
+    return _here_parse(r.json())
 
 
 def _speed_limits(spans: List[dict], base: int) -> list[tuple[int, int]]:
@@ -419,6 +456,26 @@ class TruckRoutingProvider:
             raise RoutingUnavailable("; ".join(failed))
         info = _mock(from_lat, from_lng, to_lat, to_lng)
         info.approach = from_route(info)
+        return info
+
+    async def reroute(self, handle: Optional[str], lat: float, lng: float, heading: Optional[int],
+                      to_lat: float, to_lng: float, truck: Optional[TruckProfile] = None, *,
+                      section_index: int = 0, traveled_m: float = 0.0) -> RouteInfo:
+        """Back onto the route the driver left (HERE route handle), else a fresh route from here.
+
+        The handle call keeps the old route's shape past the rejoin point and avoids a U-turn; HERE can
+        expire a handle at any time, so any failure falls back to a normal route() with no alternatives.
+        """
+        t = truck or TruckProfile()
+        if handle and os.environ.get("HERE_API_KEY") and on("REROUTE_ENABLED"):
+            try:
+                info = await _here_by_handle(handle, lat, lng, heading, t, section_index, traveled_m)
+                info.approach = from_route(info)
+                return info
+            except Exception as e:  # noqa: BLE001 - expired/invalid handle, HERE hiccup: fall back
+                logger.warning("re-route by handle failed, routing fresh: %s", e)
+        info = await self.route(lat, lng, to_lat, to_lng, t, alternatives=0)
+        info.alternatives = []  # a re-route swaps the line under the driver; no chooser mid-drive
         return info
 
 
