@@ -131,7 +131,8 @@ class FakeLlm:
     calls: list[tuple[str, str, str]] = field(default_factory=list)
     default: Optional[dict] = None
 
-    def on(self, pattern: str, reply: dict) -> "FakeLlm":
+    def on(self, pattern: str, reply) -> "FakeLlm":
+        """A dict reply is the classifier JSON; a str reply is returned as-is (summaries, gists)."""
         self.rules.append((re.compile(pattern, re.I), reply))
         return self
 
@@ -141,10 +142,10 @@ class FakeLlm:
         said = (m.group(1) if m else text).strip()
         for rx, reply in self.rules:
             if rx.search(said):
-                return json.dumps(reply)
+                return json.dumps(reply) if isinstance(reply, dict) else str(reply)
         if self.default is not None:
-            return json.dumps(self.default)
-        raise AssertionError(f"no canned classification for: {said!r}")
+            return json.dumps(self.default) if isinstance(self.default, dict) else str(self.default)
+        raise AssertionError(f"no canned LLM reply for: {said[:120]!r}")
 
 
 @pytest.fixture

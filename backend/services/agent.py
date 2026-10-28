@@ -14,7 +14,7 @@ from typing import Optional
 import httpx
 
 from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
-from services import approach, breakdown, controls, llm, memory
+from services import approach, breakdown, controls, fuel_index, llm, memory, reviews
 from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
@@ -117,7 +117,7 @@ makes sense for a trucker and act on the corrected meaning, e.g. "I need a few" 
 "these all". Only fix words that clearly don't fit; never invent a destination. If you can't tell, use "unclear".
 
 Classify the driver's LAST utterance and answer with JSON only, no other text:
-{{"intent": "find"|"go"|"pick"|"alternative"|"add_stop"|"clear_stops"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "near": string|null, "query": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
+{{"intent": "find"|"go"|"pick"|"alternative"|"add_stop"|"clear_stops"|"reviews"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "near": string|null, "query": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
 
 - find: the driver needs a place. Pick the category yourself, never ask:
   truck_stop = fuel, diesel, DEF, food, showers, truck stop;
@@ -134,6 +134,7 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
 - alternative: a different road to the SAME destination ("another way", "different route", "is there a faster way", "can we skip the grade", "go around that"). Never a new place. Only meaningful while a route is active; otherwise answer as chat.
 - add_stop: a stop ON THE WAY to the current destination, keeping that destination ("stop at the Pilot in Fernley on the way", "swing by Love's first", "add a fuel stop", "I need a rest area before that"). query = the place or address named (digits for numbers), else category = the kind of stop (truck_stop for fuel/food/showers, rest_area, hotel); never both null. Only while a route is active; with no route it's a plain find or go.
 - clear_stops: drop the stops added on the way ("skip the stops", "forget the stop", "no stops, straight there").
+- reviews: what other drivers say about a place ("what do drivers say about it", "is it any good", "reviews for the Pilot", "how are the showers there"). place_index = the place asked about from "Places found earlier", or null for the current route / the last one mentioned.
 {controls}
 {parking}
 {breakdown}
@@ -228,6 +229,7 @@ VIA_NO_ROUTE = "Set a route first, then I can add stops on the way."
 VIA_FULL = "I can only add three stops. Say 'clear the stops' to start over."
 VIA_CLEARED = "Stops cleared. Straight there, {time}, {mi} miles."
 VIA_NONE = "There are no stops on this route."
+WHICH_PLACE = "Which place? Find one or set a route first."
 
 
 def _alt_reply(route: RouteInfo) -> str:
@@ -257,18 +259,26 @@ def _diesel_note(p: Place) -> str:
     return f", diesel ${p.diesel_price:.2f}" + ("" if p.diesel_kind == "truck" else " (car pumps)")
 
 
-def _diesel_sentence(place: Place) -> str:
-    """Spoken price for a fuel-type place; nothing when Google has no fresh diesel price."""
+def _diesel_sentence(place: Place, regional: str = "") -> str:
+    """Spoken price for a fuel-type place (+ the regional comparison when known); nothing without a fresh price."""
     if place.diesel_price is None or place.category != "truck_stop":
         return ""
     if place.diesel_kind == "truck":
-        return f" Diesel's ${place.diesel_price:.2f} there."
-    return f" Diesel's ${place.diesel_price:.2f} at the car pumps, truck lanes may differ."
+        return f" Diesel's ${place.diesel_price:.2f} there.{regional}"
+    return f" Diesel's ${place.diesel_price:.2f} at the car pumps, truck lanes may differ.{regional}"
 
 
-def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[str] = None) -> str:
+def _rating_note(p: Place) -> str:
+    """For the model's place list: ", 4.3 stars (120 reviews)" so "is it any good?" has something to go on."""
+    if p.rating is None:
+        return ""
+    return f", {p.rating:.1f} stars" + (f" ({p.rating_count} reviews)" if p.rating_count else "")
+
+
+def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[str] = None,
+                 regional: str = "") -> str:
     """Conversational intro + one line with the place, a landmark and the distance; then a notice, if any.
-    The driver's name is used about every third answer."""
+    The driver's name is used about every third answer. `regional` = EIA comparison for the diesel price."""
     kind = "fuel_stop" if is_fuel_stop(place) else place.category
     intro, body = TEMPLATES[kind][n % len(TEMPLATES[kind])]
     street = _street(place.address)
@@ -278,7 +288,7 @@ def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[st
     intro = intro.format(**vals)
     first_name = (driver or "").split(" ")[0]
     out = f"{intro}, {first_name}. " if first_name and n % 3 == 2 else f"{intro}. "
-    out += body.format(**vals) + _diesel_sentence(place)
+    out += body.format(**vals) + _diesel_sentence(place, regional)
     warning = _route_warning(route)
     return f"{out} {warning}" if warning else out
 
@@ -375,7 +385,8 @@ class LlmAgentProvider:
             context += " Conversation so far: " + " | ".join(sess["history"][-MAX_HISTORY:]) + "."
         if sess["places"]:
             context += " Places found earlier: " + "; ".join(
-                f"{i}={p.name} ({p.category}) {p.distance_mi or 0:.1f} mi{_diesel_note(p)}: {approach.note(p)}"
+                f"{i}={p.name} ({p.category}) {p.distance_mi or 0:.1f} mi{_diesel_note(p)}{_rating_note(p)}: "
+                f"{approach.note(p)}"
                 + (" [current route]" if req.active_place and p.id == req.active_place.id else "")
                 for i, p in enumerate(sess["places"], 1)) + "."
         cur = req.active_place
@@ -430,10 +441,35 @@ class LlmAgentProvider:
         n = counter.get("n", 0)
         counter["n"] = n + 1
         self._remember_alternatives(req, place, route)
+        regional = await self._regional_note(place)
         return AgentResponse(status="route_set", transcript=text, category=place.category,
-                             reply=_route_reply(place, route, n, req.truck_profile.driver_name), place=place, route=route,
-                             parking=approach.best(place),
+                             reply=_route_reply(place, route, n, req.truck_profile.driver_name, regional),
+                             place=place, route=route, parking=approach.best(place),
                              options=others, source=self.source)
+
+    @staticmethod
+    async def _regional_note(place: Place) -> str:
+        """EIA comparison for the diesel price of a truck stop; bounded so it can never slow the reply down."""
+        if place.diesel_price is None or place.category != "truck_stop":
+            return ""
+        try:
+            return await asyncio.wait_for(fuel_index.regional_note(place.lat, place.lng, place.diesel_price), 1.5)
+        except Exception as e:  # noqa: BLE001 - incl. timeout
+            logger.info("regional diesel note skipped: %s", e)
+            return ""
+
+    async def _reviews(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
+        """"What do drivers say about it?": the spoken gist of the place's Google reviews."""
+        place = pick_place(d, sess["places"]) or req.active_place or (sess["places"][0] if sess["places"] else None)
+        if not place:
+            return AgentResponse(status="chat", transcript=text, reply=WHICH_PLACE, source=self.source)
+        if not place.reviews:  # the app's copy may be older than the search; refresh from the provider cache
+            fresh = await get_places_provider().get(place.id, req.lat, req.lng)
+            if fresh and fresh.reviews:
+                place = fresh
+        with stage("tools"):
+            reply = await reviews.speech(place)
+        return AgentResponse(status="chat", transcript=text, reply=reply, place=place, source=self.source)
 
     @staticmethod
     def _remember_alternatives(req: AgentRequest, place: Place, route: RouteInfo) -> None:
@@ -660,6 +696,8 @@ class LlmAgentProvider:
                 return await self._add_stop(req, d, sess, text)
             if intent == "clear_stops":
                 return await self._clear_stops(req, sess, text)
+            if intent == "reviews":
+                return await self._reviews(req, d, sess, text)
             if intent == "pick":
                 place = pick_place(d, sess["places"])
                 if place and place.id not in exclude:
