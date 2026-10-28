@@ -42,6 +42,7 @@ def _offline_env(monkeypatch):
     for k, v in OFFLINE_ENV.items():
         monkeypatch.setenv(k, v)
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("MEMORY_STORE", "off")  # no store unless a test asks for sqlite
     monkeypatch.delenv("EXPO_PUBLIC_BACKEND_URL", raising=False)
 
 
@@ -246,6 +247,7 @@ def api_client():
     for k, v in OFFLINE_ENV.items():
         mp.setenv(k, v)
     mp.delenv("DATABASE_URL", raising=False)
+    mp.setenv("MEMORY_STORE", "off")
     import server
     from services import auth
     mp.setattr(auth, "RATE_PER_MIN", 0)
