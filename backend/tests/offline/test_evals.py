@@ -16,12 +16,13 @@ from services import agent
 TESTS_DIR = Path(__file__).resolve().parents[1]
 KNOWN_INTENTS = {"find", "go", "pick", "alternative", "add_stop", "clear_stops", "reviews", "weather", "hos",
                  "parking", "control", "breakdown", "chat", "bye", "unclear"}
+LATER_INTENTS = {"memory"}  # added by later PRs in the stack; the dataset gains cases for them on merge
 
 
 # ---- dataset ----------------------------------------------------------------------------------
 
 def test_prompts_name_every_known_intent():
-    assert intents_from_prompts() == KNOWN_INTENTS
+    assert intents_from_prompts() - LATER_INTENTS == KNOWN_INTENTS
 
 
 def test_dataset_is_well_formed():
@@ -66,8 +67,8 @@ def test_legacy_eval_script_is_gone():
 def test_every_preset_builds_a_context_offline(agent_sandbox, fake_http, name):
     req, context, truck = build_context(name)
     assert context.startswith("Driver location: 38.58160, -121.49440.")
-    assert truck.label in agent.SYSTEM.format(truck=truck.label, prefs=truck.prefs_label, controls="", parking="",
-                                              breakdown="")
+    system, user = agent.prompt_messages(req.text, context, truck)
+    assert truck.label in system + user  # the truck line lives in the system prompt before #38, in the user turn after
     assert fake_http.calls == []  # no provider, no satellite, no DB
 
 
