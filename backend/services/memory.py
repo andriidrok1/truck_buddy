@@ -4,6 +4,7 @@ The database is never on the hot path of a voice turn: writes go through add_lat
 and the agent reads recent() under its own short timeout. A slow or unreachable database only costs memory.
 """
 import asyncio
+import json
 import logging
 import os
 from collections import defaultdict
@@ -31,6 +32,12 @@ CREATE TABLE IF NOT EXISTS conversation (
     at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX IF NOT EXISTS conversation_driver_at ON conversation (driver, at);
+CREATE TABLE IF NOT EXISTS driver_facts (
+    driver TEXT PRIMARY KEY,
+    facts TEXT NOT NULL,
+    turns_seen INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL
+);
 """
 
 
@@ -112,9 +119,44 @@ async def recent(driver: str, limit: int) -> list[dict]:
     return [{"role": r["role"], "text": r["text"], "at": r["at"].astimezone(timezone.utc).isoformat()} for r in reversed(rows)]
 
 
+async def count_turns(driver: str) -> int:
+    pool = await _db()
+    return int(await pool.fetchval("SELECT count(*) FROM conversation WHERE driver = $1", driver) or 0)
+
+
+async def get_facts(driver: str) -> dict | None:
+    """{"facts": dict, "turns_seen": int, "updated_at": datetime} or None."""
+    pool = await _db()
+    row = await pool.fetchrow("SELECT facts, turns_seen, updated_at FROM driver_facts WHERE driver = $1", driver)
+    if not row:
+        return None
+    try:
+        facts = json.loads(row["facts"])
+    except ValueError:
+        return None
+    return {"facts": facts, "turns_seen": int(row["turns_seen"]), "updated_at": row["updated_at"]}
+
+
+async def set_facts(driver: str, facts: dict, turns_seen: int) -> None:
+    pool = await _db()
+    await pool.execute(
+        "INSERT INTO driver_facts (driver, facts, turns_seen, updated_at) VALUES ($1, $2, $3, $4) "
+        "ON CONFLICT (driver) DO UPDATE SET facts = EXCLUDED.facts, turns_seen = EXCLUDED.turns_seen, "
+        "updated_at = EXCLUDED.updated_at",
+        driver, json.dumps(facts), int(turns_seen), datetime.now(timezone.utc))
+
+
+async def clear_facts(driver: str) -> int:
+    pool = await _db()
+    status = await pool.execute("DELETE FROM driver_facts WHERE driver = $1", driver)
+    return int(status.split()[-1])
+
+
 async def clear(driver: str) -> int:
+    """Everything about the driver: the turns and the learned facts."""
     if _pending.get(driver):
         await asyncio.gather(*list(_pending[driver]), return_exceptions=True)
     pool = await _db()
     status = await pool.execute("DELETE FROM conversation WHERE driver = $1", driver)
+    await pool.execute("DELETE FROM driver_facts WHERE driver = $1", driver)
     return int(status.split()[-1])

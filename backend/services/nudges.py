@@ -60,7 +60,7 @@ def _mi(a: tuple[float, float], b: tuple[float, float]) -> float:
 
 
 async def place_ahead(req: NudgeRequest, categories: tuple[str, ...], window: tuple[float, float],
-                      prefer_live: bool = False) -> Optional[tuple[Place, float]]:
+                      prefer_live: bool = False, sess_facts: Optional[dict] = None) -> Optional[tuple[Place, float]]:
     """A place of one of `categories` roughly `window` miles ahead along the route, with its miles ahead."""
     from services import agent  # lazy: the agent imports nothing from here
     lo, hi = window
@@ -86,7 +86,7 @@ async def place_ahead(req: NudgeRequest, categories: tuple[str, ...], window: tu
         live = [f for f in found if f[0].parking_available]
         if live:
             found = live
-    chosen = agent.choose_place([p for p, _ in found], req.truck_profile, set())
+    chosen = agent.choose_place([p for p, _ in found], req.truck_profile, set(), sess_facts)
     if chosen is None:
         return None
     miles = next(m for p, m in found if p.id == chosen.id)
@@ -124,7 +124,7 @@ async def compute(req: NudgeRequest, sess: dict, motive_key: Optional[str]) -> l
         if due is not None and due > BREAK_RESET_MIN:
             sess.pop("nudge_break_done", None)
         if due is not None and due <= BREAK_DUE_MIN and not sess.get("nudge_break_done"):
-            hit = await place_ahead(req, ("truck_stop", "rest_area"), BREAK_LOOKAHEAD_MI)
+            hit = await place_ahead(req, ("truck_stop", "rest_area"), BREAK_LOOKAHEAD_MI, sess_facts=sess.get("facts"))
             if hit:
                 place, mi = hit
                 name = place.name.split(",")[0]
@@ -138,7 +138,8 @@ async def compute(req: NudgeRequest, sess: dict, motive_key: Optional[str]) -> l
         by_clock = (h is None and req.local_hour is not None and req.local_hour >= PARKING_HOUR
                     and (req.drive_elapsed_min or 0) >= PARKING_ELAPSED_MIN)
         if by_hos or by_clock:
-            hit = await place_ahead(req, ("truck_stop",), PARKING_LOOKAHEAD_MI, prefer_live=True)
+            hit = await place_ahead(req, ("truck_stop",), PARKING_LOOKAHEAD_MI, prefer_live=True,
+                                    sess_facts=sess.get("facts"))
             if hit:
                 place, mi = hit
                 name = place.name.split(",")[0]
