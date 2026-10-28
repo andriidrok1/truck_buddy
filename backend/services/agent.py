@@ -1092,8 +1092,8 @@ class LlmAgentProvider:
         if intent in ("chat", "bye") and reply:
             if intent == "bye":
                 sess.pop("rejected", None)
-            return AgentResponse(status="chat", transcript=text, reply=reply, end_conversation=intent == "bye",
-                                 source=self.source)
+            return AgentResponse(status="chat", transcript=text, reply=fit_reply(reply),
+                                 end_conversation=intent == "bye", source=self.source)
         return _not_understood(text, self.source)
 
 

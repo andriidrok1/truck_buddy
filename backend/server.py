@@ -26,6 +26,7 @@ from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E
 from services import approach, approach_api, auth, chains, memory, onboarding, parking_store, parking_warm, timing, tpims, voice, weather  # noqa: E402,E501
 
 WEATHER_BUDGET_S = 2.5  # NWS alerts on /route may add at most this much; never the route itself
+from services.speech_text import SENTENCE_END  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")

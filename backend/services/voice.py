@@ -1,4 +1,4 @@
-"""Speech in / speech out: Whisper (STT); TTS via ElevenLabs (primary) or OpenAI tts-1 (fallback)."""
+"""Speech in / speech out: Whisper (STT); TTS via ElevenLabs (when enabled) or OpenAI gpt-4o-mini-tts."""
 import asyncio
 import hashlib
 import io
@@ -162,7 +162,13 @@ HALLUCINATION = re.compile(
 
 VOICES = ("alloy", "ash", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer")
 DEFAULT_VOICE = "sage"
-FALLBACK_MODEL = "tts-1"  # OpenAI fallback when ElevenLabs is off or fails
+DEFAULT_TTS_MODEL = "gpt-4o-mini-tts"  # same price per minute as tts-1, better voice, takes INSTRUCTIONS
+
+
+def fallback_model() -> str:
+    """OpenAI TTS model (used whenever ElevenLabs is off or fails). OPENAI_TTS_MODEL=tts-1 switches back."""
+    return os.environ.get("OPENAI_TTS_MODEL") or DEFAULT_TTS_MODEL
+
 
 ELEVEN_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 ELEVEN_DEFAULT_VOICE = "21m00Tcm4TlvDq8ikWAM"  # "Rachel", ElevenLabs premade voice
@@ -194,7 +200,8 @@ def cache_tag(voice: Optional[str] = None, model: Optional[str] = None, eleven_v
     """Identifies who speaks a cached line: provider + voice (changes invalidate /speak cache)."""
     if not voice and not model and eleven_voice():
         return f"elevenlabs|{ELEVEN_MODEL}|{eleven_voice_id or eleven_voice()}"
-    return f"openai|{model or FALLBACK_MODEL}|{voice or DEFAULT_VOICE}|g{OPENAI_GAIN_DB}"  # gain: old quiet clips miss
+    # The gain is part of the tag: clips boosted differently must not be served from the old cache.
+    return f"openai|{model or fallback_model()}|{voice or DEFAULT_VOICE}|g{OPENAI_GAIN_DB}"
 
 
 def is_fallback(audio_id: str) -> bool:
@@ -285,7 +292,7 @@ async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str
         audio = await _eleven(text, eleven_voice_id or eleven, previous_text, next_text)
     fell_back = bool(eleven) and audio is None
     if audio is None:
-        model = model or FALLBACK_MODEL
+        model = model or fallback_model()
         try:
             extra = {"instructions": INSTRUCTIONS} if model == "gpt-4o-mini-tts" else {}
             res = await llm.client().audio.speech.create(input=text, model=model, voice=voice or DEFAULT_VOICE,

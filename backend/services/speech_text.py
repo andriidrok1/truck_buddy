@@ -119,12 +119,28 @@ def split_reply(text: str, clause: bool = True) -> tuple[str, str]:
     return first, sentence_rest
 
 
-def fit_reply(text: str, max_sentences: int) -> str:
-    """The first `max_sentences` sentences of a reply (what a driver at speed has attention for)."""
-    t = " ".join((text or "").split())
-    if max_sentences < 1 or not t:
-        return t
-    return " ".join(SENTENCE_END.split(t)[:max_sentences])
+REPLY_MAX_SENTENCES = 2
+REPLY_MAX_CHARS = 220
+
+
+def fit_reply(text: str, max_sentences: int = REPLY_MAX_SENTENCES, max_chars: int = REPLY_MAX_CHARS) -> str:
+    """Keeps a free-form model reply short enough to listen to at the wheel: whole sentences only,
+    at most `max_sentences` (0 or less = no sentence cap), and never past `max_chars` (a sentence that
+    would cross the cap is dropped, unless it's the first one, which is kept whole). Templated replies
+    never go through here."""
+    t = re.sub(r"\s+", " ", text or "").strip()
+    if not t:
+        return ""
+    parts = SENTENCE_END.split(t)
+    if max_sentences >= 1:
+        parts = parts[:max_sentences]
+    out: list[str] = []
+    for s in parts:
+        candidate = " ".join(out + [s])
+        if out and len(candidate) > max_chars:
+            break
+        out.append(s)
+    return " ".join(out)
 
 
 def spoken(text: str) -> str:
