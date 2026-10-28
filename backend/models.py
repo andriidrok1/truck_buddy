@@ -79,6 +79,17 @@ class Incident(BaseModel):
     criticality: str = "minor"  # low | minor | major | critical
 
 
+class WeatherAlert(BaseModel):
+    """An active NWS alert on the route; `index` is the geometry index of the first sample point it covers."""
+    id: str
+    event: str  # "High Wind Warning", "Winter Storm Warning", ...
+    severity: str  # Extreme | Severe | Moderate | Minor | Unknown
+    headline: str
+    area: str  # first part of NWS areaDesc, e.g. "Greater Lake Tahoe Area"
+    index: int
+    ends: Optional[str] = None  # RFC 3339
+
+
 class Approach(BaseModel):
     """How the driver arrives: heading over the last 300 m and the street of the last maneuver."""
     bearing: int  # degrees, 0 = heading north
@@ -109,6 +120,7 @@ class RouteInfo(BaseModel):
     handle: Optional[str] = None  # HERE routeHandle: lets the app re-route back onto this route after a deviation
     via: List[List[float]] = Field(default_factory=list)  # stops on the way, [[lat, lng], ...], in order
     section_starts: List[int] = Field(default_factory=list)  # geometry index where each HERE section begins
+    weather: List[WeatherAlert] = Field(default_factory=list)  # active NWS alerts along the route
 
 
 RouteInfo.model_rebuild()

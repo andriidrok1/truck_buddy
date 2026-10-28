@@ -22,7 +22,9 @@ from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import cached_parking, check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import approach, approach_api, auth, memory, onboarding, parking_store, parking_warm, timing, voice  # noqa: E402
+from services import approach, approach_api, auth, memory, onboarding, parking_store, parking_warm, timing, voice, weather  # noqa: E402,E501
+
+WEATHER_BUDGET_S = 2.5  # NWS alerts on /route may add at most this much; never the route itself
 from pydantic import BaseModel, Field  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -139,6 +141,11 @@ async def build_route(req: RouteRequest):
                                                    via=req.via)
     except RoutingUnavailable:
         raise HTTPException(status_code=503, detail="Truck routing is unavailable right now")
+    try:  # NWS alerts along the way; a slow or down NWS costs at most WEATHER_BUDGET_S and never the route
+        route.weather = await asyncio.wait_for(weather.alerts_along(route.geometry), WEATHER_BUDGET_S)
+    except Exception as e:  # noqa: BLE001
+        logger.info("route weather skipped: %s", e)
+        route.weather = []
     if req.skip_parking:  # breakdown providers: the driver needs the shop, no parking check at all
         return RouteResponse(place=place, route=route, parking=None)
     approach.background(check_parking(place, route.approach))  # don't wait for the satellite; app re-asks /parking
