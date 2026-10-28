@@ -22,7 +22,7 @@ from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import cached_parking, check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import approach, approach_api, auth, memory, onboarding, parking_store, parking_warm, timing, voice, weather  # noqa: E402,E501
+from services import approach, approach_api, auth, chains, memory, onboarding, parking_store, parking_warm, timing, voice, weather  # noqa: E402,E501
 
 WEATHER_BUDGET_S = 2.5  # NWS alerts on /route may add at most this much; never the route itself
 from pydantic import BaseModel, Field  # noqa: E402
@@ -141,11 +141,14 @@ async def build_route(req: RouteRequest):
                                                    via=req.via)
     except RoutingUnavailable:
         raise HTTPException(status_code=503, detail="Truck routing is unavailable right now")
-    try:  # NWS alerts along the way; a slow or down NWS costs at most WEATHER_BUDGET_S and never the route
-        route.weather = await asyncio.wait_for(weather.alerts_along(route.geometry), WEATHER_BUDGET_S)
+    # NWS alerts and Caltrans chain controls along the way; slow or down sources cost at most WEATHER_BUDGET_S
+    # and never the route itself.
+    try:
+        route.weather, route.chain_controls = await asyncio.wait_for(
+            asyncio.gather(weather.alerts_along(route.geometry), chains.for_route(route.geometry)), WEATHER_BUDGET_S)
     except Exception as e:  # noqa: BLE001
-        logger.info("route weather skipped: %s", e)
-        route.weather = []
+        logger.info("route weather/chains skipped: %s", e)
+        route.weather, route.chain_controls = [], []
     if req.skip_parking:  # breakdown providers: the driver needs the shop, no parking check at all
         return RouteResponse(place=place, route=route, parking=None)
     approach.background(check_parking(place, route.approach))  # don't wait for the satellite; app re-asks /parking
@@ -440,10 +443,12 @@ app.include_router(parking_warm.router)
 @app.on_event("startup")
 async def _memory_up():
     _bg(memory.warm())
+    await chains.start()  # Caltrans chain-control poller (CHAIN_CONTROLS=0 to skip)
 
 
 @app.on_event("shutdown")
 async def _memory_down():
+    await chains.stop()
     await memory.close()
 
 

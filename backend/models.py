@@ -90,6 +90,22 @@ class WeatherAlert(BaseModel):
     ends: Optional[str] = None  # RFC 3339
 
 
+class ChainControl(BaseModel):
+    """A Caltrans chain-control point; `index` is the geometry index of the route near it (−1 when unplaced)."""
+    id: str
+    route: str  # "I-80", "SR-89", "US-50"
+    location: str  # "Luther Pass", "Kingvale"
+    nearby: Optional[str] = None
+    lat: float
+    lng: float
+    direction: Optional[str] = None
+    status: str  # R-0 (none) | R-1 | R-2 | R-3
+    description: str = ""
+    updated: Optional[str] = None  # "2026-05-05 05:58:27" Pacific, as Caltrans publishes it
+    in_service: bool = True
+    index: int = -1
+
+
 class Approach(BaseModel):
     """How the driver arrives: heading over the last 300 m and the street of the last maneuver."""
     bearing: int  # degrees, 0 = heading north
@@ -121,6 +137,7 @@ class RouteInfo(BaseModel):
     via: List[List[float]] = Field(default_factory=list)  # stops on the way, [[lat, lng], ...], in order
     section_starts: List[int] = Field(default_factory=list)  # geometry index where each HERE section begins
     weather: List[WeatherAlert] = Field(default_factory=list)  # active NWS alerts along the route
+    chain_controls: List[ChainControl] = Field(default_factory=list)  # active Caltrans chain controls on the route
 
 
 RouteInfo.model_rebuild()
