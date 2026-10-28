@@ -1,0 +1,4 @@
+# Run reports are artifacts, not source. The committed baseline lives one level up (evals/baseline.json).
+*.json
+*.md
+!.gitkeep
