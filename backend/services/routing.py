@@ -12,7 +12,7 @@ import logging
 import math
 import os
 import re
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 import flexpolyline
 from services.http import client
@@ -124,8 +124,12 @@ def default_alternatives() -> int:
     return ALTERNATIVES if on("ROUTE_ALTERNATIVES") else 0
 
 
+Via = Sequence[Sequence[float]]  # [[lat, lng], ...]
+VIA_STOP_S = 1800  # assumed time at each added stop, so the ETA stays honest
+
+
 def _here_params(t: TruckProfile, origin: tuple[float, float], dest: tuple[float, float], *,
-                 alternatives: int = 0) -> list[tuple[str, str]]:
+                 alternatives: int = 0, via: Via = ()) -> list[tuple[str, str]]:
     """Query for HERE Routing v8 as (key, value) pairs, so a key can repeat (via=...&via=...)."""
     ret, spans = [HERE_RETURN], [HERE_SPANS]
     if on("ROUTE_SPEED_LIMITS"):
@@ -150,6 +154,8 @@ def _here_params(t: TruckProfile, origin: tuple[float, float], dest: tuple[float
         ("vehicle[length]", str(round(t.total_length_ft * 30.48))),  # cm
         ("vehicle[grossWeight]", str(round(t.weight_lb * 0.4536))),  # kg
     ]
+    for stop in via:
+        params.append(("via", f"{stop[0]},{stop[1]}!stopDuration={VIA_STOP_S}"))
     if on("ROUTE_ALTERNATIVES"):
         params.append(("currency", "USD"))
     if alternatives > 0:
@@ -196,9 +202,11 @@ def _parse_route(route: dict) -> RouteInfo:
     geometry, meters, seconds, raw, traffic, actions = [], 0.0, 0.0, [], [], []
     limits: list[tuple[int, int]] = []  # (global offset, mph)
     incidents: list[tuple[int, dict]] = []  # (global offset, incident)
+    bases: list[int] = []
     for s in sections:
         pts = [[round(p[0], 6), round(p[1], 6)] for p in flexpolyline.decode(s["polyline"])]
         base = len(geometry)
+        bases.append(base)
         spans = s.get("spans") or []
         for a in s.get("actions") or []:
             actions.append((base + int(a.get("offset", 0)), a))
@@ -216,6 +224,7 @@ def _parse_route(route: dict) -> RouteInfo:
     info.incidents = [_incident(_thin_index(off, n), inc) for off, inc in incidents]
     info.labels = _labels(route)
     info.tolls_usd = _tolls_usd(sections)
+    info.section_starts = [_thin_index(b, n) for b in bases]
     handle = route.get("routeHandle")
     info.handle = handle if isinstance(handle, str) and handle else None
     return info
@@ -326,8 +335,9 @@ def _here_parse(data: dict) -> RouteInfo:
     return primary
 
 
-async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile, alternatives: int = 0) -> RouteInfo:
-    params = _here_params(t, (fl, fg), (tl, tg), alternatives=alternatives)
+async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile, alternatives: int = 0,
+                via: Via = ()) -> RouteInfo:
+    params = _here_params(t, (fl, fg), (tl, tg), alternatives=alternatives, via=via)
     params.append(("apiKey", os.environ["HERE_API_KEY"]))
     r = await client().get(HERE_URL, params=params, timeout=20)
     if r.is_error:
@@ -374,9 +384,9 @@ def _friendly(codes: List[str]) -> List[str]:
     return out
 
 
-async def _ors(fl: float, fg: float, tl: float, tg: float, t: TruckProfile) -> RouteInfo:
+async def _ors(fl: float, fg: float, tl: float, tg: float, t: TruckProfile, via: Via = ()) -> RouteInfo:
     body = {
-        "coordinates": [[fg, fl], [tg, tl]],  # ORS uses [lng, lat]
+        "coordinates": [[fg, fl], *[[v[1], v[0]] for v in via], [tg, tl]],  # ORS uses [lng, lat]
         "instructions": False,
         "options": {
             "vehicle_type": "hgv",
@@ -434,20 +444,25 @@ class TruckRoutingProvider:
         return "openrouteservice" if os.environ.get("ORS_API_KEY") else "mock"
 
     async def route(self, from_lat: float, from_lng: float, to_lat: float, to_lng: float,
-                    truck: Optional[TruckProfile] = None, alternatives: Optional[int] = None) -> RouteInfo:
-        """Truck route; `alternatives` = how many other routes to ask HERE for (default: the flag)."""
+                    truck: Optional[TruckProfile] = None, alternatives: Optional[int] = None,
+                    via: Via = ()) -> RouteInfo:
+        """Truck route; `alternatives` = how many other routes to ask HERE for (default: the flag);
+        `via` = stops on the way, [[lat, lng], ...], each with a 30-minute stop in the ETA."""
         t = truck or TruckProfile()
         n_alt = default_alternatives() if alternatives is None else max(0, alternatives)
+        via = [[float(v[0]), float(v[1])] for v in via]
         failed: list[str] = []
         for key, fn in (("HERE_API_KEY", _here), ("ORS_API_KEY", _ors)):
             if not os.environ.get(key):
                 continue
             try:
-                info = await fn(from_lat, from_lng, to_lat, to_lng, t, n_alt) if fn is _here \
-                    else await fn(from_lat, from_lng, to_lat, to_lng, t)
+                info = await fn(from_lat, from_lng, to_lat, to_lng, t, n_alt, via) if fn is _here \
+                    else await fn(from_lat, from_lng, to_lat, to_lng, t, via)
                 info.approach = from_route(info)
+                info.via = via
                 for alt in info.alternatives:
                     alt.approach = from_route(alt)
+                    alt.via = via
                 return info
             except Exception as e:  # noqa: BLE001 - fall through to the next provider
                 logger.warning("%s routing failed: %s", fn.__name__, e)
@@ -460,7 +475,7 @@ class TruckRoutingProvider:
 
     async def reroute(self, handle: Optional[str], lat: float, lng: float, heading: Optional[int],
                       to_lat: float, to_lng: float, truck: Optional[TruckProfile] = None, *,
-                      section_index: int = 0, traveled_m: float = 0.0) -> RouteInfo:
+                      section_index: int = 0, traveled_m: float = 0.0, via: Via = ()) -> RouteInfo:
         """Back onto the route the driver left (HERE route handle), else a fresh route from here.
 
         The handle call keeps the old route's shape past the rejoin point and avoids a U-turn; HERE can
@@ -471,10 +486,11 @@ class TruckRoutingProvider:
             try:
                 info = await _here_by_handle(handle, lat, lng, heading, t, section_index, traveled_m)
                 info.approach = from_route(info)
+                info.via = [[float(v[0]), float(v[1])] for v in via]  # the handle keeps them; echo for the app
                 return info
             except Exception as e:  # noqa: BLE001 - expired/invalid handle, HERE hiccup: fall back
                 logger.warning("re-route by handle failed, routing fresh: %s", e)
-        info = await self.route(lat, lng, to_lat, to_lng, t, alternatives=0)
+        info = await self.route(lat, lng, to_lat, to_lng, t, alternatives=0, via=via)
         info.alternatives = []  # a re-route swaps the line under the driver; no chooser mid-drive
         return info
 
