@@ -4,6 +4,8 @@ import { KeyboardStickyView } from "@/src/keyboard";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 
 import { routesChipText } from "../geo/routeChoice";
+import type { OfflineMapState } from "../hooks/useOfflineMap";
+import { formatBytes } from "../map/bounds";
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import type { ActiveRoute, ParkingState, Phase, Place } from "../types";
 import { Avatar } from "./Avatar";
@@ -39,6 +41,9 @@ type Props = {
   onRemoveStop?: (stop: Place) => void;
   /** Open the list of the other routes the engine offered. */
   onShowRoutes?: () => void;
+  /** Offline corridor pack for this route (MapLibre builds only; null hides the button). */
+  offlineMap?: OfflineMapState | null;
+  onDownloadMap?: () => void;
   onLayout: (h: number) => void;
   /** Set while the wake word is actively listening (shows the privacy dot + phrase). */
   wakePhrase?: string | null;
@@ -70,6 +75,47 @@ function SideButton({
   );
 }
 
+/** "Download for offline · ~84 MB" / "Downloading · 42%" / "Saved · 84 MB" / "Download failed · try again". */
+export function offlineMapLabel(s: OfflineMapState): string {
+  switch (s.kind) {
+    case "none":
+      return `Download for offline · ~${formatBytes(s.estimateBytes)}`;
+    case "downloading":
+      return `Downloading · ${Math.round(s.percentage)}%${s.bytes ? ` · ${formatBytes(s.bytes)}` : ""}`;
+    case "saved":
+      return `Saved · ${formatBytes(s.bytes)}`;
+    case "failed":
+      return `Download failed · try again (~${formatBytes(s.estimateBytes)})`;
+  }
+}
+
+function OfflineMapButton({ state, onPress }: { state: OfflineMapState; onPress?: () => void }) {
+  const { colors } = useTheme();
+  const busy = state.kind === "downloading";
+  const saved = state.kind === "saved";
+  return (
+    <Pressable
+      testID="offline-map-button"
+      accessibilityLabel={offlineMapLabel(state)}
+      accessibilityState={{ disabled: busy || saved }}
+      disabled={busy || saved}
+      onPress={onPress}
+      hitSlop={8}
+      style={[styles.offlineBtn, { borderColor: saved ? colors.success : colors.info }]}
+    >
+      <Icon name={saved ? "check-circle-outline" : busy ? "progress-download" : "download-outline"} size={16} color={saved ? colors.success : colors.info} />
+      <Text testID="offline-map-label" style={[styles.otherText, { color: saved ? colors.success : colors.info }]}>
+        {offlineMapLabel(state)}
+      </Text>
+      {busy && (
+        <View style={[styles.progressTrack, { backgroundColor: colors.surfaceTertiary }]}>
+          <View style={[styles.progressFill, { backgroundColor: colors.info, width: `${Math.max(2, Math.min(100, state.percentage))}%` }]} />
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
 function arrivalClock(seconds: number) {
   const d = new Date(Date.now() + seconds * 1000);
   return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -84,7 +130,7 @@ function durationLabel(seconds: number) {
 }
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, onClose, onEndRoute, onRemoveStop, onShowRoutes, onLayout, wakePhrase, panel } = props;
+  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, wakePhrase, panel } = props;
   const routesChip = active && !driving ? routesChipText(active.route) : null;
   const { colors } = useTheme();
   const navigating = phase === "navigating";
@@ -226,6 +272,7 @@ export function CopilotSheet(props: Props) {
                 )}
               </View>
             )}
+            {offlineMap && <OfflineMapButton state={offlineMap} onPress={onDownloadMap} />}
             <PressableScale
               testID="go-button"
               accessibilityLabel="Go"
@@ -350,6 +397,9 @@ const styles = StyleSheet.create({
   linkRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   routesChip: { flexDirection: "row", alignItems: "center", gap: 4, height: 32, paddingHorizontal: spacing.sm, borderRadius: radius.pill, borderWidth: 1 },
   otherBtn: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", minHeight: 44, gap: 2 },
+  offlineBtn: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", alignSelf: "flex-start", gap: 6, minHeight: 32, paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1, marginTop: spacing.xs },
+  progressTrack: { width: "100%", height: 3, borderRadius: 2, overflow: "hidden" },
+  progressFill: { height: 3 },
   otherText: { fontFamily: fonts.bold, fontSize: 14 },
   actions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.sm },
   side: { width: 72, alignItems: "center", gap: 6 },

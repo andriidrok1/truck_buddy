@@ -9,8 +9,10 @@ import { requestCode, setToken } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
 import { setEldToken, useEldToken } from "@/src/eld";
 import { PressableScale } from "@/src/components/PressableScale";
+import { removePack, usePacks } from "@/src/hooks/useOfflineMap";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { DEFAULT_TRUCK, requestTruckReroute, saveTruckProfile, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { formatBytes } from "@/src/map/bounds";
 import { setSim } from "@/src/sim";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
 
@@ -96,6 +98,7 @@ export default function TruckProfileScreen() {
   const eldToken = useEldToken();
   const [eldDraft, setEldDraft] = useState("");
   const eldConnected = !!eldToken;
+  const offlineMaps = usePacks();
 
   const [feet, setFeet] = useState(String(Math.floor(truck.height_in / 12)));
   const [inches, setInches] = useState(String(truck.height_in % 12));
@@ -272,6 +275,39 @@ export default function TruckProfileScreen() {
           </Text>
         </View>
 
+        {/* MapLibre builds only: with the Apple provider there is no pack to list and nothing to delete. */}
+        {offlineMaps.available && (
+          <>
+            <Text style={[styles.section, { color: colors.onSurface }]}>Offline maps</Text>
+            <View testID="offline-maps-section" style={[styles.eldBox, { backgroundColor: colors.surfaceSecondary }]}>
+              {offlineMaps.packs.length === 0 ? (
+                <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
+                  No maps saved. Set a route and tap “Download for offline” on its card; the last three routes are kept.
+                </Text>
+              ) : (
+                offlineMaps.packs.map((p) => (
+                  <View key={p.name} testID={`offline-pack-${p.name}`} style={styles.eldStatusRow}>
+                    <Icon name={p.complete ? "map-check-outline" : "progress-download"} size={18} color={p.complete ? colors.success : colors.muted} />
+                    <View style={styles.flex}>
+                      <Text style={[styles.switchTitle, { color: colors.onSurface }]} numberOfLines={1}>
+                        {p.name}
+                      </Text>
+                      <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
+                        {p.complete ? formatBytes(p.bytes) : `${Math.round(p.percentage)}% · ${formatBytes(p.bytes)}`}
+                        {p.createdAt ? ` · ${new Date(p.createdAt).toLocaleDateString()}` : ""}
+                      </Text>
+                    </View>
+                    <PressableScale testID={`offline-pack-delete-${p.name}`} accessibilityLabel={`Delete ${p.name}`} onPress={() => removePack(p.name)} style={styles.packDelete}>
+                      <Icon name="delete-outline" size={22} color={colors.error} />
+                    </PressableScale>
+                  </View>
+                ))
+              )}
+              <Text style={[styles.switchSub, { color: colors.muted }]}>Map data © OpenFreeMap © OpenMapTiles © OpenStreetMap contributors.</Text>
+            </View>
+          </>
+        )}
+
         {!valid && (
           <Text testID="truck-profile-error" style={[styles.error, { color: colors.error }]}>
             Check the highlighted values: height 5–16 ft, trailer 10–65 ft, weight 5,000–200,000 lb.
@@ -358,6 +394,7 @@ const styles = StyleSheet.create({
   eldStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   eldBtn: { flex: 1, height: 48, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
   eldBtnText: { fontFamily: fonts.semibold, fontSize: 15 },
+  packDelete: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   error: { fontFamily: fonts.medium, fontSize: 13 },
   footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   save: { height: 56, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },

@@ -22,6 +22,7 @@ import { swapAlternative, switchedLine } from "@/src/geo/routeChoice";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
 import { useOfflineGuidance, type OfflineGuidance } from "@/src/hooks/useOfflineGuidance";
+import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
@@ -491,6 +492,8 @@ export default function MapScreen() {
   useEffect(() => {
     offlineRef.current = offline;
   }, [offline]);
+  // Offline corridor pack for the route (MapLibre builds; null with the Apple provider).
+  const offlineMap = useOfflineMap(active?.route ?? null);
   // Closures, weather, chains and speed alerts while driving; the shield and chips on the banner.
   const advisories = useRouteAdvisories(driving ? active : null, guidance, driving ? loc.speed : null, say);
   const limitRef = useRef<number | null>(null);
@@ -1129,6 +1132,8 @@ export default function MapScreen() {
         onEndRoute={onEndRoute}
         onRemoveStop={onRemoveStop}
         onShowRoutes={() => setRoutesOpen(true)}
+        offlineMap={offlineMap.state}
+        onDownloadMap={offlineMap.download}
         onLayout={setSheetH}
         wakePhrase={wake.active ? wake.phrase : null}
         panel={providers ? <ProvidersList data={providers} onRoute={(p) => onPlacePress(providerPlace(p))} /> : null}
@@ -1150,6 +1155,7 @@ export default function MapScreen() {
       {restored && active && (
         <RestoredBanner
           placeName={active.place.name}
+          note={offlineMap.state?.kind === "saved" ? "Map saved" : null}
           top={topH + spacing.sm}
           onResume={() => {
             setRestoredId(null);

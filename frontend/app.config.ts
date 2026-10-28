@@ -1,7 +1,13 @@
 // Expo config as code: identical to the former app.json except android.config.googleMaps.apiKey,
 // which comes from the GOOGLE_MAPS_ANDROID_KEY env var (an EAS secret) so the key is never committed.
 // Check the result with `npx expo config --type public`.
+//
+// EXPO_PUBLIC_MAP_PROVIDER=maplibre adds the MapLibre config plugin (native SDK on both platforms);
+// the same variable makes the JS side pick that map (src/map/provider.ts). Without it the build is
+// unchanged: react-native-maps only, and Expo Go keeps working.
 import type { ExpoConfig } from "expo/config";
+
+const mapLibre = process.env.EXPO_PUBLIC_MAP_PROVIDER?.trim().toLowerCase() === "maplibre";
 
 const config: ExpoConfig = {
     "name": "TruckBuddy",
@@ -134,7 +140,8 @@ const config: ExpoConfig = {
           "enableBackgroundRecording": false
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      ...(mapLibre ? (["@maplibre/maplibre-react-native"] as const) : [])
     ],
     "experiments": {
       "typedRoutes": true
