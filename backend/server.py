@@ -331,7 +331,7 @@ async def voice_turn(
     confidence = None
     try:
         with timing.stage("stt"):
-            tr = await voice.transcribe_full(data, name)
+            tr = await voice.transcribe_full(data, name, current.name if current else None)
             text, confidence = tr.text, tr.confidence
     except Exception:
         logger.exception("transcription failed")
@@ -345,7 +345,7 @@ async def voice_turn(
 
 
 @api.post("/voice/transcribe")
-async def voice_transcribe(audio: UploadFile = File(...)):
+async def voice_transcribe(audio: UploadFile = File(...), hint: Optional[str] = Form(None, max_length=600)):
     """Step 1 of a voice turn: speech -> text (the app shows it right away, then calls /agent?speak=true)."""
     timing.begin()
     with timing.stage("upload"):
@@ -360,7 +360,7 @@ async def voice_transcribe(audio: UploadFile = File(...)):
     confidence = None
     try:
         with timing.stage("stt"):
-            tr = await voice.transcribe_full(data, name)
+            tr = await voice.transcribe_full(data, name, hint)
             text, confidence = tr.text, tr.confidence
     except voice.SttTimeout as e:
         logger.warning("transcription timed out: %s", e)

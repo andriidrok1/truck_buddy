@@ -65,19 +65,43 @@ def confidence_of(logprobs) -> Optional[float]:
     return round(min(1.0, math.exp(sum(vals) / len(vals))), 3)
 
 
-async def transcribe(data: bytes, filename: str) -> str:
+HINT_MAX_CHARS = 200
+_HINT_OK = re.compile(r"[^A-Za-z0-9'&.\- ]+")
+
+
+def stt_prompt(hint: Optional[str] = None) -> str:
+    """The vocabulary hint for the recognizer: the fixed trucker list plus names from the active route
+    (destination, the options on screen, towns), so "Lodi" is not heard as "lady". Capped and sanitised."""
+    if not hint:
+        return PROMPT
+    seen, terms = set(), []
+    for raw in re.split(r"[,;|\n]+", hint):
+        t = _HINT_OK.sub(" ", raw).strip()
+        t = " ".join(t.split())
+        key = t.lower()
+        if t and key not in seen and key not in PROMPT.lower():
+            seen.add(key)
+            terms.append(t)
+    extra = ", ".join(terms)
+    if len(extra) > HINT_MAX_CHARS:
+        extra = extra[:HINT_MAX_CHARS].rsplit(",", 1)[0]
+    return f"{PROMPT} {extra}." if extra else PROMPT
+
+
+async def transcribe(data: bytes, filename: str, hint: Optional[str] = None) -> str:
     """Speech -> text (see transcribe_full for the confidence)."""
-    return (await transcribe_full(data, filename)).text
+    return (await transcribe_full(data, filename, hint)).text
 
 
-async def transcribe_full(data: bytes, filename: str) -> Transcript:
+async def transcribe_full(data: bytes, filename: str, hint: Optional[str] = None) -> Transcript:
     stt = llm.client().audio.transcriptions
+    prompt = stt_prompt(hint)
     try:
         buf = io.BytesIO(data)
         buf.name = filename
         res = await asyncio.wait_for(
             stt.create(file=buf, model=STT_MODEL, response_format="json", language="en",
-                       prompt=PROMPT, temperature=0.0, include=["logprobs"]),
+                       prompt=prompt, temperature=0.0, include=["logprobs"]),
             STT_TIMEOUT_S)
         return Transcript(_clean((getattr(res, "text", "") or "").strip()),
                           confidence_of(getattr(res, "logprobs", None)))
@@ -89,7 +113,7 @@ async def transcribe_full(data: bytes, filename: str) -> Transcript:
     buf.name = filename
     try:
         res = await asyncio.wait_for(
-            stt.create(file=buf, model="whisper-1", response_format="verbose_json", language="en", prompt=PROMPT),
+            stt.create(file=buf, model="whisper-1", response_format="verbose_json", language="en", prompt=prompt),
             STT_TIMEOUT_S)
     except asyncio.TimeoutError:
         raise SttTimeout(f"whisper-1 took longer than {STT_TIMEOUT_S:.0f}s")

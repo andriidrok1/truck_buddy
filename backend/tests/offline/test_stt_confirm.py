@@ -47,7 +47,7 @@ def test_whisper_fallback_maps_avg_logprob(monkeypatch):
 
 
 def test_transcribe_endpoint_returns_confidence(api_client, monkeypatch):
-    async def fake(data, name):
+    async def fake(data, name, hint=None):
         return Transcript("take me to Reno", 0.42)
 
     monkeypatch.setattr(voice, "transcribe_full", fake)
