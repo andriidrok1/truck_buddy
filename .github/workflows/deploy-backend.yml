@@ -1,0 +1,49 @@
+# Deploys backend/ to the TruckBuddy server (AWS Lightsail) on every push to main that touches it.
+# The SSH key in TRUCKBUDDY_DEPLOY_KEY can only run the server's deploy command: no shell, no AWS access.
+name: Deploy backend
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", ".github/workflows/deploy-backend.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        env:
+          DEPLOY_KEY: ${{ secrets.TRUCKBUDDY_DEPLOY_KEY }}
+          KNOWN_HOSTS: ${{ secrets.TRUCKBUDDY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Ship backend and deploy
+        env:
+          HOST: ${{ secrets.TRUCKBUDDY_HOST }}
+        run: |
+          # The server's forced command reads the tarball from stdin and takes the commit as its only argument.
+          tar -czf - -C backend --exclude=tests --exclude=__pycache__ . \
+            | ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "tbdeploy@${HOST}" "${GITHUB_SHA::7}"
+
+      - name: Health check
+        env:
+          HOST: ${{ secrets.TRUCKBUDDY_HOST }}
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS "http://${HOST}/api/health"; then exit 0; fi
+            sleep 5
+          done
+          echo "Backend did not become healthy" >&2
+          exit 1
