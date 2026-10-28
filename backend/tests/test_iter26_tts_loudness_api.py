@@ -29,7 +29,7 @@ def _stats(mp3: bytes) -> dict:
 @pytest.fixture(scope="module")
 def s():
     sess = requests.Session()
-    r = sess.post(f"{BASE}/api/auth/access-code", json={"code": "TRUCK2026"}, timeout=20)
+    r = sess.post(f"{BASE}/api/auth/access-code", json={"code": os.environ["ACCESS_CODE"]}, timeout=20)
     assert r.status_code == 200, r.text
     sess.headers["Authorization"] = f"Bearer {r.json()['access_token']}"
     return sess

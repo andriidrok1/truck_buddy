@@ -4,6 +4,7 @@ import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from "re
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PRIVACY_URL } from "../constants";
+import { requestCode } from "../auth";
 import { giveConsent } from "../consent";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import { Icon } from "./Icon";
@@ -33,8 +34,9 @@ export function ConsentGate() {
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
 
-  const agree = async () => {
+  const agree = async (withCode = false) => {
     setBusy(true);
+    if (withCode) requestCode();
     await giveConsent();
   };
 
@@ -61,11 +63,14 @@ export function ConsentGate() {
         <PressableScale
           testID="consent-agree"
           accessibilityLabel="Agree and continue"
-          onPress={agree}
+          onPress={() => agree()}
           disabled={busy}
           style={[styles.button, { backgroundColor: colors.brandPrimary }]}
         >
           {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={[styles.buttonText, { color: colors.onBrandPrimary }]}>Agree and continue</Text>}
+        </PressableScale>
+        <PressableScale testID="consent-agree-code" accessibilityRole="button" onPress={() => agree(true)} disabled={busy}>
+          <Text style={[styles.link, styles.center, { color: colors.info }]}>Agree and enter an access code</Text>
         </PressableScale>
       </View>
     </View>
@@ -83,7 +88,8 @@ const styles = StyleSheet.create({
   itemTitle: { fontFamily: fonts.semibold, fontSize: 16, marginBottom: 2 },
   itemBody: { fontFamily: fonts.regular, fontSize: 14, lineHeight: 20 },
   link: { fontFamily: fonts.semibold, fontSize: 15, paddingVertical: spacing.sm },
-  footer: { paddingHorizontal: spacing.xl, paddingTop: spacing.md },
+  footer: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, gap: spacing.xs },
+  center: { textAlign: "center" },
   button: { height: 56, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
   buttonText: { fontFamily: fonts.bold, fontSize: 17 },
 });

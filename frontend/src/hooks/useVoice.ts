@@ -13,9 +13,11 @@ import { Platform } from "react-native";
 
 export type MicPermission = "granted" | "ask" | "blocked";
 
-const SPEECH_DB = -38; // lower bound for "the driver is talking" (quiet cab)
+const SPEECH_DB = -38; // starting value before calibration (quiet cab)
 const SILENCE_DB = -45; // lower bound for "pause"
-const SPEECH_OVER_FLOOR = 10; // dB above the calibrated noise floor
+// Speech = this far above the measured cab noise. No absolute floor on top: at highway speed the cab
+// meters around -30 dBFS and a fixed -38 lower bound would put the threshold above normal speech.
+const SPEECH_OVER_FLOOR = 8;
 const SILENCE_OVER_FLOOR = 4;
 const CALIBRATE_MS = 400; // the first part of each listen measures the cab noise
 const SUSTAIN_MS = 300; // speech only counts after this long above the threshold
@@ -143,12 +145,12 @@ export function useVoice() {
 
   /**
    * Hands-free answer: records until the driver stops talking.
-   * The first ~400 ms calibrate the noise floor (speech = floor + 10 dB, pause = floor + 4 dB,
-   * never below the fixed quiet-cab values); speech counts after 300 ms above the threshold.
+   * The first ~400 ms calibrate the noise floor (speech = floor + 8 dB, pause = floor + 4 dB but not
+   * below the quiet-cab value); speech counts after 300 ms above the threshold.
    * Resolves the file uri, "silent" if nobody spoke, or "cancelled".
    */
   const listen = useCallback(
-    async ({ maxMs = 15000, silenceMs = 1100, startTimeoutMs = 7000, chime = true }: ListenOptions = {}) => {
+    async ({ maxMs = 15000, silenceMs = 1600, startTimeoutMs = 7000, chime = true }: ListenOptions = {}) => {
       const token = ++listenToken.current;
       finishNow.current = false;
       await startRecording();
@@ -193,7 +195,7 @@ export function useVoice() {
             if (now - t0 < CALIBRATE_MS) continue;
             // Quietest sample = the cab noise (the chime or an early word only raise the others).
             const floor = Math.min(...calib);
-            speechDb = Math.max(SPEECH_DB, floor + SPEECH_OVER_FLOOR);
+            speechDb = floor + SPEECH_OVER_FLOOR;
             silenceDb = Math.max(SILENCE_DB, floor + SILENCE_OVER_FLOOR);
             calibrated = true;
             console.log(`[voice] calibrated floor=${floor.toFixed(1)} speech>${speechDb.toFixed(1)} silence<${silenceDb.toFixed(1)} samples=${calib.map((v) => v.toFixed(0)).join(",")}`);

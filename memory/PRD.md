@@ -96,7 +96,7 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - 2026-10-25: merged main 4c145cc into emergency (/route: instant reply + background check; skip_parking → no check, parking=None). tests/conftest.py: backend URL from frontend/.env, speech fixtures (/tmp/q.mp3 etc.) generated via /api/speak. Fixed /speak single-flight (pin inside the shared task). Agent context: straight-line distance to active place when the app sends no route numbers. Suite: 335 passed.
 
 ## Jun 2026 — Access code, long-term memory, mobile web
-- Shared access code (env ACCESS_CODE=TRUCK2026, case-insensitive) on first launch -> 365-day JWT per device (sub = random driver id), stored in SecureStore/AsyncStorage; 401 sends the app back to the code screen. 5 wrong tries per IP / 10 min (last X-Forwarded-For hop = ingress)
+- Shared access code (env ACCESS_CODE, case-insensitive) on first launch -> 365-day JWT per device (sub = random driver id), stored in SecureStore/AsyncStorage; 401 sends the app back to the code screen. 5 wrong tries per IP / 10 min (last X-Forwarded-For hop = ingress)
 - All /api routes need Bearer except /health, /auth/access-code, /voice/audio/{id}, /satellite. CORS without credentials
 - Long-term memory in Mongo `conversation` per driver: every turn saved; new dialogs get the driver's lines from the last 80 turns as background. History screen (/history, top-bar chat button) with Clear memory (GET/DELETE /api/memory)
 - Mobile web: PWA meta tags (home-screen app, no zoom on input)
@@ -130,7 +130,7 @@ Scope change from the user: a simple MOCK MVP. No Whisper, GPT, TTS, Overpass or
 - NOTE: ElevenLabs quota is exhausted (0 credits) -> TTS falls back to OpenAI; TTS latency/cache tests fail until topped up
 
 ## Jun 2026 — Tester mode
-- Code test123 (env TESTER_CODE) logs in as role "tester" (JWT claim + stored on device). Tester sees a flask button -> /tester screen with scenarios; "Flat tire on I-80" moves the app's GPS to I-80 E near Vacaville (38.38585,-121.93664, heading 52). "Back to real GPS" resets. Simulated spot lives in memory (src/sim.ts), resets on app restart
+- The TESTER_CODE (env) logs in as role "tester" (JWT claim + stored on device). Tester sees a flask button -> /tester screen with scenarios; "Flat tire on I-80" moves the app's GPS to I-80 E near Vacaville (38.38585,-121.93664, heading 52). "Back to real GPS" resets. Simulated spot lives in memory (src/sim.ts), resets on app restart
 
 ## Jun 2026 — Loud OpenAI voice fallback
 - OpenAI tts-1 was ~-26 LUFS vs ElevenLabs ~-15 (12 dB quieter on phones). louder(): bundled ffmpeg (imageio-ffmpeg) +13 dB + limiter -> ~-15..-17 LUFS, ~20 ms extra. OpenAI cache tag has |g13 so old quiet cached clips are not reused

@@ -24,7 +24,7 @@ async def raw(text):
     return t1 - t0, time.time() - t1
 
 
-tok = requests.post(f"{BASE}/api/auth/access-code", json={"code": "TRUCK2026"}).json()["access_token"]
+tok = requests.post(f"{BASE}/api/auth/access-code", json={"code": os.environ["ACCESS_CODE"]}).json()["access_token"]
 H = {"Authorization": f"Bearer {tok}"}
 for i in range(3):
     text = f"Probe {uuid.uuid4().hex[:4]}, weigh station open in two miles, keep right."

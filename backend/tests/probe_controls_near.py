@@ -1,4 +1,5 @@
 # T1 probe: control phrases end-to-end with an active route + find-near address stability
+import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
@@ -6,7 +7,7 @@ import requests
 
 BASE_URL = [l.split("=", 1)[1].strip().strip('"') for l in open("/app/frontend/.env")
             if l.startswith("EXPO_PUBLIC_BACKEND_URL") or l.startswith("EXPO_BACKEND_URL")][0].rstrip("/")
-H = {"Authorization": "Bearer " + requests.post(f"{BASE_URL}/api/auth/access-code", json={"code": "TRUCK2026"},
+H = {"Authorization": "Bearer " + requests.post(f"{BASE_URL}/api/auth/access-code", json={"code": os.environ["ACCESS_CODE"]},
                                                 timeout=30).json()["access_token"]}
 SAC = {"lat": 38.58, "lng": -121.49}
 

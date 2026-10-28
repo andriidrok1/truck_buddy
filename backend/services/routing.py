@@ -1,7 +1,10 @@
 """Truck routing.
 
 Order: HERE Routing v8 (transportMode=truck) when HERE_API_KEY is set, then
-OpenRouteService driving-hgv when ORS_API_KEY is set, then a MOCK curved line.
+OpenRouteService driving-hgv when ORS_API_KEY is set. With no key configured at all the
+route is a MOCK curved line (local demo); when a key is set and every provider fails,
+route() raises RoutingUnavailable so the driver hears that routing is down instead of a
+line that isn't a road.
 The truck profile (height, length, weight, hazmat) is sent to the real providers so
 the route avoids low bridges and weight/length/hazmat restrictions.
 """
@@ -214,6 +217,10 @@ def _mock(from_lat: float, from_lng: float, to_lat: float, to_lng: float) -> Rou
     return _info(geometry, km * 1000, minutes * 60, "mock", [], False)
 
 
+class RoutingUnavailable(RuntimeError):
+    """Every configured routing provider failed (timeout, quota, bad response)."""
+
+
 class TruckRoutingProvider:
     @property
     def source(self) -> str:
@@ -224,6 +231,7 @@ class TruckRoutingProvider:
     async def route(self, from_lat: float, from_lng: float, to_lat: float, to_lng: float,
                     truck: Optional[TruckProfile] = None) -> RouteInfo:
         t = truck or TruckProfile()
+        failed: list[str] = []
         for key, fn in (("HERE_API_KEY", _here), ("ORS_API_KEY", _ors)):
             if not os.environ.get(key):
                 continue
@@ -233,6 +241,9 @@ class TruckRoutingProvider:
                 return info
             except Exception as e:  # noqa: BLE001 - fall through to the next provider
                 logger.warning("%s routing failed: %s", fn.__name__, e)
+                failed.append(f"{fn.__name__}: {type(e).__name__}")
+        if failed:  # a real provider is configured: never hand the driver a made-up line
+            raise RoutingUnavailable("; ".join(failed))
         info = _mock(from_lat, from_lng, to_lat, to_lng)
         info.approach = from_route(info)
         return info

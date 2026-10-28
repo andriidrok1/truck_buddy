@@ -1,10 +1,11 @@
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Platform, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { Alert, Platform, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { setToken } from "@/src/auth";
+import { api } from "@/src/api";
+import { requestCode, setToken } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
 import { PressableScale } from "@/src/components/PressableScale";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
@@ -56,6 +57,33 @@ function Field({
     </View>
   );
 }
+
+const DELETE_MSG = "This removes everything TruckBuddy stored for this device on our servers and signs you out. This can't be undone.";
+
+const confirmDelete = (onYes: () => void) => {
+  if (Platform.OS === "web") {
+    if (window.confirm(DELETE_MSG)) onYes();
+    return;
+  }
+  Alert.alert("Delete my data?", DELETE_MSG, [
+    { text: "Cancel", style: "cancel" },
+    { text: "Delete", style: "destructive", onPress: onYes },
+  ]);
+};
+
+/** Server records first (while the token is still valid), then a fresh local state. */
+const deleteMyData = async () => {
+  try {
+    await api.clearMemory();
+  } catch {
+    Alert.alert("Couldn't reach the server", "Your data is still there. Check your connection and try again.");
+    return;
+  }
+  saveTruckProfile(DEFAULT_TRUCK);
+  setSim(null);
+  requestCode();
+  await setToken(null);
+};
 
 export default function TruckProfileScreen() {
   const router = useRouter();
@@ -181,13 +209,28 @@ export default function TruckProfileScreen() {
           accessibilityLabel="Sign out"
           onPress={async () => {
             setSim(null);
-            await setToken(null); // back to the access-code screen
+            requestCode(); // back to the access-code screen, not an automatic sign-in
+            await setToken(null);
           }}
           style={[styles.signOut, { borderColor: colors.error }]}
         >
           <Icon name="logout" size={20} color={colors.error} />
           <Text style={[styles.signOutText, { color: colors.error }]}>Sign out (enter a code again)</Text>
         </PressableScale>
+
+        {/* 5.1.1(v): a device identity with server records counts as an account; deletion must be in-app. */}
+        <PressableScale
+          testID="delete-my-data"
+          accessibilityLabel="Delete my data"
+          onPress={() => confirmDelete(deleteMyData)}
+          style={[styles.signOut, { borderColor: colors.error, marginTop: spacing.md }]}
+        >
+          <Icon name="delete-outline" size={20} color={colors.error} />
+          <Text style={[styles.signOutText, { color: colors.error }]}>Delete my data</Text>
+        </PressableScale>
+        <Text style={[styles.deleteNote, { color: colors.muted }]}>
+          Erases everything stored for this device on our servers (conversation memory) and signs you out. The truck profile on this phone is reset too.
+        </Text>
       </KeyboardAwareScrollView>
 
       <KeyboardStickyView offset={{ opened: insets.bottom }}>
@@ -209,6 +252,7 @@ export default function TruckProfileScreen() {
 const styles = StyleSheet.create({
   signOut: { height: 52, borderRadius: radius.pill, borderWidth: 1.5, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginTop: spacing.xl },
   signOutText: { fontFamily: fonts.semibold, fontSize: 16 },
+  deleteNote: { fontFamily: fonts.regular, fontSize: 13, textAlign: "center", marginTop: spacing.sm, paddingHorizontal: spacing.lg },
   root: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, gap: spacing.md },
   back: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },

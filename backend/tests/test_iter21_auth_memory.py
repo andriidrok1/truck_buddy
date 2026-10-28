@@ -6,7 +6,7 @@ import pytest
 import requests
 
 BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "").rstrip("/")
-CODE = "TRUCK2026"
+CODE = os.environ["ACCESS_CODE"]  # set in the shell; the real code is never in the repo
 NO_AUTH = {"Authorization": None}  # conftest patches requests to add a token; None drops the header
 LOC = {"lat": 39.7392, "lng": -104.9903}
 
@@ -50,7 +50,7 @@ class TestAccessCode:
         assert d["token_type"] == "bearer" and isinstance(d["access_token"], str) and d["access_token"].count(".") == 2
 
     def test_lowercase_code_accepted(self):
-        r = _token("  truck2026 ", ip="10.30.0.2")
+        r = _token(f"  {CODE.lower()} ", ip="10.30.0.2")
         assert r.status_code == 200 and r.json()["access_token"]
 
     def test_wrong_code_401(self):
@@ -90,6 +90,7 @@ PROTECTED = [
     ("POST", "/api/voice/transcribe", None),
     ("POST", "/api/speak", {"text": "hi"}),
     ("POST", "/api/onboarding/parse", None),
+    ("GET", f"/api/satellite?lat={LOC['lat']}&lng={LOC['lng']}", None),
 ]
 
 
@@ -105,7 +106,7 @@ class TestProtection:
 
     def test_all_openapi_routes_protected(self):
         spec = requests.get(f"{BASE_URL}/api/openapi.json", headers=NO_AUTH, timeout=30).json()
-        public = {"/api/health", "/api/auth/access-code", "/api/voice/audio/{audio_id}", "/api/satellite"}
+        public = {"/api/health", "/api/auth/access-code", "/api/voice/audio/{audio_id}"}
         open_routes = []
         for path, ops in spec["paths"].items():
             if path in public:

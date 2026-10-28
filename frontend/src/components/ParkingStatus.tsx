@@ -5,6 +5,7 @@ import Animated, { ZoomIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { apiUrl } from "../api";
+import { authHeader } from "../auth";
 import { fonts, radius, spacing, useTheme, type ThemeColors } from "../theme";
 import type { LatLng, ParkingCheck, ParkingSpot, Place } from "../types";
 import { routeTail } from "../utils/entry";
@@ -116,7 +117,7 @@ export function ParkingStatus({ parking, idSuffix = "", place, route }: Props) {
             <View pointerEvents="none" style={[styles.thumbIcon, { backgroundColor: colors.surfaceTertiary }]}>
               <Icon name="satellite-variant" size={20} color={colors.muted} />
             </View>
-            <Image source={{ uri }} style={styles.thumb} contentFit="cover" transition={150} />
+            <Image source={{ uri, headers: authHeader() }} style={styles.thumb} contentFit="cover" transition={150} />
             <SpotMarkers spots={spots} size={14} />
           </View>
         </PressableScale>

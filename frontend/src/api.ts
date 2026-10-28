@@ -1,9 +1,13 @@
-import { authHeader, setToken } from "./auth";
+import { authHeader, requestCode, setToken } from "./auth";
 import { getTruckProfile } from "./hooks/useTruckProfile";
 import { uploadForm } from "./utils/upload";
 import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
 
 const ORIGIN = process.env.EXPO_PUBLIC_BACKEND_URL;
+if (!ORIGIN) {
+  // Fail loudly at load time: without it every request would go to "undefined/api" and look like a dead connection.
+  throw new Error("EXPO_PUBLIC_BACKEND_URL is not set (eas.json build env, or frontend/.env for local runs)");
+}
 const BASE = `${ORIGIN}/api`;
 
 export const absoluteUrl = (path: string) => `${ORIGIN}${path}`;
@@ -53,22 +57,48 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
   }
 }
 
+/** Thrown when the server has open sign-up turned off: the driver needs an access code. */
+export class CodeRequiredError extends Error {}
+
+/** Open sign-up: a device token without a code. */
+export async function registerDevice() {
+  let res: Response;
+  const d = deadline(DEFAULT_TIMEOUT_MS);
+  try {
+    res = await fetch(`${BASE}/auth/device`, { method: "POST", signal: d.signal });
+  } catch {
+    throw new Error("No connection. Check your internet and try again.");
+  } finally {
+    d.done();
+  }
+  if (res.status === 403) throw new CodeRequiredError("Access code required");
+  if (res.status === 429) throw new Error("Too many tries. Wait a few minutes and try again.");
+  if (!res.ok) throw new Error("Something went wrong. Try again.");
+  const data = (await res.json()) as { access_token: string };
+  await setToken(data.access_token, "driver");
+}
+
 export async function redeemAccessCode(code: string) {
   let res: Response;
+  const d = deadline(15000);
   try {
     res = await fetch(`${BASE}/auth/access-code`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code }),
+      signal: d.signal,
     });
   } catch {
     throw new Error("No connection. Check your internet and try again.");
+  } finally {
+    d.done();
   }
   if (res.status === 429) throw new Error("Too many tries. Wait a few minutes and try again.");
   if (res.status === 401) throw new Error("That code isn't right. Check it and try again.");
   if (!res.ok) throw new Error("Something went wrong. Try again.");
   const data = (await res.json()) as { access_token: string; role?: "driver" | "tester" };
   await setToken(data.access_token, data.role === "tester" ? "tester" : "driver");
+  requestCode(false);
 }
 
 export const api = {
@@ -101,14 +131,19 @@ export const api = {
   /** Voice turn step 1: speech -> text, shown to the driver right away. */
   transcribe: async (uri: string, signal?: AbortSignal) => {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
-    const res = await uploadForm(`${BASE}/voice/transcribe`, {
-      fields: {},
-      files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
-      headers: authHeader(),
-      signal,
-    });
-    check(res as Response, "/voice/transcribe");
-    return (await res.json()) as { transcript: string; timings?: Record<string, number> };
+    const d = deadline(20000, signal); // upload + STT; the server itself gives up on STT after 12 s
+    try {
+      const res = await uploadForm(`${BASE}/voice/transcribe`, {
+        fields: {},
+        files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
+        headers: authHeader(),
+        signal: d.signal,
+      });
+      check(res as Response, "/voice/transcribe");
+      return (await res.json()) as { transcript: string; timings?: Record<string, number> };
+    } finally {
+      d.done();
+    }
   },
   /** Voice turn step 2: text -> action + spoken reply. */
   agentSpeak: (text: string, at: LatLng, active?: ActiveRoute | null, signal?: AbortSignal, sessionId?: string, ui?: UiState) =>
@@ -133,12 +168,18 @@ export const api = {
     request<AgentResponse>(`/breakdown/${id}?speak=true`, { signal, timeoutMs: 120000 }),
   onboardingParse: async (uri: string, step: "name" | "truck" | "prefs") => {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
-    const res = await uploadForm(`${BASE}/onboarding/parse`, {
-      fields: { step },
-      files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
-      headers: authHeader(),
-    });
-    check(res as Response, "/onboarding/parse");
-    return (await res.json()) as { transcript: string; updates: Record<string, unknown> };
+    const d = deadline(30000);
+    try {
+      const res = await uploadForm(`${BASE}/onboarding/parse`, {
+        fields: { step },
+        files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
+        headers: authHeader(),
+        signal: d.signal,
+      });
+      check(res as Response, "/onboarding/parse");
+      return (await res.json()) as { transcript: string; updates: Record<string, unknown> };
+    } finally {
+      d.done();
+    }
   },
 };

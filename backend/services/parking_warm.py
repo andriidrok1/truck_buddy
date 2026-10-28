@@ -1,4 +1,4 @@
-"""Warm the satellite cache for all demo places at startup (so the demo never waits on vision)."""
+"""Warm the satellite cache for all demo places at startup (PARKING_WARM=1; off by default: up to ~23 vision calls per cold start)."""
 import asyncio
 import logging
 import os
@@ -39,7 +39,7 @@ async def warm_demo_places() -> dict:
 
 async def _start():
     global _task
-    if os.environ.get("PARKING_WARM", "1") != "0":
+    if os.environ.get("PARKING_WARM", "0") == "1":
         _task = asyncio.create_task(warm_demo_places())
 
 

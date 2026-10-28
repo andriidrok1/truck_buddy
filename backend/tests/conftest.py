@@ -22,8 +22,10 @@ BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "").rstrip("/")
 
 def _auth_everything() -> None:
     """The API needs the access-code token: every requests call in the tests sends it (unless set)."""
-    token = requests.post(f"{BASE_URL}/api/auth/access-code", json={"code": os.environ.get("ACCESS_CODE", "TRUCK2026")},
-                          timeout=30).json()["access_token"]
+    code = os.environ.get("ACCESS_CODE")
+    if not code:
+        pytest.exit("ACCESS_CODE env is required (the backend's access code; never committed)", returncode=2)
+    token = requests.post(f"{BASE_URL}/api/auth/access-code", json={"code": code}, timeout=30).json()["access_token"]
     orig = requests.Session.request
 
     def request(self, method, url, **kw):
@@ -34,7 +36,8 @@ def _auth_everything() -> None:
     requests.Session.request = request
 
 
-_auth_everything()
+if BASE_URL:  # pure unit tests (test_rate_limit, test_stt_timeout, ...) run without a backend
+    _auth_everything()
 
 # Speech fixtures used by voice tests: path -> phrase (spoken by our own /api/speak TTS, then fed to Whisper)
 SPEECH = {
@@ -70,6 +73,8 @@ def _speak_to(path: str, text: str) -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def speech_fixtures():
+    if not BASE_URL:
+        return
     for path, text in SPEECH.items():
         if not os.path.exists(path) or os.path.getsize(path) < 1000:
             _speak_to(path, text)

@@ -7,8 +7,9 @@ import { redeemAccessCode } from "../api";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import { PressableScale } from "./PressableScale";
 
-/** First launch: the driver enters the shared access code before using the app. */
-export function AccessGate() {
+/** The driver enters an access code (tester code, or the shared code when open sign-up is off).
+ *  `onSkip` adds a "Continue without a code" link. */
+export function AccessGate({ onSkip }: { onSkip?: () => void }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [code, setCode] = useState("");
@@ -69,6 +70,11 @@ export function AccessGate() {
       >
         {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={[styles.buttonText, { color: colors.onBrandPrimary }]}>Continue</Text>}
       </PressableScale>
+      {onSkip && (
+        <PressableScale testID="access-code-skip" accessibilityRole="button" onPress={onSkip}>
+          <Text style={[styles.skip, { color: colors.info }]}>Continue without a code</Text>
+        </PressableScale>
+      )}
     </KeyboardAwareScrollView>
   );
 }
@@ -94,4 +100,5 @@ const styles = StyleSheet.create({
   buttonWrap: { alignSelf: "stretch" },
   button: { height: 56, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", marginTop: spacing.sm },
   buttonText: { fontFamily: fonts.bold, fontSize: 17 },
+  skip: { fontFamily: fonts.semibold, fontSize: 15, paddingVertical: spacing.md },
 });

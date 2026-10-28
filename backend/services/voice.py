@@ -38,6 +38,11 @@ _CACHE_MAX = 50
 
 
 STT_MODEL = "gpt-4o-mini-transcribe"  # more accurate with accents/cab noise, faster; returns "" on silence
+STT_TIMEOUT_S = 12.0  # a slow STT must become a spoken "try again", not "I didn't catch that"
+
+
+class SttTimeout(Exception):
+    """Speech recognition did not answer within STT_TIMEOUT_S."""
 
 
 async def transcribe(data: bytes, filename: str) -> str:
@@ -45,15 +50,23 @@ async def transcribe(data: bytes, filename: str) -> str:
     try:
         buf = io.BytesIO(data)
         buf.name = filename
-        res = await stt.create(file=buf, model=STT_MODEL, response_format="json", language="en",
-                                   prompt=PROMPT, temperature=0.0)
+        res = await asyncio.wait_for(
+            stt.create(file=buf, model=STT_MODEL, response_format="json", language="en",
+                       prompt=PROMPT, temperature=0.0),
+            STT_TIMEOUT_S)
         return _clean((getattr(res, "text", "") or "").strip())
+    except asyncio.TimeoutError:
+        raise SttTimeout(f"{STT_MODEL} took longer than {STT_TIMEOUT_S:.0f}s")  # no fallback: it would double the wait
     except Exception as e:  # noqa: BLE001 - fall back to Whisper with its confidence guard
         logger.warning("stt %s failed, falling back to whisper-1: %s", STT_MODEL, e)
     buf = io.BytesIO(data)
     buf.name = filename
-    res = await stt.create(file=buf, model="whisper-1", response_format="verbose_json", language="en",
-                               prompt=PROMPT)
+    try:
+        res = await asyncio.wait_for(
+            stt.create(file=buf, model="whisper-1", response_format="verbose_json", language="en", prompt=PROMPT),
+            STT_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        raise SttTimeout(f"whisper-1 took longer than {STT_TIMEOUT_S:.0f}s")
     segments = getattr(res, "segments", None) or []
     # Whisper invents text on silence/noise; drop segments that are most likely not speech.
     if segments:
