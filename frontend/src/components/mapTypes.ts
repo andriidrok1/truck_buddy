@@ -9,6 +9,23 @@ export function frameSpan(lat: number) {
   return { dLat, dLng: dLat / Math.max(0.2, Math.cos((lat * Math.PI) / 180)) };
 }
 
+/** Esri World Imagery is served to this zoom; above it react-native-maps upscales the z19 tiles. */
+export const ESRI_MAX_NATIVE_Z = 19;
+/** Camera limits of the parking view: close enough to read a lot, never out to the whole state. */
+export const SAT_MAX_Z = 21;
+export const SAT_MIN_Z = 14;
+
+/**
+ * Apple Maps camera distance (m, `MKMapView.cameraZoomRange`) that shows web-mercator zoom `zoom`
+ * in a view `viewHeightPx` tall, assuming MapKit's ~30 degree vertical field of view. Apple Maps
+ * ignores `maxZoomLevel`/`minZoomLevel` as a hard cap (it only bounces back after the gesture),
+ * so the parking view passes these distances too.
+ */
+export function cameraDistanceForZoom(zoom: number, lat: number, viewHeightPx: number) {
+  const metersPerPx = (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
+  return (viewHeightPx * metersPerPx) / 2 / Math.tan((15 * Math.PI) / 180);
+}
+
 export type ParkingSatMapProps = {
   center: LatLng;
   place?: Place | null;
