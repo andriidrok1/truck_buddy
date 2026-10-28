@@ -895,11 +895,6 @@
     "@eslint/core" "^0.15.1"
     levn "^0.4.1"
 
-"@expo-google-fonts/material-symbols@^0.4.1":
-  version "0.4.41"
-  resolved "https://registry.yarnpkg.com/@expo-google-fonts/material-symbols/-/material-symbols-0.4.41.tgz#6cd0d8dd26370eb7ae311925c0e23b16f281ddcc"
-  integrity sha512-BKNSJ6oFGWi+aXu6PF+1EdI43J8Ag+Sm7Ste1SXYmC2eYOJasyjXHkKjgkIieBB1eDZQJSPWuPv421Vg6N5tCQ==
-
 "@expo/cli@^58.1.16":
   version "58.1.16"
   resolved "https://registry.yarnpkg.com/@expo/cli/-/cli-58.1.16.tgz#21b44f7a8ef820687a349ec2918d97b64beebb40"
@@ -4112,11 +4107,6 @@ expo-audio@~58.0.10:
   resolved "https://registry.yarnpkg.com/expo-audio/-/expo-audio-58.0.10.tgz#2131be2aaefcf64a6f554084725580c33b29536b"
   integrity sha512-GoOyd1JAb7l/bJ/UNc5QIrXqSK9QrEFF3ahjdONGt8V6PN3RXRsTcOJDMN6RmDc9kb0XPP34DJIxEd/ushH1RQ==
 
-expo-blur@58.0.5:
-  version "58.0.5"
-  resolved "https://registry.yarnpkg.com/expo-blur/-/expo-blur-58.0.5.tgz#55f32f4817e91f06a996c40cc65913eb515d3f69"
-  integrity sha512-l8MEObIh0opwIUf+SD9MfqD0JnOirGuetAW/V3phXQRJaTPKLtb0IukgyLmnOsfWMAWTdJrcl5l/2ezcDHrkHQ==
-
 expo-constants@58.0.13, expo-constants@~58.0.13:
   version "58.0.13"
   resolved "https://registry.yarnpkg.com/expo-constants/-/expo-constants-58.0.13.tgz#766177f24940be1a57887f8689f0148a8e68cb9f"
@@ -4317,14 +4307,6 @@ expo-status-bar@58.0.4, expo-status-bar@^58.0.4:
   version "58.0.4"
   resolved "https://registry.yarnpkg.com/expo-status-bar/-/expo-status-bar-58.0.4.tgz#a7264f706a2882a2c451cd792100d7a06121c59a"
   integrity sha512-e6JJHziSSNb1v1VSzmDrAPf6GFoPRdVOIDrTCcK3bHfbJEAZGZ3YZXfqlorZtUFDT0z6NcjaZf0mPWifJZcqew==
-
-expo-symbols@58.0.4:
-  version "58.0.4"
-  resolved "https://registry.yarnpkg.com/expo-symbols/-/expo-symbols-58.0.4.tgz#384f8e85f04a71cd9bd318e4a295442a13528d93"
-  integrity sha512-cZeIh4bf4uUI5GhI0BK88dV1BCoWlgp1fmbPuUY/bZnonmyGS881Yvy8MkbM+R+ozo7W9TdZFpbFRWjUA+spcA==
-  dependencies:
-    "@expo-google-fonts/material-symbols" "^0.4.1"
-    sf-symbols-typescript "^2.0.0"
 
 expo-system-ui@58.0.6:
   version "58.0.6"
@@ -7408,7 +7390,7 @@ setprototypeof@~1.2.0:
   resolved "https://registry.yarnpkg.com/setprototypeof/-/setprototypeof-1.2.0.tgz#66c9a24a73f9fc28cbe66b09fed3d33dcaf1b424"
   integrity sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==
 
-sf-symbols-typescript@^2.0.0, sf-symbols-typescript@^2.1.0, sf-symbols-typescript@^2.2.0:
+sf-symbols-typescript@^2.1.0, sf-symbols-typescript@^2.2.0:
   version "2.2.0"
   resolved "https://registry.yarnpkg.com/sf-symbols-typescript/-/sf-symbols-typescript-2.2.0.tgz#926d6e0715e3d8784cadf7658431e36581254208"
   integrity sha512-TPbeg0b7ylrswdGCji8FRGFAKuqbpQlLbL8SOle3j1iHSs5Ob5mhvMAxWN2UItOjgALAB5Zp3fmMfj8mbWvXKw==

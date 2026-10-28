@@ -434,12 +434,20 @@ export default function MapScreen() {
         if (typed === undefined) filler = scheduleFiller(); // only when the driver actually said something
         setCaption({ reply: "…", heard: transcript });
       }
-      const res = await api.agentSpeak(transcript, loc.coords, activeRef.current, ctrl.signal, dialog.current ?? undefined, {
-        driving,
-        voice_guidance: voiceOn,
-        hands_free: handsFree && WAKE_SUPPORTED,
-        options_count: optionsRef.current.length,
-      });
+      const res = await api.agentSpeak(
+        transcript,
+        loc.coords,
+        activeRef.current,
+        ctrl.signal,
+        dialog.current ?? undefined,
+        {
+          driving,
+          voice_guidance: voiceOn,
+          hands_free: handsFree && WAKE_SUPPORTED,
+          options_count: optionsRef.current.length,
+        },
+        loc.heading ?? null,
+      );
       if (myTurn !== turn.current) return;
       // Fast answer: the filler never starts. Otherwise the answer waits for it to finish.
       filler?.cancel();
@@ -460,6 +468,14 @@ export default function MapScreen() {
         const replyDone = speak();
         followParking(res.place, replyDone, myTurn, res.route.approach);
         pauseDialog(); // route is set: stop listening until the driver taps the mic again (same session)
+      } else if (res.status === "options" && res.options?.length) {
+        // A list to choose from: same sheet as the "show_options" action, dialog stays open for "the second one".
+        setOptions(res.options);
+        setParking({});
+        setPlaces(res.options);
+        setPhase("options");
+        if (res.actions?.length) runActions(res.actions, myTurn);
+        continueDialog(myTurn, res, speak());
       } else {
         if (res.status !== "chat" && res.status !== "not_understood") showToast(res.message ?? MESSAGES.notUnderstood);
         backToIdle();

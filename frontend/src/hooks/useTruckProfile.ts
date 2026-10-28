@@ -36,17 +36,31 @@ let current: TruckProfile = DEFAULT_TRUCK;
 let loaded = false;
 const listeners = new Set<(t: TruckProfile) => void>();
 
+/**
+ * What `storage.getItem(KEY)` hands back. Older builds saved `JSON.stringify(profile)` through a
+ * wrapper that stringifies again, so the stored document was a JSON string holding JSON; current
+ * builds save the object itself. Both decode here; anything else (corrupt, wrong type) is null.
+ */
+export function parseStoredProfile(raw: unknown): Partial<TruckProfile> | null {
+  let value: unknown = raw;
+  try {
+    // Up to two string layers: the double-encoded form, then the single-encoded one.
+    for (let i = 0; i < 2 && typeof value === "string"; i++) value = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Partial<TruckProfile>;
+}
+
 async function load() {
   if (loaded) return;
   loaded = true;
-  const raw = await storage.getItem(KEY, null);
-  if (typeof raw === "string") {
-    try {
-      current = { ...DEFAULT_TRUCK, ...JSON.parse(raw) };
-      listeners.forEach((l) => l(current));
-    } catch {
-      // keep defaults on a corrupt value
-    }
+  const raw = await storage.getItem<Record<string, unknown> | string | null>(KEY, null);
+  const parsed = parseStoredProfile(raw);
+  if (parsed) {
+    current = { ...DEFAULT_TRUCK, ...parsed };
+    listeners.forEach((l) => l(current));
   }
 }
 
@@ -65,7 +79,7 @@ export const takeTruckReroute = () => {
 export async function saveTruckProfile(t: TruckProfile) {
   current = t;
   listeners.forEach((l) => l(t));
-  await storage.setItem(KEY, JSON.stringify(t));
+  await storage.setItem(KEY, t); // the wrapper serialises once; load() still reads the older double-encoded form
 }
 
 export function getTruckProfile() {

@@ -153,7 +153,15 @@ export const api = {
     }
   },
   /** Voice turn step 2: text -> action + spoken reply. */
-  agentSpeak: (text: string, at: LatLng, active?: ActiveRoute | null, signal?: AbortSignal, sessionId?: string, ui?: UiState) =>
+  agentSpeak: (
+    text: string,
+    at: LatLng,
+    active?: ActiveRoute | null,
+    signal?: AbortSignal,
+    sessionId?: string,
+    ui?: UiState,
+    heading: number | null = null, // degrees from the GPS fix, null when the truck is standing still
+  ) =>
     request<AgentResponse>(`/agent?speak=true`, {
       method: "POST",
       signal,
@@ -162,6 +170,7 @@ export const api = {
         text,
         lat: at.lat,
         lng: at.lng,
+        heading,
         truck_profile: getTruckProfile(),
         session_id: sessionId,
         active_place: active?.place,
