@@ -294,6 +294,7 @@ class AgentRequest(BaseModel):
     ui: UiState = Field(default_factory=UiState)
     # Set by the server from the X-Motive-Key header (never stored, never logged, never echoed back).
     motive_key: Optional[str] = Field(None, max_length=200, exclude=True, repr=False)
+    stt_ms: Optional[int] = Field(None, ge=0, le=60000)  # how long /voice/transcribe took, for the turn log
 
 
 AgentStatus = Literal["options", "route_set", "chat", "no_results", "not_understood", "researching", "providers", "error"]
@@ -356,7 +357,8 @@ class AgentResponse(BaseModel):
     actions: List[AppAction] = Field(default_factory=list)  # app controls to run (see services/controls.py)
     audio_url: Optional[str] = None  # relative path to the spoken reply (mp3)
     audio_url_2: Optional[str] = None  # rest of a 2-sentence reply, generated in parallel
-    timings: dict[str, int] = Field(default_factory=dict)  # ms per pipeline stage (voice turns)
+    timings: dict[str, int] = Field(default_factory=dict)  # ms per pipeline stage (voice turns), n_* = counters
+    intent: Optional[str] = None  # what the classifier decided (for logs and the app's debug screen)
     # Breakdown scenario (services/breakdown.py)
     research_id: Optional[str] = None
     providers: List[Provider] = Field(default_factory=list)

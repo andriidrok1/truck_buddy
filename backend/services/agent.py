@@ -15,7 +15,7 @@ from typing import Optional
 import httpx
 
 from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
-from services import approach, breakdown, chains, controls, fuel_index, hos, llm, memory, reviews, tpims, weather
+from services import approach, breakdown, chains, controls, fuel_index, hos, llm, memory, reviews, timing, tpims, weather
 from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
@@ -385,8 +385,8 @@ async def classify(text: str, context: str, truck: TruckProfile) -> dict:
     system = SYSTEM.format(truck=truck.label, prefs=truck.prefs_label, controls=controls.PROMPT,
                            parking=approach.PROMPT, breakdown=breakdown.PROMPT)
     with stage("llm_round_1"):
-        raw = await llm.complete(system, f"[{context}]\nDriver said: {text}", MODEL[1])
-    return _parse(raw)
+        res = await llm.complete_full(system, f"[{context}]\nDriver said: {text}", MODEL[1])
+    return _parse(res.text)
 
 
 class LlmAgentProvider:
@@ -773,9 +773,11 @@ class LlmAgentProvider:
                                        timeout=CLASSIFY_TIMEOUT_S)
         except Exception as e:  # noqa: BLE001 - incl. timeout
             logger.warning("agent LLM failed: %s: %s", type(e).__name__, e)
+            timing.note("error", "llm_timeout" if isinstance(e, asyncio.TimeoutError) else "llm_error")
             return _error(text, LLM_DOWN, self.source)
 
         intent = d.get("intent")
+        timing.note("intent", str(intent) if intent else "none")
         logger.info("agent intent=%s category=%s query=%r place_index=%s", intent, d.get("category"),
                     d.get("query"), d.get("place_index"))
         reply = str(d.get("reply") or "").strip()

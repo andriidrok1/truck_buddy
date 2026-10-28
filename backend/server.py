@@ -214,10 +214,20 @@ async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
     return res
 
 
+TURN_STAGES = ("upload", "stt", "llm_round_1", "tools", "tts")
+
+
 def _finish(res: AgentResponse, extra: Optional[dict] = None) -> AgentResponse:
+    """Timings onto the response and one `turn ...` log line per copilot turn (scripts/turn_stats.py reads them)."""
     res.timings = {**(extra or {}), **timing.current()}
-    res.timings["total"] = sum(v for k, v in res.timings.items() if k != "total")
-    logger.info("voice timings %s", " ".join(f"{k}={v}" for k, v in res.timings.items()))
+    res.timings["total"] = sum(v for k, v in res.timings.items() if k != "total" and not timing.is_counter(k))
+    # Server-side estimate of when the driver first hears the reply: everything before the first clip is ready.
+    res.timings["first_audio"] = sum(res.timings.get(k, 0) for k in TURN_STAGES)
+    notes = timing.notes()
+    res.intent = notes.get("intent") or res.intent
+    fields = {"status": res.status, "intent": res.intent or "-", **{k: v for k, v in notes.items() if k != "intent"},
+              **res.timings}
+    logger.info("turn %s", " ".join(f"{k}={v}" for k, v in fields.items()))
     return res
 
 
@@ -226,7 +236,7 @@ async def agent(req: AgentRequest, request: Request, speak: bool = Query(False),
                 driver: str = Depends(auth.require_driver)):
     timing.begin()
     req.motive_key = _motive_key(request)
-    return _finish(await _run_agent(req, speak, driver))
+    return _finish(await _run_agent(req, speak, driver), {"stt": req.stt_ms} if req.stt_ms else None)
 
 
 def _motive_key(request: Request) -> Optional[str]:

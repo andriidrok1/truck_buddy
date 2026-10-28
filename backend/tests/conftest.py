@@ -47,7 +47,8 @@ OFFLINE_FILES = {
 }
 
 # Individual tests inside OFFLINE_FILES that still need the network (real geocoder, real LLM).
-LIVE_TESTS = {"test_geocoder_stays_in_california"}
+LIVE_TESTS = {"test_geocoder_stays_in_california", "test_live_extraction_prices_time_flags",
+              "test_live_extraction_no_facts_stays_unknown"}
 
 _live_selected = False
 
