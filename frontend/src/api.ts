@@ -184,10 +184,14 @@ export const api = {
   speak: (text: string) => request<{ audio_url: string }>(`/speak`, { method: "POST", body: JSON.stringify({ text }) }),
   /** Pre-fetch nearby places (+ parking checks) so the next voice turn hits warm caches. */
   warm: (at: LatLng) => request<{ ok: boolean }>(`/warm?lat=${at.lat}&lng=${at.lng}`, { method: "POST" }),
-  /** Voice turn step 1: speech -> text, shown to the driver right away. */
+  /**
+   * Voice turn step 1: speech -> text, shown to the driver right away. `stt_ms` is the server's
+   * STT stage when it reports one, else the wall time of this call; agentSpeak forwards it.
+   */
   transcribe: async (uri: string, signal?: AbortSignal) => {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
     const d = deadline(20000, signal); // upload + STT; the server itself gives up on STT after 12 s
+    const t0 = Date.now();
     try {
       const res = await uploadForm(`${BASE}/voice/transcribe`, {
         fields: {},
@@ -196,7 +200,8 @@ export const api = {
         signal: d.signal,
       });
       check(res as Response, "/voice/transcribe");
-      return json<{ transcript: string; timings?: Record<string, number> }>(res, "/voice/transcribe");
+      const out = await json<{ transcript: string; timings?: Record<string, number> }>(res, "/voice/transcribe");
+      return { ...out, stt_ms: out.timings?.stt ?? Date.now() - t0 };
     } finally {
       d.done();
     }
@@ -211,6 +216,7 @@ export const api = {
     ui?: UiState,
     heading: number | null = null, // degrees from the GPS fix, null when the truck is standing still
     activeSpeedLimitMph: number | null = null, // posted limit where the truck is, when the route knows it
+    sttMs: number | null = null, // how long speech-to-text took on this turn (server stage, else measured); null for typed text
   ) =>
     request<AgentResponse>(`/agent?speak=true`, {
       method: "POST",
@@ -229,6 +235,7 @@ export const api = {
         active_distance_mi: active?.route.distance_mi,
         active_duration_min: active?.route.duration_min,
         ui,
+        stt_ms: sttMs,
       }),
     }),
   /** Breakdown research result (long-poll: waits until the research is done). */

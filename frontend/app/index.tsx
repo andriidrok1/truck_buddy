@@ -17,6 +17,7 @@ import { RestoredBanner } from "@/src/components/RestoredBanner";
 import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
+import { logAnnouncement } from "@/src/dev/announcements";
 import { isTester } from "@/src/auth";
 import { swapAlternative, switchedLine } from "@/src/geo/routeChoice";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
@@ -36,6 +37,7 @@ import { offlineTurn } from "@/src/state/offlineTurn";
 import { clearSavedRoute, loadActiveRoute, saveActiveRoute } from "@/src/state/routeStore";
 import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
 import { storage } from "@/src/utils/storage";
+import { planFiller } from "@/src/voice/fillers";
 import { PRIORITY } from "@/src/voice/queue";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
@@ -62,8 +64,11 @@ const nearbyLine = (pk: ParkingCheck) => {
   const look = pk.nearby.kind === "unclear" ? "" : `, looks like a ${pk.nearby.kind}`;
   return ` There's a lot with trailers to the ${pk.nearby.direction}${look}.`;
 };
-const FILLER_DELAY_MS = 300; // answer faster than this: no filler at all
-// Shortest first: scheduleFiller() picks from the top more often.
+const FILLER_DELAY_MS = 300; // after the driver stops talking; an answer faster than this needs no filler
+const FILLER_SECOND_MS = 4000; // first clip played and still no answer: "Still looking."
+const FILLER_SECOND = "Still looking.";
+const SLOW_TURN_MS = 2500; // a previous turn slower than this: the filler is skipped less often
+// Shortest first: planFiller() picks from the top more often.
 const FILLERS = [
   "Hang on.",
   "On it.",
@@ -264,39 +269,44 @@ export default function MapScreen() {
   };
 
   // Instant acknowledgement while the real answer is on its way (cached TTS, rotated).
-  const fillers = useRef<string[]>([]);
-  const lastFiller = useRef(-1);
+  // Keyed by text so the dev log can name the clip; the URL is what plays.
+  const fillerUrls = useRef<Map<string, string>>(new Map());
+  const lastFiller = useRef<string | null>(null);
+  const lastTurnSlow = useRef(false); // previous turn's timings.total > SLOW_TURN_MS
   useEffect(() => {
-    Promise.allSettled(FILLERS.map((t) => api.speak(t).then((r) => absoluteUrl(r.audio_url)))).then((all) => {
-      fillers.current = all.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+    const texts = [...FILLERS, FILLER_SECOND];
+    Promise.allSettled(texts.map((t) => api.speak(t).then((r) => absoluteUrl(r.audio_url)))).then((all) => {
+      const m = new Map<string, string>();
+      all.forEach((r, i) => {
+        if (r.status === "fulfilled") m.set(texts[i], r.value);
+      });
+      fillerUrls.current = m;
     });
   }, []);
   /**
-   * Acknowledgement that starts after FILLER_DELAY_MS unless the answer is already there.
-   * Short fillers (listed first) are picked more often; never the same twice in a row; skipped 1 in 4.
-   * Returns `cancel()` (true if the filler hadn't started) and `done` (resolves when it finished).
+   * Acknowledgement planned the moment the driver stops talking: the first clip after
+   * FILLER_DELAY_MS unless the answer is already there, "Still looking." once at FILLER_SECOND_MS
+   * if it still is not. Short fillers (listed first) are picked more often; never the same twice
+   * in a row; skipped 1 in 4 (1 in 10 after a slow turn).
+   * Returns `cancel()` (true if nothing had played) and `done` (resolves when nothing more will play).
    */
   const scheduleFiller = () => {
-    const n = fillers.current.length;
-    if (!n || Math.random() < 0.25) return null;
-    let i = Math.floor(n * Math.random() ** 2); // biased towards the short ones at the top
-    if (n > 1 && i === lastFiller.current) i = (i + 1) % n;
-    let started = false;
-    let resolveDone: () => void = () => {};
-    const done = new Promise<void>((r) => (resolveDone = r));
-    const timer = setTimeout(() => {
-      started = true;
-      lastFiller.current = i;
-      voice.playAndWait(fillers.current[i], 4000).then(resolveDone);
-    }, FILLER_DELAY_MS);
-    return {
-      done,
-      cancel: () => {
-        clearTimeout(timer);
-        if (!started) resolveDone();
-        return !started;
+    const urls = fillerUrls.current;
+    const clips = FILLERS.filter((t) => urls.has(t));
+    return planFiller({
+      clips,
+      secondClip: urls.has(FILLER_SECOND) ? FILLER_SECOND : null,
+      delayMs: FILLER_DELAY_MS,
+      secondMs: FILLER_SECOND_MS,
+      skipRate: lastTurnSlow.current ? 0.1 : 0.25,
+      lastClip: lastFiller.current,
+      play: (clip) => {
+        const url = urls.get(clip);
+        if (!url) return Promise.resolve();
+        if (clip !== FILLER_SECOND) lastFiller.current = clip;
+        return voice.playAndWait(url, 4000);
       },
-    };
+    });
   };
 
   // Warm Places + parking caches around the driver: app on screen, no active route,
@@ -552,19 +562,23 @@ export default function MapScreen() {
     const ctrl = new AbortController();
     inflight.current = ctrl;
     const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
-    let filler: ReturnType<typeof scheduleFiller> = null;
+    let filler: ReturnType<typeof scheduleFiller> | null = null;
+    let sttMs: number | null = null;
     try {
       let transcript = typed ?? "";
       if (typed === undefined) {
         const uri = recorded ?? (await voice.stopRecording());
         if (!uri) throw new Error("no recording");
-        transcript = (await api.transcribe(uri, ctrl.signal)).transcript;
+        // Planned before STT, so the driver hears something ~300 ms after they stop talking
+        // (the transcript alone takes 1-1.5 s to come back).
+        filler = scheduleFiller();
+        const stt = await api.transcribe(uri, ctrl.signal);
+        sttMs = stt.stt_ms;
+        transcript = stt.transcript;
+        if (!transcript) filler.cancel(); // nothing heard: no "Hang on." for silence
       }
       if (myTurn !== turn.current) return;
-      if (transcript) {
-        if (typed === undefined) filler = scheduleFiller(); // only when the driver actually said something
-        setCaption({ reply: "…", heard: transcript });
-      }
+      if (transcript) setCaption({ reply: "…", heard: transcript });
       const res = await api.agentSpeak(
         transcript,
         loc.coords,
@@ -579,11 +593,20 @@ export default function MapScreen() {
         },
         loc.heading ?? null,
         limitRef.current,
+        sttMs,
       );
       if (myTurn !== turn.current) return;
+      lastTurnSlow.current = (res.timings?.total ?? 0) > SLOW_TURN_MS;
       // Fast answer: the filler never starts. Otherwise the answer waits for it to finish.
       filler?.cancel();
       const afterFiller = filler?.done ?? Promise.resolve();
+      if (__DEV__ && filler) {
+        // Ms after the driver stopped talking. No filler on air: the reply is the first sound, about now.
+        const at = filler.startedAt();
+        const line = `[turn] filler=${at === null ? "none" : filler.picked} at=${at ?? "-"} first_audio=${at ?? filler.elapsed()}`;
+        console.log(line);
+        logAnnouncement(line, "system");
+      }
       const speak = () => afterFiller.then(() => (myTurn === turn.current ? sayReply(res) : undefined));
       await applyAgentResponse(res, myTurn, ctrl.signal, afterFiller, speak);
     } catch (e) {
