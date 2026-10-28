@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AppState, Platform, StyleSheet, View } from "react-native";
+import { AppState, Keyboard, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { absoluteUrl, api } from "@/src/api";
@@ -1228,6 +1228,7 @@ export default function MapScreen() {
           setTracking(false);
           if (driving) setOverview(true); // look around; following resumes after 15 s
         }}
+        onMapTouch={Keyboard.dismiss}
       />
 
       {driving && active ? (

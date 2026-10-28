@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import { KeyboardStickyView } from "@/src/keyboard";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
@@ -380,6 +380,10 @@ export function CopilotSheet(props: Props) {
             value={draft}
             onChangeText={setDraft}
             onSubmitEditing={send}
+            // The keyboard went away (map tap, swipe, Done): an empty field has nothing to keep open.
+            onBlur={() => {
+              if (!draft.trim()) setTyping(false);
+            }}
             placeholder="Type a request…"
             placeholderTextColor={colors.onSurfaceSecondary}
             returnKeyType="send"
@@ -396,18 +400,21 @@ export function CopilotSheet(props: Props) {
             <Icon name="send" size={22} color={draft.trim() ? colors.onInfo : colors.onSurfaceSecondary} />
           </PressableScale>
           <PressableScale
-            testID="copilot-text-cancel"
-            accessibilityLabel="Cancel typing"
-            onPress={() => setTyping(false)}
+            testID="copilot-text-close"
+            accessibilityLabel="Done typing"
+            onPress={() => {
+              Keyboard.dismiss();
+              setTyping(false);
+            }}
             style={[styles.roundBtn, { backgroundColor: colors.surfaceSecondary }]}
           >
-            <Icon name="microphone" size={22} color={colors.onSurface} />
+            <Icon name="close" size={22} color={colors.onSurface} />
           </PressableScale>
         </View>
       ) : (
       <View style={styles.actions}>
         {canType ? (
-          <SideButton icon="keyboard-outline" label="Type" testID="type-button" onPress={() => setTyping(true)} />
+          <SideButton icon="keyboard-outline" label="Type" testID="type-button" onPress={() => setTyping((t) => !t)} />
         ) : (
           <View style={styles.side} />
         )}

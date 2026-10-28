@@ -53,4 +53,6 @@ export type MapLayerProps = {
   follow?: boolean;
   /** The driver dragged the map (stops following). */
   onUserPan?: () => void;
+  /** Any touch on the map (tap or drag); the screen uses it to put the keyboard away. */
+  onMapTouch?: () => void;
 };
