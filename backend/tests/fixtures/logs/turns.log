@@ -1,0 +1,8 @@
+2026-10-27 18:01:02,101 - truckbuddy - INFO - turn status=route_set intent=find stt=820 llm_round_1=1400 tools=300 tts=600 total=3120 first_audio=3120 n_prompt_tokens=2100 n_cached_tokens=1500
+2026-10-27 18:01:20,500 - truckbuddy - INFO - turn status=chat intent=chat stt=700 llm_round_1=1100 tts=500 total=2300 first_audio=2300 n_prompt_tokens=2000 n_cached_tokens=1500
+2026-10-27 18:02:05,000 - truckbuddy - INFO - turn status=route_set intent=go stt=900 llm_round_1=1600 tools=800 tts=700 total=4000 first_audio=4000 n_prompt_tokens=2300 n_cached_tokens=0
+2026-10-27 18:02:12,000 - truckbuddy - INFO - turn status=route_set intent=go stt=850 llm_round_1=1500 tools=700 tts=650 total=3700 first_audio=3700 n_prompt_tokens=2300 n_cached_tokens=1500
+2026-10-27 18:05:40,000 - truckbuddy - INFO - turn status=error intent=- error=llm_timeout stt=800 llm_round_1=9000 total=9800 first_audio=9800
+2026-10-27 18:06:01,000 - truckbuddy - INFO - turn status=not_understood intent=unclear stt=600 llm_round_1=900 total=1500 first_audio=1500 n_prompt_tokens=1900 n_cached_tokens=1500
+2026-10-27 18:30:00,000 - truckbuddy - INFO - turn status=route_set intent=alternative stt=750 llm_round_1=1200 tools=400 tts=550 total=2900 first_audio=2900 n_prompt_tokens=2200 n_cached_tokens=1500
+2026-10-27 18:31:10,000 - truckbuddy - INFO - voice timings upload=12 stt=400

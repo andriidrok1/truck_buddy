@@ -9,15 +9,16 @@ from dotenv import load_dotenv
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-from models import AgentRequest, AgentResponse, Category, ParkingCheck, ParkingRequest, Place, PlacesResponse, RerouteRequest, RouteRequest, RouteResponse, TruckProfile  # noqa: E402,E501
+from models import AgentRequest, AgentResponse, Category, NudgeRequest, NudgeResponse, ParkingCheck, ParkingRequest, Place, PlacesResponse, RerouteRequest, RouteRequest, RouteResponse, TruckProfile  # noqa: E402,E501
 from services.agent import get_agent_provider  # noqa: E402
-from services import breakdown  # noqa: E402
+from services import breakdown, flags, nudges  # noqa: E402
+from services.speech_text import split_reply  # noqa: E402
 from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import cached_parking, check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
@@ -156,6 +157,24 @@ async def build_route(req: RouteRequest):
     return RouteResponse(place=place, route=route, parking=cached_parking(place))
 
 
+@api.post("/nudges", response_model=NudgeResponse)
+async def nudges_endpoint(req: NudgeRequest, request: Request, driver: str = Depends(auth.require_driver)):
+    """Anything the copilot wants to say on its own right now (break due, parking before the shift ends)."""
+    _require_us(req.lat, req.lng)
+    req.motive_key = _motive_key(request)
+    if req.session_id:
+        req.session_id = f"{driver}:{req.session_id}"[:64]
+    else:
+        req.session_id = f"{driver}:solo"[:64]
+    from services.agent import _session
+    try:
+        out = await nudges.compute(req, _session(req.session_id), req.motive_key)
+    except Exception as e:  # noqa: BLE001 - never an error for a background poll
+        logger.warning("nudges failed: %s: %s", type(e).__name__, e)
+        out = []
+    return NudgeResponse(nudges=out)
+
+
 @api.post("/reroute", response_model=RouteResponse)
 async def reroute(req: RerouteRequest):
     """The app detected the driver left the route: a new route from the current position to the same place.
@@ -201,21 +220,38 @@ async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = Non
 
 async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
     if speak and res.reply:
-        # First sentence is spoken as soon as it's ready; the rest is generated in parallel.
-        first, *rest = SENTENCE_END.split(res.reply.strip(), maxsplit=1)
+        # The first clip (first clause, or first sentence with TTS_CLAUSE_SPLIT=0) is spoken as soon as it's
+        # ready; the rest is generated in parallel and the app plays it right after.
+        first, rest = split_reply(res.reply, clause=flags.on("TTS_CLAUSE_SPLIT"))
+        res.reply_parts = [first, rest] if rest else [first]
         if rest:
-            res.audio_url_2 = f"/api/voice/audio/{voice.synthesize_later(rest[0], previous_text=first)}"
-        with timing.stage("tts"):
-            audio_id = await voice.synthesize(first, next_text=rest[0] if rest else None)
+            res.audio_url_2 = f"/api/voice/audio/{voice.synthesize_later(rest, previous_text=first)}"
+        if flags.on("TTS_STREAM", "0") and not voice.eleven_voice():
+            # Streamed: the id is ready now; the first bytes reach the app in ~300 ms instead of a whole clip.
+            audio_id = voice.synthesize_stream(first)
+            timing.add("tts", 0)
+        else:
+            with timing.stage("tts"):
+                audio_id = await voice.synthesize(first, next_text=rest or None)
         if audio_id:
             res.audio_url = f"/api/voice/audio/{audio_id}"
     return res
 
 
+TURN_STAGES = ("upload", "stt", "llm_round_1", "tools", "tts")
+
+
 def _finish(res: AgentResponse, extra: Optional[dict] = None) -> AgentResponse:
+    """Timings onto the response and one `turn ...` log line per copilot turn (scripts/turn_stats.py reads them)."""
     res.timings = {**(extra or {}), **timing.current()}
-    res.timings["total"] = sum(v for k, v in res.timings.items() if k != "total")
-    logger.info("voice timings %s", " ".join(f"{k}={v}" for k, v in res.timings.items()))
+    res.timings["total"] = sum(v for k, v in res.timings.items() if k != "total" and not timing.is_counter(k))
+    # Server-side estimate of when the driver first hears the reply: everything before the first clip is ready.
+    res.timings["first_audio"] = sum(res.timings.get(k, 0) for k in TURN_STAGES)
+    notes = timing.notes()
+    res.intent = notes.get("intent") or res.intent
+    fields = {"status": res.status, "intent": res.intent or "-", **{k: v for k, v in notes.items() if k != "intent"},
+              **res.timings}
+    logger.info("turn %s", " ".join(f"{k}={v}" for k, v in fields.items()))
     return res
 
 
@@ -224,7 +260,7 @@ async def agent(req: AgentRequest, request: Request, speak: bool = Query(False),
                 driver: str = Depends(auth.require_driver)):
     timing.begin()
     req.motive_key = _motive_key(request)
-    return _finish(await _run_agent(req, speak, driver))
+    return _finish(await _run_agent(req, speak, driver), {"stt": req.stt_ms} if req.stt_ms else None)
 
 
 def _motive_key(request: Request) -> Optional[str]:
@@ -316,21 +352,24 @@ async def voice_turn(
     name = audio.filename or "speech.m4a"
     if "." not in name:
         name += ".webm" if "webm" in (audio.content_type or "") else ".m4a"
+    confidence = None
     try:
         with timing.stage("stt"):
-            text = await voice.transcribe(data, name)
+            tr = await voice.transcribe_full(data, name, current.name if current else None)
+            text, confidence = tr.text, tr.confidence
     except Exception:
         logger.exception("transcription failed")
         text = ""
-    logger.info("voice transcript=%r", text)
+    logger.info("voice transcript=%r confidence=%s", text, confidence)
     req = AgentRequest(text=text, lat=lat, lng=lng, active_place=current, truck_profile=truck, session_id=session_id,
                        active_distance_mi=active_distance_mi, active_duration_min=active_duration_min,
+                       stt_confidence=confidence,
                        motive_key=_motive_key(request) if request is not None else None)
     return _finish(await _run_agent(req, speak=True, driver=driver))
 
 
 @api.post("/voice/transcribe")
-async def voice_transcribe(audio: UploadFile = File(...)):
+async def voice_transcribe(audio: UploadFile = File(...), hint: Optional[str] = Form(None, max_length=600)):
     """Step 1 of a voice turn: speech -> text (the app shows it right away, then calls /agent?speak=true)."""
     timing.begin()
     with timing.stage("upload"):
@@ -342,9 +381,11 @@ async def voice_transcribe(audio: UploadFile = File(...)):
     name = audio.filename or "speech.m4a"
     if "." not in name:
         name += ".webm" if "webm" in (audio.content_type or "") else ".m4a"
+    confidence = None
     try:
         with timing.stage("stt"):
-            text = await voice.transcribe(data, name)
+            tr = await voice.transcribe_full(data, name, hint)
+            text, confidence = tr.text, tr.confidence
     except voice.SttTimeout as e:
         logger.warning("transcription timed out: %s", e)
         raise HTTPException(status_code=504, detail="Speech recognition timed out")
@@ -352,8 +393,9 @@ async def voice_transcribe(audio: UploadFile = File(...)):
         logger.exception("transcription failed")
         text = ""
     t = timing.current()
-    logger.info("voice transcribe bytes=%d transcript=%r %s", len(data), text, " ".join(f"{k}={v}" for k, v in t.items()))
-    return {"transcript": text, "timings": t}
+    logger.info("voice transcribe bytes=%d transcript=%r confidence=%s %s", len(data), text, confidence,
+                " ".join(f"{k}={v}" for k, v in t.items()))
+    return {"transcript": text, "stt_confidence": confidence, "timings": t}
 
 
 class SpeakRequest(BaseModel):
@@ -421,7 +463,19 @@ _RANGE = re.compile(r"bytes=(\d*)-(\d*)")
 
 @public.get("/voice/audio/{audio_id}")
 async def voice_audio(audio_id: str, request: Request):
-    """mp3 with byte-range support (AVPlayer on iOS probes with Range: bytes=0-1)."""
+    """mp3 with byte-range support (AVPlayer on iOS probes with Range: bytes=0-1). A clip still being streamed
+    is served as it arrives: a probe gets 206 with the first byte, a full request gets a 200 stream."""
+    if voice.is_streaming(audio_id):
+        rng = (request.headers.get("range") or "").strip()
+        if _RANGE.fullmatch(rng) and rng.startswith("bytes=0-"):
+            head = await voice.first_chunk(audio_id)
+            if head is None:
+                raise HTTPException(status_code=404, detail="Audio not found")
+            return Response(content=head, status_code=206, media_type="audio/mpeg",
+                            headers={"Accept-Ranges": "bytes", "Content-Range": "bytes 0-0/*", "Cache-Control": "no-store"})
+        if voice.is_streaming(audio_id):
+            return StreamingResponse(voice.stream_chunks(audio_id), media_type="audio/mpeg",
+                                     headers={"Accept-Ranges": "none", "Cache-Control": "no-store"})
     data = await voice.wait_audio(audio_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Audio not found")

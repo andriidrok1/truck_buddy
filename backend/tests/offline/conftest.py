@@ -129,12 +129,15 @@ class FakeLlm:
     """Canned classifier: matches the 'Driver said: ...' line against rules; unmatched text fails."""
     rules: list[tuple[Any, dict]] = field(default_factory=list)
     calls: list[tuple[str, str, str]] = field(default_factory=list)
+    cache_keys: list = field(default_factory=list)
     default: Optional[dict] = None
 
     def on(self, pattern: str, reply) -> "FakeLlm":
         """A dict reply is the classifier JSON; a str reply is returned as-is (summaries, gists)."""
         self.rules.append((re.compile(pattern, re.I), reply))
         return self
+
+    usage: dict = field(default_factory=lambda: {"prompt_tokens": 2000, "completion_tokens": 40, "cached_tokens": 0})
 
     async def complete(self, system: str, text: str, model: str = "gpt-5.4-mini", image_b64=None) -> str:
         self.calls.append((system, text, model))
@@ -147,13 +150,24 @@ class FakeLlm:
             return json.dumps(self.default) if isinstance(self.default, dict) else str(self.default)
         raise AssertionError(f"no canned LLM reply for: {said[:120]!r}")
 
+    async def complete_full(self, system: str, text: str, model: str = "gpt-5.4-mini", image_b64=None,
+                            cache_key: Optional[str] = None):
+        """Same canned reply plus usage counters, recorded into the request timings like the real one."""
+        from services import llm, timing
+        self.cache_keys.append(cache_key)
+        text_out = await self.complete(system, text, model, image_b64)
+        for k in ("prompt_tokens", "completion_tokens", "cached_tokens"):
+            if self.usage.get(k):
+                timing.add(f"n_{k}", self.usage[k])
+        return llm.LlmResult(text=text_out, usage=dict(self.usage))
+
 
 @pytest.fixture
 def fake_llm(monkeypatch) -> FakeLlm:
-    from services import agent, llm
+    from services import llm
     fake = FakeLlm()
     monkeypatch.setattr(llm, "complete", fake.complete)
-    monkeypatch.setattr(agent.llm, "complete", fake.complete)
+    monkeypatch.setattr(llm, "complete_full", fake.complete_full)  # services do `llm.complete...` on the module
     return fake
 
 

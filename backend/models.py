@@ -198,6 +198,7 @@ class TruckProfile(BaseModel):
     avoid_ferries_tunnels: bool = False
     favorite_chains: List[str] = Field(default_factory=list, max_length=8)
     break_hours: Optional[int] = Field(None, ge=1, le=14)
+    chains_on_board: Optional[bool] = None  # None = never asked; drives the chain-control question
 
     @property
     def total_length_ft(self) -> int:
@@ -222,6 +223,10 @@ class TruckProfile(BaseModel):
             p.append("favorite truck stop chains: " + ", ".join(self.favorite_chains))
         if self.break_hours:
             p.append(f"wants a break reminder every {self.break_hours} h")
+        if self.chains_on_board is True:
+            p.append("carries tire chains")
+        elif self.chains_on_board is False:
+            p.append("no tire chains on board")
         return "; ".join(p) or "none"
 
 
@@ -236,6 +241,41 @@ class RouteRequest(BaseModel):
     skip_parking: bool = False  # breakdown providers: the driver needs the shop, not a parking check
     truck_profile: TruckProfile = Field(default_factory=lambda: TruckProfile())
     via: List[List[float]] = Field(default_factory=list, max_length=MAX_VIA)  # stops on the way, [[lat, lng], ...]
+
+
+class NudgeRequest(BaseModel):
+    """The app's periodic "anything to say?" while driving (every few minutes)."""
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    driving: bool = True
+    active_place: Optional[Place] = None
+    # Route points ahead of the truck as [lat, lng, miles_ahead], nearest first (every ~5 miles, ≤ 60 miles).
+    ahead: List[List[float]] = Field(default_factory=list, max_length=40)
+    drive_elapsed_min: Optional[int] = Field(None, ge=0, le=24 * 60)  # minutes driving since the route started
+    local_hour: Optional[int] = Field(None, ge=0, le=23)  # the phone's local hour
+    session_id: Optional[str] = Field(None, max_length=64)
+    truck_profile: TruckProfile = Field(default_factory=TruckProfile)
+    chain_control_ahead: Optional["ChainAhead"] = None  # first active Caltrans control on the route ahead
+    motive_key: Optional[str] = Field(None, max_length=200, exclude=True, repr=False)
+
+
+class ChainAhead(BaseModel):
+    route: str
+    location: str
+    status: str  # R-1 | R-2 | R-3
+    miles_ahead: float = Field(ge=0, le=500)
+
+
+class Nudge(BaseModel):
+    kind: Literal["break", "parking", "chains"]
+    text: str  # spoken as an ambient line
+    priority: int = 2
+    place: Optional[Place] = None
+    offer: Optional[Literal["add_stop", "go", "chains_answer"]] = None  # what a "yes" on the next turn does
+
+
+class NudgeResponse(BaseModel):
+    nudges: List[Nudge] = Field(default_factory=list)
 
 
 class RerouteRequest(BaseModel):
@@ -294,9 +334,13 @@ class AgentRequest(BaseModel):
     ui: UiState = Field(default_factory=UiState)
     # Set by the server from the X-Motive-Key header (never stored, never logged, never echoed back).
     motive_key: Optional[str] = Field(None, max_length=200, exclude=True, repr=False)
+    stt_ms: Optional[int] = Field(None, ge=0, le=60000)  # how long /voice/transcribe took, for the turn log
+    stt_confidence: Optional[float] = Field(None, ge=0, le=1)  # from /voice/transcribe; low = ask before acting
+    speed_mps: Optional[float] = Field(None, ge=0, le=60)  # GPS speed; at highway speed replies get shorter
 
 
-AgentStatus = Literal["options", "route_set", "chat", "no_results", "not_understood", "researching", "providers", "error"]
+AgentStatus = Literal["options", "route_set", "chat", "confirm", "no_results", "not_understood", "researching",
+                      "providers", "error"]
 
 
 class ProviderFacts(BaseModel):
@@ -355,8 +399,10 @@ class AgentResponse(BaseModel):
     end_conversation: bool = False  # the dialog reached its end (goodbye / done)
     actions: List[AppAction] = Field(default_factory=list)  # app controls to run (see services/controls.py)
     audio_url: Optional[str] = None  # relative path to the spoken reply (mp3)
-    audio_url_2: Optional[str] = None  # rest of a 2-sentence reply, generated in parallel
-    timings: dict[str, int] = Field(default_factory=dict)  # ms per pipeline stage (voice turns)
+    audio_url_2: Optional[str] = None  # rest of the reply, generated in parallel
+    reply_parts: List[str] = Field(default_factory=list)  # the text behind audio_url and audio_url_2, in order
+    timings: dict[str, int] = Field(default_factory=dict)  # ms per pipeline stage (voice turns), n_* = counters
+    intent: Optional[str] = None  # what the classifier decided (for logs and the app's debug screen)
     # Breakdown scenario (services/breakdown.py)
     research_id: Optional[str] = None
     providers: List[Provider] = Field(default_factory=list)
