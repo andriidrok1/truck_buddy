@@ -23,6 +23,9 @@ import { dragProgress, EXPANDED_SHARE, heightAt, sheetHeights, snapTarget, type 
 /** Sheet height while nothing pins it: whatever the content needs (Yoga treats this as no cap). */
 const AUTO_MAX_HEIGHT = 100000;
 const SNAP_SPRING = { damping: 22, stiffness: 240, mass: 0.9, overshootClamping: true };
+/** Vertical travel before the drag takes over; sideways travel that hands the touch to a chip row. */
+const PAN_ACTIVE_Y: [number, number] = [-8, 8];
+const PAN_FAIL_X: [number, number] = [-24, 24];
 
 type Props = {
   phase: Phase;
@@ -164,27 +167,25 @@ export function CopilotSheet(props: Props) {
     "worklet";
     return sheetHeights(collapsedH.get(), expandedH);
   };
-  const panConfig = {
-    activeOffsetY: [-8, 8] as [number, number],
-    failOffsetX: [-24, 24] as [number, number],
-    onActivate: () => {
-      "worklet";
-      dragStart.set(progress.get());
-    },
-    onUpdate: (e: { translationY: number }) => {
-      "worklet";
-      progress.set(dragProgress(dragStart.get(), e.translationY, heights()));
-    },
-    onDeactivate: (e: { velocityY: number }) => {
-      "worklet";
-      const h = heights();
-      const target = snapTarget(heightAt(progress.get(), h), e.velocityY, h);
-      progress.set(withSpring(target === "expanded" ? 1 : 0, SNAP_SPRING));
-      runOnJS(markExpanded)(target === "expanded");
-    },
+  const onActivate = () => {
+    "worklet";
+    dragStart.set(progress.get());
   };
-  const handlePan = usePanGesture(panConfig);
-  const bodyPan = usePanGesture({ ...panConfig, enabled: bodyDraggable });
+  const onUpdate = (e: { translationY: number }) => {
+    "worklet";
+    progress.set(dragProgress(dragStart.get(), e.translationY, heights()));
+  };
+  const onDeactivate = (e: { velocityY: number }) => {
+    "worklet";
+    const h = heights();
+    const target = snapTarget(heightAt(progress.get(), h), e.velocityY, h);
+    progress.set(withSpring(target === "expanded" ? 1 : 0, SNAP_SPRING));
+    runOnJS(markExpanded)(target === "expanded");
+  };
+  // Two detectors, one behaviour (a gesture object cannot be attached twice). The worklets babel
+  // plugin wants object literals here, so the config is spelled out for each.
+  const handlePan = usePanGesture({ activeOffsetY: PAN_ACTIVE_Y, failOffsetX: PAN_FAIL_X, onActivate, onUpdate, onDeactivate });
+  const bodyPan = usePanGesture({ activeOffsetY: PAN_ACTIVE_Y, failOffsetX: PAN_FAIL_X, enabled: bodyDraggable, onActivate, onUpdate, onDeactivate });
 
   const sheetStyle = useAnimatedStyle(() => {
     const p = progress.get();
