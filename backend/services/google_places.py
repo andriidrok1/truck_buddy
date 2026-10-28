@@ -14,6 +14,7 @@ from services.http import client
 from models import Category, Place, PlacesResponse, Review
 from services.flags import on
 from services.geo import haversine_km, km_to_mi
+from services import tpims
 from services.places import DATA_ONLY, search_data
 
 logger = logging.getLogger("truckbuddy.google")
@@ -245,6 +246,7 @@ class GooglePlacesProvider:
         if not found:
             radius, widened = WIDE_RADIUS_KM, True
             found = await self._query(category, lat, lng, radius)
+        tpims.attach(found)  # live counts / capacity for truck stops and rest areas, when a sensor site is near
         res = PlacesResponse(category=category, radius_km=radius, widened=widened, places=found, source=self.source)
         if len(self._searches) >= CACHE_MAX:
             self._searches.pop(next(iter(self._searches)))

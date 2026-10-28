@@ -15,7 +15,7 @@ from typing import Optional
 import httpx
 
 from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
-from services import approach, breakdown, chains, controls, fuel_index, llm, memory, reviews, weather
+from services import approach, breakdown, chains, controls, fuel_index, llm, memory, reviews, tpims, weather
 from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
@@ -328,7 +328,7 @@ def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[st
     intro = intro.format(**vals)
     first_name = (driver or "").split(" ")[0]
     out = f"{intro}, {first_name}. " if first_name and n % 3 == 2 else f"{intro}. "
-    out += body.format(**vals) + _diesel_sentence(place, regional)
+    out += body.format(**vals) + _diesel_sentence(place, regional) + tpims.sentence(place)
     warning = _route_warning(route)
     return f"{out} {warning}" if warning else out
 
