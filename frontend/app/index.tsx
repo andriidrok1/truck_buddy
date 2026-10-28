@@ -18,11 +18,12 @@ import { MESSAGES } from "@/src/constants";
 import { isTester } from "@/src/auth";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance } from "@/src/hooks/useGuidance";
-import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, takeTruckReroute, truckLabel, useHandsFree, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
+import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, takeTruckReroute, truckLabel, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { WAKE_SUPPORTED, useWakeWord } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
-import type { ActiveRoute, AgentResponse, AppAction, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
+import { reduceAgentResponse } from "@/src/state/agentReducer";
+import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
 import { storage } from "@/src/utils/storage";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
@@ -453,49 +454,7 @@ export default function MapScreen() {
       filler?.cancel();
       const afterFiller = filler?.done ?? Promise.resolve();
       const speak = () => afterFiller.then(() => (myTurn === turn.current ? sayReply(res) : undefined));
-      if (res.dial_phone) dial(res.dial_phone);
-      if (res.status === "researching" && res.research_id) {
-        await afterFiller;
-        await runResearch(res, myTurn, ctrl.signal);
-        return;
-      }
-      if (res.status === "route_set" && res.place && res.route) {
-        const others = res.options ?? [];
-        setOptions(others);
-        setParking({});
-        setPlaces([res.place, ...others]);
-        startRoute({ place: res.place, route: res.route, parking: res.parking });
-        const replyDone = speak();
-        followParking(res.place, replyDone, myTurn, res.route.approach);
-        pauseDialog(); // route is set: stop listening until the driver taps the mic again (same session)
-      } else if (res.status === "options" && res.options?.length) {
-        // A list to choose from: same sheet as the "show_options" action, dialog stays open for "the second one".
-        setOptions(res.options);
-        setParking({});
-        setPlaces(res.options);
-        setPhase("options");
-        if (res.actions?.length) runActions(res.actions, myTurn);
-        continueDialog(myTurn, res, speak());
-      } else {
-        if (res.status !== "chat" && res.status !== "not_understood") showToast(res.message ?? MESSAGES.notUnderstood);
-        backToIdle();
-        if (res.actions?.length) runActions(res.actions, myTurn); // after backToIdle: actions may change the phase
-        const spoken = speak();
-        const followup = res.actions?.find((a) => a.type === "parking_followup");
-        const fPlace = followup && [activeRef.current?.place, ...optionsRef.current, ...places].find((p) => p?.id === followup.value);
-        const answered = fPlace
-          ? parkingFollowup(fPlace, spoken, {
-              isCurrent: () => myTurn === turn.current,
-              busy: () => phaseRef.current === "listening" || phaseRef.current === "thinking",
-              say: async (text, url) => {
-                setCaption({ reply: text });
-                const a = toAudio(url);
-                if (a) await voice.playAndWait(a, 6000);
-              },
-            })
-          : spoken;
-        continueDialog(myTurn, res, answered);
-      }
+      await applyAgentResponse(res, myTurn, ctrl.signal, afterFiller, speak);
     } catch (e) {
       filler?.cancel();
       if (myTurn !== turn.current) return;
@@ -770,23 +729,79 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focused]);
 
-  /** Executes app controls the copilot returned (trip, sound, map, truck data, preferences). */
-  const runActions = (actions: AppAction[], myTurn: number) => {
-    let truckPatch: Partial<TruckProfile> = {};
-    for (const { type, value } of actions) {
-      switch (type) {
-        case "start_navigation":
-          if (activeRef.current) {
-            pauseDialog();
-            setDriving(true);
-          }
+  /**
+   * One copilot reply: src/state/agentReducer.ts decides what happens (state patch + ordered effects),
+   * this applies it. Effects run in order; `speak` sets the promise that `followParking`,
+   * `parkingFollowup` and `continueDialog` chain on. Only `research` awaits (it waits for the
+   * breakdown result); everything else runs synchronously in this tick, as the inline code used to.
+   */
+  const applyAgentResponse = async (res: AgentResponse, myTurn: number, signal: AbortSignal, afterFiller: Promise<void>, speak: () => Promise<void>) => {
+    const { patch, effects } = reduceAgentResponse(res, {
+      activePlaceId: activeRef.current?.place.id ?? null,
+      optionsCount: optionsRef.current.length,
+      favoriteChains: getTruckProfile().favorite_chains,
+    });
+    if (patch.options) setOptions(patch.options);
+    if (patch.parking) setParking(patch.parking);
+    if (patch.places) setPlaces(patch.places);
+    if (patch.phase) setPhase(patch.phase);
+    let spoken: Promise<void> = Promise.resolve();
+    for (const e of effects) {
+      switch (e.type) {
+        case "dial":
+          dial(e.phone);
           break;
-        case "end_route":
+        case "research":
+          await afterFiller;
+          await runResearch(res, myTurn, signal);
+          break;
+        case "startRoute":
+          startRoute({ place: e.place, route: e.route, parking: e.parking });
+          break;
+        case "speak":
+          spoken = speak();
+          break;
+        case "toast":
+          showToast(e.text);
+          break;
+        case "backToIdle":
+          backToIdle();
+          break;
+        case "pauseDialog":
+          pauseDialog();
+          break;
+        case "endDialog":
           endDialog();
+          break;
+        case "continueDialog":
+          continueDialog(myTurn, res, spoken);
+          break;
+        case "followParking":
+          followParking(e.place, spoken, myTurn, e.approach);
+          break;
+        case "parkingFollowup": {
+          const fPlace = [activeRef.current?.place, ...optionsRef.current, ...places].find((p) => p?.id === e.placeId);
+          if (!fPlace) break;
+          spoken = parkingFollowup(fPlace, spoken, {
+            isCurrent: () => myTurn === turn.current,
+            busy: () => phaseRef.current === "listening" || phaseRef.current === "thinking",
+            say: async (text, url) => {
+              setCaption({ reply: text });
+              const a = toAudio(url);
+              if (a) await voice.playAndWait(a, 6000);
+            },
+          });
+          break;
+        }
+        case "clearRoute":
           clearRoute();
           break;
-        case "show_options":
-          if (optionsRef.current.length) setPhase("options");
+        case "startDriving":
+          pauseDialog();
+          setDriving(true);
+          break;
+        case "openOptions":
+          setPhase("options");
           break;
         case "recenter":
           setOverview(false);
@@ -799,63 +814,24 @@ export default function MapScreen() {
             setFit({ key: `overview-${Date.now()}`, points: [loc.coords, activeRef.current.place] });
           }
           break;
-        case "zoom_in":
-          mapRef.current?.zoomBy(1);
+        case "zoomBy":
+          mapRef.current?.zoomBy(e.delta);
           break;
-        case "zoom_out":
-          mapRef.current?.zoomBy(-1);
+        case "setVoiceGuidance":
+          setVoiceOn(e.on);
           break;
-        case "voice_guidance":
-          setVoiceOn(value === true);
+        case "setHandsFree":
+          setHandsFree(e.on);
           break;
-        case "wake_word":
-          setHandsFree(value === true);
-          break;
-        case "stop_talking":
-          pauseDialog();
-          break;
-        case "set_height_in":
-          truckPatch.height_in = Number(value);
-          break;
-        case "set_trailer_ft":
-          truckPatch.trailer_ft = Number(value);
-          break;
-        case "set_weight_lb":
-          truckPatch.weight_lb = Number(value);
-          break;
-        case "set_hazmat":
-          truckPatch.hazmat = value === true;
-          break;
-        case "set_driver_name":
-          truckPatch.driver_name = String(value);
-          break;
-        case "avoid_tolls":
-          truckPatch.avoid_tolls = value === true;
-          break;
-        case "avoid_ferries_tunnels":
-          truckPatch.avoid_ferries_tunnels = value === true;
-          break;
-        case "add_favorite_chain": {
-          const list = truckPatch.favorite_chains ?? getTruckProfile().favorite_chains ?? [];
-          truckPatch.favorite_chains = [...list, String(value)];
-          break;
-        }
-        case "remove_favorite_chain": {
-          const list = truckPatch.favorite_chains ?? getTruckProfile().favorite_chains ?? [];
-          truckPatch.favorite_chains = list.filter((c) => c.toLowerCase() !== String(value).toLowerCase());
-          break;
-        }
-        case "set_break_hours":
-          truckPatch.break_hours = value == null ? null : Number(value);
+        case "saveProfile":
+          saveTruckProfile({ ...getTruckProfile(), ...e.patch });
           break;
         case "reroute":
           // Save first so the new route uses the new profile.
-          saveTruckProfile({ ...getTruckProfile(), ...truckPatch }).then(() => reroute(myTurn));
-          truckPatch = {};
+          saveTruckProfile({ ...getTruckProfile(), ...e.patch }).then(() => reroute(myTurn));
           break;
       }
     }
-    if (Object.keys(truckPatch).length) saveTruckProfile({ ...getTruckProfile(), ...truckPatch });
   };
 
   const onPlacePress = async (p: Place) => {
