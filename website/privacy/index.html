@@ -63,16 +63,17 @@ footer a { color: var(--ink-2); font-weight: 600; text-decoration: none; }
     <span class="eyebrow">Privacy policy</span>
     <h1>TruckBuddy Privacy Policy</h1>
     <p>TruckBuddy is a voice copilot for truck drivers. This policy explains what the app collects, why, and who it is shared with.</p>
-    <p class="updated">Last updated: October 27, 2026</p>
+    <p class="updated">Last updated: October 28, 2026</p>
   </div>
 </section>
 <main class="doc wrap">
   <h2>What we collect</h2>
   <ul>
     <li><strong>Location.</strong> While you use the app, your GPS position is used to find truck-friendly parking, fuel, repair shops and routes near you.</li>
-    <li><strong>Voice.</strong> When you tap the copilot or say the wake word, TruckBuddy records what you say and sends it to our server to understand your request. Wake-word detection runs on your phone (Picovoice); audio leaves your phone only after the wake word or a tap.</li>
+    <li><strong>Voice.</strong> When you tap the copilot, TruckBuddy records what you say and sends it to our server to understand your request. The microphone is only used after a tap.</li>
     <li><strong>Truck profile and preferences.</strong> Height, trailer length, weight, hazmat, your first name and route preferences you enter. These are stored on your phone and sent with each request so routes fit your truck.</li>
-    <li><strong>Conversation history.</strong> Recent things you said and the copilot&rsquo;s replies are stored on our server, linked to a random ID issued when you enter your access code, so the copilot can remember context. You can clear it in the app (Conversation memory &rarr; Clear memory).</li>
+    <li><strong>Conversation history.</strong> Recent things you said and the copilot&rsquo;s replies are stored on our server, linked to a random ID issued to your device the first time you open the app, so the copilot can remember context. You can clear it in the app (Conversation memory &rarr; Clear memory).</li>
+    <li><strong>Hours of service (optional).</strong> If you add a Motive API key in Truck profile, it is kept in your phone&rsquo;s secure storage and sent with copilot requests so our server can read your hours-of-service clocks (drive, shift, break, cycle) from Motive. Our server uses the key for that one request and does not store the key or your clocks.</li>
   </ul>
   <p>We do not collect your contacts, photos, or advertising identifiers, and we do not track you across other apps or websites.</p>
 
@@ -81,6 +82,8 @@ footer a { color: var(--ink-2); font-weight: 600; text-decoration: none; }
   <ul>
     <li><strong>OpenAI</strong> receives your voice recordings and transcripts to transcribe speech, understand requests and generate spoken replies. Satellite images of a destination may be sent to OpenAI to check truck parking.</li>
     <li><strong>HERE, OpenRouteService, Google Maps Platform and OpenStreetMap (Nominatim)</strong> receive locations and truck dimensions to search places, geocode addresses and plan truck routes.</li>
+    <li><strong>The US National Weather Service</strong> receives points along your route to look up weather alerts and forecasts. No information about you is sent with them.</li>
+    <li><strong>Motive</strong>, only if you add your own Motive API key, receives that key so it can return your hours-of-service clocks.</li>
   </ul>
   <p>These providers process data under their own terms and are not allowed by them to use API data for advertising. We do not sell your data.</p>
 
@@ -93,8 +96,8 @@ footer a { color: var(--ink-2); font-weight: 600; text-decoration: none; }
   <h2>Your choices</h2>
   <ul>
     <li>You can deny location or microphone access in your phone&rsquo;s settings.</li>
-    <li>You can turn off hands-free (wake word) in the app.</li>
-    <li>To delete your conversation history, use Clear memory on the Conversation memory screen, or email us.</li>
+    <li>To delete your conversation history, use Clear memory on the Conversation memory screen. To delete everything we store for your device, use Delete my data in Truck profile, or email us.</li>
+    <li>You can remove your Motive key at any time in Truck profile.</li>
   </ul>
 
   <h2>Children</h2>

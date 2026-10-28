@@ -2,6 +2,8 @@
 
 The reviews themselves stay on the Place for the app (author + link, as Google's terms want);
 the voice gets a summary, cached per place for a day so repeat questions cost no LLM call.
+The summary is off unless REVIEW_GIST=1: Google's Maps Platform terms limit derived content and
+caching, so by default the voice reads the star rating instead.
 """
 import logging
 import time
@@ -10,6 +12,7 @@ from typing import Optional
 
 from models import Place
 from services import llm
+from services.flags import on
 
 logger = logging.getLogger("truckbuddy.reviews")
 
@@ -18,6 +21,7 @@ GIST_MAX = 500
 SAY = "Drivers say: {gist}"
 NO_REVIEWS = "No driver reviews there yet."
 RATING_ONLY = "Drivers rate it {rating:.1f} out of 5, but I can't read the reviews right now."
+RATING = "Drivers rate it {rating:.1f} out of 5 on Google{count}. The reviews are on the place card."
 PROMPT = ("You summarise Google reviews of a truck stop, hotel or rest area for a truck driver who is driving. "
           "Answer with ONE spoken sentence, at most 25 words, plain text, no quotes, no author names, no star "
           "numbers. Lead with the point reviewers agree on most (parking, showers, fuel lanes, staff, food, "
@@ -60,6 +64,11 @@ async def gist(place: Place, now: Optional[float] = None) -> Optional[str]:
 
 async def speech(place: Place) -> str:
     """The spoken answer to "what do drivers say about it?"."""
+    if not on("REVIEW_GIST", "0"):
+        if place.rating:
+            count = f", from {place.rating_count} reviews" if place.rating_count else ""
+            return RATING.format(rating=place.rating, count=count)
+        return NO_REVIEWS
     g = await gist(place)
     if g:
         return SAY.format(gist=g)

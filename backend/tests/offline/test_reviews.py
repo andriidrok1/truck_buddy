@@ -62,7 +62,17 @@ def test_gist_prompt_carries_the_reviews_and_is_cached(fake_llm):
     assert g3 == g1 and len(fake_llm.calls) == 2  # expired, re-asked
 
 
-def test_speech_variants(fake_llm):
+def test_speech_reads_the_rating_when_the_gist_is_off(fake_llm, monkeypatch):
+    monkeypatch.delenv("REVIEW_GIST", raising=False)
+    reviews._gists.clear()
+    assert run(reviews.speech(_pilot())) == "Drivers rate it 4.1 out of 5 on Google, from 1832 reviews. The reviews are on the place card."
+    assert fake_llm.calls == []
+    unrated = _pilot().model_copy(update={"rating": None})
+    assert run(reviews.speech(unrated)) == "No driver reviews there yet."
+
+
+def test_speech_variants(fake_llm, monkeypatch):
+    monkeypatch.setenv("REVIEW_GIST", "1")
     reviews._gists.clear()
     fake_llm.on(r"^Place: Pilot", "Good parking, slow showers.")
     assert run(reviews.speech(_pilot())) == "Drivers say: Good parking, slow showers."
@@ -73,7 +83,8 @@ def test_speech_variants(fake_llm):
     assert run(reviews.speech(none)) == "No driver reviews there yet."
 
 
-def test_reviews_intent_in_the_dialog(agent_sandbox):
+def test_reviews_intent_in_the_dialog(agent_sandbox, monkeypatch):
+    monkeypatch.setenv("REVIEW_GIST", "1")
     reviews._gists.clear()
     agent_sandbox.llm.on(r"^Place: Pilot", "Lots of parking, showers can take a while.")
     agent_sandbox.llm.on(r"drivers say", {"intent": "reviews", "place_index": None})
