@@ -184,12 +184,26 @@ def _session(sid: Optional[str]) -> dict:
 
 
 _tasks: set = set()
+MEMORY_FIRST_TURN_S = 0.3  # how long the first turn of a dialog waits for long-term memory
+MEMORY_LOAD_S = 3.0  # after this the memory read is abandoned for good
+
+
+def _background_task(t: asyncio.Task) -> None:
+    _tasks.add(t)
+    t.add_done_callback(_tasks.discard)
 
 
 def _background(coro) -> None:
-    t = asyncio.create_task(coro)
-    _tasks.add(t)
-    t.add_done_callback(_tasks.discard)
+    _background_task(asyncio.create_task(coro))
+
+
+def _adopt_past(sess: dict) -> None:
+    """A memory read that outlived the first turn lands in the session as soon as it is done."""
+    task = sess.get("past_task")
+    if task is not None and task.done():
+        sess.pop("past_task", None)
+        if not task.cancelled() and task.exception() is None:
+            sess["past"] = task.result()
 
 
 def _street(address: Optional[str]) -> str:
@@ -396,12 +410,19 @@ class LlmAgentProvider:
         if driver and not req.session_id:
             req.session_id = f"{driver}:solo"[:64]  # typed turns outside a dialog still use memory
         if driver and req.session_id and req.session_id not in _SESSIONS:
-            try:  # a new dialog starts with what the driver told the copilot in earlier ones
-                past = await asyncio.wait_for(memory.recent(driver, PAST_TURNS), 3.0)
-            except Exception:  # noqa: BLE001 - a slow or down database must not delay the reply
-                logger.warning("memory load failed or timed out")
-                past = []
-            _session(req.session_id)["past"] = [t["text"][:200] for t in past if t["role"] == "driver"]
+            # A new dialog starts with what the driver told the copilot in earlier ones. The read runs as a
+            # task: a warm database answers well within MEMORY_FIRST_TURN_S, a cold or slow one no longer
+            # holds the first reply, the result is picked up by whichever turn comes next.
+            sess = _session(req.session_id)
+            task = asyncio.create_task(self._load_past(driver))
+            _background_task(task)
+            done, _ = await asyncio.wait({task}, timeout=MEMORY_FIRST_TURN_S)
+            if done:
+                sess["past"] = task.result()
+            else:
+                sess["past_task"] = task
+        elif req.session_id in _SESSIONS:
+            _adopt_past(_SESSIONS[req.session_id])
         res = await self._handle(req)
         if res.status == "chat" and GOODBYE.search(req.text or ""):
             res.end_conversation = True
@@ -417,7 +438,18 @@ class LlmAgentProvider:
                 sess["places"] = ([res.place] + list(res.options))[:MAX_OPTIONS + 1]
         return res
 
+    @staticmethod
+    async def _load_past(driver: str) -> list[str]:
+        """The driver's own lines from earlier dialogs; [] when the database is down or slow."""
+        try:
+            past = await asyncio.wait_for(memory.recent(driver, PAST_TURNS), MEMORY_LOAD_S)
+        except Exception:  # noqa: BLE001 - a slow or down database must never surface to the driver
+            logger.warning("memory load failed or timed out")
+            return []
+        return [t["text"][:200] for t in past if t["role"] == "driver"]
+
     def _context(self, req: AgentRequest, sess: dict) -> str:
+        _adopt_past(sess)
         context = f"Driver location: {req.lat:.5f}, {req.lng:.5f}."
         if sess.get("past"):
             context += (" Long-term memory, what this driver said in earlier conversations (background facts only;"
