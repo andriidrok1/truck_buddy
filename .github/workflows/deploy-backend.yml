@@ -1,0 +1,71 @@
+name: Deploy backend
+
+# Pushes backend/ to the server over SSH and restarts it. Runs on every push to main that touches
+# backend/, or by hand (Actions > Deploy backend > Run workflow).
+#
+# Repository secrets (Settings > Secrets and variables > Actions > Secrets):
+#   TRUCKBUDDY_HOST         server IP or hostname
+#   TRUCKBUDDY_KNOWN_HOSTS  the server's host key line, as `ssh-keyscan -t ed25519 <host>` prints it
+#   TRUCKBUDDY_DEPLOY_KEY   private key whose public half is in the deploy user's authorized_keys
+# Repository variables (same page > Variables), all optional:
+#   DEPLOY_USER     ssh user                     (default: ubuntu)
+#   DEPLOY_PATH     where backend/ lives         (default: /opt/truckbuddy/backend)
+#   DEPLOY_RESTART  command run after the sync   (default: docker compose up -d --build, in DEPLOY_PATH)
+#   DEPLOY_HEALTH   URL polled after the restart (default: http://<host>/api/health)
+# The server keeps its own .env (never synced); see backend/.env.example for the variables.
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", ".github/workflows/deploy-backend.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HOST: ${{ secrets.TRUCKBUDDY_HOST }}
+      USER: ${{ vars.DEPLOY_USER || 'ubuntu' }}
+      DEST: ${{ vars.DEPLOY_PATH || '/opt/truckbuddy/backend' }}
+      RESTART: ${{ vars.DEPLOY_RESTART || 'docker compose up -d --build' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ssh key and host key
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.TRUCKBUDDY_DEPLOY_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.TRUCKBUDDY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: sync backend/
+        run: |
+          rsync -az --delete \
+            --exclude '.env' --exclude '.env.*' --exclude '.parking_cache/' --exclude '.tts_cache/' \
+            --exclude '__pycache__/' --exclude '.pytest_cache/' --exclude 'tests/' --exclude 'test_reports/' \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
+            backend/ "$USER@$HOST:$DEST/"
+
+      - name: restart
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$USER@$HOST" \
+            "cd '$DEST' && $RESTART"
+
+      - name: health
+        run: |
+          url="${{ vars.DEPLOY_HEALTH }}"
+          [ -n "$url" ] || url="http://$HOST/api/health"
+          for i in $(seq 1 20); do
+            if body=$(curl -fsS -m 10 "$url"); then
+              echo "$body"
+              echo "$body" | grep -q '"ok":true' && exit 0
+            fi
+            sleep 5
+          done
+          echo "backend did not report ok at $url" >&2
+          exit 1
