@@ -40,6 +40,15 @@ the Bearer token the app gets by redeeming the access code.
 | `PARKING_CACHE_DIR`, `PARKING_WARM` | Satellite parking check cache; `PARKING_WARM=1` pre-checks the demo places at startup (off by default) |
 | `RATE_LIMIT_PER_MIN` | Requests per minute per driver on authenticated routes (default 40, `0` = off for test backends) |
 | `DEV_DOCS` | `1` enables Swagger at `/api/docs` (dev only) |
+| `ROUTE_SPEED_LIMITS`, `ROUTE_INCIDENTS`, `ROUTE_ALTERNATIVES`, `REROUTE_ENABLED` | HERE extras on every route: posted limits, closures, 2 alternatives with road labels and tolls, route handle for `POST /api/reroute` (all default on) |
+| `PLACE_REVIEWS` | Google reviews on places and the spoken gist ("what do drivers say about it?"); same SKU, no extra cost |
+| `EIA_ENABLED`, `EIA_API_KEY` | Weekly regional diesel average for the price comparison (free key at eia.gov/opendata) |
+| `CATEGORIES_EXTRA` | `walmart,cat_scale,truck_wash,weigh_station` or `all`; off by default until the app has pins for them. CAT scales come from `backend/data/cat_scale.json` (`scripts/import_cat_scales.py`) |
+| `WEATHER_ALERTS`, `NWS_USER_AGENT` | NWS alerts along new routes and the weather intent; the User-Agent must carry a contact |
+| `CHAIN_CONTROLS`, `CHAIN_DISTRICTS` | Caltrans chain controls on California routes (districts polled every 10 min) |
+| `TPIMS_ENABLED`, `TPIMS_FEEDS` | Live truck parking counts (WI, KY, IL open feeds; JSON to add states); capacity from `backend/data/truck_parking_capacity.json` (`scripts/import_ntad.py`) |
+| `HOS_MOTIVE` | Hours of service from the driver's own Motive key (`X-Motive-Key` header, never stored) |
+| `OPENAI_TTS_MODEL` | `gpt-4o-mini-tts` (default) or `tts-1` |
 
 ### Tests
 

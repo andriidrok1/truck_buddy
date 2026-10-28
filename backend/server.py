@@ -222,9 +222,17 @@ def _finish(res: AgentResponse, extra: Optional[dict] = None) -> AgentResponse:
 
 
 @api.post("/agent", response_model=AgentResponse)
-async def agent(req: AgentRequest, speak: bool = Query(False), driver: str = Depends(auth.require_driver)):
+async def agent(req: AgentRequest, request: Request, speak: bool = Query(False),
+                driver: str = Depends(auth.require_driver)):
     timing.begin()
+    req.motive_key = _motive_key(request)
     return _finish(await _run_agent(req, speak, driver))
+
+
+def _motive_key(request: Request) -> Optional[str]:
+    """The driver's Motive API key, sent per request by the app; used for one call, never kept."""
+    key = (request.headers.get("X-Motive-Key") or "").strip()
+    return key[:200] or None
 
 
 @api.get("/breakdown/{rid}", response_model=AgentResponse)
@@ -288,6 +296,7 @@ async def voice_turn(
     active_distance_mi: Optional[float] = Form(None, ge=0),
     active_duration_min: Optional[int] = Form(None, ge=0),
     driver: str = Depends(auth.require_driver),
+    request: Request = None,
 ):
     timing.begin()
     with timing.stage("upload"):
@@ -317,7 +326,8 @@ async def voice_turn(
         text = ""
     logger.info("voice transcript=%r", text)
     req = AgentRequest(text=text, lat=lat, lng=lng, active_place=current, truck_profile=truck, session_id=session_id,
-                       active_distance_mi=active_distance_mi, active_duration_min=active_duration_min)
+                       active_distance_mi=active_distance_mi, active_duration_min=active_duration_min,
+                       motive_key=_motive_key(request) if request is not None else None)
     return _finish(await _run_agent(req, speak=True, driver=driver))
 
 

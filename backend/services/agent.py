@@ -15,7 +15,7 @@ from typing import Optional
 import httpx
 
 from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
-from services import approach, breakdown, chains, controls, fuel_index, llm, memory, reviews, tpims, weather
+from services import approach, breakdown, chains, controls, fuel_index, hos, llm, memory, reviews, tpims, weather
 from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
@@ -132,7 +132,7 @@ makes sense for a trucker and act on the corrected meaning, e.g. "I need a few" 
 "these all". Only fix words that clearly don't fit; never invent a destination. If you can't tell, use "unclear".
 
 Classify the driver's LAST utterance and answer with JSON only, no other text:
-{{"intent": "find"|"go"|"pick"|"alternative"|"add_stop"|"clear_stops"|"reviews"|"weather"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|"walmart"|"cat_scale"|"truck_wash"|"weigh_station"|null, "near": string|null, "query": string|null, "when": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
+{{"intent": "find"|"go"|"pick"|"alternative"|"add_stop"|"clear_stops"|"reviews"|"weather"|"hos"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|"walmart"|"cat_scale"|"truck_wash"|"weigh_station"|null, "near": string|null, "query": string|null, "when": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
 
 - find: the driver needs a place. Pick the category yourself, never ask:
   truck_stop = fuel, diesel, DEF, food, showers, truck stop;
@@ -154,6 +154,7 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
 - add_stop: a stop ON THE WAY to the current destination, keeping that destination ("stop at the Pilot in Fernley on the way", "swing by Love's first", "add a fuel stop", "I need a rest area before that"). query = the place or address named (digits for numbers), else category = the kind of stop (truck_stop for fuel/food/showers, rest_area, hotel); never both null. Only while a route is active; with no route it's a plain find or go.
 - clear_stops: drop the stops added on the way ("skip the stops", "forget the stop", "no stops, straight there").
 - reviews: what other drivers say about a place ("what do drivers say about it", "is it any good", "reviews for the Pilot", "how are the showers there"). place_index = the place asked about from "Places found earlier", or null for the current route / the last one mentioned.
+- hos: the driver's hours of service ("how many hours do I have", "how much drive time is left", "when do I have to stop", "where's my clock at", "how long till my break"). No other fields.
 - weather: the weather or wind at a place and time ("weather in Reno at 3pm", "how's the wind over Donner tonight", "is it snowing ahead", "what's it like at the destination"). query = the place named (null for here, or for the destination when they say there/ahead), when = the time words as said ("3pm", "tonight", "tomorrow morning", null for now).
 {controls}
 {parking}
@@ -533,6 +534,21 @@ class LlmAgentProvider:
                 reply = weather.NO_FORECAST.format(place=name)
         return AgentResponse(status="chat", transcript=text, reply=reply, source=self.source)
 
+    async def _hos(self, req: AgentRequest, text: str) -> AgentResponse:
+        """"How many hours do I have?" from the driver's Motive account (key comes per request, never stored)."""
+        if not hos.enabled() or not req.motive_key:
+            return AgentResponse(status="chat", transcript=text, reply=hos.CONNECT, source=self.source)
+        with stage("tools"):
+            try:
+                clocks = await asyncio.wait_for(hos.available_time(req.motive_key), 8.0)
+                reply = hos.speech(clocks)
+            except hos.HosAuthError:
+                reply = hos.BAD_KEY
+            except Exception as e:  # noqa: BLE001 - incl. timeout and HosDown
+                logger.info("hos lookup failed: %s", type(e).__name__)  # never the key, never the body
+                reply = hos.DOWN
+        return AgentResponse(status="chat", transcript=text, reply=reply, source=self.source)
+
     @staticmethod
     async def _regional_note(place: Place) -> str:
         """EIA comparison for the diesel price of a truck stop; bounded so it can never slow the reply down."""
@@ -794,6 +810,8 @@ class LlmAgentProvider:
                 return await self._reviews(req, d, sess, text)
             if intent == "weather":
                 return await self._weather(req, d, sess, text)
+            if intent == "hos":
+                return await self._hos(req, text)
             if intent == "pick":
                 place = pick_place(d, sess["places"])
                 if place and place.id not in exclude:
