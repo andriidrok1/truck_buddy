@@ -24,6 +24,15 @@ PARKING_HOUR = 17  # without Motive: evening and a long day
 PARKING_ELAPSED_MIN = 8 * 60
 PARKING_LOOKAHEAD_MI = (20.0, 60.0)
 HOS_CACHE_S = 60
+CHAINS_R1_MIN_TRAILER = 48  # R-1 only matters to a loaded combination; R-2/R-3 to everyone
+CHAINS_MAX_MI = 60
+CHAINS_ASK = "Chains required ahead on {route} near {location}. Do you have chains on board?"
+CHAINS_NO = ("Got it, no chains on board. The last truck stop before the control is {name}, {mi} miles ahead, "
+             "want me to add it?")
+CHAINS_NO_STOP = ("Got it, no chains on board. I couldn't find a truck stop before the control, keep an eye out "
+                  "for a safe spot.")
+CHAINS_NONE = ("Chains required ahead on {route} near {location}, and you've got no chains on board. The last truck "
+               "stop before it is {name}, {mi} miles ahead, want me to add it?")
 BREAK = "Your break is due in {due} minutes. There's a {name} in {mi} miles, want me to add it?"
 BREAK_NOW = "Your break is due now. There's a {name} in {mi} miles, want me to add it?"
 PARKING = "About {shift} minutes on the shift. The {name} in {mi} miles{live}, should I route you there?"
@@ -149,4 +158,34 @@ async def compute(req: NudgeRequest, sess: dict, motive_key: Optional[str]) -> l
                 sess["nudge_parking_done"] = True
                 _offer(sess, "go", place)
                 out.append(Nudge(kind="parking", text=text, place=place, offer="go"))
+
+    cc = req.chain_control_ahead
+    if on("NUDGE_CHAINS") and cc and not sess.get("nudge_chains_done") and cc.miles_ahead <= CHAINS_MAX_MI:
+        long_rig = req.truck_profile.trailer_ft >= CHAINS_R1_MIN_TRAILER
+        serious = cc.status in ("R-2", "R-3") or (cc.status == "R-1" and long_rig)
+        if serious and req.truck_profile.chains_on_board is not True:
+            sess["nudge_chains_done"] = True
+            window = (max(0.0, cc.miles_ahead - 40), max(1.0, cc.miles_ahead - 3))
+            stop = await place_ahead(req, ("truck_stop",), window, sess_facts=sess.get("facts"))
+            if req.truck_profile.chains_on_board is False:
+                if stop:
+                    place, mi = stop
+                    _offer(sess, "add_stop", place)
+                    out.append(Nudge(kind="chains", text=CHAINS_NONE.format(route=cc.route, location=cc.location,
+                                                                            name=place.name.split(",")[0], mi=mi),
+                                     place=place, offer="add_stop"))
+            else:
+                # "yes" records chains on board; "no" records none and offers the last stop before the control.
+                no_act = {"type": "set_chains_on_board", "value": False}
+                no_branch: dict = {"reply": CHAINS_NO_STOP, "actions": [no_act]}
+                if stop:
+                    place, mi = stop
+                    no_branch["reply"] = CHAINS_NO.format(name=place.name.split(",")[0], mi=mi)
+                    no_branch["then_pending"] = {"d": {"intent": "add_stop", "place": place.model_dump()},
+                                                 "text": f"add_stop {place.name}"}
+                yes_act = {"type": "set_chains_on_board", "value": True}
+                sess["pending"] = {"d": {"intent": "control", "actions": [yes_act]}, "text": "chains on board",
+                                   "no": no_branch}
+                out.append(Nudge(kind="chains", text=CHAINS_ASK.format(route=cc.route, location=cc.location),
+                                 place=stop[0] if stop else None, offer="chains_answer"))
     return out

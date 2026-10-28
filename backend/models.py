@@ -198,6 +198,7 @@ class TruckProfile(BaseModel):
     avoid_ferries_tunnels: bool = False
     favorite_chains: List[str] = Field(default_factory=list, max_length=8)
     break_hours: Optional[int] = Field(None, ge=1, le=14)
+    chains_on_board: Optional[bool] = None  # None = never asked; drives the chain-control question
 
     @property
     def total_length_ft(self) -> int:
@@ -222,6 +223,10 @@ class TruckProfile(BaseModel):
             p.append("favorite truck stop chains: " + ", ".join(self.favorite_chains))
         if self.break_hours:
             p.append(f"wants a break reminder every {self.break_hours} h")
+        if self.chains_on_board is True:
+            p.append("carries tire chains")
+        elif self.chains_on_board is False:
+            p.append("no tire chains on board")
         return "; ".join(p) or "none"
 
 
@@ -250,15 +255,23 @@ class NudgeRequest(BaseModel):
     local_hour: Optional[int] = Field(None, ge=0, le=23)  # the phone's local hour
     session_id: Optional[str] = Field(None, max_length=64)
     truck_profile: TruckProfile = Field(default_factory=TruckProfile)
+    chain_control_ahead: Optional["ChainAhead"] = None  # first active Caltrans control on the route ahead
     motive_key: Optional[str] = Field(None, max_length=200, exclude=True, repr=False)
 
 
+class ChainAhead(BaseModel):
+    route: str
+    location: str
+    status: str  # R-1 | R-2 | R-3
+    miles_ahead: float = Field(ge=0, le=500)
+
+
 class Nudge(BaseModel):
-    kind: Literal["break", "parking"]
+    kind: Literal["break", "parking", "chains"]
     text: str  # spoken as an ambient line
     priority: int = 2
     place: Optional[Place] = None
-    offer: Optional[Literal["add_stop", "go"]] = None  # what a "yes" on the next turn does
+    offer: Optional[Literal["add_stop", "go", "chains_answer"]] = None  # what a "yes" on the next turn does
 
 
 class NudgeResponse(BaseModel):

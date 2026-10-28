@@ -15,7 +15,8 @@ PROMPT = """- control: the driver wants the app to DO something or CHANGE a sett
   voice_guidance value=true|false (spoken turn directions), wake_word value=true|false (hands-free wake-word listening), stop_talking (be quiet now),
   set_height_in value=total inches (13 ft 6 in = 162), set_trailer_ft value=feet, set_weight_lb value=pounds (70k = 70000), set_hazmat value=true|false,
   set_driver_name value=name, avoid_tolls value=true|false, avoid_ferries_tunnels value=true|false,
-  add_favorite_chain value=chain name, remove_favorite_chain value=chain name, set_break_hours value=hours or null to turn reminders off.
+  add_favorite_chain value=chain name, remove_favorite_chain value=chain name, set_break_hours value=hours or null to turn reminders off,
+  set_chains_on_board value=true|false (tire chains carried), set_nudges value=true|false ("stop suggesting" turns the copilot's own break/parking/chain suggestions off).
   Several actions are allowed in one turn. Use control (not chat) whenever the driver asks for any of these."""
 
 ROUTE_FIELDS = {"set_height_in", "set_trailer_ft", "set_weight_lb", "set_hazmat", "avoid_tolls", "avoid_ferries_tunnels"}
@@ -142,6 +143,16 @@ def apply_actions(raw: Any, req: AgentRequest) -> Tuple[List[AppAction], str, bo
                 ok(kind, n, f"I'll remind you to take a break every {n} hour{'s' if n > 1 else ''}", True)
             else:
                 said.append("Break reminders can be every 1 to 14 hours.")
+        elif kind == "set_chains_on_board":
+            if b is None:
+                said.append("Chains on board, yes or no?")
+            else:
+                ok(kind, b, "Got it, chains on board" if b else "Got it, no chains on board", True)
+        elif kind == "set_nudges":
+            if b is None:
+                said.append("Suggestions on or off?")
+            else:
+                ok(kind, b, "I'll speak up with suggestions again" if b else "Okay, I'll stop suggesting things")
 
     if active and any(a.type in ROUTE_FIELDS for a in out):
         out.append(AppAction(type="reroute"))

@@ -924,6 +924,13 @@ class LlmAgentProvider:
                 timing.note("intent", str(d.get("intent")))
                 return await self._dispatch(req, sess, pending["text"], d, confirmed=True)
             if NO.match(text):
+                branch = pending.get("no")
+                if branch:  # a question with a real "no" path (e.g. "chains on board?")
+                    if branch.get("then_pending"):
+                        sess["pending"] = branch["then_pending"]
+                    acts = [AppAction(type=a["type"], value=a.get("value")) for a in branch.get("actions") or []]
+                    return AgentResponse(status="chat", transcript=text, reply=branch["reply"], actions=acts,
+                                         source=self.source)
                 return AgentResponse(status="chat", transcript=text, reply=CONFIRM_NO, source=self.source)
             # anything else: the driver moved on, classify it as a fresh utterance
         try:
