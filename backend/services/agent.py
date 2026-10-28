@@ -22,6 +22,7 @@ from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
 from services.parking import cached_parking, check_parking, is_town, listed_in_data
 from services.places import get_places_provider
 from services.routing import get_routing_provider
+from services.speech_text import fit_reply
 from services.timing import stage
 
 logger = logging.getLogger("truckbuddy.agent")
@@ -868,8 +869,8 @@ class LlmAgentProvider:
         if intent in ("chat", "bye") and reply:
             if intent == "bye":
                 sess.pop("rejected", None)
-            return AgentResponse(status="chat", transcript=text, reply=reply, end_conversation=intent == "bye",
-                                 source=self.source)
+            return AgentResponse(status="chat", transcript=text, reply=fit_reply(reply),
+                                 end_conversation=intent == "bye", source=self.source)
         return _not_understood(text, self.source)
 
 
