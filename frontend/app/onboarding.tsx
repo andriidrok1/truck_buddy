@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
@@ -113,21 +113,25 @@ export default function Onboarding() {
   const [truckHeard, setTruckHeard] = useState(false);
 
   const run = useRef(0); // bumps to cancel the running conversation turn
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
+  const draftRef = useRef(draft); // for the async turn; written at commit, synchronously
+  useLayoutEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
   const micOk = useRef<boolean | null>(null);
 
   const name = (draft.driver_name ?? "").trim();
   const idx = STEPS.indexOf(step);
 
   // Saved profile arrives async; prefill.
-  useEffect(() => {
+  const [prefilled, setPrefilled] = useState(saved);
+  if (prefilled !== saved) {
+    setPrefilled(saved);
     setDraft(saved);
     setFeet(String(Math.floor(saved.height_in / 12)));
     setInches(String(saved.height_in % 12));
     setTrailer(String(saved.trailer_ft));
     setWeight(String(saved.weight_lb));
-  }, [saved]);
+  }
 
   const set = (u: Partial<TruckProfile>) => setDraft((d) => ({ ...d, ...u }));
 
@@ -260,10 +264,12 @@ export default function Onboarding() {
   const inchesRef = useRef(inches);
   const trailerRef = useRef(trailer);
   const weightRef = useRef(weight);
-  feetRef.current = feet;
-  inchesRef.current = inches;
-  trailerRef.current = trailer;
-  weightRef.current = weight;
+  useLayoutEffect(() => {
+    feetRef.current = feet;
+    inchesRef.current = inches;
+    trailerRef.current = trailer;
+    weightRef.current = weight;
+  }, [feet, inches, trailer, weight]);
 
   // Start a conversation turn whenever the step changes.
   useEffect(() => {
@@ -273,17 +279,14 @@ export default function Onboarding() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
-  useEffect(
-    () => {
-      // Pre-generate the fixed lines while the first question is being asked.
-      api.speak(spoken("prefs", "")).catch(() => {});
-      return () => {
-        run.current++;
-      };
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  useEffect(() => {
+    // Pre-generate the fixed lines while the first question is being asked.
+    api.speak(spoken("prefs", "")).catch(() => {});
+    const turns = run; // a counter, not a node: bumping it on unmount cancels the running turn
+    return () => {
+      turns.current++;
+    };
+  }, []);
 
   const stopTurn = () => {
     run.current++;

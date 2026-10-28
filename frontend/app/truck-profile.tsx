@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Alert, Platform, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -107,13 +107,15 @@ export default function TruckProfileScreen() {
   const [hazmat, setHazmat] = useState(truck.hazmat);
 
   // The saved profile loads async (e.g. when this screen is opened directly): sync the fields once it arrives.
-  useEffect(() => {
+  const [synced, setSynced] = useState(truck);
+  if (synced !== truck) {
+    setSynced(truck);
     setFeet(String(Math.floor(truck.height_in / 12)));
     setInches(String(truck.height_in % 12));
     setTrailer(String(truck.trailer_ft));
     setWeight(String(truck.weight_lb));
     setHazmat(truck.hazmat);
-  }, [truck]);
+  }
 
   const close = () => (router.canGoBack() ? router.back() : router.replace("/"));
 

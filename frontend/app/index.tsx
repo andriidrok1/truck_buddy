@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AppState, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -88,8 +88,12 @@ export default function MapScreen() {
   const [topH, setTopH] = useState(140);
   const [sheetH, setSheetH] = useState(260);
   const [phase, setPhase] = useState<Phase>("ready");
+  // Mirrors of the state the async handlers read after an await (they outlive the render that
+  // made them). Written at commit, so a handler never sees a value from an uncommitted render.
   const phaseRef = useRef<Phase>("ready");
-  phaseRef.current = phase;
+  useLayoutEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
   const [active, setActive] = useState<ActiveRoute | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -107,9 +111,11 @@ export default function MapScreen() {
   const [tracking, setTracking] = useState(false);
   const following = tracking || (driving && !overview);
   // A new view to show (route, options, overview) wins over the Follow button.
-  useEffect(() => {
+  const [fitSeen, setFitSeen] = useState(fit.key);
+  if (fitSeen !== fit.key) {
+    setFitSeen(fit.key);
     if (fit.key !== "init" && fit.key !== "gps") setTracking(false);
-  }, [fit.key]);
+  }
   // Whole-route view while driving: back to following the truck after 15 s.
   useEffect(() => {
     if (!overview) return;
@@ -120,7 +126,9 @@ export default function MapScreen() {
   const { online } = useOnline();
   const [providers, setProviders] = useState<ProvidersResult | null>(null);
   const providersRef = useRef<ProvidersResult | null>(null);
-  providersRef.current = providers;
+  useLayoutEffect(() => {
+    providersRef.current = providers;
+  }, [providers]);
 
   useEffect(() => {
     storage.getItem(VOICE_GUIDANCE_KEY, true as boolean).then((v) => setVoiceOnState(v !== false));
@@ -135,9 +143,13 @@ export default function MapScreen() {
   const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const inflight = useRef<AbortController | null>(null);
   const activeRef = useRef<ActiveRoute | null>(null);
-  activeRef.current = active;
+  useLayoutEffect(() => {
+    activeRef.current = active;
+  }, [active]);
   const optionsRef = useRef<Place[]>([]);
-  optionsRef.current = options;
+  useLayoutEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
 
   const showToast = useCallback((text: string, kind: ToastData["kind"] = "error") => {
     setToast({ id: Date.now(), text, kind });
@@ -189,14 +201,12 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, truck.break_hours, truck.driver_name]);
 
-  // Re-center once when the real GPS fix arrives.
-  useEffect(() => {
-    if (!loc.isDemo) {
-      center.current = loc.coords;
-      setFit({ key: "gps", points: [loc.coords] });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loc.isDemo]);
+  // Re-center once when the real GPS fix arrives. (Nothing reads `center` back; the map only reports it.)
+  const [fixSeen, setFixSeen] = useState<boolean | null>(null);
+  if (fixSeen !== loc.isDemo) {
+    setFixSeen(loc.isDemo);
+    if (!loc.isDemo) setFit({ key: "gps", points: [loc.coords] });
+  }
 
   // Tester jumped to a made-up spot (or back to GPS): show it.
   const simId = loc.sim?.id ?? "real";
@@ -211,13 +221,14 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [simId]);
 
-  // Fit all option pins once the (taller) options sheet has been laid out.
-  useEffect(() => {
-    if (phase === "options" && options.length) {
-      setFit({ key: `options-${sheetH}-${options.length}`, points: [loc.coords, ...options] });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, sheetH, options]);
+  // Fit all option pins once the (taller) options sheet has been laid out. The map refits only
+  // when the key changes, so the key is all that has to be tracked.
+  const optionsFit = phase === "options" && options.length ? `options-${sheetH}-${options.length}` : null;
+  const [optionsFitSeen, setOptionsFitSeen] = useState(optionsFit);
+  if (optionsFit !== optionsFitSeen) {
+    setOptionsFitSeen(optionsFit);
+    if (optionsFit) setFit({ key: optionsFit, points: [loc.coords, ...options] });
+  }
 
   const sayReply = (res: AgentResponse) => {
     setCaption({ reply: res.reply, heard: res.transcript || undefined });
@@ -632,7 +643,7 @@ export default function MapScreen() {
       setProviders({ providers: list, call_card: out.call_card, summary: out.summary, provider_source: out.provider_source });
       setPlaces(list.map(providerPlace));
       setPhase("providers");
-      setFit({ key: `providers-${Date.now()}`, points: [loc.coords, ...list] });
+      setFit({ key: `providers-${myTurn}`, points: [loc.coords, ...list] }); // one research per turn: unique
     } else backToIdle();
     continueDialog(myTurn, out, sayReply(out));
   };

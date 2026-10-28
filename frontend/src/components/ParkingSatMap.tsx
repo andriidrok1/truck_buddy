@@ -2,8 +2,9 @@
 // drag-to-pan, pinch / +- zoom, and the same E / P / place / route-tail overlays.
 import { Image } from "expo-image";
 import { useEffect, useRef, useState, type ComponentRef } from "react";
-import { PanResponder, StyleSheet, View, type LayoutChangeEvent } from "react-native";
+import { StyleSheet, View, type LayoutChangeEvent } from "react-native";
 
+import { usePanResponder } from "../hooks/usePanResponder";
 import { radius, useTheme } from "../theme";
 import type { LatLng } from "../types";
 import { Icon } from "./Icon";
@@ -88,11 +89,11 @@ export default function ParkingSatMap({ center, place, spots, tail }: ParkingSat
     return () => node.removeEventListener("wheel", onWheel);
   }, []);
 
-  const [pan] = useState(() => {
+  const pan = usePanResponder(() => {
     let start = { x: 0, y: 0 };
     let pinch: { dist: number; zoom: number; x: number; y: number } | null = null;
     const dist = (t: readonly { pageX: number; pageY: number }[]) => Math.hypot(t[0].pageX - t[1].pageX, t[0].pageY - t[1].pageY);
-    return PanResponder.create({
+    return {
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
@@ -122,7 +123,7 @@ export default function ParkingSatMap({ center, place, spots, tail }: ParkingSat
         const z = viewRef.current.zoom;
         setView({ zoom: z, center: unproject(start.x - g.dx, start.y - g.dy, z) });
       },
-    });
+    };
   });
 
   const z = view.zoom;

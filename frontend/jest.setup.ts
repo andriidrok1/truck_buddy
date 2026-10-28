@@ -4,5 +4,5 @@ process.env.EXPO_PUBLIC_BACKEND_URL = "https://ci.invalid";
 
 // src/utils/storage imports AsyncStorage at module load; the native module is null under jest.
 jest.mock("@react-native-async-storage/async-storage", () =>
-  require("@react-native-async-storage/async-storage/jest/async-storage-mock"),
+  jest.requireActual("@react-native-async-storage/async-storage/jest/async-storage-mock"),
 );
