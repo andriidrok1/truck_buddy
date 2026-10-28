@@ -20,11 +20,17 @@ const LOG_KIND: Record<SpeechItem["kind"], AnnouncementKind> = { maneuver: "mane
  * copilot reply on air) pauses it; the queue's own clip does not count as busy. While it drains
  * the voice hook holds the playback session, so the recorder is not re-armed between two lines
  * (that flips the audio mode twice per clip and clicks on iOS); the hold is released as soon as
- * the queue is empty. `onPlay` fires as each line starts (captions). Offline (NetInfo or a failed
- * API call), or when /api/speak fails, the line goes through the phone's own voice instead
- * (src/voice/localTts.ts): the guidance must stay audible in a dead zone.
+ * the queue is empty. `onPlay` fires as each line starts (captions); `onDone` once it has played
+ * to the end (not when it was cut off), so a line that asks a question can open the mic. Offline
+ * (NetInfo or a failed API call), or when /api/speak fails, the line goes through the phone's own
+ * voice instead (src/voice/localTts.ts): the guidance must stay audible in a dead zone.
  */
-export function useSpeechQueue(voice: Voice, isBusy: () => boolean, onPlay?: (item: QueuedSpeech) => void) {
+export function useSpeechQueue(
+  voice: Voice,
+  isBusy: () => boolean,
+  onPlay?: (item: QueuedSpeech) => void,
+  onDone?: (item: QueuedSpeech) => void,
+) {
   const [q] = useState(
     () =>
       new SpeechQueue({
@@ -40,9 +46,11 @@ export function useSpeechQueue(voice: Voice, isBusy: () => boolean, onPlay?: (it
   const poll = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyRef = useRef(isBusy);
   const onPlayRef = useRef(onPlay);
+  const onDoneRef = useRef(onDone);
   useEffect(() => {
     busyRef.current = isBusy;
     onPlayRef.current = onPlay;
+    onDoneRef.current = onDone;
   });
   const { playAndWait, stopSpeaking, isSpeaking, isRecording, holdPlayback } = voice;
 
@@ -81,7 +89,10 @@ export function useSpeechQueue(voice: Voice, isBusy: () => boolean, onPlay?: (it
         } catch (e) {
           console.log(`[speech] "${item.text}" failed: ${String(e)}`);
         }
-        if (playing.current === item) playing.current = null;
+        if (playing.current === item) {
+          playing.current = null;
+          onDoneRef.current?.(item);
+        }
       }
     } finally {
       draining.current = false;

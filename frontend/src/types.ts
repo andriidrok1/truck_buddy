@@ -114,6 +114,9 @@ export type ChainControl = {
   description?: string;
 };
 
+/** The first active Caltrans chain control on the route ahead (NudgeRequest.chain_control_ahead). */
+export type ChainControlAhead = { route: string; location: string; status: "R-1" | "R-2" | "R-3"; miles_ahead: number };
+
 export type Approach = { bearing: number; compass: string; street?: string | null };
 
 export type PlacesResponse = {
@@ -199,7 +202,12 @@ export type ProvidersResult = {
 };
 
 export type AgentResponse = {
-  status: "options" | "route_set" | "chat" | "no_results" | "not_understood" | "researching" | "providers" | "error";
+  /** `confirm` = a yes/no question about what was heard ("Did you say Reno, NV?"): the mic reopens after it. */
+  status: "options" | "route_set" | "chat" | "confirm" | "no_results" | "not_understood" | "researching" | "providers" | "error";
+  /** What the classifier decided (logs, the tester screen). */
+  intent?: string | null;
+  /** The text behind audio_url and audio_url_2, in order; the playback timeout is sized from it. */
+  reply_parts?: string[];
   research_id?: string | null;
   providers?: Provider[];
   call_card?: CallCard | null;
@@ -232,6 +240,30 @@ export type ActiveRoute = {
   parking?: ParkingCheck | null;
   /** Via stops on the way, in order (mirrors `route.via`); empty or missing = none. */
   stops?: Place[];
+};
+
+/** POST /api/nudges body (truck_profile is added by the client). */
+export type NudgeRequest = {
+  lat: number;
+  lng: number;
+  driving: boolean;
+  active_place?: Place | null;
+  /** Route points ahead as [lat, lng, miles_ahead], nearest first (see geo/ahead.ts). */
+  ahead: [number, number, number][];
+  drive_elapsed_min?: number | null;
+  local_hour?: number | null;
+  session_id?: string | null;
+  /** Left out when no active control is ahead or its position is unknown (see geo/ahead.ts). */
+  chain_control_ahead?: ChainControlAhead;
+};
+
+export type Nudge = {
+  kind: "break" | "parking" | "chains";
+  text: string;
+  priority: number;
+  place?: Place | null;
+  /** What a "yes" on the next turn does; the backend keeps it pending for the session. */
+  offer?: "add_stop" | "go" | "chains_answer" | null;
 };
 
 export type Phase = "ready" | "listening" | "thinking" | "options" | "navigating" | "providers";

@@ -95,6 +95,18 @@ describe("reduceAgentResponse", () => {
     expect(types(effects)).toEqual(["backToIdle", "speak", "continueDialog"]);
   });
 
+  test("confirm reopens the mic", () => {
+    // "Did you say Reno, NV?": spoken like chat, no toast, and the mic opens after the reply even
+    // when the loop was paused, because the next "yes" / "no" resolves it.
+    const { patch, effects } = reduceAgentResponse({ ...chatRes, status: "confirm", reply: "Did you say Reno, NV?" }, onRoute);
+    expect(patch).toEqual({});
+    expect(types(effects)).toEqual(["backToIdle", "speak", "continueDialog"]);
+    expect(effects[2]).toEqual({ type: "continueDialog", force: true });
+    // Plain chat does not force it.
+    const chat = reduceAgentResponse(chatRes, onRoute);
+    expect(chat.effects[2]).toEqual({ type: "continueDialog" });
+  });
+
   test("no_results and not_understood", () => {
     const none = reduceAgentResponse({ ...chatRes, status: "no_results", message: null }, idle);
     expect(none.effects[0]).toEqual({ type: "toast", text: MESSAGES.notUnderstood });
@@ -172,6 +184,17 @@ describe("reduceActions", () => {
       { ...idle, favoriteChains: ["Pilot", "TA"] },
     );
     expect(effects).toEqual([{ type: "saveProfile", patch: { favorite_chains: ["TA", "Love's"] } }]);
+  });
+
+  test("set_chains_on_board lands in the profile like the other truck data", () => {
+    expect(reduceActions([{ type: "set_chains_on_board", value: true }], idle)).toEqual([{ type: "saveProfile", patch: { chains_on_board: true } }]);
+    expect(reduceActions([{ type: "set_chains_on_board", value: false }], idle)).toEqual([{ type: "saveProfile", patch: { chains_on_board: false } }]);
+    expect(reduceActions([{ type: "set_chains_on_board", value: "yes" }], idle)).toEqual([{ type: "saveProfile", patch: { chains_on_board: false } }]);
+  });
+
+  test("set_nudges is a preference, not a profile field", () => {
+    expect(reduceActions([{ type: "set_nudges", value: false }], idle)).toEqual([{ type: "setNudges", on: false }]);
+    expect(reduceActions([{ type: "set_nudges", value: true }], idle)).toEqual([{ type: "setNudges", on: true }]);
   });
 
   test("unknown action is ignored", () => {
