@@ -1,63 +1,84 @@
-import { dragProgress, FLING_VELOCITY, heightAt, progressFor, sheetHeights, snapTarget } from "../utils/sheetSnap";
+import { availableStates, dragHeight, FLING_VELOCITY, RUBBER_MAX, rubberBand, sheetHeights, snapTarget, stateHeight } from "../utils/sheetSnap";
 
-const h = sheetHeights(260, 640);
+// A route card that fits: body not clipped.
+const fits = sheetHeights({ peek: 150, auto: 360, content: 360, window: 844 });
+// An options list clipped in auto: full exists.
+const clipped = sheetHeights({ peek: 120, auto: 420, content: 900, window: 844 });
 
 describe("sheetHeights", () => {
-  test("tall state is never shorter than the content", () => {
-    expect(sheetHeights(700, 640)).toEqual({ collapsed: 700, expanded: 700 });
-    expect(sheetHeights(260, 640)).toEqual({ collapsed: 260, expanded: 640 });
+  test("no full state when the content fits the auto height", () => {
+    expect(fits).toEqual({ peek: 150, auto: 360 });
+    expect(availableStates(fits)).toEqual(["peek", "auto"]);
+    // A rounding hair of extra content is not a reason to offer full.
+    expect(sheetHeights({ peek: 150, auto: 360, content: 361, window: 844 }).full).toBeUndefined();
+  });
+
+  test("full is the content height, capped at 85% of the window", () => {
+    expect(clipped.full).toBeCloseTo(844 * 0.85);
+    expect(sheetHeights({ peek: 120, auto: 420, content: 500, window: 844 }).full).toBe(500);
+    expect(availableStates(clipped)).toEqual(["peek", "auto", "full"]);
+  });
+
+  test("peek never exceeds auto; without a shorter peek only auto remains", () => {
+    const h = sheetHeights({ peek: 500, auto: 360, content: 360, window: 844 });
+    expect(h.peek).toBe(360);
+    expect(availableStates(h)).toEqual(["auto"]);
+  });
+
+  test("stateHeight falls back to auto for a missing full", () => {
+    expect(stateHeight("full", fits)).toBe(360);
+    expect(stateHeight("peek", fits)).toBe(150);
+    expect(stateHeight("full", clipped)).toBe(clipped.full);
   });
 });
 
-describe("heightAt / progressFor", () => {
-  test("round-trip between the two states", () => {
-    expect(heightAt(0, h)).toBe(260);
-    expect(heightAt(1, h)).toBe(640);
-    expect(heightAt(0.5, h)).toBe(450);
-    expect(progressFor(450, h)).toBe(0.5);
-    expect(progressFor(100, h)).toBe(0);
-    expect(progressFor(900, h)).toBe(1);
+describe("dragHeight", () => {
+  test("follows the finger between the ends", () => {
+    expect(dragHeight(360, 100, fits)).toBe(260);
+    expect(dragHeight(420, -200, clipped)).toBe(620);
   });
 
-  test("no span means no progress", () => {
-    expect(progressFor(700, sheetHeights(700, 640))).toBe(0);
-  });
-});
-
-describe("dragProgress", () => {
-  test("dragging up from collapsed grows the sheet; down shrinks it", () => {
-    expect(dragProgress(0, -190, h)).toBeCloseTo(0.5);
-    expect(dragProgress(1, 190, h)).toBeCloseTo(0.5);
+  test("rubber-bands past the tallest state, never more than RUBBER_MAX", () => {
+    expect(dragHeight(360, -10, fits)).toBeCloseTo(360 + rubberBand(10));
+    expect(dragHeight(360, -1000, fits)).toBeLessThan(360 + RUBBER_MAX);
+    expect(dragHeight(360, -1000, fits)).toBeGreaterThan(360 + RUBBER_MAX * 0.9);
+    expect(dragHeight(clipped.full!, -500, clipped)).toBeLessThan(clipped.full! + RUBBER_MAX);
   });
 
-  test("clamped at both ends", () => {
-    expect(dragProgress(0, -1000, h)).toBe(1);
-    expect(dragProgress(0, 50, h)).toBe(0);
-    expect(dragProgress(1, -50, h)).toBe(1);
+  test("rubber-bands below peek too", () => {
+    expect(dragHeight(150, 500, fits)).toBeGreaterThan(150 - RUBBER_MAX);
+    expect(dragHeight(150, 500, fits)).toBeLessThan(150);
+  });
+
+  test("rubberBand is monotonic and bounded", () => {
+    expect(rubberBand(0)).toBe(0);
+    expect(rubberBand(RUBBER_MAX)).toBe(RUBBER_MAX / 2);
+    expect(rubberBand(10000)).toBeLessThan(RUBBER_MAX);
   });
 });
 
 describe("snapTarget", () => {
-  test("slow release snaps to the nearer height", () => {
-    expect(snapTarget(300, 0, h)).toBe("collapsed");
-    expect(snapTarget(449, 0, h)).toBe("collapsed");
-    expect(snapTarget(450, 0, h)).toBe("expanded");
-    expect(snapTarget(600, 100, h)).toBe("expanded");
+  test("slow release snaps to the nearest available height", () => {
+    expect(snapTarget(200, 0, fits, "auto")).toBe("peek");
+    expect(snapTarget(300, 0, fits, "auto")).toBe("auto");
+    expect(snapTarget(380, 0, fits, "auto")).toBe("auto"); // rubber-band overshoot, no full
+    expect(snapTarget(650, 50, clipped, "auto")).toBe("full");
+    expect(snapTarget(500, 50, clipped, "auto")).toBe("auto");
   });
 
-  test("a fling is obeyed regardless of position", () => {
-    expect(snapTarget(280, -FLING_VELOCITY, h)).toBe("expanded");
-    expect(snapTarget(280, -2000, h)).toBe("expanded");
-    expect(snapTarget(620, FLING_VELOCITY, h)).toBe("collapsed");
-    expect(snapTarget(620, 1500, h)).toBe("collapsed");
+  test("a fling moves one state in its direction from where the drag began", () => {
+    expect(snapTarget(400, -FLING_VELOCITY, clipped, "auto")).toBe("full");
+    expect(snapTarget(400, FLING_VELOCITY, clipped, "auto")).toBe("peek");
+    expect(snapTarget(130, -2000, clipped, "peek")).toBe("auto");
+    expect(snapTarget(700, 2000, clipped, "full")).toBe("auto");
+  });
+
+  test("a fling cannot leave the available states", () => {
+    expect(snapTarget(360, -2000, fits, "auto")).toBe("auto");
+    expect(snapTarget(150, 2000, fits, "peek")).toBe("peek");
   });
 
   test("below fling speed the position still decides", () => {
-    expect(snapTarget(280, -(FLING_VELOCITY - 1), h)).toBe("collapsed");
-    expect(snapTarget(620, FLING_VELOCITY - 1, h)).toBe("expanded");
-  });
-
-  test("nothing to expand into: always collapsed", () => {
-    expect(snapTarget(700, -3000, sheetHeights(700, 640))).toBe("collapsed");
+    expect(snapTarget(200, -(FLING_VELOCITY - 1), fits, "auto")).toBe("peek");
   });
 });

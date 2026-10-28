@@ -1,55 +1,97 @@
-// Geometry of the draggable copilot sheet: two resting heights (the content's own height and a
-// tall state that leaves the top of the map visible) and the rules for the drag in between.
+// Geometry of the draggable copilot sheet. Three resting heights, all derived from the content:
+//   peek  - grabber, the first header line and the controls row; the rest hidden (see the map)
+//   auto  - the content's natural height, where every phase starts
+//   full  - only when the body is clipped in auto: the whole content, capped at FULL_SHARE of the
+//           window, with the body scrolling. Never empty space.
 // Pure functions so the snap decision can be tested without a gesture; every one is a worklet
 // because the gesture callbacks call them on the UI thread.
 
-export type SheetHeights = { collapsed: number; expanded: number };
-export type SnapState = "collapsed" | "expanded";
+export type SnapState = "peek" | "auto" | "full";
+export type SheetHeights = { peek: number; auto: number; full?: number };
 
-/** Share of the window the tall sheet takes; the rest (top ~25%) stays map. */
-export const EXPANDED_SHARE = 0.75;
+/** Measurements the sheet takes with onLayout while resting in auto. */
+export type SheetMeasure = {
+  /** Height of everything but the hidden part of the body: grabber + first header line + controls. */
+  peek: number;
+  /** The sheet's natural height. */
+  auto: number;
+  /** Height the sheet would need to show the whole body unclipped. */
+  content: number;
+  window: number;
+};
 
+/** Cap of the full state, so the map keeps its top strip. */
+export const FULL_SHARE = 0.85;
 /** Finger speed (px/s) from which the direction of the fling decides, not the position. */
 export const FLING_VELOCITY = 600;
+/** How far the sheet stretches past its last state before it springs back. */
+export const RUBBER_MAX = 24;
 
-/** The tall state never ends up shorter than the content it replaces. */
-export function sheetHeights(collapsed: number, expanded: number): SheetHeights {
+/** The resting heights. `full` exists only when auto clips the body. */
+export function sheetHeights(m: SheetMeasure): SheetHeights {
   "worklet";
-  return { collapsed, expanded: Math.max(collapsed, expanded) };
+  const auto = Math.max(0, m.auto);
+  const peek = Math.min(auto, Math.max(0, m.peek));
+  const h: SheetHeights = { peek, auto };
+  if (m.content > auto + 1) h.full = Math.max(auto, Math.min(m.content, m.window * FULL_SHARE));
+  return h;
 }
 
-/** Height of the sheet at `progress` (0 = collapsed, 1 = expanded). */
-export function heightAt(progress: number, h: SheetHeights): number {
+/** States the sheet can rest in, shortest first. */
+export function availableStates(h: SheetHeights): SnapState[] {
   "worklet";
-  return h.collapsed + (h.expanded - h.collapsed) * progress;
+  const states: SnapState[] = h.peek < h.auto ? ["peek", "auto"] : ["auto"];
+  if (h.full !== undefined && h.full > h.auto) states.push("full");
+  return states;
 }
 
-/** Progress for a height; 0 when the two states coincide (nothing to expand into). */
-export function progressFor(height: number, h: SheetHeights): number {
+/** Height of a state; a missing full state is the auto height. */
+export function stateHeight(s: SnapState, h: SheetHeights): number {
   "worklet";
-  const span = h.expanded - h.collapsed;
-  if (span <= 0) return 0;
-  return Math.min(1, Math.max(0, (height - h.collapsed) / span));
+  if (s === "peek") return h.peek;
+  if (s === "full") return h.full ?? h.auto;
+  return h.auto;
+}
+
+/** Overshoot `o` px past an end, softened: asymptotic to RUBBER_MAX. */
+export function rubberBand(o: number): number {
+  "worklet";
+  return (RUBBER_MAX * o) / (o + RUBBER_MAX);
 }
 
 /**
- * Progress after the finger moved `translationY` px (positive = down, as the gesture reports it)
- * from a drag that began at `startProgress`. Clamped: the sheet does not stretch past either state.
+ * Sheet height after the finger moved `translationY` px (positive = down, as the gesture reports
+ * it) from a drag that began at `startHeight`. Past the shortest or tallest state it stretches
+ * by a rubber band of at most RUBBER_MAX px.
  */
-export function dragProgress(startProgress: number, translationY: number, h: SheetHeights): number {
+export function dragHeight(startHeight: number, translationY: number, h: SheetHeights): number {
   "worklet";
-  return progressFor(heightAt(startProgress, h) - translationY, h);
+  const min = h.peek;
+  const max = h.full ?? h.auto;
+  const raw = startHeight - translationY;
+  if (raw > max) return max + rubberBand(raw - max);
+  if (raw < min) return min - rubberBand(min - raw);
+  return raw;
 }
 
 /**
- * Where a released sheet goes. A fling (|velocityY| >= FLING_VELOCITY) is obeyed: finger moving
- * up expands, down collapses. Slower releases snap to the nearer of the two heights.
+ * Where a released sheet goes. A fling (|velocityY| >= FLING_VELOCITY) moves one state from
+ * `from` in its direction (up = taller); slower releases snap to the nearest available height.
  */
-export function snapTarget(height: number, velocityY: number, h: SheetHeights): SnapState {
+export function snapTarget(height: number, velocityY: number, h: SheetHeights, from: SnapState): SnapState {
   "worklet";
-  if (h.expanded <= h.collapsed) return "collapsed";
-  if (velocityY <= -FLING_VELOCITY) return "expanded";
-  if (velocityY >= FLING_VELOCITY) return "collapsed";
-  const mid = (h.collapsed + h.expanded) / 2;
-  return height >= mid ? "expanded" : "collapsed";
+  const states = availableStates(h);
+  const at = Math.max(0, states.indexOf(from));
+  if (velocityY <= -FLING_VELOCITY) return states[Math.min(states.length - 1, at + 1)];
+  if (velocityY >= FLING_VELOCITY) return states[Math.max(0, at - 1)];
+  let best = states[0];
+  let bestD = Infinity;
+  for (let i = 0; i < states.length; i++) {
+    const d = Math.abs(stateHeight(states[i], h) - height);
+    if (d < bestD) {
+      bestD = d;
+      best = states[i];
+    }
+  }
+  return best;
 }

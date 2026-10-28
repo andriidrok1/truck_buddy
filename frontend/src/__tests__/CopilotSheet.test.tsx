@@ -5,10 +5,10 @@ import { CopilotSheet } from "../components/CopilotSheet";
 
 // Reanimated's native worklets are not installed under jest: plain views, no-op animations.
 jest.mock("react-native-reanimated", () => {
-  const { View, Text } = jest.requireActual<typeof import("react-native")>("react-native");
+  const { View, Text, ScrollView } = jest.requireActual<typeof import("react-native")>("react-native");
   return {
     __esModule: true,
-    default: { View, Text },
+    default: { View, Text, ScrollView },
     useSharedValue: (v: unknown) => {
       const sv = { value: v, get: () => sv.value, set: (n: unknown) => void (sv.value = n) };
       return sv;
@@ -105,9 +105,20 @@ describe("CopilotSheet text mode", () => {
     expect(screen.queryByTestId("copilot-text-input")).toBeNull();
   });
 
-  test("the grabber is there to drag", async () => {
+  test("the grabber is there to drag and tap", async () => {
     await render(sheet());
     expect(screen.getByTestId("sheet-grabber")).toBeTruthy();
     expect(screen.getByTestId("sheet-body")).toBeTruthy();
+    expect(screen.getByTestId("sheet-grabber").props.accessibilityLabel).toBe("Hide details");
+  });
+
+  test("no full state when the content fits: the body does not scroll; a clipped body does", async () => {
+    await render(sheet());
+    const body = screen.getByTestId("sheet-body");
+    await fireEvent(body, "layout", { nativeEvent: { layout: { x: 0, y: 0, width: 390, height: 200 } } });
+    await fireEvent(body, "contentSizeChange", 390, 200);
+    expect(screen.getByTestId("sheet-body").props.scrollEnabled).toBe(false);
+    await fireEvent(body, "contentSizeChange", 390, 640);
+    expect(screen.getByTestId("sheet-body").props.scrollEnabled).toBe(true);
   });
 });

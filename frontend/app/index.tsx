@@ -101,6 +101,10 @@ export default function MapScreen() {
 
   const [topH, setTopH] = useState(140);
   const [sheetH, setSheetH] = useState(260);
+  // The sheet's peek height while the driver has pulled it down; the map keeps sheetH as its inset
+  // (no camera refit on a drag) but the chrome above the sheet moves down into the freed room.
+  const [peekH, setPeekH] = useState<number | null>(null);
+  const chromeBottom = (peekH ?? sheetH) + spacing.lg;
   const [phase, setPhase] = useState<Phase>("ready");
   // Mirrors of the state the async handlers read after an await (they outlive the render that
   // made them). Written at commit, so a handler never sees a value from an uncommitted render.
@@ -1278,13 +1282,13 @@ export default function MapScreen() {
             setTracking(true);
           }
         }}
-        containerStyle={[styles.recenter, { bottom: sheetH + spacing.lg }]}
+        containerStyle={[styles.recenter, { bottom: chromeBottom }]}
         style={[styles.recenterBtn, shadow(colors), { backgroundColor: following ? colors.info : colors.surface }]}
       >
         <Icon name={following ? "navigation-variant" : "crosshairs-gps"} size={24} color={following ? colors.onInfo : colors.info} />
       </PressableScale>
 
-      <CaptionBubble text={caption?.reply ?? null} heard={caption?.heard} bottom={sheetH + spacing.lg} />
+      <CaptionBubble text={caption?.reply ?? null} heard={caption?.heard} bottom={chromeBottom} />
 
       <CopilotSheet
         phase={phase}
@@ -1309,18 +1313,19 @@ export default function MapScreen() {
         offlineMap={offlineMap.state}
         onDownloadMap={offlineMap.download}
         onLayout={setSheetH}
+        onPeekHeight={setPeekH}
         wakePhrase={wake.active ? wake.phrase : null}
         panel={providers ? <ProvidersList data={providers} onRoute={(p) => onPlacePress(providerPlace(p))} /> : null}
       />
 
       {routesOpen && active && !driving && !!active.route.alternatives?.length && (
-        <AlternativesSheet primary={active.route} bottom={sheetH + spacing.lg} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
+        <AlternativesSheet primary={active.route} bottom={chromeBottom} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
       )}
 
       {micCard && (
         <MicPermissionCard
           state={micCard}
-          bottom={sheetH + spacing.lg}
+          bottom={chromeBottom}
           onAllow={onAllowMic}
           onDismiss={() => setMicCard(null)}
         />

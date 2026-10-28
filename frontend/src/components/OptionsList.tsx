@@ -1,4 +1,4 @@
-import { ActivityIndicator, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { categoryColor, categoryIcon } from "../constants";
@@ -15,6 +15,8 @@ type Props = {
   parking: Record<string, ParkingState>;
   onParking: (p: Place) => void;
   onRoute: (p: Place) => void;
+  /** Layout of the "N found nearby" line (the sheet keeps it visible when peeked). */
+  onTitleLayout?: (e: LayoutChangeEvent) => void;
 };
 
 function Rating({ place }: { place: Place }) {
@@ -113,20 +115,19 @@ function OptionCard({ place, state, onParking, onRoute, index }: { place: Place;
   );
 }
 
-/** Scrollable list of places found by the copilot. */
-export function OptionsList({ options, parking, onParking, onRoute }: Props) {
+/** List of places found by the copilot; the sheet body it sits in does the scrolling. */
+export function OptionsList({ options, parking, onParking, onRoute, onTitleLayout }: Props) {
   const { colors } = useTheme();
-  const { height } = useWindowDimensions();
   return (
     <View testID="options-list">
-      <Text testID="options-title" style={[styles.title, { color: colors.onSurface }]}>
+      <Text testID="options-title" onLayout={onTitleLayout} style={[styles.title, { color: colors.onSurface }]}>
         {options.length} found nearby
       </Text>
-      <ScrollView style={{ maxHeight: height * 0.45 }} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+      <View style={styles.list}>
         {options.map((p, i) => (
           <OptionCard key={p.id} index={i} place={p} state={parking[p.id]} onParking={() => onParking(p)} onRoute={() => onRoute(p)} />
         ))}
-      </ScrollView>
+      </View>
     </View>
   );
 }
