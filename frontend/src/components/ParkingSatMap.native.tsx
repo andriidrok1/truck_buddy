@@ -2,14 +2,18 @@ import { Platform, StyleSheet } from "react-native";
 import MapView, { Polyline, UrlTile } from "react-native-maps";
 
 import { useTheme } from "../theme";
-import { ViewMarker } from "./MapLayer.native";
+import { ViewMarker } from "./MapLayerApple.native";
 import { ESRI_TILES, frameSpan, type ParkingSatMapProps } from "./mapTypes";
 import { Pin } from "./Pin";
 import { SpotBadge } from "./SpotBadge";
 
 const toCoord = (lat: number, lng: number) => ({ latitude: lat, longitude: lng });
 
-/** Zoomable satellite map of the parking check frame (Esri imagery, same as the verdict). */
+/**
+ * Zoomable satellite map of the parking check frame (Esri imagery, same as the verdict).
+ * Stays on react-native-maps whatever the main map's provider: the Esri tiles are online-only,
+ * so there is nothing an offline pack could add here.
+ */
 export default function ParkingSatMap({ center, place, spots, tail }: ParkingSatMapProps) {
   const { colors } = useTheme();
   const { dLat, dLng } = frameSpan(center.lat);

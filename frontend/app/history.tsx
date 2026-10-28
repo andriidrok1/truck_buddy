@@ -29,16 +29,20 @@ export default function HistoryScreen() {
   const [error, setError] = useState(false);
   const listRef = useRef<FlatList<MemoryTurn>>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const r = await api.memory();
-      setTurns(r.turns); // oldest first, like a chat; the list scrolls to the newest
-      setError(false);
-    } catch {
-      setError(true);
-      setTurns((t) => t ?? []);
-    }
-  }, []);
+  const load = useCallback(
+    () =>
+      api
+        .memory()
+        .then((r) => {
+          setTurns(r.turns); // oldest first, like a chat; the list scrolls to the newest
+          setError(false);
+        })
+        .catch(() => {
+          setError(true);
+          setTurns((t) => t ?? []);
+        }),
+    [],
+  );
 
   useEffect(() => {
     load();

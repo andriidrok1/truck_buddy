@@ -7,7 +7,7 @@
 //
 // Namespaces: general KV -> getItem/setItem/removeItem (AsyncStorage);
 //             tokens/secrets -> secureGet/secureSet/secureRemove (Keychain).
-// Values are auto JSON-serialized (string|number|boolean|null) in this implementation — never JSON.stringify/parse yourself.
+// Values are auto JSON-serialized (string|number|boolean|null, or a plain object/array) in this implementation — never JSON.stringify/parse yourself.
 // Helpers NEVER throw: a miss returns `fallback`, a failed write returns `false` (failures are SILENT).
 // 
 // Use async/await for all storage operations.

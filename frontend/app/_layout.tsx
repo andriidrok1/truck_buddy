@@ -2,6 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useEffect } from "react";
 import { LogBox, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "@/src/keyboard";
@@ -11,6 +12,7 @@ import { ConsentGate } from "@/src/components/ConsentGate";
 import { DeviceGate } from "@/src/components/DeviceGate";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { useConsent } from "@/src/consent";
+import { loadEldToken } from "@/src/eld";
 import { queryClient } from "@/src/query-client";
 
 // Disable logbox errors etc so that users can see the app
@@ -20,6 +22,10 @@ LogBox.ignoreAllLogs(true);
 export default function RootLayout() {
   const auth = useAuthState();
   const consent = useConsent();
+  // The Motive key is read alongside the auth token so the first copilot request already carries it.
+  useEffect(() => {
+    loadEldToken();
+  }, []);
   // Pre-load the icon font (prevents blank icons in Expo Go) and app fonts.
   const [loaded, error] = useFonts({
     MaterialDesignIcons: require("@react-native-vector-icons/material-design-icons/fonts/MaterialDesignIcons.ttf"),

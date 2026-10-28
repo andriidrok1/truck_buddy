@@ -13,9 +13,11 @@ export type TruckProfile = {
   avoid_ferries_tunnels?: boolean;
   favorite_chains?: string[];
   break_hours?: number | null;
+  /** Tire chains on the truck; null = never asked (the copilot asks when a chain control is ahead). */
+  chains_on_board?: boolean | null;
 };
 
-export const DEFAULT_TRUCK: TruckProfile = { height_in: 162, trailer_ft: 53, weight_lb: 80000, hazmat: false };
+export const DEFAULT_TRUCK: TruckProfile = { height_in: 162, trailer_ft: 53, weight_lb: 80000, hazmat: false, chains_on_board: null };
 const KEY = "truck_profile_v1";
 const ONBOARDED_KEY = "onboarded_v1";
 
@@ -36,17 +38,31 @@ let current: TruckProfile = DEFAULT_TRUCK;
 let loaded = false;
 const listeners = new Set<(t: TruckProfile) => void>();
 
+/**
+ * What `storage.getItem(KEY)` hands back. Older builds saved `JSON.stringify(profile)` through a
+ * wrapper that stringifies again, so the stored document was a JSON string holding JSON; current
+ * builds save the object itself. Both decode here; anything else (corrupt, wrong type) is null.
+ */
+export function parseStoredProfile(raw: unknown): Partial<TruckProfile> | null {
+  let value: unknown = raw;
+  try {
+    // Up to two string layers: the double-encoded form, then the single-encoded one.
+    for (let i = 0; i < 2 && typeof value === "string"; i++) value = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Partial<TruckProfile>;
+}
+
 async function load() {
   if (loaded) return;
   loaded = true;
-  const raw = await storage.getItem(KEY, null);
-  if (typeof raw === "string") {
-    try {
-      current = { ...DEFAULT_TRUCK, ...JSON.parse(raw) };
-      listeners.forEach((l) => l(current));
-    } catch {
-      // keep defaults on a corrupt value
-    }
+  const raw = await storage.getItem<Record<string, unknown> | string | null>(KEY, null);
+  const parsed = parseStoredProfile(raw);
+  if (parsed) {
+    current = { ...DEFAULT_TRUCK, ...parsed };
+    listeners.forEach((l) => l(current));
   }
 }
 
@@ -65,7 +81,7 @@ export const takeTruckReroute = () => {
 export async function saveTruckProfile(t: TruckProfile) {
   current = t;
   listeners.forEach((l) => l(t));
-  await storage.setItem(KEY, JSON.stringify(t));
+  await storage.setItem(KEY, t); // the wrapper serialises once; load() still reads the older double-encoded form
 }
 
 export function getTruckProfile() {
@@ -97,6 +113,67 @@ export function useHandsFree() {
     }
     return () => {
       handsFreeListeners.delete(setValue);
+    };
+  }, []);
+  return value;
+}
+
+// Nudges while driving (on by default): "break coming due", "chains ahead", parking offers.
+// The copilot's set_nudges action and a future settings switch share this.
+const NUDGES_KEY = "nudges_v1";
+let nudgesEnabled = true;
+let nudgesLoaded = false;
+const nudgesListeners = new Set<(v: boolean) => void>();
+
+export async function setNudgesEnabled(v: boolean) {
+  nudgesEnabled = v;
+  nudgesListeners.forEach((l) => l(v));
+  await storage.setItem(NUDGES_KEY, v);
+}
+
+export function useNudgesEnabled() {
+  const [value, setValue] = useState(nudgesEnabled);
+  useEffect(() => {
+    nudgesListeners.add(setValue);
+    if (!nudgesLoaded) {
+      nudgesLoaded = true;
+      storage.getItem(NUDGES_KEY, true as boolean).then((v) => {
+        nudgesEnabled = v !== false;
+        nudgesListeners.forEach((l) => l(nudgesEnabled));
+      });
+    }
+    return () => {
+      nudgesListeners.delete(setValue);
+    };
+  }, []);
+  return value;
+}
+
+// Speed limit alerts (off by default: posted limits come from map data and can be stale).
+const SPEED_ALERTS_KEY = "speed_alerts_v1";
+let speedAlerts = false;
+let speedAlertsLoaded = false;
+const speedAlertsListeners = new Set<(v: boolean) => void>();
+
+export async function setSpeedAlerts(v: boolean) {
+  speedAlerts = v;
+  speedAlertsListeners.forEach((l) => l(v));
+  await storage.setItem(SPEED_ALERTS_KEY, v);
+}
+
+export function useSpeedAlerts() {
+  const [value, setValue] = useState(speedAlerts);
+  useEffect(() => {
+    speedAlertsListeners.add(setValue);
+    if (!speedAlertsLoaded) {
+      speedAlertsLoaded = true;
+      storage.getItem(SPEED_ALERTS_KEY, false as boolean).then((v) => {
+        speedAlerts = v === true;
+        speedAlertsListeners.forEach((l) => l(speedAlerts));
+      });
+    }
+    return () => {
+      speedAlertsListeners.delete(setValue);
     };
   }, []);
   return value;

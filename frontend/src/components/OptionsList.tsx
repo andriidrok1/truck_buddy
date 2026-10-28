@@ -1,12 +1,14 @@
 import { ActivityIndicator, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
-import { categoryColor, CATEGORY_ICON } from "../constants";
+import { categoryColor, categoryIcon } from "../constants";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import type { ParkingState, Place } from "../types";
 import { Icon } from "./Icon";
+import { ParkingLiveBadge } from "./ParkingLiveBadge";
 import { ParkingStatus } from "./ParkingStatus";
 import { PressableScale } from "./PressableScale";
+import { reviewsGistLine } from "./ReviewsGist";
 
 type Props = {
   options: Place[];
@@ -37,6 +39,7 @@ function OptionCard({ place, state, onParking, onRoute, index }: { place: Place;
   const { colors } = useTheme();
   const tint = categoryColor(colors, place.category);
   const description = place.summary || place.address;
+  const gist = reviewsGistLine(place.reviews, place.rating);
   return (
     <Animated.View
       entering={FadeInDown.delay(index * 50).duration(220)}
@@ -45,7 +48,7 @@ function OptionCard({ place, state, onParking, onRoute, index }: { place: Place;
     >
       <View style={styles.topRow}>
         <View style={[styles.catIcon, { backgroundColor: tint }]}>
-          <Icon name={CATEGORY_ICON[place.category]} size={16} color={colors.onCategory} />
+          <Icon name={categoryIcon(place.category)} size={16} color={colors.onCategory} />
         </View>
         <View style={styles.titleCol}>
           <Text testID={`option-name-${place.id}`} numberOfLines={1} style={[styles.name, { color: colors.onSurface }]}>
@@ -62,6 +65,12 @@ function OptionCard({ place, state, onParking, onRoute, index }: { place: Place;
               </Text>
             )}
           </View>
+          {!!gist && (
+            <Text testID={`option-review-gist-${place.id}`} numberOfLines={1} style={[styles.gist, { color: colors.onSurfaceSecondary }]}>
+              {gist}
+            </Text>
+          )}
+          <ParkingLiveBadge place={place} idSuffix={`-${place.id}`} />
         </View>
       </View>
 
@@ -134,6 +143,7 @@ const styles = StyleSheet.create({
   ratingRow: { flexDirection: "row", alignItems: "center", gap: 3 },
   ratingText: { fontFamily: fonts.semibold, fontSize: 14 },
   meta: { fontFamily: fonts.medium, fontSize: 13 },
+  gist: { fontFamily: fonts.regular, fontSize: 12, marginTop: 2 },
   desc: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 18 },
   btnRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
   btnItem: { flex: 1 },

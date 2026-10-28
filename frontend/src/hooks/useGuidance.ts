@@ -1,75 +1,95 @@
 import { useEffect, useMemo, useRef } from "react";
 
+import { limitAt } from "../geo/advisories";
+import { announcement, createRouteMatcher, markSpoken, nextManeuver, stageFor } from "../geo/guidance";
+import { createOffRouteTracker, thresholdM } from "../geo/offroute";
 import type { ActiveRoute, LatLng, Maneuver } from "../types";
+import { PRIORITY } from "../voice/queue";
+import type { SayOptions } from "./useSpeechQueue";
 
-const R = 6371000;
-function meters(a: LatLng, b: LatLng) {
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const s = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(s));
-}
+export { formatDistance } from "../geo/guidance";
 
-/** "0.4 mi" / "500 ft" for the banner. */
-export function formatDistance(m: number) {
-  const ft = m * 3.28084;
-  if (ft < 1000) return `${Math.max(50, Math.round(ft / 50) * 50)} ft`;
-  const mi = m / 1609.34;
-  return mi < 10 ? `${mi.toFixed(1)} mi` : `${Math.round(mi)} mi`;
-}
+/** One GPS fix: position plus what the off-route tracker needs. */
+export type DriverFix = LatLng & {
+  /** m/s; null when the platform does not report it. */
+  speed?: number | null;
+  /** Horizontal accuracy radius, metres; null when unknown. */
+  accuracy?: number | null;
+  /** Fix time, epoch ms; 0 or missing = no real fix yet (the demo fallback), never tracked. */
+  ts?: number;
+};
 
-/** Spoken lead-in before the maneuver: "In half a mile", "In 500 feet". */
-function spokenDistance(m: number) {
-  if (m > 1200) return "In about a mile";
-  if (m > 600) return "In half a mile";
-  return "In 500 feet";
-}
+export type Guidance = {
+  next: Maneuver | null;
+  toNextM: number;
+  remainingM: number;
+  remainingS: number;
+  /** Route segment the truck is on (vertex index of its start); -1 without a route. */
+  matchedIndex: number;
+  /** Metres travelled along the route to the projected position. */
+  alongM: number;
+  /** Metres from the truck to the route (off-route signal). */
+  distM: number;
+  /** cum[i] = metres from the route start to vertex i (see cumulativeMeters). */
+  cum: readonly number[];
+  /** Posted limit on the current segment, null when the route has none here. */
+  limitMph: number | null;
+  /** Off-route distance in use for the current fix. */
+  thresholdM: number;
+  /** True on the tick the tracker decided the truck has left the route; false again on the next fix. */
+  offRoute: boolean;
+  /** Forget the off-route count and cooldown (a reroute just landed). */
+  resetOffRoute: () => void;
+};
 
-// Announce once ~1 mi out, once ~0.5 mi / 500 ft out, then right at the turn.
-const STAGES = [
-  { key: "far", max: 1800, min: 1000 },
-  { key: "near", max: 900, min: 120 },
-  { key: "now", max: 90, min: 0 },
-];
-
-export type Guidance = { next: Maneuver | null; toNextM: number; remainingM: number; remainingS: number };
+const NO_CUM: readonly number[] = [0];
+const noop = () => {};
+const EMPTY: Guidance = {
+  next: null, toNextM: 0, remainingM: 0, remainingS: 0, matchedIndex: -1, alongM: 0, distM: 0,
+  cum: NO_CUM, limitMph: null, thresholdM: 30, offRoute: false, resetOffRoute: noop,
+};
 
 /** Turn-by-turn state from the driver position along the route; speaks maneuvers when `voiceOn`. */
 export function useGuidance(
   active: ActiveRoute | null,
-  driver: LatLng,
+  driver: DriverFix,
   driving: boolean,
   voiceOn: boolean,
-  say: (text: string) => void,
+  say: (text: string, opts: SayOptions) => void,
+  /** Called once per off-route verdict with the guidance state of that fix (the map screen reroutes). */
+  onOffRoute?: (g: Guidance) => void,
 ): Guidance {
-  // Cumulative distance along the polyline, once per route.
-  const cum = useMemo(() => {
-    const g = active?.route.geometry ?? [];
-    const out = [0];
-    for (let i = 1; i < g.length; i++) {
-      out.push(out[i - 1] + meters({ lat: g[i - 1][0], lng: g[i - 1][1] }, { lat: g[i][0], lng: g[i][1] }));
-    }
-    return out;
-  }, [active?.route.geometry]);
+  // Cumulative distances once per route, plus the last matched segment so each fix only searches
+  // around it. A new geometry object gets a fresh matcher, so the hint resets with the route.
+  const matcher = useMemo(() => createRouteMatcher(active?.route.geometry ?? []), [active?.route.geometry]);
+  // The off-route tracker lives and dies with the route too: a reroute hands back a new geometry
+  // (and handle), and its count must not carry over.
+  const handle = active?.route.handle;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the deps are the reset trigger, not inputs
+  const tracker = useMemo(() => createOffRouteTracker(), [active?.route.geometry, handle]);
 
   const state = useMemo<Guidance>(() => {
     const route = active?.route;
-    if (!route || !route.geometry.length) return { next: null, toNextM: 0, remainingM: 0, remainingS: 0 };
-    let best = 0;
-    let bestD = Infinity;
-    route.geometry.forEach(([lat, lng], i) => {
-      const d = meters(driver, { lat, lng });
-      if (d < bestD) {
-        bestD = d;
-        best = i;
-      }
-    });
+    if (!route || !route.geometry.length) return EMPTY;
+    const { cum } = matcher;
+    const m = matcher.match(driver);
     const total = cum[cum.length - 1] || 1;
-    const remainingM = Math.max(0, total - cum[best]);
-    const next = (route.maneuvers ?? []).find((m) => m.index > best) ?? null;
-    const toNextM = next ? Math.max(0, cum[Math.min(next.index, cum.length - 1)] - cum[best]) : remainingM;
-    return { next, toNextM, remainingM, remainingS: (route.duration_s * remainingM) / total };
-  }, [active?.route, driver, cum]);
+    const remainingM = Math.max(0, total - m.alongM);
+    const next = nextManeuver(route, m.index);
+    const toNextM = next ? Math.max(0, cum[Math.min(next.index, cum.length - 1)] - m.alongM) : remainingM;
+    const limitMph = limitAt(route.speed_limits, m.index);
+    const speed = driver.speed ?? null;
+    const threshold = thresholdM(limitMph, speed);
+    // ts 0 = the demo fallback, never a real fix. The tracker replays its verdict for a fix it has
+    // already seen, so a memo re-run on the same fix does not count it twice.
+    const ts = driver.ts ?? 0;
+    const offRoute = ts > 0 && tracker.push({ distM: m.distM, speed, accuracy: driver.accuracy ?? null, ts, thresholdM: threshold }) === "off";
+    return {
+      next, toNextM, remainingM, remainingS: (route.duration_s * remainingM) / total,
+      matchedIndex: m.index, alongM: m.alongM, distM: m.distM, cum,
+      limitMph, thresholdM: threshold, offRoute, resetOffRoute: tracker.reset,
+    };
+  }, [active?.route, driver, matcher, tracker]);
 
   const spoken = useRef(new Set<string>());
   useEffect(() => {
@@ -79,16 +99,24 @@ export function useGuidance(
   useEffect(() => {
     const { next, toNextM } = state;
     if (!driving || !voiceOn || !next) return;
-    const stage = STAGES.find((s) => toNextM <= s.max && toNextM >= s.min);
+    const stage = stageFor(toNextM, next.index, spoken.current);
     if (!stage) return;
-    const key = `${next.index}-${stage.key}`;
-    if (spoken.current.has(key)) return;
-    // Saying the far/near call also counts for the stages above it.
-    STAGES.slice(0, STAGES.indexOf(stage) + 1).forEach((s) => spoken.current.add(`${next.index}-${s.key}`));
-    const text = next.action === "arrive" ? next.instruction : stage.key === "now" ? next.instruction : `${spokenDistance(toNextM)}, ${next.instruction.charAt(0).toLowerCase()}${next.instruction.slice(1)}`;
-    say(`${text}.`);
+    markSpoken(spoken.current, next.index, stage);
+    // A due turn beats everything and is stale after 8 s; far/near calls share a key, so an
+    // unplayed far call is replaced by the near one instead of playing late.
+    const opts: SayOptions =
+      stage === "now"
+        ? { priority: PRIORITY.MANEUVER_NOW, ttlMs: 8000, key: `m-${next.index}-now`, kind: "maneuver" }
+        : { priority: PRIORITY.MANEUVER, ttlMs: 30000, key: `m-${next.index}`, kind: "maneuver" };
+    say(announcement(next, stage, toNextM), opts);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, driving, voiceOn]);
+
+  // One call per verdict: `state` only changes with the fix, and the verdict is true for one fix.
+  useEffect(() => {
+    if (state.offRoute) onOffRoute?.(state);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.offRoute, state]);
 
   return state;
 }

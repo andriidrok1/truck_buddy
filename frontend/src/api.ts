@@ -1,20 +1,33 @@
 import { authHeader, requestCode, setToken } from "./auth";
+import { eldHeader } from "./eld";
 import { getTruckProfile } from "./hooks/useTruckProfile";
+import { isNetworkError, offlineHint } from "./net/offlineHint";
 import { uploadForm } from "./utils/upload";
-import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
+import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, Nudge, NudgeRequest, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
+import { BASE } from "./url";
 
-const ORIGIN = process.env.EXPO_PUBLIC_BACKEND_URL;
-if (!ORIGIN) {
-  // Fail loudly at load time: without it every request would go to "undefined/api" and look like a dead connection.
-  throw new Error("EXPO_PUBLIC_BACKEND_URL is not set (eas.json build env, or frontend/.env for local runs)");
-}
-const BASE = `${ORIGIN}/api`;
-
-export const absoluteUrl = (path: string) => `${ORIGIN}${path}`;
-
-export const apiUrl = (path: string) => `${BASE}${path}`;
+// ./url throws at load time when EXPO_PUBLIC_BACKEND_URL is missing, so importing this module still fails loudly.
+export { absoluteUrl, apiUrl } from "./url";
 
 export type MemoryTurn = { role: "driver" | "copilot"; text: string; at: string };
+
+export type RouteResult = { place: Place; route: RouteInfo; parking?: ParkingCheck | null };
+
+/** POST /api/reroute (truck_profile is added by the client). */
+export type RerouteBody = {
+  lat: number;
+  lng: number;
+  place: Place;
+  /** RouteInfo.handle of the route being left; null when the backend never sent one. */
+  handle?: string | null;
+  /** Degrees 0..359 from the GPS fix; null when standing still / unknown. */
+  heading?: number | null;
+  /** Index into RouteInfo.section_starts of the section the truck was in (0 without sections). */
+  section_index: number;
+  /** Metres driven into that section. */
+  traveled_m: number;
+  via?: [number, number][];
+};
 
 /** A rejected token (expired / code changed) sends the driver back to the access-code screen. */
 function check(res: Response, path: string) {
@@ -38,6 +51,15 @@ async function json<T>(res: Response, path: string): Promise<T> {
 
 const DEFAULT_TIMEOUT_MS = 30000;
 
+/** AgentRequest.speed_mps accepts 0..60; the GPS reports null or a negative value when it has no idea. */
+const MAX_SPEED_MPS = 60;
+
+/** GPS speed as the agent takes it: m/s to one decimal, capped; undefined (left out) when unknown. */
+export function speedForAgent(speed: number | null | undefined): number | undefined {
+  if (typeof speed !== "number" || !Number.isFinite(speed) || speed < 0) return undefined;
+  return Math.round(Math.min(speed, MAX_SPEED_MPS) * 10) / 10;
+}
+
 /** Aborts after `ms`, or as soon as the caller's own signal aborts (no AbortSignal.any on Hermes). */
 function deadline(ms: number, outer?: AbortSignal | null) {
   const ctrl = new AbortController();
@@ -54,12 +76,28 @@ function deadline(ms: number, outer?: AbortSignal | null) {
   };
 }
 
+/**
+ * A failed fetch on a link that still shows bars is how a dead zone looks: mark the link offline
+ * for a short window (useOnline reads it); an answer of any status clears the mark.
+ */
+async function fetchTracked(url: string, init: RequestInit): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch (e) {
+    if (!init.signal?.aborted && isNetworkError(e)) offlineHint.mark(Date.now());
+    throw e;
+  }
+  offlineHint.clear();
+  return res;
+}
+
 /** A stalled cell connection must never leave a screen spinning forever: every call has a deadline. */
 async function request<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, ...rest } = init ?? {};
   const d = deadline(timeoutMs, rest.signal);
   try {
-    const res = await fetch(`${BASE}${path}`, {
+    const res = await fetchTracked(`${BASE}${path}`, {
       ...rest,
       signal: d.signal,
       headers: { "Content-Type": "application/json", ...authHeader(), ...(rest.headers ?? {}) },
@@ -121,9 +159,21 @@ export const api = {
   places: (category: Category, at: LatLng) =>
     request<PlacesResponse>(`/places?category=${category}&lat=${at.lat}&lng=${at.lng}`),
   route: (from: LatLng, place: Place, skipParking = false) =>
-    request<{ place: Place; route: RouteInfo; parking?: ParkingCheck | null }>(`/route`, {
+    request<RouteResult>(`/route`, {
       method: "POST",
       body: JSON.stringify({ lat: from.lat, lng: from.lng, place, skip_parking: skipParking, truck_profile: getTruckProfile() }),
+    }),
+  /**
+   * Off-route reroute: the engine resumes the server-side plan (`handle`, section, metres into it)
+   * instead of planning from scratch. Same shape back as /route, with a new `handle`.
+   * 503 = routing down, 422 = outside the US; the caller falls back to /route on any failure.
+   * 15 s: longer than that and the driver has long passed the next turn anyway.
+   */
+  reroute: (body: RerouteBody) =>
+    request<RouteResult>(`/reroute`, {
+      method: "POST",
+      timeoutMs: 15000,
+      body: JSON.stringify({ ...body, truck_profile: getTruckProfile() }),
     }),
   parking: (place: Place, approach?: Approach | null) =>
     request<ParkingCheck>(`/parking`, { method: "POST", body: JSON.stringify({ place, approach }), timeoutMs: 60000 }),
@@ -137,45 +187,83 @@ export const api = {
     request<AgentResponse>(`/agent`, {
       method: "POST",
       timeoutMs: 65000,
+      headers: eldHeader(), // Motive key: the copilot reads hours of service
       body: JSON.stringify({ text, lat: at.lat, lng: at.lng, truck_profile: getTruckProfile() }),
     }),
   speak: (text: string) => request<{ audio_url: string }>(`/speak`, { method: "POST", body: JSON.stringify({ text }) }),
   /** Pre-fetch nearby places (+ parking checks) so the next voice turn hits warm caches. */
   warm: (at: LatLng) => request<{ ok: boolean }>(`/warm?lat=${at.lat}&lng=${at.lng}`, { method: "POST" }),
-  /** Voice turn step 1: speech -> text, shown to the driver right away. */
-  transcribe: async (uri: string, signal?: AbortSignal) => {
+  /**
+   * Voice turn step 1: speech -> text, shown to the driver right away. `stt_ms` is the server's
+   * STT stage when it reports one, else the wall time of this call; agentSpeak forwards it along
+   * with `stt_confidence` (null when the recogniser reports none). `hint` = names to expect,
+   * comma-separated (voice/sttHint.ts); the server takes at most 600 chars.
+   */
+  transcribe: async (uri: string, signal?: AbortSignal, hint?: string) => {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
     const d = deadline(20000, signal); // upload + STT; the server itself gives up on STT after 12 s
+    const t0 = Date.now();
     try {
       const res = await uploadForm(`${BASE}/voice/transcribe`, {
-        fields: {},
+        fields: hint ? { hint: hint.slice(0, 600) } : {},
         files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
-        headers: authHeader(),
+        headers: { ...authHeader(), ...eldHeader() },
         signal: d.signal,
       });
       check(res as Response, "/voice/transcribe");
-      return json<{ transcript: string; timings?: Record<string, number> }>(res, "/voice/transcribe");
+      const out = await json<{ transcript: string; timings?: Record<string, number>; stt_confidence?: number | null }>(res, "/voice/transcribe");
+      return { ...out, stt_ms: out.timings?.stt ?? Date.now() - t0, stt_confidence: out.stt_confidence ?? null };
     } finally {
       d.done();
     }
   },
   /** Voice turn step 2: text -> action + spoken reply. */
-  agentSpeak: (text: string, at: LatLng, active?: ActiveRoute | null, signal?: AbortSignal, sessionId?: string, ui?: UiState) =>
+  agentSpeak: (
+    text: string,
+    at: LatLng,
+    active?: ActiveRoute | null,
+    signal?: AbortSignal,
+    sessionId?: string,
+    ui?: UiState,
+    heading: number | null = null, // degrees from the GPS fix, null when the truck is standing still
+    activeSpeedLimitMph: number | null = null, // posted limit where the truck is, when the route knows it
+    sttMs: number | null = null, // how long speech-to-text took on this turn (server stage, else measured); null for typed text
+    sttConfidence: number | null = null, // 0..1 from /voice/transcribe; null for typed text or when the recogniser gives none
+    speedMps: number | null = null, // GPS speed in m/s as the location hook reports it; left out of the body when unknown
+  ) =>
     request<AgentResponse>(`/agent?speak=true`, {
       method: "POST",
       signal,
       timeoutMs: 65000, // the map screen aborts the turn itself at 60 s
+      headers: eldHeader(), // Motive key: the copilot reads hours of service
       body: JSON.stringify({
         text,
         lat: at.lat,
         lng: at.lng,
+        heading,
+        active_speed_limit_mph: activeSpeedLimitMph,
         truck_profile: getTruckProfile(),
         session_id: sessionId,
         active_place: active?.place,
         active_distance_mi: active?.route.distance_mi,
         active_duration_min: active?.route.duration_min,
         ui,
+        stt_ms: sttMs,
+        stt_confidence: sttConfidence,
+        speed_mps: speedForAgent(speedMps),
       }),
+    }),
+  /**
+   * "Anything to say?" while driving (every few minutes): break and parking nudges, spoken as
+   * ambient lines. The backend keeps an offer pending for the next turn of the same session.
+   */
+  nudges: (body: NudgeRequest, signal?: AbortSignal) =>
+    request<{ nudges: Nudge[] }>(`/nudges`, {
+      method: "POST",
+      signal,
+      timeoutMs: 20000,
+      headers: eldHeader(), // Motive key: hours of service decide when a break is due
+      body: JSON.stringify({ ...body, truck_profile: getTruckProfile() }),
     }),
   /** Breakdown research result (long-poll: waits until the research is done). */
   breakdownResult: (id: string, signal?: AbortSignal) =>

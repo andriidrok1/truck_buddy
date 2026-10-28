@@ -1,0 +1,104 @@
+{
+  "status": "route_set",
+  "transcript": "take me to the nearest truck stop",
+  "category": "truck_stop",
+  "reply": "Heading to Pilot Travel Center, 4.2 miles, about 8 minutes. Diesel is 3.89.",
+  "message": null,
+  "place": {
+    "id": "ChIJpilot-sac-001",
+    "name": "Pilot Travel Center",
+    "category": "truck_stop",
+    "lat": 38.5521,
+    "lng": -121.4211,
+    "tags": ["diesel", "showers", "parking"],
+    "address": "1234 Stockton Blvd, Sacramento, CA 95822",
+    "rating": 4.1,
+    "rating_count": 1832,
+    "summary": "Large lot, scales on site.",
+    "diesel_price": 3.89,
+    "diesel_kind": "truck",
+    "diesel_updated": "2026-10-27T14:05:00Z",
+    "distance_km": 6.8,
+    "distance_mi": 4.2
+  },
+  "route": {
+    "geometry": [
+      [38.5816, -121.4944],
+      [38.5742, -121.4731],
+      [38.5663, -121.4518],
+      [38.559, -121.436],
+      [38.5521, -121.4211]
+    ],
+    "distance_m": 6759,
+    "duration_s": 492,
+    "distance_mi": 4.2,
+    "duration_min": 8,
+    "summary": "US-50 E and Stockton Blvd",
+    "source": "google_routes",
+    "notices": ["Low clearance avoided on 16th St"],
+    "truck_aware": true,
+    "traffic": [
+      {
+        "level": "slow",
+        "points": [
+          [38.5663, -121.4518],
+          [38.559, -121.436]
+        ]
+      }
+    ],
+    "maneuvers": [
+      {
+        "action": "depart",
+        "direction": null,
+        "instruction": "Head east on Capitol Mall",
+        "lat": 38.5816,
+        "lng": -121.4944,
+        "index": 0
+      },
+      {
+        "action": "turn",
+        "direction": "right",
+        "instruction": "Turn right onto US-50 E",
+        "lat": 38.5742,
+        "lng": -121.4731,
+        "index": 1
+      },
+      {
+        "action": "exit",
+        "direction": "right",
+        "instruction": "Take exit 7 for Stockton Blvd",
+        "lat": 38.5663,
+        "lng": -121.4518,
+        "index": 2
+      },
+      {
+        "action": "arrive",
+        "direction": null,
+        "instruction": "Arrive at Pilot Travel Center on the right",
+        "lat": 38.5521,
+        "lng": -121.4211,
+        "index": 4
+      }
+    ],
+    "approach": { "bearing": 135, "compass": "SE", "street": "Stockton Blvd" }
+  },
+  "parking": {
+    "verdict": "listed",
+    "label": "Truck parking listed",
+    "reason": "Place data lists 120 truck spaces.",
+    "source": "place_data",
+    "image_path": null,
+    "entry_tip": "Enter from Stockton Blvd, trucks keep right.",
+    "park_tip": null,
+    "spots": [],
+    "relative": false,
+    "nearby": null
+  },
+  "options": [],
+  "audio_url": "/api/audio/route_set_001.mp3",
+  "audio_url_2": null,
+  "timings": { "stt_ms": 410, "agent_ms": 1920, "tts_ms": 640 },
+  "end_conversation": false,
+  "actions": [{ "type": "set_driving", "value": true }],
+  "source": "agent"
+}

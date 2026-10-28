@@ -6,7 +6,18 @@ import { DEMO_LOCATION } from "../constants";
 import { useSim } from "../sim";
 import type { LatLng } from "../types";
 
-type State = { coords: LatLng; heading: number | null; isDemo: boolean; resolved: boolean };
+type State = {
+  coords: LatLng;
+  heading: number | null;
+  /** m/s from the GPS fix; null when the platform does not report it. */
+  speed: number | null;
+  /** Horizontal accuracy radius in metres; null when unknown. */
+  accuracy: number | null;
+  /** Fix time (epoch ms); 0 while only the demo fallback is shown (no real fix yet). */
+  ts: number;
+  isDemo: boolean;
+  resolved: boolean;
+};
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
@@ -16,7 +27,15 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
  *  Coming back to the app (e.g. after turning location on in Settings) tries again.
  *  A tester's simulated spot (src/sim.ts) overrides both. */
 export function useDriverLocation() {
-  const [state, setState] = useState<State>({ coords: DEMO_LOCATION, heading: null, isDemo: true, resolved: false });
+  const [state, setState] = useState<State>({
+    coords: DEMO_LOCATION,
+    heading: null,
+    speed: null,
+    accuracy: null,
+    ts: 0,
+    isDemo: true,
+    resolved: false,
+  });
   const sim = useSim();
   const sub = useRef<Location.LocationSubscription | null>(null);
   const starting = useRef(false);
@@ -31,6 +50,9 @@ export function useDriverLocation() {
       setState({
         coords: { lat: loc.coords.latitude, lng: loc.coords.longitude },
         heading: loc.coords.heading ?? null,
+        speed: loc.coords.speed ?? null,
+        accuracy: loc.coords.accuracy ?? null,
+        ts: loc.timestamp,
         isDemo: false,
         resolved: true,
       });
@@ -79,6 +101,18 @@ export function useDriverLocation() {
     start();
   }, [start]);
 
-  if (sim) return { coords: sim.coords, heading: sim.heading, isDemo: false, resolved: true, sim, enable };
+  if (sim) {
+    return {
+      coords: sim.coords,
+      heading: sim.heading,
+      speed: sim.speed ?? null,
+      accuracy: sim.accuracy ?? 5,
+      ts: sim.ts ?? 0, // setSim() stamps it; 0 only for a hand-built SimLocation
+      isDemo: false,
+      resolved: true,
+      sim,
+      enable,
+    };
+  }
   return { ...state, sim: null, enable };
 }
