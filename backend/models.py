@@ -336,6 +336,7 @@ class AgentRequest(BaseModel):
     motive_key: Optional[str] = Field(None, max_length=200, exclude=True, repr=False)
     stt_ms: Optional[int] = Field(None, ge=0, le=60000)  # how long /voice/transcribe took, for the turn log
     stt_confidence: Optional[float] = Field(None, ge=0, le=1)  # from /voice/transcribe; low = ask before acting
+    speed_mps: Optional[float] = Field(None, ge=0, le=60)  # GPS speed; at highway speed replies get shorter
 
 
 AgentStatus = Literal["options", "route_set", "chat", "confirm", "no_results", "not_understood", "researching",

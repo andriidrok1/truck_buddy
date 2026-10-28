@@ -24,6 +24,7 @@ from services.parking import cached_parking, check_parking, is_town, listed_in_d
 from services.places import get_places_provider
 from services.routing import get_routing_provider
 from services.flags import on
+from services.speech_text import fit_reply
 from services.timing import stage
 
 logger = logging.getLogger("truckbuddy.agent")
@@ -171,6 +172,29 @@ MAX_HISTORY = 8
 PAST_TURNS = 80  # long-term memory fed to a new dialog (the driver's lines among the last 80 stored turns)
 _SESSIONS: "OrderedDict[str, dict]" = OrderedDict()
 GOODBYE = re.compile(r"\b(bye|goodbye|that's all|that is all|that's it|i'm good|im good|no thanks|nothing else|see you)\b", re.I)
+
+
+FIT_STATUSES = ("chat", "no_results", "not_understood")  # free text; route/options/confirm lines stay whole
+FAST_SENTENCES = 1
+SLOW_SENTENCES = 3
+
+
+def fast_mps() -> float:
+    try:
+        return float(os.environ.get("REPLY_FAST_MPS", "25"))  # 25 m/s = 56 mph
+    except ValueError:
+        return 25.0
+
+
+def at_speed(req: AgentRequest) -> bool:
+    return req.speed_mps is not None and req.speed_mps >= fast_mps()
+
+
+def _fit_for_speed(req: AgentRequest, res: AgentResponse) -> None:
+    """At highway speed a free-text reply is cut to one sentence; parked, up to three (REPLY_FIT=0 turns it off)."""
+    if not on("REPLY_FIT") or req.speed_mps is None or res.status not in FIT_STATUSES:
+        return
+    res.reply = fit_reply(res.reply, FAST_SENTENCES if at_speed(req) else SLOW_SENTENCES)
 
 
 def _session(sid: Optional[str]) -> dict:
@@ -479,6 +503,7 @@ class LlmAgentProvider:
         elif req.session_id in _SESSIONS:
             _adopt_past(_SESSIONS[req.session_id])
         res = await self._handle(req)
+        _fit_for_speed(req, res)
         if res.status == "chat" and GOODBYE.search(req.text or ""):
             res.end_conversation = True
         if driver and res.status != "not_understood":  # saved in the background: the reply (and TTS) never waits on the DB
@@ -568,6 +593,8 @@ class LlmAgentProvider:
         else:
             context += " No route is active."
         ui = req.ui
+        if at_speed(req):
+            context += " The truck is at highway speed: answer in one short sentence."
         context += (f" App: {'driving (navigation started)' if ui.driving else 'not driving yet'};"
                     f" spoken turn directions {'on' if ui.voice_guidance else 'off'};"
                     f" hands-free wake word {'on' if ui.hands_free else 'off (the driver taps the copilot to talk)'};"

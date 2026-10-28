@@ -119,6 +119,14 @@ def split_reply(text: str, clause: bool = True) -> tuple[str, str]:
     return first, sentence_rest
 
 
+def fit_reply(text: str, max_sentences: int) -> str:
+    """The first `max_sentences` sentences of a reply (what a driver at speed has attention for)."""
+    t = " ".join((text or "").split())
+    if max_sentences < 1 or not t:
+        return t
+    return " ".join(SENTENCE_END.split(t)[:max_sentences])
+
+
 def spoken(text: str) -> str:
     t = text or ""
     for rx, rep in _RULES:
