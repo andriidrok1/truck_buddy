@@ -356,7 +356,8 @@ class AgentResponse(BaseModel):
     end_conversation: bool = False  # the dialog reached its end (goodbye / done)
     actions: List[AppAction] = Field(default_factory=list)  # app controls to run (see services/controls.py)
     audio_url: Optional[str] = None  # relative path to the spoken reply (mp3)
-    audio_url_2: Optional[str] = None  # rest of a 2-sentence reply, generated in parallel
+    audio_url_2: Optional[str] = None  # rest of the reply, generated in parallel
+    reply_parts: List[str] = Field(default_factory=list)  # the text behind audio_url and audio_url_2, in order
     timings: dict[str, int] = Field(default_factory=dict)  # ms per pipeline stage (voice turns), n_* = counters
     intent: Optional[str] = None  # what the classifier decided (for logs and the app's debug screen)
     # Breakdown scenario (services/breakdown.py)

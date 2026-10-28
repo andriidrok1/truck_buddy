@@ -17,7 +17,8 @@ load_dotenv(ROOT_DIR / ".env")
 
 from models import AgentRequest, AgentResponse, Category, ParkingCheck, ParkingRequest, Place, PlacesResponse, RerouteRequest, RouteRequest, RouteResponse, TruckProfile  # noqa: E402,E501
 from services.agent import get_agent_provider  # noqa: E402
-from services import breakdown  # noqa: E402
+from services import breakdown, flags  # noqa: E402
+from services.speech_text import split_reply  # noqa: E402
 from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import cached_parking, check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
@@ -190,9 +191,6 @@ async def satellite(lat: float = Query(..., ge=-90, le=90), lng: float = Query(.
     return Response(content=img, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
 
 
-SENTENCE_END = re.compile(r"(?<!\bSt\.)(?<!\bDr\.)(?<!U\.S\.)(?<=[.!?])\s+(?=[A-Z])")
-
-
 async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = None) -> AgentResponse:
     if driver and req.session_id:
         req.session_id = f"{driver}:{req.session_id}"[:64]  # sessions can't be shared across drivers
@@ -203,12 +201,14 @@ async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = Non
 
 async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
     if speak and res.reply:
-        # First sentence is spoken as soon as it's ready; the rest is generated in parallel.
-        first, *rest = SENTENCE_END.split(res.reply.strip(), maxsplit=1)
+        # The first clip (first clause, or first sentence with TTS_CLAUSE_SPLIT=0) is spoken as soon as it's
+        # ready; the rest is generated in parallel and the app plays it right after.
+        first, rest = split_reply(res.reply, clause=flags.on("TTS_CLAUSE_SPLIT"))
+        res.reply_parts = [first, rest] if rest else [first]
         if rest:
-            res.audio_url_2 = f"/api/voice/audio/{voice.synthesize_later(rest[0], previous_text=first)}"
+            res.audio_url_2 = f"/api/voice/audio/{voice.synthesize_later(rest, previous_text=first)}"
         with timing.stage("tts"):
-            audio_id = await voice.synthesize(first, next_text=rest[0] if rest else None)
+            audio_id = await voice.synthesize(first, next_text=rest or None)
         if audio_id:
             res.audio_url = f"/api/voice/audio/{audio_id}"
     return res

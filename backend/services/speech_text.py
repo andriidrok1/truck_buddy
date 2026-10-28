@@ -94,6 +94,31 @@ _MINUTES = re.compile(r"\b(about\s+|around\s+)?(\d+)\s*min(?:utes?|s)?\b", re.I)
 _MILES = re.compile(r"\b(about\s+|around\s+)?(\d[\d,]*(?:\.\d+)?)\s*(?:mi|miles?)\b(?!-)", re.I)
 
 
+# Sentence boundary for speech: ". " before a capital, but not after St./Dr./U.S. abbreviations.
+SENTENCE_END = re.compile(r"(?<!\bSt\.)(?<!\bDr\.)(?<!U\.S\.)(?<=[.!?])\s+(?=[A-Z])")
+# Clause boundary: a comma or dash followed by a space. Used to hand the voice its first clip sooner.
+CLAUSE_END = re.compile(r"(?<=,)\s+|\s+[—–-]\s+")
+MIN_CLAUSE_WORDS = 4  # the first clip must carry some meaning ("Alright, got one" is fine; "Okay," alone is not)
+MIN_REST_WORDS = 3  # and the remainder must be worth a second clip
+
+
+def split_reply(text: str, clause: bool = True) -> tuple[str, str]:
+    """(first clip, rest) for TTS. With `clause`, the first clip ends at the first comma or dash once it
+    has MIN_CLAUSE_WORDS words and leaves MIN_REST_WORDS behind; otherwise at the first sentence end.
+    The rest may be empty."""
+    t = " ".join((text or "").split())
+    if not t:
+        return "", ""
+    first, *rest = SENTENCE_END.split(t, maxsplit=1)
+    sentence_rest = rest[0] if rest else ""
+    if clause:
+        for m in CLAUSE_END.finditer(first):
+            head, tail = first[:m.start()], first[m.end():]
+            if len(head.split()) >= MIN_CLAUSE_WORDS and len((tail + " " + sentence_rest).split()) >= MIN_REST_WORDS:
+                return head, (tail + " " + sentence_rest).strip()
+    return first, sentence_rest
+
+
 def spoken(text: str) -> str:
     t = text or ""
     for rx, rep in _RULES:
