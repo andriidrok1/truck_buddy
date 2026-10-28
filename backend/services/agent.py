@@ -96,6 +96,7 @@ def city_of(query: str, place: Place) -> Optional[str]:
     return None
 MODEL = ("openai", "gpt-5.4-mini")
 MAX_OPTIONS = 4
+ALTERNATIVES_FRESH = 2  # when "another way?" comes with no cached alternatives: ask HERE for this many
 PRECHECK = 1  # nearest candidates satellite-checked in the background (each = one vision call)
 FAVORITE_EXTRA_MI = 5.0
 TRUCK_TAGS = ("truck parking", "53 ft", "truck lot", "hgv")
@@ -116,7 +117,7 @@ makes sense for a trucker and act on the corrected meaning, e.g. "I need a few" 
 "these all". Only fix words that clearly don't fit; never invent a destination. If you can't tell, use "unclear".
 
 Classify the driver's LAST utterance and answer with JSON only, no other text:
-{{"intent": "find"|"go"|"pick"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "near": string|null, "query": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
+{{"intent": "find"|"go"|"pick"|"alternative"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "near": string|null, "query": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
 
 - find: the driver needs a place. Pick the category yourself, never ask:
   truck_stop = fuel, diesel, DEF, food, showers, truck stop;
@@ -130,6 +131,7 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
   (never rest_area or parking for these).
 - go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV". Write numbers as digits ("2828 El Centro Rd, Sacramento"). If the driver gives only a street address and named a town earlier in the conversation, add that town to query.
 - pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something closer", "the cheapest diesel": lowest "diesel $" in the list). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. If no earlier place fits, use find with the same category instead.
+- alternative: a different road to the SAME destination ("another way", "different route", "is there a faster way", "can we skip the grade", "go around that"). Never a new place. Only meaningful while a route is active; otherwise answer as chat.
 {controls}
 {parking}
 {breakdown}
@@ -216,6 +218,15 @@ NOTICES = (
     ("ferry", "Heads up, there's a ferry on this one."),
 )
 CLOSURE = "Heads up, there's a road closure on this route: {description}."
+ALT_REPLY = "Here's another way{via}, {time}, {mi} miles{tolls}."
+NO_ALT = "That's the only truck route I've got."
+ALT_NO_ROUTE = "Set a route first and I'll look for other ways."
+
+
+def _alt_reply(route: RouteInfo) -> str:
+    via = f" via {' and '.join(route.labels[:2])}" if route.labels else ""
+    tolls = f", about ${route.tolls_usd:,.0f} in tolls" if route.tolls_usd else ""
+    return ALT_REPLY.format(via=via, time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi), tolls=tolls)
 _turns: dict = {"n": 0}  # rotation when there's no dialog session
 
 
@@ -373,6 +384,10 @@ class LlmAgentProvider:
             context += "."
             if req.active_speed_limit_mph:
                 context += f" Posted speed limit here: {req.active_speed_limit_mph} mph."
+            alts = sess.get("alternatives")
+            if alts and alts.get("place") == cur.id:
+                left = len(alts["routes"]) - alts["i"]
+                context += f" {left} alternative route{'s' if left != 1 else ''} not yet offered."
             pk = approach.best(cur)
             if is_town(cur):
                 context += " Destination is a town; no parking check."
@@ -404,10 +419,40 @@ class LlmAgentProvider:
         counter = _SESSIONS[req.session_id] if req.session_id in _SESSIONS else _turns
         n = counter.get("n", 0)
         counter["n"] = n + 1
+        self._remember_alternatives(req, place, route)
         return AgentResponse(status="route_set", transcript=text, category=place.category,
                              reply=_route_reply(place, route, n, req.truck_profile.driver_name), place=place, route=route,
                              parking=approach.best(place),
                              options=others, source=self.source)
+
+    @staticmethod
+    def _remember_alternatives(req: AgentRequest, place: Place, route: RouteInfo) -> None:
+        """"Another way?" later in this dialog walks through the alternatives HERE returned with this route."""
+        if req.session_id in _SESSIONS:
+            _SESSIONS[req.session_id]["alternatives"] = {"place": place.id, "routes": list(route.alternatives), "i": 0}
+
+    async def _alternative(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
+        """Next unused alternative route to the active destination; fetched fresh when the dialog has none."""
+        place = req.active_place
+        if not place:
+            return AgentResponse(status="chat", transcript=text, reply=ALT_NO_ROUTE, source=self.source)
+        cached = sess.get("alternatives")
+        if not cached or cached.get("place") != place.id:
+            with stage("tools"):
+                try:
+                    fresh = await get_routing_provider().route(req.lat, req.lng, *approach.target(place),
+                                                               req.truck_profile, alternatives=ALTERNATIVES_FRESH)
+                except Exception as e:  # noqa: BLE001
+                    raise RouteFailed(f"{type(e).__name__}: {e}") from e
+            cached = sess["alternatives"] = {"place": place.id, "routes": list(fresh.alternatives), "i": 0}
+        i = cached["i"]
+        if i >= len(cached["routes"]):
+            return AgentResponse(status="chat", transcript=text, reply=NO_ALT, source=self.source)
+        route = cached["routes"][i]
+        cached["i"] = i + 1
+        route.alternatives = []
+        return AgentResponse(status="route_set", transcript=text, category=place.category, reply=_alt_reply(route),
+                             place=place, route=route, parking=approach.best(place), source=self.source)
 
     def _parking(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
         """Cached verdict -> answer now; otherwise "Let me look" and the app fetches /parking/answer."""
@@ -537,6 +582,8 @@ class LlmAgentProvider:
         try:
             if intent == "breakdown":
                 return await breakdown.from_intent(d, req, sess, text, self.source)
+            if intent == "alternative":
+                return await self._alternative(req, sess, text)
             if intent == "pick":
                 place = pick_place(d, sess["places"])
                 if place and place.id not in exclude:

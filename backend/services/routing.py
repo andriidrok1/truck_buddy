@@ -117,9 +117,15 @@ HERE_RETURN = "polyline,summary,actions,instructions"
 HERE_SPANS = "dynamicSpeedInfo"
 MPH_PER_MS = 2.23694
 INCIDENT_TEXT_MAX = 80
+ALTERNATIVES = 2  # extra truck routes HERE is asked for (ROUTE_ALTERNATIVES=0 turns them off)
 
 
-def _here_params(t: TruckProfile, origin: tuple[float, float], dest: tuple[float, float]) -> list[tuple[str, str]]:
+def default_alternatives() -> int:
+    return ALTERNATIVES if on("ROUTE_ALTERNATIVES") else 0
+
+
+def _here_params(t: TruckProfile, origin: tuple[float, float], dest: tuple[float, float], *,
+                 alternatives: int = 0) -> list[tuple[str, str]]:
     """Query for HERE Routing v8 as (key, value) pairs, so a key can repeat (via=...&via=...)."""
     ret, spans = [HERE_RETURN], [HERE_SPANS]
     if on("ROUTE_SPEED_LIMITS"):
@@ -127,6 +133,9 @@ def _here_params(t: TruckProfile, origin: tuple[float, float], dest: tuple[float
     if on("ROUTE_INCIDENTS"):
         ret.append("incidents")
         spans.append("incidents")
+    if on("ROUTE_ALTERNATIVES"):
+        ret.append("routeLabels")
+        ret.append("tolls")
     params: list[tuple[str, str]] = [
         ("transportMode", "truck"),
         ("origin", f"{origin[0]},{origin[1]}"),
@@ -139,12 +148,42 @@ def _here_params(t: TruckProfile, origin: tuple[float, float], dest: tuple[float
         ("vehicle[length]", str(round(t.total_length_ft * 30.48))),  # cm
         ("vehicle[grossWeight]", str(round(t.weight_lb * 0.4536))),  # kg
     ]
+    if on("ROUTE_ALTERNATIVES"):
+        params.append(("currency", "USD"))
+    if alternatives > 0:
+        params.append(("alternatives", str(min(alternatives, 6))))
     if t.hazmat:
         params.append(("vehicle[shippedHazardousGoods]", HERE_HAZMAT))
     avoid = (["tollRoad"] if t.avoid_tolls else []) + (["ferry", "tunnel"] if t.avoid_ferries_tunnels else [])
     if avoid:
         params.append(("avoid[features]", ",".join(avoid)))
     return params
+
+
+def _labels(route: dict) -> List[str]:
+    out: List[str] = []
+    for lab in route.get("routeLabels") or []:
+        name = (lab or {}).get("name") if isinstance(lab, dict) else None
+        value = name.get("value") if isinstance(name, dict) else None
+        if isinstance(value, str) and value and value not in out:
+            out.append(value)
+    return out
+
+
+def _tolls_usd(sections: List[dict]) -> Optional[float]:
+    """Sum over tolls of the cheapest USD fare; None when no section lists a USD toll."""
+    total, seen = 0.0, False
+    for s in sections:
+        for toll in s.get("tolls") or []:
+            prices = []
+            for fare in (toll or {}).get("fares") or []:
+                price = (fare or {}).get("price") or {}
+                if price.get("currency") == "USD" and isinstance(price.get("value"), (int, float)):
+                    prices.append(float(price["value"]))
+            if prices:
+                total += min(prices)
+                seen = True
+    return round(total, 2) if seen else None
 
 
 def _parse_route(route: dict) -> RouteInfo:
@@ -173,6 +212,8 @@ def _parse_route(route: dict) -> RouteInfo:
     n = len(geometry)
     info.speed_limits = _remap_limits(limits, n)
     info.incidents = [_incident(_thin_index(off, n), inc) for off, inc in incidents]
+    info.labels = _labels(route)
+    info.tolls_usd = _tolls_usd(sections)
     return info
 
 
@@ -234,15 +275,23 @@ def _incident(index: int, inc: dict) -> Incident:
 
 
 def _here_parse(data: dict) -> RouteInfo:
-    """HERE Routing v8 response body -> the primary route (pure; no I/O)."""
+    """HERE Routing v8 response body -> the primary route, with the other routes as .alternatives
+    (pure; no I/O). An alternative HERE can't fully parse is dropped, never the primary."""
     routes = (data or {}).get("routes") or []
     if not routes or not routes[0].get("sections"):
         raise RuntimeError("HERE returned no truck route")
-    return _parse_route(routes[0])
+    primary = _parse_route(routes[0])
+    for alt in routes[1:]:
+        try:
+            primary.alternatives.append(_parse_route(alt))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("HERE alternative skipped: %s", e)
+    return primary
 
 
-async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile) -> RouteInfo:
-    params = _here_params(t, (fl, fg), (tl, tg)) + [("apiKey", os.environ["HERE_API_KEY"])]
+async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile, alternatives: int = 0) -> RouteInfo:
+    params = _here_params(t, (fl, fg), (tl, tg), alternatives=alternatives)
+    params.append(("apiKey", os.environ["HERE_API_KEY"]))
     r = await client().get(HERE_URL, params=params, timeout=20)
     if r.is_error:
         raise RuntimeError(f"HERE {r.status_code}: {r.text[:200]}")
@@ -348,15 +397,20 @@ class TruckRoutingProvider:
         return "openrouteservice" if os.environ.get("ORS_API_KEY") else "mock"
 
     async def route(self, from_lat: float, from_lng: float, to_lat: float, to_lng: float,
-                    truck: Optional[TruckProfile] = None) -> RouteInfo:
+                    truck: Optional[TruckProfile] = None, alternatives: Optional[int] = None) -> RouteInfo:
+        """Truck route; `alternatives` = how many other routes to ask HERE for (default: the flag)."""
         t = truck or TruckProfile()
+        n_alt = default_alternatives() if alternatives is None else max(0, alternatives)
         failed: list[str] = []
         for key, fn in (("HERE_API_KEY", _here), ("ORS_API_KEY", _ors)):
             if not os.environ.get(key):
                 continue
             try:
-                info = await fn(from_lat, from_lng, to_lat, to_lng, t)
+                info = await fn(from_lat, from_lng, to_lat, to_lng, t, n_alt) if fn is _here \
+                    else await fn(from_lat, from_lng, to_lat, to_lng, t)
                 info.approach = from_route(info)
+                for alt in info.alternatives:
+                    alt.approach = from_route(alt)
                 return info
             except Exception as e:  # noqa: BLE001 - fall through to the next provider
                 logger.warning("%s routing failed: %s", fn.__name__, e)
