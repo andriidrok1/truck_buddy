@@ -56,11 +56,11 @@ def test_speed_in_context_and_on_a_chat_turn(agent_sandbox):
     assert "highway speed: answer in one short sentence" in ctx
     ctx = prov._context(AgentRequest(text="hi", speed_mps=5.0, **SAC), {"history": [], "places": []})
     assert "highway speed" not in ctx
-    agent_sandbox.llm.default = {"intent": "chat", "reply": "Sure thing. Rain near Auburn. Drive safe."}
+    agent_sandbox.llm.default = {"intent": "chat", "reply": "Sure thing. Rain near Auburn."}
     res = run(prov.handle(AgentRequest(text="how's the weather", session_id="sp", speed_mps=30.0, **SAC), None))
     assert res.reply == "Sure thing."
     res = run(prov.handle(AgentRequest(text="how's the weather", session_id="sp", speed_mps=0.0, **SAC), None))
-    assert res.reply == "Sure thing. Rain near Auburn. Drive safe."
+    assert res.reply == "Sure thing. Rain near Auburn."
 
 
 def test_speed_field_bounds():
