@@ -1,6 +1,7 @@
 import { authHeader, requestCode, setToken } from "./auth";
 import { eldHeader } from "./eld";
 import { getTruckProfile } from "./hooks/useTruckProfile";
+import { isNetworkError, offlineHint } from "./net/offlineHint";
 import { uploadForm } from "./utils/upload";
 import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
 import { BASE } from "./url";
@@ -66,12 +67,28 @@ function deadline(ms: number, outer?: AbortSignal | null) {
   };
 }
 
+/**
+ * A failed fetch on a link that still shows bars is how a dead zone looks: mark the link offline
+ * for a short window (useOnline reads it); an answer of any status clears the mark.
+ */
+async function fetchTracked(url: string, init: RequestInit): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch (e) {
+    if (!init.signal?.aborted && isNetworkError(e)) offlineHint.mark(Date.now());
+    throw e;
+  }
+  offlineHint.clear();
+  return res;
+}
+
 /** A stalled cell connection must never leave a screen spinning forever: every call has a deadline. */
 async function request<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, ...rest } = init ?? {};
   const d = deadline(timeoutMs, rest.signal);
   try {
-    const res = await fetch(`${BASE}${path}`, {
+    const res = await fetchTracked(`${BASE}${path}`, {
       ...rest,
       signal: d.signal,
       headers: { "Content-Type": "application/json", ...authHeader(), ...(rest.headers ?? {}) },
@@ -193,6 +210,7 @@ export const api = {
     sessionId?: string,
     ui?: UiState,
     heading: number | null = null, // degrees from the GPS fix, null when the truck is standing still
+    activeSpeedLimitMph: number | null = null, // posted limit where the truck is, when the route knows it
   ) =>
     request<AgentResponse>(`/agent?speak=true`, {
       method: "POST",
@@ -204,6 +222,7 @@ export const api = {
         lat: at.lat,
         lng: at.lng,
         heading,
+        active_speed_limit_mph: activeSpeedLimitMph,
         truck_profile: getTruckProfile(),
         session_id: sessionId,
         active_place: active?.place,

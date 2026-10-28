@@ -21,7 +21,7 @@ export function haptic(kind: "light" | "medium" | "heavy" | "success" = "light")
 
 export function PressableScale({ style, containerStyle, children, haptic: h = "light", onPressIn, onPressOut, onPress, ...rest }: Props) {
   const scale = useSharedValue(1);
-  const anim = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const anim = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
   return (
     <Pressable
       {...rest}
@@ -31,11 +31,11 @@ export function PressableScale({ style, containerStyle, children, haptic: h = "l
         onPress?.(e);
       }}
       onPressIn={(e) => {
-        scale.value = withSpring(0.94, { damping: 18, stiffness: 400 });
+        scale.set(withSpring(0.94, { damping: 18, stiffness: 400 }));
         onPressIn?.(e);
       }}
       onPressOut={(e) => {
-        scale.value = withSpring(1, { damping: 14, stiffness: 300 });
+        scale.set(withSpring(1, { damping: 14, stiffness: 300 }));
         onPressOut?.(e);
       }}
     >

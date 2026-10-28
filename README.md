@@ -54,8 +54,8 @@ the Bearer token the app gets by redeeming the access code.
 
 `backend/tests` are integration tests against a running backend: they read
 `EXPO_PUBLIC_BACKEND_URL` (or `frontend/.env`) and `ACCESS_CODE`, then call the live
-API. Run with `cd backend && pytest`. For the app, `cd frontend && npx tsc --noEmit`
-and `yarn lint`.
+API. Run with `cd backend && pytest`. For the app, `cd frontend && yarn typecheck && yarn test`
+and `yarn lint --max-warnings 0`; CI (`.github/workflows/frontend.yml`) runs the same three and fails on any lint error or warning.
 
 ## Frontend conventions
 

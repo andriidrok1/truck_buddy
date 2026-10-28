@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Alert, Platform, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,8 +9,10 @@ import { requestCode, setToken } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
 import { setEldToken, useEldToken } from "@/src/eld";
 import { PressableScale } from "@/src/components/PressableScale";
+import { removePack, usePacks } from "@/src/hooks/useOfflineMap";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
-import { DEFAULT_TRUCK, requestTruckReroute, saveTruckProfile, setHandsFree, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { DEFAULT_TRUCK, requestTruckReroute, saveTruckProfile, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { formatBytes } from "@/src/map/bounds";
 import { setSim } from "@/src/sim";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
 
@@ -92,9 +94,11 @@ export default function TruckProfileScreen() {
   const { colors } = useTheme();
   const truck = useTruckProfile();
   const handsFree = useHandsFree();
+  const speedAlerts = useSpeedAlerts();
   const eldToken = useEldToken();
   const [eldDraft, setEldDraft] = useState("");
   const eldConnected = !!eldToken;
+  const offlineMaps = usePacks();
 
   const [feet, setFeet] = useState(String(Math.floor(truck.height_in / 12)));
   const [inches, setInches] = useState(String(truck.height_in % 12));
@@ -103,13 +107,15 @@ export default function TruckProfileScreen() {
   const [hazmat, setHazmat] = useState(truck.hazmat);
 
   // The saved profile loads async (e.g. when this screen is opened directly): sync the fields once it arrives.
-  useEffect(() => {
+  const [synced, setSynced] = useState(truck);
+  if (synced !== truck) {
+    setSynced(truck);
     setFeet(String(Math.floor(truck.height_in / 12)));
     setInches(String(truck.height_in % 12));
     setTrailer(String(truck.trailer_ft));
     setWeight(String(truck.weight_lb));
     setHazmat(truck.hazmat);
-  }, [truck]);
+  }
 
   const close = () => (router.canGoBack() ? router.back() : router.replace("/"));
 
@@ -202,6 +208,21 @@ export default function TruckProfileScreen() {
           </View>
         )}
 
+        <View style={[styles.switchRow, { backgroundColor: colors.surfaceSecondary }]}>
+          <View style={styles.flex}>
+            <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Speed limit alerts</Text>
+            <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>Say so after 10 s more than 5 mph over the posted limit</Text>
+          </View>
+          <Switch
+            testID="speed-alerts-switch"
+            value={speedAlerts}
+            onValueChange={setSpeedAlerts}
+            trackColor={{ true: colors.brandPrimary, false: colors.surfaceTertiary }}
+            thumbColor={colors.surface}
+            {...(Platform.OS === "web" ? { activeThumbColor: colors.surface } : {})}
+          />
+        </View>
+
         <Text style={[styles.section, { color: colors.onSurface }]}>Hours of service (Motive)</Text>
         <View testID="eld-section" style={[styles.eldBox, { backgroundColor: colors.surfaceSecondary }]}>
           <View style={styles.eldStatusRow}>
@@ -255,6 +276,39 @@ export default function TruckProfileScreen() {
             Your Motive API key stays in this phone&apos;s secure storage. It is sent only with your copilot requests so the copilot can read your hours, and is never stored on TruckBuddy servers. Remove it any time.
           </Text>
         </View>
+
+        {/* MapLibre builds only: with the Apple provider there is no pack to list and nothing to delete. */}
+        {offlineMaps.available && (
+          <>
+            <Text style={[styles.section, { color: colors.onSurface }]}>Offline maps</Text>
+            <View testID="offline-maps-section" style={[styles.eldBox, { backgroundColor: colors.surfaceSecondary }]}>
+              {offlineMaps.packs.length === 0 ? (
+                <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
+                  No maps saved. Set a route and tap “Download for offline” on its card; the last three routes are kept.
+                </Text>
+              ) : (
+                offlineMaps.packs.map((p) => (
+                  <View key={p.name} testID={`offline-pack-${p.name}`} style={styles.eldStatusRow}>
+                    <Icon name={p.complete ? "map-check-outline" : "progress-download"} size={18} color={p.complete ? colors.success : colors.muted} />
+                    <View style={styles.flex}>
+                      <Text style={[styles.switchTitle, { color: colors.onSurface }]} numberOfLines={1}>
+                        {p.name}
+                      </Text>
+                      <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
+                        {p.complete ? formatBytes(p.bytes) : `${Math.round(p.percentage)}% · ${formatBytes(p.bytes)}`}
+                        {p.createdAt ? ` · ${new Date(p.createdAt).toLocaleDateString()}` : ""}
+                      </Text>
+                    </View>
+                    <PressableScale testID={`offline-pack-delete-${p.name}`} accessibilityLabel={`Delete ${p.name}`} onPress={() => removePack(p.name)} style={styles.packDelete}>
+                      <Icon name="delete-outline" size={22} color={colors.error} />
+                    </PressableScale>
+                  </View>
+                ))
+              )}
+              <Text style={[styles.switchSub, { color: colors.muted }]}>Map data © OpenFreeMap © OpenMapTiles © OpenStreetMap contributors.</Text>
+            </View>
+          </>
+        )}
 
         {!valid && (
           <Text testID="truck-profile-error" style={[styles.error, { color: colors.error }]}>
@@ -342,6 +396,7 @@ const styles = StyleSheet.create({
   eldStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   eldBtn: { flex: 1, height: 48, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
   eldBtnText: { fontFamily: fonts.semibold, fontSize: 15 },
+  packDelete: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   error: { fontFamily: fonts.medium, fontSize: 13 },
   footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   save: { height: 56, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },

@@ -226,7 +226,13 @@ export type AppAction = { type: string; value?: boolean | number | string | null
 
 export type UiState = { driving: boolean; voice_guidance: boolean; hands_free: boolean; options_count: number };
 
-export type ActiveRoute = { place: Place; route: RouteInfo; parking?: ParkingCheck | null };
+export type ActiveRoute = {
+  place: Place;
+  route: RouteInfo;
+  parking?: ParkingCheck | null;
+  /** Via stops on the way, in order (mirrors `route.via`); empty or missing = none. */
+  stops?: Place[];
+};
 
 export type Phase = "ready" | "listening" | "thinking" | "options" | "navigating" | "providers";
 

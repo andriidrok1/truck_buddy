@@ -116,6 +116,36 @@ export function useHandsFree() {
   return value;
 }
 
+// Speed limit alerts (off by default: posted limits come from map data and can be stale).
+const SPEED_ALERTS_KEY = "speed_alerts_v1";
+let speedAlerts = false;
+let speedAlertsLoaded = false;
+const speedAlertsListeners = new Set<(v: boolean) => void>();
+
+export async function setSpeedAlerts(v: boolean) {
+  speedAlerts = v;
+  speedAlertsListeners.forEach((l) => l(v));
+  await storage.setItem(SPEED_ALERTS_KEY, v);
+}
+
+export function useSpeedAlerts() {
+  const [value, setValue] = useState(speedAlerts);
+  useEffect(() => {
+    speedAlertsListeners.add(setValue);
+    if (!speedAlertsLoaded) {
+      speedAlertsLoaded = true;
+      storage.getItem(SPEED_ALERTS_KEY, false as boolean).then((v) => {
+        speedAlerts = v === true;
+        speedAlertsListeners.forEach((l) => l(speedAlerts));
+      });
+    }
+    return () => {
+      speedAlertsListeners.delete(setValue);
+    };
+  }, []);
+  return value;
+}
+
 export function useTruckProfile() {
   const [truck, setTruck] = useState<TruckProfile>(current);
   useEffect(() => {

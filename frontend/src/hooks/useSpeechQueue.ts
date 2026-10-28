@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { absoluteUrl, api } from "../api";
 import { logAnnouncement, type AnnouncementKind } from "../dev/announcements";
+import { speakLocal, stopLocal } from "../voice/localTts";
 import { preempts, SpeechQueue, type QueuedSpeech, type SpeechItem } from "../voice/queue";
+import { isOnline } from "./useOnline";
 import type { useVoice } from "./useVoice";
 
 type Voice = Pick<ReturnType<typeof useVoice>, "playAndWait" | "stopSpeaking" | "isSpeaking" | "isRecording" | "holdPlayback">;
@@ -18,7 +20,9 @@ const LOG_KIND: Record<SpeechItem["kind"], AnnouncementKind> = { maneuver: "mane
  * copilot reply on air) pauses it; the queue's own clip does not count as busy. While it drains
  * the voice hook holds the playback session, so the recorder is not re-armed between two lines
  * (that flips the audio mode twice per clip and clicks on iOS); the hold is released as soon as
- * the queue is empty. `onPlay` fires as each line starts (captions).
+ * the queue is empty. `onPlay` fires as each line starts (captions). Offline (NetInfo or a failed
+ * API call), or when /api/speak fails, the line goes through the phone's own voice instead
+ * (src/voice/localTts.ts): the guidance must stay audible in a dead zone.
  */
 export function useSpeechQueue(voice: Voice, isBusy: () => boolean, onPlay?: (item: QueuedSpeech) => void) {
   const [q] = useState(
@@ -30,6 +34,8 @@ export function useSpeechQueue(voice: Voice, isBusy: () => boolean, onPlay?: (it
       }),
   );
   const playing = useRef<QueuedSpeech | null>(null);
+  /** The line the phone's own voice is reading right now (stopSpeaking() only cuts the player). */
+  const localPlaying = useRef<QueuedSpeech | null>(null);
   const draining = useRef(false);
   const poll = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyRef = useRef(isBusy);
@@ -54,11 +60,24 @@ export function useSpeechQueue(voice: Voice, isBusy: () => boolean, onPlay?: (it
         playing.current = item;
         if (__DEV__) logAnnouncement(item.text, LOG_KIND[item.kind]);
         onPlayRef.current?.(item);
+        const maxMs = Math.min(15000, 1500 + item.text.length * 65);
+        let cloud: string | null = null;
+        if (isOnline()) {
+          try {
+            cloud = absoluteUrl((await api.speak(item.text)).audio_url);
+          } catch (e) {
+            console.log(`[speech] "${item.text}" cloud voice failed (${String(e)}), using the local voice`);
+          }
+        }
+        // Cut off (preempted) while the audio was being made: play the newer line instead.
+        if (playing.current !== item) continue;
         try {
-          const r = await api.speak(item.text);
-          // Cut off (preempted) while the audio was being made: play the newer line instead.
-          if (playing.current !== item) continue;
-          await playAndWait(absoluteUrl(r.audio_url), Math.min(15000, 1500 + item.text.length * 65));
+          if (cloud) await playAndWait(cloud, maxMs);
+          else {
+            localPlaying.current = item;
+            await speakLocal(item.text, maxMs);
+            if (localPlaying.current === item) localPlaying.current = null;
+          }
         } catch (e) {
           console.log(`[speech] "${item.text}" failed: ${String(e)}`);
         }
@@ -79,6 +98,10 @@ export function useSpeechQueue(voice: Voice, isBusy: () => boolean, onPlay?: (it
         if (__DEV__) logAnnouncement(`${cur.text} (cut off)`, "skipped");
         playing.current = null;
         stopSpeaking(); // resolves the current playAndWait; the loop takes the new line next
+        if (localPlaying.current === cur) {
+          localPlaying.current = null;
+          stopLocal(); // resolves speakLocal through onStopped
+        }
       }
       pump();
     },
