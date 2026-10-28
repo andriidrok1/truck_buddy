@@ -15,9 +15,9 @@ from starlette.middleware.cors import CORSMiddleware
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-from models import AgentRequest, AgentResponse, Category, ParkingCheck, ParkingRequest, Place, PlacesResponse, RerouteRequest, RouteRequest, RouteResponse, TruckProfile  # noqa: E402,E501
+from models import AgentRequest, AgentResponse, Category, NudgeRequest, NudgeResponse, ParkingCheck, ParkingRequest, Place, PlacesResponse, RerouteRequest, RouteRequest, RouteResponse, TruckProfile  # noqa: E402,E501
 from services.agent import get_agent_provider  # noqa: E402
-from services import breakdown, flags  # noqa: E402
+from services import breakdown, flags, nudges  # noqa: E402
 from services.speech_text import split_reply  # noqa: E402
 from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import cached_parking, check_parking, fetch_satellite  # noqa: E402
@@ -154,6 +154,24 @@ async def build_route(req: RouteRequest):
         return RouteResponse(place=place, route=route, parking=None)
     approach.background(check_parking(place, route.approach))  # don't wait for the satellite; app re-asks /parking
     return RouteResponse(place=place, route=route, parking=cached_parking(place))
+
+
+@api.post("/nudges", response_model=NudgeResponse)
+async def nudges_endpoint(req: NudgeRequest, request: Request, driver: str = Depends(auth.require_driver)):
+    """Anything the copilot wants to say on its own right now (break due, parking before the shift ends)."""
+    _require_us(req.lat, req.lng)
+    req.motive_key = _motive_key(request)
+    if req.session_id:
+        req.session_id = f"{driver}:{req.session_id}"[:64]
+    else:
+        req.session_id = f"{driver}:solo"[:64]
+    from services.agent import _session
+    try:
+        out = await nudges.compute(req, _session(req.session_id), req.motive_key)
+    except Exception as e:  # noqa: BLE001 - never an error for a background poll
+        logger.warning("nudges failed: %s: %s", type(e).__name__, e)
+        out = []
+    return NudgeResponse(nudges=out)
 
 
 @api.post("/reroute", response_model=RouteResponse)

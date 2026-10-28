@@ -238,6 +238,33 @@ class RouteRequest(BaseModel):
     via: List[List[float]] = Field(default_factory=list, max_length=MAX_VIA)  # stops on the way, [[lat, lng], ...]
 
 
+class NudgeRequest(BaseModel):
+    """The app's periodic "anything to say?" while driving (every few minutes)."""
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    driving: bool = True
+    active_place: Optional[Place] = None
+    # Route points ahead of the truck as [lat, lng, miles_ahead], nearest first (every ~5 miles, ≤ 60 miles).
+    ahead: List[List[float]] = Field(default_factory=list, max_length=40)
+    drive_elapsed_min: Optional[int] = Field(None, ge=0, le=24 * 60)  # minutes driving since the route started
+    local_hour: Optional[int] = Field(None, ge=0, le=23)  # the phone's local hour
+    session_id: Optional[str] = Field(None, max_length=64)
+    truck_profile: TruckProfile = Field(default_factory=TruckProfile)
+    motive_key: Optional[str] = Field(None, max_length=200, exclude=True, repr=False)
+
+
+class Nudge(BaseModel):
+    kind: Literal["break", "parking"]
+    text: str  # spoken as an ambient line
+    priority: int = 2
+    place: Optional[Place] = None
+    offer: Optional[Literal["add_stop", "go"]] = None  # what a "yes" on the next turn does
+
+
+class NudgeResponse(BaseModel):
+    nudges: List[Nudge] = Field(default_factory=list)
+
+
 class RerouteRequest(BaseModel):
     """The driver left the active route: a new route from where they are, back onto the old one if possible."""
     lat: float = Field(ge=-90, le=90)

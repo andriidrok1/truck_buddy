@@ -647,7 +647,13 @@ class LlmAgentProvider:
         return list(via["stops"])
 
     async def _resolve_stop(self, req: AgentRequest, d: dict, sess: dict) -> Optional[Place]:
-        """The place the driver wants to stop at: a named place/address, else the best place of a category."""
+        """The place the driver wants to stop at: a place offered earlier (nudges), a named place/address, else
+        the best place of a category."""
+        if isinstance(d.get("place"), dict):
+            try:
+                return Place(**d["place"])
+            except Exception:  # noqa: BLE001 - a malformed offer falls through to the normal path
+                pass
         query = str(d.get("query") or "").strip()
         if query:
             with stage("tools"):
@@ -921,6 +927,8 @@ class LlmAgentProvider:
                 if near:
                     return await self._find_near(req, d["category"], near, text, exclude, sess)
                 return await self._find(req, d["category"], text, exclude)
+            if intent == "go" and isinstance(d.get("place"), dict):  # a place offered by a nudge, accepted
+                return await self._route_to(req, Place(**d["place"]), [], text)
             if intent == "go" and str(d.get("query") or "").strip():
                 query = with_city(str(d["query"]).strip(), sess.get("city"))
                 with stage("tools"):
