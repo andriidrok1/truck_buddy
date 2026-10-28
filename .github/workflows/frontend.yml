@@ -1,0 +1,36 @@
+name: frontend
+
+on:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      EXPO_PUBLIC_BACKEND_URL: https://ci.invalid
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - run: yarn install --frozen-lockfile
+      - run: yarn typecheck
+      # 19 pre-existing react-compiler errors in app/index.tsx, app/onboarding.tsx, PressableScale etc.
+      # Lint stays visible but does not block until those are cleaned up; then drop continue-on-error
+      # and add --max-warnings 0.
+      - run: yarn lint
+        continue-on-error: true
+      - run: yarn test --ci

@@ -2,17 +2,10 @@ import { authHeader, requestCode, setToken } from "./auth";
 import { getTruckProfile } from "./hooks/useTruckProfile";
 import { uploadForm } from "./utils/upload";
 import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
+import { BASE } from "./url";
 
-const ORIGIN = process.env.EXPO_PUBLIC_BACKEND_URL;
-if (!ORIGIN) {
-  // Fail loudly at load time: without it every request would go to "undefined/api" and look like a dead connection.
-  throw new Error("EXPO_PUBLIC_BACKEND_URL is not set (eas.json build env, or frontend/.env for local runs)");
-}
-const BASE = `${ORIGIN}/api`;
-
-export const absoluteUrl = (path: string) => `${ORIGIN}${path}`;
-
-export const apiUrl = (path: string) => `${BASE}${path}`;
+// ./url throws at load time when EXPO_PUBLIC_BACKEND_URL is missing, so importing this module still fails loudly.
+export { absoluteUrl, apiUrl } from "./url";
 
 export type MemoryTurn = { role: "driver" | "copilot"; text: string; at: string };
 
