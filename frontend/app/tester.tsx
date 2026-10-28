@@ -9,8 +9,10 @@ import { PressableScale } from "@/src/components/PressableScale";
 import { clearAnnouncements, useAnnouncements, type AnnouncementKind } from "@/src/dev/announcements";
 import { cumulativeMeters } from "@/src/geo/guidance";
 import { syntheticTrace, type TracePoint } from "@/src/geo/trace";
+import { useOnline } from "@/src/hooks/useOnline";
 import { isTracePlaying, playTrace, SCENARIOS, setSim, stopTrace, useSim } from "@/src/sim";
 import { useActiveRoute } from "@/src/state/activeRoute";
+import { savedAgeLabel, useSavedRouteAt } from "@/src/state/routeStore";
 import { fonts, radius, shadow, spacing, useTheme } from "@/src/theme";
 import type { RouteInfo } from "@/src/types";
 
@@ -75,6 +77,8 @@ const clock = (t: number) => {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
 };
 
+const onlineLabel = (online: boolean | null) => (online === null ? "network unknown" : online ? "online" : "offline");
+
 /** Tester screen (TESTER_CODE login only): jump the truck to made-up spots to try scenarios. */
 export default function TesterScreen() {
   const router = useRouter();
@@ -83,6 +87,8 @@ export default function TesterScreen() {
   const sim = useSim();
   const active = useActiveRoute();
   const announcements = useAnnouncements();
+  const savedAt = useSavedRouteAt();
+  const { online } = useOnline();
   const [speedFactor, setSpeedFactor] = useState<1 | 4>(1);
   const playing = isTracePlaying();
   // Drivers can reach this route by deep link (truckbuddy://tester); the simulated locations are for testers only.
@@ -112,6 +118,12 @@ export default function TesterScreen() {
           <Icon name={sim ? "map-marker-radius" : "crosshairs-gps"} size={22} color={sim ? colors.warning : colors.success} />
           <Text testID="tester-status" style={[styles.statusText, { color: colors.onSurface }]} numberOfLines={2}>
             {sim ? sim.label : "Using your real location"}
+          </Text>
+        </View>
+        <View style={[styles.status, { backgroundColor: colors.surface }]}>
+          <Icon name={online === false ? "signal-off" : "content-save-outline"} size={22} color={online === false ? colors.warning : colors.onSurfaceSecondary} />
+          <Text testID="tester-offline-status" style={[styles.cardSub, { color: colors.onSurfaceSecondary, flex: 1 }]} numberOfLines={2}>
+            Route on disk: {savedAgeLabel(savedAt)} · {onlineLabel(online)}
           </Text>
         </View>
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 
-import { announcement, createRouteMatcher, limitAt, markSpoken, nextManeuver, stageFor } from "../geo/guidance";
+import { limitAt } from "../geo/advisories";
+import { announcement, createRouteMatcher, markSpoken, nextManeuver, stageFor } from "../geo/guidance";
 import { createOffRouteTracker, thresholdM } from "../geo/offroute";
 import type { ActiveRoute, LatLng, Maneuver } from "../types";
 import { PRIORITY } from "../voice/queue";

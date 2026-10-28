@@ -28,9 +28,5 @@ jobs:
           cache-dependency-path: frontend/yarn.lock
       - run: yarn install --frozen-lockfile
       - run: yarn typecheck
-      # 19 pre-existing react-compiler errors in app/index.tsx, app/onboarding.tsx, PressableScale etc.
-      # Lint stays visible but does not block until those are cleaned up; then drop continue-on-error
-      # and add --max-warnings 0.
-      - run: yarn lint
-        continue-on-error: true
+      - run: yarn lint --max-warnings 0
       - run: yarn test --ci

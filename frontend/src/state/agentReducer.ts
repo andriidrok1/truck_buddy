@@ -15,6 +15,8 @@ export type AgentPatch = {
   places?: Place[];
   parking?: Record<string, ParkingState>;
   phase?: Phase;
+  /** Same destination, new route ("another way?", a via stop added or cleared): swap it in place. */
+  activeRoute?: { route: RouteInfo; stops: Place[] };
 };
 
 export type Effect =
@@ -143,6 +145,14 @@ export function reduceAgentResponse(res: AgentResponse, ctx: AgentContext): Agen
   if (res.status === "researching" && res.research_id) {
     effects.push({ type: "research", id: res.research_id });
     return { patch: {}, effects };
+  }
+
+  if (res.status === "route_set" && res.place && res.route && ctx.activePlaceId && res.place.id === ctx.activePlaceId) {
+    // Route update, not a new destination: the parking check, the sheet and the dialog state stay.
+    // With via stops, `options` lists the stop places in order; without them it is empty.
+    const stops = res.route.via?.length ? (res.options ?? []) : [];
+    effects.push({ type: "speak" });
+    return { patch: { activeRoute: { route: res.route, stops } }, effects };
   }
 
   if (res.status === "route_set" && res.place && res.route) {

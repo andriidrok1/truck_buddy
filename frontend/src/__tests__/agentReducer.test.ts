@@ -35,6 +35,39 @@ describe("reduceAgentResponse", () => {
     expect(effects.some((e) => e.type === "startDriving")).toBe(false);
   });
 
+  test("route_set same place updates route and stops", () => {
+    const stop = { ...optionsRes.options![0], id: "stop-fernley", name: "Pilot Fernley" };
+    const route = { ...routeSetRes.route!, summary: "I-80 E via Fernley", via: [[39.6, -119.25]] as [number, number][] };
+    const res: AgentResponse = { ...routeSetRes, route, options: [stop] };
+    const { patch, effects } = reduceAgentResponse(res, onRoute);
+    expect(types(effects)).toEqual(["speak"]); // no startRoute, no followParking, no pauseDialog
+    expect(patch).toEqual({ activeRoute: { route, stops: [stop] } });
+    expect(patch.options).toBeUndefined(); // the options sheet is left alone
+    expect(patch.parking).toBeUndefined();
+  });
+
+  test("route_set same place with empty via clears stops", () => {
+    const route = { ...routeSetRes.route!, via: [] as [number, number][] };
+    // Even if the backend echoed something in `options`, no via means no stops.
+    const res: AgentResponse = { ...routeSetRes, route, options: [optionsRes.options![0]] };
+    const { patch, effects } = reduceAgentResponse(res, onRoute);
+    expect(types(effects)).toEqual(["speak"]);
+    expect(patch.activeRoute).toEqual({ route, stops: [] });
+    // "another way?": no via field at all is the same thing.
+    const other = reduceAgentResponse({ ...routeSetRes, options: [] }, onRoute);
+    expect(other.patch.activeRoute?.stops).toEqual([]);
+  });
+
+  test("route_set new place starts a route", () => {
+    const place = { ...routeSetRes.place!, id: "ChIJhotel-002", name: "Motel 6" };
+    const { patch, effects } = reduceAgentResponse({ ...routeSetRes, place }, onRoute);
+    expect(types(effects)).toEqual(["startRoute", "speak", "followParking", "pauseDialog"]);
+    expect(patch.activeRoute).toBeUndefined();
+    expect(patch.places?.[0].id).toBe("ChIJhotel-002");
+    // Without an active route the same id is a new destination too.
+    expect(types(reduceAgentResponse(routeSetRes, idle).effects)[0]).toBe("startRoute");
+  });
+
   test("route_set without a route falls through to the toast branch", () => {
     const { patch, effects } = reduceAgentResponse({ ...routeSetRes, route: null }, idle);
     expect(patch).toEqual({});

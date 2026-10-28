@@ -76,6 +76,65 @@ these are the Android-specific gaps still open:
 - The wake word (`useWakeWord`) is off on both platforms; the `Platform.OS !== "ios" || appActive`
   guard in `app/index.tsx` is dormant until a detector ships.
 
+## Offline: the saved route and the MapLibre map
+
+Two layers, independent of each other:
+
+- **The route survives no signal and restarts (always on).** The active route is written to
+  AsyncStorage (`active_route_v1`) on every change and restored on launch when younger than 12 h
+  ("Route restored: …" banner, Resume / Dismiss). Turn-by-turn, advisories and the speed shield
+  read only the stored route and GPS. In a dead zone the copilot says so once, points back at the
+  loaded line instead of rerouting ("The route is 0.3 miles to the west"), refuses voice turns
+  with "No signal right now", and speaks through the phone's own voice (`expo-speech`) because
+  the cloud voice needs the server. Works in Expo Go.
+- **Map tiles offline (MapLibre build only).** With react-native-maps (the default) the base map
+  is Apple Maps / Google Maps and goes blank without signal. The MapLibre provider draws
+  OpenFreeMap vector tiles and can save a corridor pack per route.
+
+### Building with MapLibre
+
+```sh
+EXPO_PUBLIC_MAP_PROVIDER=maplibre npx eas-cli build --profile development --platform ios
+EXPO_PUBLIC_MAP_PROVIDER=maplibre npx expo start   # the same variable at bundle time
+```
+
+The variable does two things: `app.config.ts` adds the `@maplibre/maplibre-react-native` config
+plugin (native SDK on both platforms), and `src/map/provider.ts` makes the JS pick
+`MapLayerLibre` instead of `MapLayerApple`. Without it nothing changes: the plugin is not added,
+the library is never required (`src/map/libre.ts` loads it lazily inside a try, like the keyboard
+controller), Expo Go keeps working. Expo Go cannot run MapLibre at all: with the variable set in
+Expo Go the switch falls back to Apple Maps and the offline-map UI stays hidden. Set the variable
+in `eas.json` `env` for a profile to make it stick.
+
+`ParkingSatMap` stays on react-native-maps whatever the provider: its Esri satellite tiles are
+online-only.
+
+### Attribution (required)
+
+OpenFreeMap is free and needs no key, on one condition: the attribution must stay visible.
+`MapLayerLibre` renders "© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors" in the map's
+corner and keeps MapLibre's own attribution button on; do not remove either. The dark theme uses
+`https://tiles.openfreemap.org/styles/dark`, light uses `.../liberty`.
+
+### Pack sizes
+
+A pack is the route's bounding box plus 3 km, zoom 6 to 14, named `route-<hash of the geometry>`
+(`src/map/bounds.ts`). The card shows an estimate before the download (tile count × ~25 KB):
+
+| Route | Bbox | Estimate |
+| --- | --- | --- |
+| Sacramento → Stockton (~75 km, north-south) | ~0.8° × 0.3° | ~15 MB |
+| Sacramento → Reno (~210 km, diagonal) | ~1.7° × 1.0° | ~90 MB |
+| Sacramento → Los Angeles (~600 km) | ~3.5° × 4° | ~800 MB, do not |
+
+The last three packs are kept (the oldest is deleted before a new one downloads); there is no
+state-wide pack on purpose. Packs are listed with size and a delete button under Truck profile ›
+Offline maps. The tile count limit is raised to 40 000 per device for the download. The real size
+on disk comes back from MapLibre once the pack is complete ("Saved · 84 MB").
+
+Needs a device with the dev build to verify: tile rendering, camera follow/fit, marker taps, the
+download itself and offline rendering from a pack. None of that runs under jest.
+
 ## Wake word
 
 Not in this version. Picovoice closed its free tier on 2026-06-30, so Porcupine was removed;

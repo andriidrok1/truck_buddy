@@ -23,6 +23,7 @@ from services.parking import cached_parking, check_parking, fetch_satellite  # n
 from services.places import get_places_provider  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
 from services import approach, approach_api, auth, chains, memory, onboarding, parking_store, parking_warm, timing, tpims, voice, weather  # noqa: E402,E501
+from services.speech_text import SENTENCE_END  # noqa: E402
 
 WEATHER_BUDGET_S = 2.5  # NWS alerts on /route may add at most this much; never the route itself
 from pydantic import BaseModel, Field  # noqa: E402
@@ -188,9 +189,6 @@ async def satellite(lat: float = Query(..., ge=-90, le=90), lng: float = Query(.
     except Exception:
         raise HTTPException(status_code=502, detail="Satellite image unavailable")
     return Response(content=img, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
-
-
-SENTENCE_END = re.compile(r"(?<!\bSt\.)(?<!\bDr\.)(?<!U\.S\.)(?<=[.!?])\s+(?=[A-Z])")
 
 
 async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = None) -> AgentResponse:
