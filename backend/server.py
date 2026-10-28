@@ -328,15 +328,18 @@ async def voice_turn(
     name = audio.filename or "speech.m4a"
     if "." not in name:
         name += ".webm" if "webm" in (audio.content_type or "") else ".m4a"
+    confidence = None
     try:
         with timing.stage("stt"):
-            text = await voice.transcribe(data, name)
+            tr = await voice.transcribe_full(data, name)
+            text, confidence = tr.text, tr.confidence
     except Exception:
         logger.exception("transcription failed")
         text = ""
-    logger.info("voice transcript=%r", text)
+    logger.info("voice transcript=%r confidence=%s", text, confidence)
     req = AgentRequest(text=text, lat=lat, lng=lng, active_place=current, truck_profile=truck, session_id=session_id,
                        active_distance_mi=active_distance_mi, active_duration_min=active_duration_min,
+                       stt_confidence=confidence,
                        motive_key=_motive_key(request) if request is not None else None)
     return _finish(await _run_agent(req, speak=True, driver=driver))
 
@@ -354,9 +357,11 @@ async def voice_transcribe(audio: UploadFile = File(...)):
     name = audio.filename or "speech.m4a"
     if "." not in name:
         name += ".webm" if "webm" in (audio.content_type or "") else ".m4a"
+    confidence = None
     try:
         with timing.stage("stt"):
-            text = await voice.transcribe(data, name)
+            tr = await voice.transcribe_full(data, name)
+            text, confidence = tr.text, tr.confidence
     except voice.SttTimeout as e:
         logger.warning("transcription timed out: %s", e)
         raise HTTPException(status_code=504, detail="Speech recognition timed out")
@@ -364,8 +369,9 @@ async def voice_transcribe(audio: UploadFile = File(...)):
         logger.exception("transcription failed")
         text = ""
     t = timing.current()
-    logger.info("voice transcribe bytes=%d transcript=%r %s", len(data), text, " ".join(f"{k}={v}" for k, v in t.items()))
-    return {"transcript": text, "timings": t}
+    logger.info("voice transcribe bytes=%d transcript=%r confidence=%s %s", len(data), text, confidence,
+                " ".join(f"{k}={v}" for k, v in t.items()))
+    return {"transcript": text, "stt_confidence": confidence, "timings": t}
 
 
 class SpeakRequest(BaseModel):

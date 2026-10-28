@@ -295,9 +295,11 @@ class AgentRequest(BaseModel):
     # Set by the server from the X-Motive-Key header (never stored, never logged, never echoed back).
     motive_key: Optional[str] = Field(None, max_length=200, exclude=True, repr=False)
     stt_ms: Optional[int] = Field(None, ge=0, le=60000)  # how long /voice/transcribe took, for the turn log
+    stt_confidence: Optional[float] = Field(None, ge=0, le=1)  # from /voice/transcribe; low = ask before acting
 
 
-AgentStatus = Literal["options", "route_set", "chat", "no_results", "not_understood", "researching", "providers", "error"]
+AgentStatus = Literal["options", "route_set", "chat", "confirm", "no_results", "not_understood", "researching",
+                      "providers", "error"]
 
 
 class ProviderFacts(BaseModel):

@@ -4,10 +4,12 @@ import hashlib
 import io
 import time
 import logging
+import math
 import os
 import re
 import uuid
 from collections import OrderedDict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -45,16 +47,40 @@ class SttTimeout(Exception):
     """Speech recognition did not answer within STT_TIMEOUT_S."""
 
 
+@dataclass
+class Transcript:
+    text: str
+    confidence: Optional[float] = None  # 0..1, exp(mean token logprob); None when the model gave none
+
+
+def confidence_of(logprobs) -> Optional[float]:
+    """exp(mean logprob) over the tokens the model reported, or None without usable logprobs."""
+    vals = []
+    for lp in logprobs if isinstance(logprobs, list) else []:
+        v = lp.get("logprob") if isinstance(lp, dict) else getattr(lp, "logprob", None)
+        if isinstance(v, (int, float)):
+            vals.append(float(v))
+    if not vals:
+        return None
+    return round(min(1.0, math.exp(sum(vals) / len(vals))), 3)
+
+
 async def transcribe(data: bytes, filename: str) -> str:
+    """Speech -> text (see transcribe_full for the confidence)."""
+    return (await transcribe_full(data, filename)).text
+
+
+async def transcribe_full(data: bytes, filename: str) -> Transcript:
     stt = llm.client().audio.transcriptions
     try:
         buf = io.BytesIO(data)
         buf.name = filename
         res = await asyncio.wait_for(
             stt.create(file=buf, model=STT_MODEL, response_format="json", language="en",
-                       prompt=PROMPT, temperature=0.0),
+                       prompt=PROMPT, temperature=0.0, include=["logprobs"]),
             STT_TIMEOUT_S)
-        return _clean((getattr(res, "text", "") or "").strip())
+        return Transcript(_clean((getattr(res, "text", "") or "").strip()),
+                          confidence_of(getattr(res, "logprobs", None)))
     except asyncio.TimeoutError:
         raise SttTimeout(f"{STT_MODEL} took longer than {STT_TIMEOUT_S:.0f}s")  # no fallback: it would double the wait
     except Exception as e:  # noqa: BLE001 - fall back to Whisper with its confidence guard
@@ -82,9 +108,12 @@ async def transcribe(data: bytes, filename: str) -> str:
             else:
                 kept.append(seg)
         text = " ".join(kept).strip()
+        lps = [_get(s, "avg_logprob") for s in segments if isinstance(_get(s, "avg_logprob"), (int, float))]
+        conf = round(min(1.0, math.exp(sum(lps) / len(lps))), 3) if lps else None
     else:
         text = (getattr(res, "text", "") or "").strip()
-    return _clean(text)
+        conf = None
+    return Transcript(_clean(text), conf)
 
 
 def _clean(text: str) -> str:

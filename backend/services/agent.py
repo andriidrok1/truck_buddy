@@ -22,6 +22,7 @@ from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
 from services.parking import cached_parking, check_parking, is_town, listed_in_data
 from services.places import get_places_provider
 from services.routing import get_routing_provider
+from services.flags import on
 from services.timing import stage
 
 logger = logging.getLogger("truckbuddy.agent")
@@ -187,6 +188,14 @@ MEMORY_FIRST_TURN_S = 0.3  # how long the first turn of a dialog waits for long-
 MEMORY_LOAD_S = 3.0  # after this the memory read is abandoned for good
 
 
+def stt_confirm_below() -> float:
+    """Transcripts below this confidence (exp(mean logprob)) get a confirmation question. Env STT_CONFIRM_BELOW."""
+    try:
+        return float(os.environ.get("STT_CONFIRM_BELOW", "0.6"))
+    except ValueError:
+        return 0.6
+
+
 def _background_task(t: asyncio.Task) -> None:
     _tasks.add(t)
     t.add_done_callback(_tasks.discard)
@@ -284,6 +293,11 @@ VIA_FULL = "I can only add three stops. Say 'clear the stops' to start over."
 VIA_CLEARED = "Stops cleared. Straight there, {time}, {mi} miles."
 VIA_NONE = "There are no stops on this route."
 WHICH_PLACE = "Which place? Find one or set a route first."
+# Low-confidence transcripts of a destination or a place name get one "Did you say ...?" before anything is acted on.
+CONFIRM = "Did you say {what}?"
+CONFIRM_NO = "Okay, say it again."
+YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|correct|right|that's right|that's it|sure|affirmative)\b", re.I)
+NO = re.compile(r"^\s*(?:no|nope|nah|wrong|that's wrong|not that|negative)\b", re.I)
 
 
 def _alt_reply(route: RouteInfo) -> str:
@@ -812,6 +826,15 @@ class LlmAgentProvider:
         bd = await breakdown.handle(req, sess, text, self.source)
         if bd:
             return bd
+        pending = sess.pop("pending", None)
+        if pending:  # "Did you say Reno?" was asked last turn
+            if YES.match(text):
+                d = pending["d"]
+                timing.note("intent", str(d.get("intent")))
+                return await self._dispatch(req, sess, pending["text"], d, confirmed=True)
+            if NO.match(text):
+                return AgentResponse(status="chat", transcript=text, reply=CONFIRM_NO, source=self.source)
+            # anything else: the driver moved on, classify it as a fresh utterance
         try:
             d = await asyncio.wait_for(classify(text, self._context(req, sess), req.truck_profile),
                                        timeout=CLASSIFY_TIMEOUT_S)
@@ -820,10 +843,34 @@ class LlmAgentProvider:
             timing.note("error", "llm_timeout" if isinstance(e, asyncio.TimeoutError) else "llm_error")
             return _error(text, LLM_DOWN, self.source)
 
+        return await self._dispatch(req, sess, text, d)
+
+    @staticmethod
+    def _confirm_needed(req: AgentRequest, d: dict, sess: dict) -> Optional[AgentResponse]:
+        """Ask once per dialog when speech recognition was unsure about a place or destination name."""
+        if not on("STT_CONFIRM") or req.stt_confidence is None or req.stt_confidence >= stt_confirm_below():
+            return None
+        if d.get("intent") not in ("go", "find", "add_stop") or sess.get("confirmed_once"):
+            return None
+        what = str(d.get("query") or d.get("near") or "").strip()
+        if not what:
+            return None
+        sess["pending"] = {"d": d, "text": req.text or ""}
+        sess["confirmed_once"] = True
+        timing.note("confirm", "asked")
+        return AgentResponse(status="confirm", transcript=req.text or "", reply=CONFIRM.format(what=what),
+                             source=MODEL[1])
+
+    async def _dispatch(self, req: AgentRequest, sess: dict, text: str, d: dict,
+                        confirmed: bool = False) -> AgentResponse:
+        """Everything after classification: overrides, the rejected set, and the intent switch."""
         intent = d.get("intent")
         timing.note("intent", str(intent) if intent else "none")
         logger.info("agent intent=%s category=%s query=%r place_index=%s", intent, d.get("category"),
                     d.get("query"), d.get("place_index"))
+        ask = None if confirmed else self._confirm_needed(req, d, sess)
+        if ask:
+            return ask
         reply = str(d.get("reply") or "").strip()
         # A control phrase dressed up as a destination (or echoed only as a reply): run the control.
         ctl = (control_phrase(str(d.get("query") or "")) if intent == "go" else None) or \
