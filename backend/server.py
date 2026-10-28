@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 
 ROOT_DIR = Path(__file__).parent
@@ -225,8 +225,13 @@ async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
         res.reply_parts = [first, rest] if rest else [first]
         if rest:
             res.audio_url_2 = f"/api/voice/audio/{voice.synthesize_later(rest, previous_text=first)}"
-        with timing.stage("tts"):
-            audio_id = await voice.synthesize(first, next_text=rest or None)
+        if flags.on("TTS_STREAM", "0") and not voice.eleven_voice():
+            # Streamed: the id is ready now; the first bytes reach the app in ~300 ms instead of a whole clip.
+            audio_id = voice.synthesize_stream(first)
+            timing.add("tts", 0)
+        else:
+            with timing.stage("tts"):
+                audio_id = await voice.synthesize(first, next_text=rest or None)
         if audio_id:
             res.audio_url = f"/api/voice/audio/{audio_id}"
     return res
@@ -457,7 +462,19 @@ _RANGE = re.compile(r"bytes=(\d*)-(\d*)")
 
 @public.get("/voice/audio/{audio_id}")
 async def voice_audio(audio_id: str, request: Request):
-    """mp3 with byte-range support (AVPlayer on iOS probes with Range: bytes=0-1)."""
+    """mp3 with byte-range support (AVPlayer on iOS probes with Range: bytes=0-1). A clip still being streamed
+    is served as it arrives: a probe gets 206 with the first byte, a full request gets a 200 stream."""
+    if voice.is_streaming(audio_id):
+        rng = (request.headers.get("range") or "").strip()
+        if _RANGE.fullmatch(rng) and rng.startswith("bytes=0-"):
+            head = await voice.first_chunk(audio_id)
+            if head is None:
+                raise HTTPException(status_code=404, detail="Audio not found")
+            return Response(content=head, status_code=206, media_type="audio/mpeg",
+                            headers={"Accept-Ranges": "bytes", "Content-Range": "bytes 0-0/*", "Cache-Control": "no-store"})
+        if voice.is_streaming(audio_id):
+            return StreamingResponse(voice.stream_chunks(audio_id), media_type="audio/mpeg",
+                                     headers={"Accept-Ranges": "none", "Cache-Control": "no-store"})
     data = await voice.wait_audio(audio_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Audio not found")

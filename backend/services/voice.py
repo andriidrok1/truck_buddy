@@ -370,3 +370,183 @@ async def wait_audio(audio_id: str) -> Optional[bytes]:
     if task is not None:
         await asyncio.shield(task)
     return get_audio(audio_id)
+
+
+# ---- streaming TTS (TTS_STREAM=1): the driver hears the first chunk while the rest is still being made ----
+
+STREAM_CHUNK = 4096
+STREAM_FIRST_CHUNK_S = 6.0  # no audio at all after this -> fall back to the one-shot path
+STREAM_MODEL = os.environ.get("OPENAI_TTS_STREAM_MODEL", "gpt-4o-mini-tts")  # tts-1 cannot stream
+
+
+class StreamBuf:
+    """Chunks of one clip as they arrive; readers wait on the condition for more."""
+
+    def __init__(self) -> None:
+        self.chunks: list[bytes] = []
+        self.done = False
+        self.error: Optional[str] = None
+        self.cond = asyncio.Condition()
+
+    @property
+    def size(self) -> int:
+        return sum(len(c) for c in self.chunks)
+
+
+_STREAMS: dict[str, StreamBuf] = {}
+
+
+def is_streaming(audio_id: str) -> bool:
+    return audio_id in _STREAMS
+
+
+async def _gain_pipe(src, out: "asyncio.Queue[Optional[bytes]]") -> None:
+    """Feed mp3 chunks through one long-lived ffmpeg (+OPENAI_GAIN_DB, same loudness as louder()) and put the
+    boosted mp3 chunks on `out`; None marks the end. Without ffmpeg the chunks pass through untouched."""
+    try:
+        p = await asyncio.create_subprocess_exec(
+            _FFMPEG, "-hide_banner", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
+            "-af", f"volume={OPENAI_GAIN_DB}dB,alimiter=limit=0.84:level=false",
+            "-c:a", "libmp3lame", "-b:a", "64k", "-f", "mp3", "-flush_packets", "1", "pipe:1",
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+    except Exception as e:  # noqa: BLE001 - no ffmpeg: unboosted stream is better than none
+        logger.warning("stream gain unavailable, passing audio through: %s", e)
+        async for chunk in src:
+            await out.put(chunk)
+        await out.put(None)
+        return
+
+    async def feed():
+        try:
+            async for chunk in src:
+                p.stdin.write(chunk)
+                await p.stdin.drain()
+        finally:
+            p.stdin.close()
+
+    feeder = asyncio.create_task(feed())
+    try:
+        while True:
+            chunk = await p.stdout.read(STREAM_CHUNK)
+            if not chunk:
+                break
+            await out.put(chunk)
+    finally:
+        await feeder
+        await p.wait()
+        await out.put(None)
+
+
+async def _openai_stream(text: str):
+    """Raw mp3 chunks from gpt-4o-mini-tts as they are generated."""
+    model = STREAM_MODEL
+    extra = {"instructions": INSTRUCTIONS} if model == "gpt-4o-mini-tts" else {}
+    async with llm.client().audio.speech.with_streaming_response.create(
+            input=text, model=model, voice=DEFAULT_VOICE, response_format="mp3", stream_format="audio",
+            **extra) as resp:
+        async for chunk in resp.iter_bytes(STREAM_CHUNK):
+            if chunk:
+                yield chunk
+
+
+async def _safe_pump(src, out: asyncio.Queue) -> None:
+    """_gain_pipe that always ends the queue: an exception becomes an item, then None."""
+    try:
+        await _gain_pipe(src, out)
+    except Exception as e:  # noqa: BLE001
+        await out.put(e)
+        await out.put(None)
+
+
+async def _run_stream(audio_id: str, text: str, buf: StreamBuf, previous_text: Optional[str]) -> None:
+    out: asyncio.Queue = asyncio.Queue()
+    pump = asyncio.create_task(_safe_pump(_openai_stream(text), out))
+    got_any = False
+    try:
+        while True:
+            try:
+                chunk = await asyncio.wait_for(out.get(), None if got_any else STREAM_FIRST_CHUNK_S)
+            except asyncio.TimeoutError:
+                raise RuntimeError("no audio within the first-chunk budget")
+            if chunk is None:
+                break
+            if isinstance(chunk, Exception):
+                raise chunk
+            got_any = True
+            async with buf.cond:
+                buf.chunks.append(chunk)
+                buf.cond.notify_all()
+        if not got_any:
+            raise RuntimeError("empty stream")
+    except Exception as e:  # noqa: BLE001 - fall back to the one-shot path, same id, same URL
+        logger.warning("streaming TTS failed (%s), falling back to one-shot", e)
+        pump.cancel()
+        if not got_any:
+            tmp = await synthesize(text, previous_text=previous_text)
+            data = _AUDIO_CACHE.pop(tmp, None) if tmp else None
+            if data:
+                async with buf.cond:
+                    buf.chunks = [data]
+                    buf.cond.notify_all()
+            else:
+                buf.error = "tts failed"
+        else:
+            buf.error = "stream cut off"
+    finally:
+        if not pump.done():
+            pump.cancel()
+        async with buf.cond:
+            buf.done = True
+            buf.cond.notify_all()
+        data = b"".join(buf.chunks)
+        if data:
+            _AUDIO_CACHE[audio_id] = data
+            while len(_AUDIO_CACHE) > _CACHE_MAX:
+                _AUDIO_CACHE.popitem(last=False)
+        _STREAMS.pop(audio_id, None)
+
+
+def synthesize_stream(text: str, previous_text: Optional[str] = None) -> str:
+    """Starts a streamed clip and returns its id at once; GET /api/voice/audio/{id} serves bytes as they come."""
+    audio_id = uuid.uuid4().hex
+    buf = StreamBuf()
+    _STREAMS[audio_id] = buf
+    task = asyncio.create_task(_run_stream(audio_id, spoken(text)[:4000], buf, previous_text))
+    _PENDING[audio_id] = task  # wait_audio() on a finished stream behaves like any pending clip
+    task.add_done_callback(lambda _t: _PENDING.pop(audio_id, None))
+    return audio_id
+
+
+async def first_chunk(audio_id: str, timeout: float = STREAM_FIRST_CHUNK_S + 2) -> Optional[bytes]:
+    """The first bytes of a streaming clip (for a Range probe), or None when it never produced any."""
+    buf = _STREAMS.get(audio_id)
+    if buf is None:
+        data = await wait_audio(audio_id)
+        return data[:1] if data else None
+    try:
+        async with buf.cond:
+            await asyncio.wait_for(buf.cond.wait_for(lambda: buf.chunks or buf.done), timeout)
+    except asyncio.TimeoutError:
+        return None
+    return buf.chunks[0][:1] if buf.chunks else None
+
+
+async def stream_chunks(audio_id: str):
+    """Async iterator over a streaming clip's bytes, from the start, until it is done."""
+    buf = _STREAMS.get(audio_id)
+    if buf is None:
+        data = await wait_audio(audio_id)
+        if data:
+            yield data
+        return
+    i = 0
+    while True:
+        async with buf.cond:
+            await buf.cond.wait_for(lambda: len(buf.chunks) > i or buf.done)
+            pending = buf.chunks[i:]
+            done = buf.done
+        for c in pending:
+            yield c
+        i += len(pending)
+        if done and i >= len(buf.chunks):
+            return
