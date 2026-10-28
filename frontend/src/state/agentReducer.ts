@@ -30,7 +30,8 @@ export type Effect =
   | { type: "backToIdle" }
   | { type: "pauseDialog" }
   | { type: "endDialog" }
-  | { type: "continueDialog" }
+  /** `force`: reopen the mic after the reply even if the loop was paused (a confirm question needs its yes/no). */
+  | { type: "continueDialog"; force?: boolean }
   /** Satellite parking check for the new destination, spoken after the reply. */
   | { type: "followParking"; place: Place; approach?: Approach | null }
   /** "Is there parking at X?": wrap the spoken promise with the parking answer for that place. */
@@ -173,12 +174,14 @@ export function reduceAgentResponse(res: AgentResponse, ctx: AgentContext): Agen
     return { patch: { options: res.options, parking: {}, places: res.options, phase: "options" }, effects };
   }
 
-  if (res.status !== "chat" && res.status !== "not_understood") effects.push({ type: "toast", text: res.message ?? MESSAGES.notUnderstood });
+  const spokenOnly = res.status === "chat" || res.status === "confirm" || res.status === "not_understood";
+  if (!spokenOnly) effects.push({ type: "toast", text: res.message ?? MESSAGES.notUnderstood });
   effects.push({ type: "backToIdle" });
   if (res.actions?.length) effects.push(...reduceActions(res.actions, ctx)); // after backToIdle: actions may change the phase
   effects.push({ type: "speak" });
   const followup = res.actions?.find((a) => a.type === "parking_followup");
   if (followup) effects.push({ type: "parkingFollowup", placeId: String(followup.value) });
-  effects.push({ type: "continueDialog" });
+  // A confirm question is resolved by the next utterance ("yes" / "no"): the mic reopens whatever the loop state.
+  effects.push(res.status === "confirm" ? { type: "continueDialog", force: true } : { type: "continueDialog" });
   return { patch: {}, effects };
 }

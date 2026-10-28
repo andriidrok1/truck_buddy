@@ -26,12 +26,57 @@ describe("api.agentSpeak", () => {
     expect(body.session_id).toBe("s1");
   });
 
-  test("typed text sends stt_ms as null", async () => {
+  test("typed text sends stt_ms and stt_confidence as null", async () => {
     const fetchMock = jest.fn(async () => jsonResponse({ status: "chat", reply: "ok" }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     await api.agentSpeak("hello", { lat: 0, lng: 0 });
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(init.body as string).stt_ms).toBeNull();
+    const body = JSON.parse(init.body as string);
+    expect(body.stt_ms).toBeNull();
+    expect(body.stt_confidence).toBeNull();
+  });
+
+  test("forwards the STT confidence as stt_confidence", async () => {
+    const fetchMock = jest.fn(async () => jsonResponse({ status: "chat", reply: "ok" }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await api.agentSpeak("take me to reno", { lat: 0, lng: 0 }, null, undefined, "s1", undefined, null, null, 700, 0.42);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.stt_ms).toBe(700);
+    expect(body.stt_confidence).toBe(0.42);
+  });
+});
+
+describe("api.nudges", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  test("posts the drive context and returns the nudges", async () => {
+    const nudge = { kind: "break", text: "You've been driving 7 hours. Want a stop at Pilot Fernley?", priority: 2, offer: "add_stop" };
+    const fetchMock = jest.fn(async () => jsonResponse({ nudges: [nudge] }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const out = await api.nudges({
+      lat: 39.5,
+      lng: -119.8,
+      driving: true,
+      active_place: null,
+      ahead: [[39.6, -119.3, 5.2]],
+      drive_elapsed_min: 61,
+      local_hour: 14,
+      session_id: "dlg-1",
+    });
+    expect(out.nudges).toEqual([nudge]);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toMatch(/\/api\/nudges$/);
+    expect(init.method).toBe("POST");
+    const body = JSON.parse(init.body as string);
+    expect(body.ahead).toEqual([[39.6, -119.3, 5.2]]);
+    expect(body.drive_elapsed_min).toBe(61);
+    expect(body.local_hour).toBe(14);
+    expect(body.session_id).toBe("dlg-1");
+    expect(body.truck_profile).toBeDefined(); // added by the client, like /agent
   });
 });
 
@@ -43,10 +88,30 @@ describe("api.transcribe", () => {
     jest.useRealTimers();
   });
 
-  test("stt_ms is the server's STT stage when reported", async () => {
+  test("stt_ms is the server's STT stage when reported; confidence null when absent", async () => {
     uploadForm.mockResolvedValueOnce(jsonResponse({ transcript: "truck stop", timings: { stt: 640, upload: 90 } }));
     const out = await api.transcribe("file:///speech.m4a");
-    expect(out).toEqual({ transcript: "truck stop", timings: { stt: 640, upload: 90 }, stt_ms: 640 });
+    expect(out).toEqual({ transcript: "truck stop", timings: { stt: 640, upload: 90 }, stt_ms: 640, stt_confidence: null });
+    // No hint: no field (older backends reject unknown form fields with 422 on some stacks).
+    const opts = uploadForm.mock.calls[uploadForm.mock.calls.length - 1][1] as { fields: Record<string, string> };
+    expect(opts.fields).toEqual({});
+  });
+
+  test("sends the hint field and returns the confidence", async () => {
+    uploadForm.mockResolvedValueOnce(jsonResponse({ transcript: "reno", timings: { stt: 500 }, stt_confidence: 0.83 }));
+    const out = await api.transcribe("file:///speech.m4a", undefined, "Reno NV, Pilot Fernley, I-80 E");
+    expect(out.transcript).toBe("reno");
+    expect(out.stt_confidence).toBe(0.83);
+    const [url, opts] = uploadForm.mock.calls[uploadForm.mock.calls.length - 1] as [string, { fields: Record<string, string> }];
+    expect(url).toMatch(/\/api\/voice\/transcribe$/);
+    expect(opts.fields).toEqual({ hint: "Reno NV, Pilot Fernley, I-80 E" });
+  });
+
+  test("the hint never passes the server's 600-char cap", async () => {
+    uploadForm.mockResolvedValueOnce(jsonResponse({ transcript: "x" }));
+    await api.transcribe("file:///speech.m4a", undefined, "a".repeat(700));
+    const [, opts] = uploadForm.mock.calls[uploadForm.mock.calls.length - 1] as [string, { fields: Record<string, string> }];
+    expect(opts.fields.hint).toHaveLength(600);
   });
 
   test("stt_ms falls back to the measured wall time", async () => {

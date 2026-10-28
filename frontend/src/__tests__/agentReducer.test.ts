@@ -95,6 +95,18 @@ describe("reduceAgentResponse", () => {
     expect(types(effects)).toEqual(["backToIdle", "speak", "continueDialog"]);
   });
 
+  test("confirm reopens the mic", () => {
+    // "Did you say Reno, NV?": spoken like chat, no toast, and the mic opens after the reply even
+    // when the loop was paused, because the next "yes" / "no" resolves it.
+    const { patch, effects } = reduceAgentResponse({ ...chatRes, status: "confirm", reply: "Did you say Reno, NV?" }, onRoute);
+    expect(patch).toEqual({});
+    expect(types(effects)).toEqual(["backToIdle", "speak", "continueDialog"]);
+    expect(effects[2]).toEqual({ type: "continueDialog", force: true });
+    // Plain chat does not force it.
+    const chat = reduceAgentResponse(chatRes, onRoute);
+    expect(chat.effects[2]).toEqual({ type: "continueDialog" });
+  });
+
   test("no_results and not_understood", () => {
     const none = reduceAgentResponse({ ...chatRes, status: "no_results", message: null }, idle);
     expect(none.effects[0]).toEqual({ type: "toast", text: MESSAGES.notUnderstood });

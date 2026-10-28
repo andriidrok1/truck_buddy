@@ -19,6 +19,7 @@ import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
 import { logAnnouncement } from "@/src/dev/announcements";
 import { isTester } from "@/src/auth";
+import { routePointsAhead } from "@/src/geo/ahead";
 import { swapAlternative, switchedLine } from "@/src/geo/routeChoice";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
@@ -39,6 +40,7 @@ import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, ParkingState, Ph
 import { storage } from "@/src/utils/storage";
 import { planFiller } from "@/src/voice/fillers";
 import { PRIORITY } from "@/src/voice/queue";
+import { buildSttHint, streetFromInstruction } from "@/src/voice/sttHint";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 
@@ -58,6 +60,13 @@ const STAGES = ["Searching nearby…", "Setting route…"];
 const STAGE_MS = 3500;
 const WAKE_SLEEP_MS = 10 * 60 * 1000; // background without a route: turn the wake word off
 const SESSION_IDLE_MS = 10 * 60 * 1000; // no turn for this long: the next one starts a fresh session
+const newSessionId = () => `dlg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+// Nudges (/api/nudges): first ask a minute into the drive, then every five minutes; a nudge that
+// is still waiting when the next one comes is stale. After one plays the mic opens for ~7 s.
+const NUDGE_FIRST_MS = 60 * 1000;
+const NUDGE_EVERY_MS = 5 * 60 * 1000;
+const NUDGE_ANSWER_MS = 7000;
+const NUDGE_KEY_PREFIX = "nudge-";
 /** " There's a lot with trailers to the southeast, looks like a private yard." (or "") */
 const nearbyLine = (pk: ParkingCheck) => {
   if (!pk.nearby) return "";
@@ -162,11 +171,17 @@ export default function MapScreen() {
 
   // Everything the copilot says on its own (maneuvers, reroutes, reminders) goes through one
   // queue: it waits while the driver is talking to the copilot or a reply plays (never cuts it
-  // off), and orders by urgency. The caption follows whatever line is on air.
+  // off), and orders by urgency. The caption follows whatever line is on air. A nudge ("Want me
+  // to add a stop at Pilot Fernley?") opens the mic for a few seconds once it has played:
+  // listenForAnswer, defined further down (it needs the wake word and the mic), through this ref.
+  const nudgeAnswer = useRef<() => void>(() => {});
   const { say, clear: clearSpeech } = useSpeechQueue(
     voice,
     () => phaseRef.current === "listening" || phaseRef.current === "thinking",
     (item) => setCaption({ reply: item.text }),
+    (item) => {
+      if (item.key?.startsWith(NUDGE_KEY_PREFIX)) nudgeAnswer.current();
+    },
   );
 
   useEffect(() => {
@@ -238,7 +253,10 @@ export default function MapScreen() {
   const sayReply = (res: AgentResponse) => {
     setCaption({ reply: res.reply, heard: res.transcript || undefined });
     if (!res.audio_url) return Promise.resolve();
-    const [first, ...restParts] = res.reply.split(/(?<=[.!?])\s+/);
+    // The playback timeouts are sized from the text behind each clip: the server says how it split
+    // the reply when it can; older backends leave that to the sentence split.
+    const parts = res.reply_parts?.length ? res.reply_parts : res.reply.split(/(?<=[.!?])\s+/);
+    const [first, ...restParts] = parts;
     const rest = restParts.join(" ");
     const done = voice.playAndWait(absoluteUrl(res.audio_url), Math.min(20000, 1500 + first.length * 65));
     if (!res.audio_url_2) return done;
@@ -373,26 +391,31 @@ export default function MapScreen() {
   const pauseDialog = () => {
     live.current = false;
   };
+  const sessionStale = () => !dialog.current || Date.now() - lastTurnAt.current > SESSION_IDLE_MS;
   const ensureSession = () => {
-    if (!dialog.current || Date.now() - lastTurnAt.current > SESSION_IDLE_MS) {
-      dialog.current = `dlg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    if (sessionStale()) {
+      dialog.current = newSessionId();
       misses.current = 0;
     }
     lastTurnAt.current = Date.now();
   };
   const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-  /** After an answer: keep talking unless the conversation is over. */
-  const continueDialog = async (myTurn: number, res: AgentResponse | null, spoken: Promise<void>) => {
+  /**
+   * After an answer: keep talking unless the conversation is over. `force` (a confirm question,
+   * "Did you say Reno?") reopens the mic even when the loop was paused: the next "yes" / "no"
+   * resolves it. beginListening turns the loop back on from there.
+   */
+  const continueDialog = async (myTurn: number, res: AgentResponse | null, spoken: Promise<void>, force = false) => {
     if (!dialog.current) return;
     misses.current = res && res.status !== "not_understood" ? 0 : misses.current + 1;
     if (res?.end_conversation || misses.current >= 2) {
       endDialog();
       return;
     }
-    if (!live.current) return;
+    if (!live.current && !force) return;
     await spoken;
-    if (myTurn !== turn.current || !live.current) return;
+    if (myTurn !== turn.current || (!live.current && !force)) return;
     listenNow();
   };
 
@@ -521,6 +544,75 @@ export default function MapScreen() {
   useEffect(() => {
     limitRef.current = advisories.limitMph;
   }, [advisories.limitMph]);
+  const guidanceRef = useRef<Guidance>(guidance);
+  useEffect(() => {
+    guidanceRef.current = guidance;
+  }, [guidance]);
+  const coordsRef = useRef<LatLng>(loc.coords);
+  useEffect(() => {
+    coordsRef.current = loc.coords;
+  }, [loc.coords]);
+
+  // ---- Nudges: while driving, every few minutes the backend may have something to offer (a
+  // break coming due, parking ahead). Each line is spoken as ambient; once it has played the mic
+  // opens for a few seconds (listenForAnswer) and the backend keeps the offer pending for the next
+  // turn of the same session, so "yes" is enough. Not offline, not before "Go". ----
+  const drivingSince = useRef<number | null>(null);
+  useEffect(() => {
+    drivingSince.current = driving ? Date.now() : null;
+  }, [driving]);
+  const hasRoute = !!active;
+  useEffect(() => {
+    if (!driving || !hasRoute) return;
+    const ctrl = new AbortController();
+    let every: ReturnType<typeof setInterval> | null = null;
+    const poll = async () => {
+      if (!isOnline()) return;
+      const cur = activeRef.current;
+      if (!cur) return;
+      const g = guidanceRef.current;
+      // The offer must land in the session the answer will use: a live one, else one started here.
+      const stale = sessionStale();
+      const before = dialog.current;
+      const sessionId = stale || !before ? newSessionId() : before;
+      const since = drivingSince.current;
+      try {
+        const { nudges } = await api.nudges(
+          {
+            lat: coordsRef.current.lat,
+            lng: coordsRef.current.lng,
+            driving: true,
+            active_place: cur.place,
+            ahead: routePointsAhead(cur.route.geometry, g.cum, g.matchedIndex, g.alongM),
+            drive_elapsed_min: since === null ? null : Math.min(24 * 60, Math.max(0, Math.round((Date.now() - since) / 60000))),
+            local_hour: new Date().getHours(),
+            session_id: sessionId,
+          },
+          ctrl.signal,
+        );
+        if (ctrl.signal.aborted || !nudges.length) return;
+        if (stale && dialog.current === before) {
+          dialog.current = sessionId;
+          misses.current = 0;
+        }
+        if (dialog.current === sessionId) lastTurnAt.current = Date.now(); // the answer must not start a fresh session
+        for (const n of nudges) {
+          say(n.text, { priority: PRIORITY.WEATHER, kind: "ambient", key: `${NUDGE_KEY_PREFIX}${n.kind}`, ttlMs: NUDGE_EVERY_MS });
+        }
+      } catch (e) {
+        if (!ctrl.signal.aborted) console.log(`[nudges] ${String(e)}`);
+      }
+    };
+    const first = setTimeout(() => {
+      poll();
+      every = setInterval(poll, NUDGE_EVERY_MS);
+    }, NUDGE_FIRST_MS);
+    return () => {
+      clearTimeout(first);
+      if (every) clearInterval(every);
+      ctrl.abort();
+    };
+  }, [driving, hasRoute, say]); // refs and a stable callback; `active` itself must not restart the timer
 
   const onGo = () => {
     pauseDialog();
@@ -564,6 +656,7 @@ export default function MapScreen() {
     const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
     let filler: ReturnType<typeof scheduleFiller> | null = null;
     let sttMs: number | null = null;
+    let sttConfidence: number | null = null;
     try {
       let transcript = typed ?? "";
       if (typed === undefined) {
@@ -572,8 +665,19 @@ export default function MapScreen() {
         // Planned before STT, so the driver hears something ~300 ms after they stop talking
         // (the transcript alone takes 1-1.5 s to come back).
         filler = scheduleFiller();
-        const stt = await api.transcribe(uri, ctrl.signal);
+        // Names the recogniser should expect: what is on screen and on the route, most useful first.
+        const cur = activeRef.current;
+        const hint = buildSttHint([
+          cur?.place.name,
+          ...optionsRef.current.map((p) => p.name),
+          ...places.map((p) => p.name),
+          ...(cur?.stops ?? []).map((s) => s.name),
+          ...(cur?.route.labels ?? []),
+          streetFromInstruction(guidanceRef.current.next?.instruction),
+        ]);
+        const stt = await api.transcribe(uri, ctrl.signal, hint || undefined);
         sttMs = stt.stt_ms;
+        sttConfidence = stt.stt_confidence;
         transcript = stt.transcript;
         if (!transcript) filler.cancel(); // nothing heard: no "Hang on." for silence
       }
@@ -594,6 +698,7 @@ export default function MapScreen() {
         loc.heading ?? null,
         limitRef.current,
         sttMs,
+        sttConfidence,
       );
       if (myTurn !== turn.current) return;
       lastTurnSlow.current = (res.timings?.total ?? 0) > SLOW_TURN_MS;
@@ -672,7 +777,8 @@ export default function MapScreen() {
   };
 
   // Hands-free: listening stops by itself when the driver pauses (tap to stop early).
-  const beginListening = async (fromWake = false) => {
+  // `maxMs` caps the window (a nudge's "yes" window); the default is a full turn.
+  const beginListening = async (fromWake = false, maxMs?: number) => {
     // Offline the mic stays shut: recording seven seconds for a transcription that cannot happen helps nobody.
     if (offlineTurn({ isOnline, say, setCaption })) {
       pauseDialog();
@@ -685,7 +791,7 @@ export default function MapScreen() {
     const myTurn = ++turn.current;
     let res: string;
     try {
-      res = await voice.listen({ chime: !fromWake }); // the wake word plays its own chime
+      res = await voice.listen({ chime: !fromWake, maxMs }); // the wake word plays its own chime
     } catch {
       pauseDialog();
       showToast(MESSAGES.notUnderstood);
@@ -719,6 +825,15 @@ export default function MapScreen() {
     await wake.stop();
     beginListening();
   };
+  /** A nudge just played: a short mic window for the "yes", unless a turn is already under way. */
+  const listenForAnswer = async () => {
+    if (phaseRef.current === "listening" || phaseRef.current === "thinking") return;
+    await wake.stop();
+    beginListening(false, NUDGE_ANSWER_MS);
+  };
+  useEffect(() => {
+    nudgeAnswer.current = listenForAnswer;
+  });
 
   const { micPermission } = voice;
   const checkMic = useCallback(() => {
@@ -985,7 +1100,7 @@ export default function MapScreen() {
           endDialog();
           break;
         case "continueDialog":
-          continueDialog(myTurn, res, spoken);
+          continueDialog(myTurn, res, spoken, e.force);
           break;
         case "followParking":
           followParking(e.place, spoken, myTurn, e.approach);
