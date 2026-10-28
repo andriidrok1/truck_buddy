@@ -8,8 +8,10 @@ import type { ActiveRoute, ParkingState, Phase, Place } from "../types";
 import { Avatar } from "./Avatar";
 import { Icon } from "./Icon";
 import { OptionsList } from "./OptionsList";
+import { ParkingLiveBadge } from "./ParkingLiveBadge";
 import { ParkingStatus } from "./ParkingStatus";
 import { haptic, PressableScale } from "./PressableScale";
+import { ReviewsGist } from "./ReviewsGist";
 import { Waveform } from "./Waveform";
 import { entrySpot, routeEndsAt } from "../utils/entry";
 
@@ -182,6 +184,8 @@ export function CopilotSheet(props: Props) {
                 {active.place.tags.length ? active.place.tags.join(" · ") : active.place.address ?? (active.place.category === "destination" ? "Destination" : "Address unknown")}
               </Text>
             </View>
+            {!!active.place.reviews?.length && <ReviewsGist reviews={active.place.reviews} />}
+            <ParkingLiveBadge place={active.place} />
             {active.place.category !== "service" && <ParkingStatus parking={active.parking} place={active.place} route={active.route.geometry} />}
             {options.length > 0 && (
               <Pressable testID="other-options-button" onPress={onShowOptions} hitSlop={8} style={styles.otherBtn}>

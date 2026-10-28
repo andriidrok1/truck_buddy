@@ -1,6 +1,26 @@
 export type LatLng = { lat: number; lng: number };
 
-export type Category = "truck_stop" | "hotel" | "rest_area" | "destination" | "service";
+export type Category =
+  | "truck_stop"
+  | "hotel"
+  | "rest_area"
+  | "destination"
+  | "service"
+  | "walmart"
+  | "cat_scale"
+  | "truck_wash"
+  | "weigh_station";
+
+/** One Google review. Google's terms: show the author and link to the review whenever it is displayed. */
+export type Review = {
+  author: string;
+  rating?: number | null;
+  text: string;
+  uri?: string | null;
+  time?: string | null;
+};
+
+export type ParkingTrend = "FILLING" | "CLEARING" | "STEADY";
 
 export type Place = {
   id: string;
@@ -18,6 +38,16 @@ export type Place = {
   diesel_updated?: string | null;
   distance_km?: number | null;
   distance_mi?: number | null;
+  /** Up to 5 Google reviews. */
+  reviews?: Review[];
+  /** Live truck-parking counts (TPIMS / NTAD) for truck stops and rest areas. */
+  parking_available?: number | null;
+  parking_capacity?: number | null;
+  parking_low?: boolean | null;
+  parking_trend?: ParkingTrend | null;
+  /** RFC 3339 timestamp of the last count. */
+  parking_updated?: string | null;
+  parking_source?: "tpims" | "ntad" | null;
 };
 
 export type Maneuver = {
