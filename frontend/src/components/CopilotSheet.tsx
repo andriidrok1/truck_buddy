@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from "react";
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useState, type ReactNode } from "react";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import { KeyboardStickyView } from "@/src/keyboard";
-import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown, runOnJS, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 
 import { routesChipText } from "../geo/routeChoice";
 import type { OfflineMapState } from "../hooks/useOfflineMap";
@@ -17,6 +18,11 @@ import { haptic, PressableScale } from "./PressableScale";
 import { ReviewsGist } from "./ReviewsGist";
 import { Waveform } from "./Waveform";
 import { entrySpot, routeEndsAt } from "../utils/entry";
+import { dragProgress, EXPANDED_SHARE, heightAt, sheetHeights, snapTarget, type SheetHeights } from "../utils/sheetSnap";
+
+/** Sheet height while nothing pins it: whatever the content needs (Yoga treats this as no cap). */
+const AUTO_MAX_HEIGHT = 100000;
+const SNAP_SPRING = { damping: 22, stiffness: 240, mass: 0.9, overshootClamping: true };
 
 type Props = {
   phase: Phase;
@@ -137,6 +143,70 @@ export function CopilotSheet(props: Props) {
   const canType = phase === "ready" || phase === "navigating" || phase === "options" || phase === "providers";
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState("");
+
+  // Drag: the sheet rests at its content height (progress 0) or at EXPANDED_SHARE of the window
+  // (progress 1). While nothing pins it the height is auto, exactly as before; from the first
+  // drag frame on it is pinned to the interpolated height so the body can shrink and scroll.
+  const { height: windowH } = useWindowDimensions();
+  const expandedH = Math.round(windowH * EXPANDED_SHARE);
+  const progress = useSharedValue(0);
+  const collapsedH = useSharedValue(0); // last height measured while resting collapsed
+  const dragStart = useSharedValue(0);
+  // Remembered with the phase it was reached in: a new phase swaps the content, so the tall
+  // state (sized for the old one) does not carry over.
+  const [tall, setTall] = useState<{ phase: Phase; on: boolean }>({ phase, on: false });
+  const expanded = tall.on && tall.phase === phase;
+  const markExpanded = (on: boolean) => setTall({ phase, on });
+  // The options and providers lists scroll on their own; a pan over them would steal that scroll.
+  const bodyDraggable = !expanded && phase !== "options" && phase !== "providers";
+
+  const heights = (): SheetHeights => {
+    "worklet";
+    return sheetHeights(collapsedH.get(), expandedH);
+  };
+  const panConfig = {
+    activeOffsetY: [-8, 8] as [number, number],
+    failOffsetX: [-24, 24] as [number, number],
+    onActivate: () => {
+      "worklet";
+      dragStart.set(progress.get());
+    },
+    onUpdate: (e: { translationY: number }) => {
+      "worklet";
+      progress.set(dragProgress(dragStart.get(), e.translationY, heights()));
+    },
+    onDeactivate: (e: { velocityY: number }) => {
+      "worklet";
+      const h = heights();
+      const target = snapTarget(heightAt(progress.get(), h), e.velocityY, h);
+      progress.set(withSpring(target === "expanded" ? 1 : 0, SNAP_SPRING));
+      runOnJS(markExpanded)(target === "expanded");
+    },
+  };
+  const handlePan = usePanGesture(panConfig);
+  const bodyPan = usePanGesture({ ...panConfig, enabled: bodyDraggable });
+
+  const sheetStyle = useAnimatedStyle(() => {
+    const p = progress.get();
+    const base = collapsedH.get();
+    if (p <= 0 || base <= 0) return { minHeight: 0, maxHeight: AUTO_MAX_HEIGHT };
+    const h = heightAt(p, sheetHeights(base, expandedH));
+    return { minHeight: h, maxHeight: h };
+  });
+
+  // The pinned height goes with the content it was sized for.
+  useEffect(() => {
+    progress.set(0);
+  }, [phase, progress]);
+
+  const onSheetLayout = (h: number) => {
+    // Only the resting, collapsed height is the map's bottom inset; the expanded sheet may cover
+    // the map, the camera does not follow it (that would refit the options on every drag frame).
+    if (progress.get() !== 0) return;
+    collapsedH.set(h);
+    onLayout(h);
+  };
+
   const send = () => {
     const text = draft.trim();
     if (!text) return;
@@ -161,13 +231,26 @@ export function CopilotSheet(props: Props) {
 
   return (
     <KeyboardStickyView offset={{ closed: 0, opened: bottomInset }} style={styles.wrap}>
-    <View
+    <Animated.View
       testID="copilot-sheet"
-      onLayout={(e) => onLayout(e.nativeEvent.layout.height)}
-      style={[styles.sheet, shadow(colors, 2), { backgroundColor: colors.surface, paddingBottom: bottomInset + spacing.lg }]}
+      onLayout={(e) => onSheetLayout(e.nativeEvent.layout.height)}
+      style={[styles.sheet, shadow(colors, 2), sheetStyle, { backgroundColor: colors.surface, paddingBottom: bottomInset + spacing.lg }]}
     >
-      <View style={[styles.handle, { backgroundColor: colors.surfaceTertiary }]} />
+      <GestureDetector gesture={handlePan}>
+        <View testID="sheet-grabber" accessibilityRole="adjustable" accessibilityLabel={expanded ? "Collapse" : "Expand"} hitSlop={{ top: 12, bottom: 4 }} style={styles.grab}>
+          <View style={[styles.handle, { backgroundColor: colors.surfaceTertiary }]} />
+        </View>
+      </GestureDetector>
 
+      <GestureDetector gesture={bodyPan}>
+      <ScrollView
+        testID="sheet-body"
+        style={styles.body}
+        scrollEnabled={expanded}
+        bounces={expanded}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
       <Animated.View key={`head-${phase}`} entering={FadeIn.duration(220)} style={styles.header}>
         {phase === "ready" && (
           <Text testID="sheet-title" style={[styles.title, { color: colors.onSurface }]}>
@@ -286,6 +369,8 @@ export function CopilotSheet(props: Props) {
           </View>
         )}
       </Animated.View>
+      </ScrollView>
+      </GestureDetector>
 
       {typing && canType ? (
         <Animated.View entering={FadeIn.duration(180)} style={styles.inputRow}>
@@ -360,7 +445,7 @@ export function CopilotSheet(props: Props) {
         {navigating && <SideButton icon="close" label="End route" testID="end-route-button" onPress={onEndRoute} danger />}
       </View>
       )}
-    </View>
+    </Animated.View>
     </KeyboardStickyView>
   );
 }
@@ -379,7 +464,10 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingHorizontal: spacing.xl,
   },
-  handle: { alignSelf: "center", width: 40, height: 5, borderRadius: 3, marginBottom: spacing.md },
+  grab: { alignItems: "center", paddingBottom: spacing.md },
+  handle: { width: 40, height: 5, borderRadius: 3 },
+  // Shrinks (and scrolls) once the sheet is pinned to a height; sized by its content otherwise.
+  body: { flexGrow: 1, flexShrink: 1 },
   header: { minHeight: 36, justifyContent: "center" },
   title: { fontFamily: fonts.bold, fontSize: 22, textAlign: "center" },
   listenRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.md },
