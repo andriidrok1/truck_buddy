@@ -17,8 +17,9 @@ from typing import List, Optional
 import flexpolyline
 from services.http import client
 
-from models import Maneuver, RouteInfo, TrafficSegment, TruckProfile
+from models import Incident, Maneuver, RouteInfo, SpeedLimit, TrafficSegment, TruckProfile
 from services.approach import from_route
+from services.flags import on
 from services.geo import haversine_km, km_to_mi
 
 logger = logging.getLogger("truckbuddy.routing")
@@ -114,18 +115,26 @@ def _traffic(points: List[List[float]], spans: List[dict]) -> List[TrafficSegmen
 
 HERE_RETURN = "polyline,summary,actions,instructions"
 HERE_SPANS = "dynamicSpeedInfo"
+MPH_PER_MS = 2.23694
+INCIDENT_TEXT_MAX = 80
 
 
 def _here_params(t: TruckProfile, origin: tuple[float, float], dest: tuple[float, float]) -> list[tuple[str, str]]:
     """Query for HERE Routing v8 as (key, value) pairs, so a key can repeat (via=...&via=...)."""
+    ret, spans = [HERE_RETURN], [HERE_SPANS]
+    if on("ROUTE_SPEED_LIMITS"):
+        spans.append("maxSpeed")
+    if on("ROUTE_INCIDENTS"):
+        ret.append("incidents")
+        spans.append("incidents")
     params: list[tuple[str, str]] = [
         ("transportMode", "truck"),
         ("origin", f"{origin[0]},{origin[1]}"),
         ("destination", f"{dest[0]},{dest[1]}"),
-        ("return", HERE_RETURN),
+        ("return", ",".join(ret)),
         ("lang", "en-US"),
         ("units", "imperial"),
-        ("spans", HERE_SPANS),
+        ("spans", ",".join(spans)),
         ("vehicle[height]", str(round(t.height_in * 2.54))),  # cm
         ("vehicle[length]", str(round(t.total_length_ft * 30.48))),  # cm
         ("vehicle[grossWeight]", str(round(t.weight_lb * 0.4536))),  # kg
@@ -144,18 +153,84 @@ def _parse_route(route: dict) -> RouteInfo:
     if not sections:
         raise RuntimeError("HERE route has no sections")
     geometry, meters, seconds, raw, traffic, actions = [], 0.0, 0.0, [], [], []
+    limits: list[tuple[int, int]] = []  # (global offset, mph)
+    incidents: list[tuple[int, dict]] = []  # (global offset, incident)
     for s in sections:
         pts = [[round(p[0], 6), round(p[1], 6)] for p in flexpolyline.decode(s["polyline"])]
+        base = len(geometry)
+        spans = s.get("spans") or []
         for a in s.get("actions") or []:
-            actions.append((len(geometry) + int(a.get("offset", 0)), a))
+            actions.append((base + int(a.get("offset", 0)), a))
+        limits += _speed_limits(spans, base)
+        incidents += _incidents(s, spans, base)
         geometry += pts
-        traffic += _traffic(pts, s.get("spans") or [])
+        traffic += _traffic(pts, spans)
         meters += s["summary"]["length"]
         seconds += s["summary"]["duration"]
         raw += [str(n.get("code") or n.get("title") or "") for n in s.get("notices", [])]
     info = _info(geometry, meters, seconds, "here", _friendly(raw), True, traffic)
     info.maneuvers = _maneuvers(geometry, actions)
+    n = len(geometry)
+    info.speed_limits = _remap_limits(limits, n)
+    info.incidents = [_incident(_thin_index(off, n), inc) for off, inc in incidents]
     return info
+
+
+def _speed_limits(spans: List[dict], base: int) -> list[tuple[int, int]]:
+    """(section-global offset, mph) for every span whose posted limit differs from the previous one."""
+    out: list[tuple[int, int]] = []
+    for sp in spans:
+        ms = sp.get("maxSpeed")
+        if not isinstance(ms, (int, float)) or ms <= 0:  # missing, or "unlimited"
+            continue
+        mph = int(round(ms * MPH_PER_MS))
+        if out and out[-1][1] == mph:
+            continue
+        out.append((base + int(sp.get("offset", 0)), mph))
+    return out
+
+
+def _remap_limits(limits: list[tuple[int, int]], n: int) -> List[SpeedLimit]:
+    """Offsets -> thinned indices; one entry per index (the first), consecutive equal limits merged."""
+    out: List[SpeedLimit] = []
+    for off, mph in limits:
+        idx = _thin_index(off, n)
+        if out and (out[-1].index == idx or out[-1].mph == mph):
+            continue
+        out.append(SpeedLimit(index=idx, mph=mph))
+    return out
+
+
+def _incidents(section: dict, spans: List[dict], base: int) -> list[tuple[int, dict]]:
+    """(section-global offset, incident) for each incident of a section.
+
+    HERE lists incidents per section and references them from spans by list position; the first
+    span that references an incident gives its start. An incident no span mentions starts at the
+    section start.
+    """
+    items = section.get("incidents")
+    if not isinstance(items, list):
+        return []
+    first_offset: dict[int, int] = {}
+    for sp in spans:
+        for i in sp.get("incidents") or []:
+            if isinstance(i, int) and i not in first_offset:
+                first_offset[i] = base + int(sp.get("offset", 0))
+    out = []
+    for i, inc in enumerate(items):
+        if isinstance(inc, dict):
+            out.append((first_offset.get(i, base), inc))
+    return out
+
+
+def _incident(index: int, inc: dict) -> Incident:
+    kind = str(inc.get("type") or "other")
+    crit = str(inc.get("criticality") or "minor")
+    text = re.sub(r"\s+", " ", str(inc.get("description") or kind)).strip().rstrip(".")
+    if len(text) > INCIDENT_TEXT_MAX:
+        text = text[:INCIDENT_TEXT_MAX].rsplit(" ", 1)[0]
+    return Incident(type=kind, closed=kind == "roadClosure" or crit == "critical", description=text,
+                    index=index, criticality=crit)
 
 
 def _here_parse(data: dict) -> RouteInfo:

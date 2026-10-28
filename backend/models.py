@@ -52,6 +52,21 @@ class Maneuver(BaseModel):
     index: int  # point index in RouteInfo.geometry where the maneuver happens
 
 
+class SpeedLimit(BaseModel):
+    """Posted limit from `index` in RouteInfo.geometry until the next entry (HERE spans=maxSpeed)."""
+    index: int
+    mph: int
+
+
+class Incident(BaseModel):
+    """Traffic incident on the route (HERE return=incidents); `index` is where it starts in the geometry."""
+    type: str  # roadClosure | construction | accident | congestion | weather | laneRestriction | ...
+    closed: bool  # the road is closed (type roadClosure, or criticality critical)
+    description: str  # short, already capped for speech
+    index: int
+    criticality: str = "minor"  # low | minor | major | critical
+
+
 class Approach(BaseModel):
     """How the driver arrives: heading over the last 300 m and the street of the last maneuver."""
     bearing: int  # degrees, 0 = heading north
@@ -74,6 +89,8 @@ class RouteInfo(BaseModel):
     traffic: List[TrafficSegment] = Field(default_factory=list)  # live slowdowns (HERE only)
     maneuvers: List[Maneuver] = Field(default_factory=list)  # turn-by-turn (HERE only)
     approach: Optional[Approach] = None  # arrival direction, for entrance directions
+    speed_limits: List[SpeedLimit] = Field(default_factory=list)  # posted limits along the route (HERE only)
+    incidents: List[Incident] = Field(default_factory=list)  # closures, construction, accidents (HERE only)
 
 
 ParkingVerdict = Literal["listed", "likely", "unlikely", "unclear"]
@@ -200,6 +217,7 @@ class AgentRequest(BaseModel):
     # Last known distance/time of the active route (the app already has it; no re-routing per turn).
     active_distance_mi: Optional[float] = Field(None, ge=0)
     active_duration_min: Optional[int] = Field(None, ge=0)
+    active_speed_limit_mph: Optional[int] = Field(None, ge=0, le=100)  # posted limit where the driver is now
     ui: UiState = Field(default_factory=UiState)
 
 
