@@ -186,6 +186,17 @@ describe("reduceActions", () => {
     expect(effects).toEqual([{ type: "saveProfile", patch: { favorite_chains: ["TA", "Love's"] } }]);
   });
 
+  test("set_chains_on_board lands in the profile like the other truck data", () => {
+    expect(reduceActions([{ type: "set_chains_on_board", value: true }], idle)).toEqual([{ type: "saveProfile", patch: { chains_on_board: true } }]);
+    expect(reduceActions([{ type: "set_chains_on_board", value: false }], idle)).toEqual([{ type: "saveProfile", patch: { chains_on_board: false } }]);
+    expect(reduceActions([{ type: "set_chains_on_board", value: "yes" }], idle)).toEqual([{ type: "saveProfile", patch: { chains_on_board: false } }]);
+  });
+
+  test("set_nudges is a preference, not a profile field", () => {
+    expect(reduceActions([{ type: "set_nudges", value: false }], idle)).toEqual([{ type: "setNudges", on: false }]);
+    expect(reduceActions([{ type: "set_nudges", value: true }], idle)).toEqual([{ type: "setNudges", on: true }]);
+  });
+
   test("unknown action is ignored", () => {
     expect(reduceActions([{ type: "make_coffee", value: "double" }, { type: "set_driving", value: true }], onRoute)).toEqual([]);
   });

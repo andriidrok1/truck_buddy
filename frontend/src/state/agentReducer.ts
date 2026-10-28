@@ -44,6 +44,8 @@ export type Effect =
   | { type: "zoomBy"; delta: number }
   | { type: "setVoiceGuidance"; on: boolean }
   | { type: "setHandsFree"; on: boolean }
+  /** Nudges while driving (break, chains, parking offers) on or off. */
+  | { type: "setNudges"; on: boolean }
   | { type: "saveProfile"; patch: Partial<TruckProfile> }
   /** Save the patch, then re-plan the active route with it. */
   | { type: "reroute"; patch: Partial<TruckProfile> };
@@ -96,6 +98,9 @@ export function reduceActions(actions: AppAction[], ctx: AgentContext): Effect[]
       case "stop_talking":
         effects.push({ type: "pauseDialog" });
         break;
+      case "set_nudges":
+        effects.push({ type: "setNudges", on: value === true });
+        break;
       case "set_height_in":
         truckPatch.height_in = Number(value);
         break;
@@ -125,6 +130,9 @@ export function reduceActions(actions: AppAction[], ctx: AgentContext): Effect[]
         break;
       case "set_break_hours":
         truckPatch.break_hours = value == null ? null : Number(value);
+        break;
+      case "set_chains_on_board":
+        truckPatch.chains_on_board = value === true;
         break;
       case "reroute":
         // Save first so the new route uses the new profile.

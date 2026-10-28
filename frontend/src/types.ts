@@ -114,6 +114,9 @@ export type ChainControl = {
   description?: string;
 };
 
+/** The first active Caltrans chain control on the route ahead (NudgeRequest.chain_control_ahead). */
+export type ChainControlAhead = { route: string; location: string; status: "R-1" | "R-2" | "R-3"; miles_ahead: number };
+
 export type Approach = { bearing: number; compass: string; street?: string | null };
 
 export type PlacesResponse = {
@@ -250,15 +253,17 @@ export type NudgeRequest = {
   drive_elapsed_min?: number | null;
   local_hour?: number | null;
   session_id?: string | null;
+  /** Left out when no active control is ahead or its position is unknown (see geo/ahead.ts). */
+  chain_control_ahead?: ChainControlAhead;
 };
 
 export type Nudge = {
-  kind: "break" | "parking";
+  kind: "break" | "parking" | "chains";
   text: string;
   priority: number;
   place?: Place | null;
   /** What a "yes" on the next turn does; the backend keeps it pending for the session. */
-  offer?: "add_stop" | "go" | null;
+  offer?: "add_stop" | "go" | "chains_answer" | null;
 };
 
 export type Phase = "ready" | "listening" | "thinking" | "options" | "navigating" | "providers";

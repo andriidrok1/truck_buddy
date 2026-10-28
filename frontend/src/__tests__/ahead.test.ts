@@ -1,5 +1,6 @@
-import { AHEAD_MAX_POINTS, routePointsAhead } from "../geo/ahead";
+import { AHEAD_MAX_POINTS, chainControlAhead, chainStatus, routePointsAhead } from "../geo/ahead";
 import { cumulativeMeters } from "../geo/guidance";
+import type { ChainControl } from "../types";
 
 const DEG_PER_M = 1 / 111195;
 const M_PER_MI = 1609.34;
@@ -47,5 +48,56 @@ describe("routePointsAhead", () => {
     expect(routePointsAhead(geometry, cum, -1, 0)).toEqual([]);
     expect(routePointsAhead([], [0], 0, 0)).toEqual([]);
     expect(routePointsAhead(geometry, [0], 0, 0)).toEqual([]); // cum from another route
+  });
+});
+
+describe("chainControlAhead", () => {
+  // 100 vertices one mile apart = a 99-mile route.
+  const geometry = straightNorth(100, 1);
+  const cum = cumulativeMeters(geometry);
+  const control = (index: number, status: string, id = `c${index}`): ChainControl => ({
+    id,
+    route: "I-80",
+    location: `mile ${index}`,
+    status,
+    index,
+    lat: geometry[Math.min(index, 99)]?.[0] ?? 0,
+    lng: 0,
+  });
+  const matched = 10;
+  const alongM = cum[matched] + 800; // half a mile into segment 10
+
+  test("a control behind the truck is left out", () => {
+    expect(chainControlAhead([control(4, "R-2")], cum, matched, alongM)).toBeNull();
+    expect(chainControlAhead([control(10, "R-2")], cum, matched, alongM)).toBeNull(); // the matched vertex itself
+  });
+
+  test("two ahead: the nearest wins, miles are route distance from the projected position", () => {
+    const out = chainControlAhead([control(40, "R-3"), control(21, "R-1")], cum, matched, alongM);
+    expect(out).toEqual({ route: "I-80", location: "mile 21", status: "R-1", miles_ahead: 10.5 });
+  });
+
+  test("only active R-1..R-3 controls count; the status is normalised", () => {
+    expect(chainControlAhead([control(21, "None"), control(30, "lifted")], cum, matched, alongM)).toBeNull();
+    expect(chainControlAhead([control(21, "None"), control(30, "r2 chains required")], cum, matched, alongM)?.status).toBe("R-2");
+    expect(chainStatus("R-1")).toBe("R-1");
+    expect(chainStatus("R 3")).toBe("R-3");
+    expect(chainStatus("R-4")).toBeNull();
+    expect(chainStatus("")).toBeNull();
+  });
+
+  test("no match or an index outside the route: nothing", () => {
+    expect(chainControlAhead([control(21, "R-2")], cum, -1, 0)).toBeNull();
+    expect(chainControlAhead([control(250, "R-2")], cum, matched, alongM)).toBeNull();
+    expect(chainControlAhead([control(2.5, "R-2")], cum, matched, alongM)).toBeNull();
+    expect(chainControlAhead(undefined, cum, matched, alongM)).toBeNull();
+    expect(chainControlAhead([], cum, matched, alongM)).toBeNull();
+  });
+
+  test("past 500 route miles the control is left out", () => {
+    const long = straightNorth(600, 1);
+    const longCum = cumulativeMeters(long);
+    expect(chainControlAhead([control(560, "R-2")], longCum, 10, longCum[10])).toBeNull();
+    expect(chainControlAhead([control(500, "R-2")], longCum, 10, longCum[10])?.miles_ahead).toBe(490);
   });
 });

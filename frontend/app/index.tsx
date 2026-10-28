@@ -19,7 +19,7 @@ import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
 import { logAnnouncement } from "@/src/dev/announcements";
 import { isTester } from "@/src/auth";
-import { routePointsAhead } from "@/src/geo/ahead";
+import { chainControlAhead, routePointsAhead } from "@/src/geo/ahead";
 import { swapAlternative, switchedLine } from "@/src/geo/routeChoice";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
@@ -28,7 +28,7 @@ import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
-import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, takeTruckReroute, truckLabel, useHandsFree, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, setNudgesEnabled, takeTruckReroute, truckLabel, useHandsFree, useNudgesEnabled, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { WAKE_SUPPORTED, useWakeWord } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
@@ -579,8 +579,9 @@ export default function MapScreen() {
     drivingSince.current = driving ? Date.now() : null;
   }, [driving]);
   const hasRoute = !!active;
+  const nudgesOn = useNudgesEnabled();
   useEffect(() => {
-    if (!driving || !hasRoute) return;
+    if (!driving || !hasRoute || !nudgesOn) return;
     const ctrl = new AbortController();
     let every: ReturnType<typeof setInterval> | null = null;
     const poll = async () => {
@@ -601,6 +602,7 @@ export default function MapScreen() {
             driving: true,
             active_place: cur.place,
             ahead: routePointsAhead(cur.route.geometry, g.cum, g.matchedIndex, g.alongM),
+            chain_control_ahead: chainControlAhead(cur.route.chain_controls, g.cum, g.matchedIndex, g.alongM) ?? undefined,
             drive_elapsed_min: since === null ? null : Math.min(24 * 60, Math.max(0, Math.round((Date.now() - since) / 60000))),
             local_hour: new Date().getHours(),
             session_id: sessionId,
@@ -629,7 +631,7 @@ export default function MapScreen() {
       if (every) clearInterval(every);
       ctrl.abort();
     };
-  }, [driving, hasRoute, say]); // refs and a stable callback; `active` itself must not restart the timer
+  }, [driving, hasRoute, nudgesOn, say]); // refs and a stable callback; `active` itself must not restart the timer
 
   const onGo = () => {
     pauseDialog();
@@ -1167,6 +1169,9 @@ export default function MapScreen() {
           break;
         case "setHandsFree":
           setHandsFree(e.on);
+          break;
+        case "setNudges":
+          setNudgesEnabled(e.on);
           break;
         case "saveProfile":
           saveTruckProfile({ ...getTruckProfile(), ...e.patch });
