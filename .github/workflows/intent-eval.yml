@@ -1,0 +1,76 @@
+name: intent eval
+
+# Grades the copilot classifier on backend/evals (real OpenAI calls, ~$0.5 per run). Weekly, on demand, and
+# on pull requests carrying the `eval` label. Needs the OPENAI_API_KEY repository secret.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: OpenAI model to grade
+        default: gpt-5.4-mini
+        required: false
+      tags:
+        description: comma-separated tags to run (empty = every case)
+        default: ""
+        required: false
+  schedule:
+    - cron: "0 6 * * 1"
+  pull_request:
+    types: [labeled, synchronize]
+
+concurrency:
+  group: intent-eval-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'eval')
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: run the intent eval against the baseline
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          EVAL_MODEL: ${{ inputs.model || 'gpt-5.4-mini' }}
+          EVAL_TAGS: ${{ inputs.tags }}
+        run: |
+          args=(--model "$EVAL_MODEL" --concurrency 8 --compare --fail-below 1.0)
+          if [ -n "$EVAL_TAGS" ]; then args+=(--tags "$EVAL_TAGS"); fi
+          python -m evals.run_intents "${args[@]}"
+      - name: job summary
+        if: always()
+        run: |
+          md=$(ls -t evals/results/*.md 2>/dev/null | head -1)
+          if [ -n "$md" ]; then cat "$md" >> "$GITHUB_STEP_SUMMARY"; else echo "Intent eval: no report written" >> "$GITHUB_STEP_SUMMARY"; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: intent-eval-results
+          path: backend/evals/results
+          if-no-files-found: ignore
+      - name: comment on the pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          md=$(ls -t evals/results/*.md 2>/dev/null | head -1)
+          {
+            echo "<!-- intent-eval -->"
+            if [ -n "$md" ]; then cat "$md"; else echo "Intent eval: no report (the run failed before writing one)"; fi
+          } > "$RUNNER_TEMP/intent-eval-comment.md"
+          gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/intent-eval-comment.md"
