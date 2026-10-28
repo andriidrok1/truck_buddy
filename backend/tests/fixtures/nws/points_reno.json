@@ -1,0 +1,117 @@
+{
+ "_meta": {
+  "recorded_at": "2026-10-27",
+  "provider": "nws",
+  "scenario": "gridpoint lookup for Reno"
+ },
+ "@context": [
+  "https://geojson.org/geojson-ld/geojson-context.jsonld",
+  {
+   "@version": "1.1",
+   "wx": "https://api.weather.gov/ontology#",
+   "s": "https://schema.org/",
+   "geo": "http://www.opengis.net/ont/geosparql#",
+   "unit": "http://codes.wmo.int/common/unit/",
+   "@vocab": "https://api.weather.gov/ontology#",
+   "geometry": {
+    "@id": "s:GeoCoordinates",
+    "@type": "geo:wktLiteral"
+   },
+   "city": "s:addressLocality",
+   "state": "s:addressRegion",
+   "distance": {
+    "@id": "s:Distance",
+    "@type": "s:QuantitativeValue"
+   },
+   "bearing": {
+    "@type": "s:QuantitativeValue"
+   },
+   "value": {
+    "@id": "s:value"
+   },
+   "unitCode": {
+    "@id": "s:unitCode",
+    "@type": "@id"
+   },
+   "forecastOffice": {
+    "@type": "@id"
+   },
+   "forecastGridData": {
+    "@type": "@id"
+   },
+   "publicZone": {
+    "@type": "@id"
+   },
+   "county": {
+    "@type": "@id"
+   }
+  }
+ ],
+ "id": "https://api.weather.gov/points/39.5296,-119.8138",
+ "type": "Feature",
+ "geometry": {
+  "type": "Point",
+  "coordinates": [
+   -119.8138,
+   39.5296
+  ]
+ },
+ "properties": {
+  "@id": "https://api.weather.gov/points/39.5296,-119.8138",
+  "@type": "wx:Point",
+  "cwa": "REV",
+  "type": "land",
+  "forecastOffice": "https://api.weather.gov/offices/REV",
+  "gridId": "REV",
+  "gridX": 45,
+  "gridY": 106,
+  "forecast": "https://api.weather.gov/gridpoints/REV/45,106/forecast",
+  "forecastHourly": "https://api.weather.gov/gridpoints/REV/45,106/forecast/hourly",
+  "forecastGridData": "https://api.weather.gov/gridpoints/REV/45,106",
+  "observationStations": "https://api.weather.gov/gridpoints/REV/45,106/stations",
+  "relativeLocation": {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -119.8499069,
+     39.549097
+    ]
+   },
+   "properties": {
+    "city": "Reno",
+    "state": "NV",
+    "distance": {
+     "unitCode": "wmoUnit:m",
+     "value": 0
+    },
+    "bearing": {
+     "unitCode": "wmoUnit:degree_(angle)",
+     "value": 0
+    }
+   }
+  },
+  "forecastZone": "https://api.weather.gov/zones/forecast/NVZ003",
+  "county": "https://api.weather.gov/zones/county/NVC031",
+  "fireWeatherZone": "https://api.weather.gov/zones/fire/NVZ420",
+  "timeZone": "America/Los_Angeles",
+  "radarStation": "KRGX",
+  "astronomicalData": {
+   "sunrise": "2026-10-27T07:22:23-07:00",
+   "sunset": "2026-10-27T18:03:48-07:00",
+   "transit": "2026-10-27T12:43:05-07:00",
+   "civilTwilightBegin": "2026-10-27T06:54:51-07:00",
+   "civilTwilightEnd": "2026-10-27T18:31:19-07:00",
+   "nauticalTwilightBegin": "2026-10-27T06:23:17-07:00",
+   "nauticalTwilightEnd": "2026-10-27T19:02:53-07:00",
+   "astronomicalTwilightBegin": "2026-10-27T05:52:04-07:00",
+   "astronomicalTwilightEnd": "2026-10-27T19:34:06-07:00"
+  },
+  "nwr": {
+   "transmitter": "WXK58",
+   "sameCode": "032031",
+   "areaBroadcast": "https://api.weather.gov/radio/WXK58/broadcast",
+   "pointBroadcast": "https://api.weather.gov/points/39.5296,-119.8138/radio"
+  }
+ }
+}

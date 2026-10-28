@@ -1,4 +1,13 @@
-"""Shared test setup: backend URL from frontend/.env and generated audio fixtures (no binaries in the repo)."""
+"""Shared test setup.
+
+Two kinds of tests live here:
+- `tests/offline/` (and the files in OFFLINE_FILES): no network, no keys. These run in CI with
+  `python -m pytest -n 0 -m "not live"`.
+- everything else directly in `tests/`: live tests against a running backend. They need
+  EXPO_PUBLIC_BACKEND_URL (or frontend/.env) and ACCESS_CODE, and are marked `live`
+  automatically; without a backend URL they are skipped, not failed.
+- `tests/smoke/`: the nightly smoke against the deployed backend, marked `smoke`.
+"""
 import io
 import math
 import os
@@ -9,7 +18,8 @@ from pathlib import Path
 import pytest
 import requests
 
-_FRONT_ENV = Path(__file__).resolve().parents[2] / "frontend" / ".env"
+TESTS_DIR = Path(__file__).resolve().parent
+_FRONT_ENV = TESTS_DIR.parents[1] / "frontend" / ".env"
 if not os.environ.get("EXPO_PUBLIC_BACKEND_URL") and _FRONT_ENV.exists():
     for line in _FRONT_ENV.read_text().splitlines():
         k, _, v = line.partition("=")
@@ -18,6 +28,69 @@ if not os.environ.get("EXPO_PUBLIC_BACKEND_URL") and _FRONT_ENV.exists():
 os.environ.setdefault("EXPO_BACKEND_URL", os.environ.get("EXPO_PUBLIC_BACKEND_URL", ""))
 
 BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "").rstrip("/")
+
+# Files directly in tests/ that run without a backend (pure functions or monkeypatched services).
+OFFLINE_FILES = {
+    "test_breakdown.py",
+    "test_fuel_prices.py",
+    "test_iter11_speech_text.py",
+    "test_iter15_controls.py",
+    "test_iter17_approach.py",
+    "test_iter18_side_geometry.py",
+    "test_iter19_demo_places.py",
+    "test_iter20_parking_cache.py",
+    "test_iter22_addresses.py",
+    "test_iter23_fuel_stop_nearby.py",
+    "test_iter24_places_filter.py",
+    "test_rate_limit.py",
+    "test_stt_timeout.py",
+}
+
+# Individual tests inside OFFLINE_FILES that still need the network (real geocoder, real LLM).
+LIVE_TESTS = {"test_geocoder_stays_in_california"}
+
+_live_selected = False
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "live: needs a running backend (EXPO_PUBLIC_BACKEND_URL + ACCESS_CODE)")
+    config.addinivalue_line("markers", "smoke: nightly smoke against the deployed backend")
+
+
+def _is_live_file(p: Path) -> bool:
+    if p.parent == TESTS_DIR / "smoke":
+        return True
+    return p.parent == TESTS_DIR and p.name.startswith("test_") and p.name not in OFFLINE_FILES
+
+
+def pytest_ignore_collect(collection_path, config):
+    """Live test modules read the backend URL at import time, so without one they must not even be imported."""
+    p = Path(str(collection_path))
+    if p.suffix != ".py" or not _is_live_file(p):
+        return None
+    if not BASE_URL or config.option.markexpr.replace(" ", "") == "notlive":
+        return True
+    return None
+
+
+def pytest_collection_modifyitems(config, items):
+    """Mark live/smoke tests by location; skip them when there is no backend to talk to."""
+    global _live_selected
+    skip = pytest.mark.skip(reason="no EXPO_PUBLIC_BACKEND_URL: live test skipped")
+    for item in items:
+        p = Path(str(item.fspath))
+        if p.parent == TESTS_DIR / "smoke":
+            item.add_marker("smoke")
+            item.add_marker("live")
+        elif p.parent == TESTS_DIR and (p.name not in OFFLINE_FILES or item.originalname in LIVE_TESTS):
+            item.add_marker("live")
+        if item.get_closest_marker("live"):
+            if BASE_URL:
+                _live_selected = True
+            else:
+                item.add_marker(skip)
+    if _live_selected and config.option.markexpr != "not live":
+        _auth_everything()
 
 
 def _auth_everything() -> None:
@@ -35,9 +108,6 @@ def _auth_everything() -> None:
 
     requests.Session.request = request
 
-
-if BASE_URL:  # pure unit tests (test_rate_limit, test_stt_timeout, ...) run without a backend
-    _auth_everything()
 
 # Speech fixtures used by voice tests: path -> phrase (spoken by our own /api/speak TTS, then fed to Whisper)
 SPEECH = {
@@ -73,7 +143,7 @@ def _speak_to(path: str, text: str) -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def speech_fixtures():
-    if not BASE_URL:
+    if not BASE_URL or not _live_selected:
         return
     for path, text in SPEECH.items():
         if not os.path.exists(path) or os.path.getsize(path) < 1000:

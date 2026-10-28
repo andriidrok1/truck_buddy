@@ -1,0 +1,16 @@
+{
+ "_meta": {
+  "recorded_at": "2026-10-27",
+  "provider": "here",
+  "scenario": "corrupted handle -> error body as HERE returns it"
+ },
+ "status": 400,
+ "body": {
+  "title": "Invalid request",
+  "status": 400,
+  "code": "E605201",
+  "cause": "RouteHandle not valid (anymore). (Re-)calculate route to retrieve new handle.",
+  "action": "",
+  "correlationId": "e09ef4e0-031c-4ab2-b120-f0ed2dbb5c69"
+ }
+}

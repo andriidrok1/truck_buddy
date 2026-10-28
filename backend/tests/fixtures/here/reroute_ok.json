@@ -1,0 +1,1638 @@
+{
+ "_meta": {
+  "recorded_at": "2026-10-27",
+  "provider": "here",
+  "scenario": "returnToRoute from near Auburn on the Sac->Reno handle"
+ },
+ "notices": [
+  {
+   "title": "Current route position was not on the original route. New route was calculated from the current position to the destination. Old route may have been reused.",
+   "code": "returnToRoute",
+   "severity": "info"
+  }
+ ],
+ "routes": [
+  {
+   "id": "487cfe31-24e0-4c34-8f40-27e5a4a5c2d5",
+   "sections": [
+    {
+     "id": "f1aecf5c-98a8-436a-9be2-4ccf836fef14",
+     "type": "vehicle",
+     "actions": [
+      {
+       "action": "depart",
+       "duration": 23,
+       "length": 567,
+       "instruction": "Head southwest on I-80 W (Dwight D Eisenhower Hwy). Go for 0.4 mi.",
+       "offset": 0
+      },
+      {
+       "action": "exit",
+       "duration": 71,
+       "length": 574,
+       "instruction": "Take exit 119C toward Placerville/CA-49 S onto Elm Ave. Go for 0.4 mi.",
+       "offset": 13,
+       "direction": "right"
+      },
+      {
+       "action": "ramp",
+       "duration": 6704,
+       "length": 136551,
+       "instruction": "Turn left and take ramp onto I-80 E (Dwight D Eisenhower Hwy) toward Reno. Go for 84.8 mi.",
+       "offset": 40,
+       "direction": "left"
+      },
+      {
+       "action": "continue",
+       "duration": 771,
+       "length": 20977,
+       "instruction": "Continue on I-80 E (Dwight D Eisenhower Hwy). Go for 13.0 mi.",
+       "offset": 1752
+      },
+      {
+       "action": "exit",
+       "duration": 47,
+       "length": 328,
+       "instruction": "Take exit 13 toward Virginia St/Downtown. Go for 0.2 mi.",
+       "offset": 1988,
+       "direction": "right"
+      },
+      {
+       "action": "continue",
+       "duration": 35,
+       "length": 115,
+       "instruction": "Continue on Maple St. Go for 377 ft.",
+       "offset": 1995
+      },
+      {
+       "action": "turn",
+       "duration": 95,
+       "length": 547,
+       "instruction": "Turn right onto N Virginia St (US-395-BR) toward S Virginia St/Downtown. Go for 0.3 mi.",
+       "offset": 1998,
+       "direction": "right",
+       "severity": "quite"
+      },
+      {
+       "action": "arrive",
+       "duration": 0,
+       "length": 0,
+       "instruction": "Arrive at N Virginia St (US-395-BR). Your destination is on the left.",
+       "offset": 2013
+      }
+     ],
+     "departure": {
+      "time": "2026-10-27T14:49:40-07:00",
+      "place": {
+       "type": "place",
+       "location": {
+        "lat": 38.9097499,
+        "lng": -121.0696902
+       },
+       "originalLocation": {
+        "lat": 38.9099999,
+        "lng": -121.07
+       }
+      }
+     },
+     "arrival": {
+      "time": "2026-10-27T16:58:46-07:00",
+      "place": {
+       "type": "place",
+       "location": {
+        "lat": 39.5294699,
+        "lng": -119.81412
+       },
+       "originalLocation": {
+        "lat": 39.5295999,
+        "lng": -119.8138
+       }
+      }
+     },
+     "summary": {
+      "duration": 7746,
+      "length": 159659,
+      "baseDuration": 7669
+     },
+     "polyline": "BGsz7mqCznw9mHrTrYjXrY7LzK_OnLnV3NrT_J3SvH7VnGrTjDvW7BzUA3_B4D7QUrOjD_drJ7LrE_iB_OvMzFvMvHzF_E_EnG3DnG7B7GnB3IAnG8BzKwC_EwCvC4D7B4DT4DUkD8BsEgF4DsJkD0UnB0P3DgoBTwMjDo4BT0FkXwCoLvCgFjD4DrEoL_T0FnGgF3DoLrE8kB7G0oBnBozBvCoaoB0KoBwb8GgUwH4S4IsO4IwRkNsO8L4IkIsOoQkcokBs2BsqCwR8VkS4SwR0Pk4C4kCgegZ0UsTsYgZ8oE07EkhB4mB8a0ewvBwvBwlB8f8asTgmCssBgtB8akxD0hCwvBsY4hB4NwoCoa4mBgK8Q4DkwGouBoGoB8zB0KolDoVk9CkSsxBoLgZ4I0esOkX4NoVsO4DwC0UsOsvC84BsiBkXwboQ07EwyCkhB0UgPoLwb0Z4S0UwgBgoB4uCkiD8fwlBwgB0jB4cgegmC0mC8uBouBsdsdk6B84BgoB8kB0tB0oB48F8hF0UsTsd0eofgjB0UgZ0jB4wBkcwqBwkEk1GsnBw-B0esxBw0B01C03G86KsdssB0PgUoQkSkSkS4SoQwMgKgP0KkzC41BkN4IkNgKgU0PoakX8xCwtC8xCsvCkX0U0U8QsnBge4wBokBkcoV0tBwgB02EguD4-J4pHk1BgoB0oBkhB03B8uBs2BsxBgsJ4gJkmBwgBkX8QsdkSwxFwmD8uBoao9B8f0oBwRorFslCg8BgZ4ckNoV0KsiBsT8uBgegzDg1C8rFshEoLkIk1B4mB4c4S8asOkSwHwb4IwMkDsOwC4SwCkXoBsTA4c7B0yB_EkXnBsdUsY4DsdwHoagKgZkN8akSsT0P8Q0P4X8asOsToQ0ZgKkS8QgjB0PsiBoxC00F8Q8f0Poa4S8agKwM0Zkc0ekc0kDg1CwW8QoQ0K4S0KsiBgP4hBoL01HonC0tBoLolD0UwqB4IwHoB82C8QsTsE8QsE4XwHsY0KsJgFkX4NkI0Fg6C4_BsYoQ0e8QoQwH8QoGsYoGwlBwH4SwCoa8BsdT0U7BofzFoa7GwjCzU8a3I8avH0KvC0ZrEwW7B4NAoa8BwW4D0FoB0U0FokB4NolDwvB00F01C0_C4rBkpCge4mB4NwlBwM03BoQskFwqBstD8agpDwb8pB8Lof8LgoBsTsToLsTwM4coV0U8Q44CgwCwWoQof4SsnBwRsT0FsTsE0esEo-D0K0ZkDoVsE4S0FsYsJoV0KsgHk7DoasO81FgkDk_BkhB4kC8kB0sJ07Ew0B4c0UkN8asTkc4XgU4Ss6E8hF4hB0e0UoQsYwRkXsOgjB4SwgB4N4S8Gge4I4hB8G8a4DsxBoG8gD0KkrBoGsvCgKonCgKk9CwRkkC8L41BsJ0oBkIgZoG4hB0Ksd8L8V0Kk4C0tBofgP4c8LspFsgCsqCsdopG0rCgUsJwb0P0UsOsqC03BsTwMoa4NoVkIsOsE0iEwgBgZ8GgK4DgUkI0ZwM8a0PgxE06CsdsT8zBof4hB4SkcsOk1BkX41BkSkuCsYs2BwRwM0FgK0FsTsO4IkI0PwRoGkIkN0U0K8V4DsJoLsiBkXsqCkIoV8LsY8GoLwM8QkIsJsO4N4IwH0yB0jB0rC0yBgyB4hB4S0PwHwHoLkN8LwR4IgP4I4SoLkhB0Fof8BgUUsT7B8f3cogIjD0jBTokBwCwlB0F0jBsEsToGoVsEkNgKgZgKgUkNkXsTsdg9D8wF0U8akNgPsYwWwW8QkNkIgK0F8VgKs7BkX4X0K4NkIkSkNsYwW8Vkc4IsOgKsToLwb4IkcgFgUkD8Q8BoQU0KAsYT0PvCkrBnBw0BUgeoBwR8B0PoGkhBoGsY4I4ckIoV4S8pBsxB8lD0tBwhDg6C0-F8L0Z4NwbghC8oEkmBwyCslCs6Es6E00KoGgP0PgoBkSsxBosCo4G0PwqB0FkN0F8L8QgesO8V8Q0UgZ4XsOoLwRwMsOkI8VgKsJkDgU0F4SkDsOoBkSA8V7BshEvWwWvCwb7BofoBkSwCgPkD0ZwHoagKkNoGwWkNsdoVsd0ZwMkNsO8Q8Vsd8L4SwMwW4NkckNwgB8GoVwH8asJ4mBs5CosMkXolD4I4hBsOkrBwH4SsO0e0KsT8LgUkSoasgC4uC0nE8hFkc4hBkXkcwgB4mB85DoyE4zCgkD4ckcsT8QoQwM4_B4rB0KkIge0Z4NwMgK0K8f4mBwR4X4IkN4IsOkSkhB4IwRgmCoyE8Q8kBgPkmB4I4c0FwWwH0oB0FwvB0F0rCkI85D8B8fA4hBvC4hB3D0Z_EsYvHwbjhBknD7G8a_Ekc7B8QnB4NTkcoBge4DokB8fsgHsJo4B4IsiB8G0UwH4S0P0e4XsnB4wB0rCoxCs8DoQgU8L8LgK4IgU0PwW4NoQkIgUwHsgCwRwlBkN0KsEoV0KgUwM4XoQgtBgjB0hC8zBwlBoagZgPo9BkhBgewR4NsJ8LgKkNwM8Q4SkI0K4N0UoLsT4IwRkIsTwHwW4DsOsJkwB4Ik6BgFkhB8a86FkDgeoBwbA4hB7BopBrE0oBrJonCnLg_CvCgoBU4hBoBsOkD4XgFgZwHwbsE4N0FsOgK8V8LoVkSwbwM8Qk6BwoCwbkmB4XkmB4X4rB8lD41G8GsOkco4Bkcw0B8qDw7FgPoag4D0yG0U0jBgmC85DsO4XwRoa8fgoBkS8Q8L0KgUoQokB4XwqBoaoawR8a0UoawWwb8awbsdwlB0tBw6DohFoV8akS8VkNsO4XoV8pBsd41BsiBsiB0ZwRwRsJ0KkN8Q8LwR8LoVgK0UopBk9CsO4cgF4I0K0P4Xsd8VoVoV0PsT8LghCokBoawRgUwRgU8VsT8a0KkS0oBwyC8LkX8QgekXgjBsYofk1Bo9BsJoLgekhB0UgUkS0PwR4NgP0K8V4N4S0KoL0FwboLwWwHwW0FkhBgFkwBwC0UoBsToBkckDkSsEgZgKwW8LwRwMwM0K4NkNkSgU8LoQsTofkSkhB8f08BgZgyBsY03Boa4_BwMwboQgewMsT4N4SoLkNsiBsiBsgCk_B4SwRsjIs-H8uB8uBoQkSwM0P8GsJ0P0ZkIoQ4I0Uofs0CgKgZwMkcgP4c8LgUwM4SgUoasToV8QoQwWkSwgBoVkc0PsgC4hBotJ07EkqEwoCgU8LkNsJwM0Ksdsd8GwH0K4NsOwWkIgPoLgZwRouBo-Dw5LkSw0BoLkcsJsT4N4XoLoQsTkXkSwR8Q4NwM4I0P4IsT4I0P0FkN4DkNwC4XwC0PA0UnBw3CnGkhBnBkcUkX4DwbwHkcoLwbsO8GsEkXoQ0UkSkN4NoQ4SgPsTwMkSoQkcokBwtC8L0Zw0B4xDsdw-BgPkhBwvBgkDoVkwBgek_B8pBk9C8G4NgZ0yB4NofkhBonC4vJ8wU8V0yBoGwRkIwbwHkmBsEkmB4Dw8CwC4rBwCge8Gw0BkIopBwH4ckIoasO4mBkI4S0K8V4S4hBoQ0Zk6B4zCoQsYwW0e0PkSgPgPsOwMsT4NwtCgtBgU4NgU8QsT0UgPsToL8QwMkX0KsYoVw-Bgeg_CsYwyCsYk9CoawrD8Lw0B0zDwpOgjBsmEsToxCsOgmCkXwkE0Kw0BoG8asEgPsEsO0PssBgUgyBsJ0UwMoawR8kB8zBsoD80DgmHsOkhBgF4NoL0jB4I8kBoG0jB4DkrBwHgvF8B8VwC4SsJouBkNopBkN0e4IwRgK4SsT0esYgjB84BkzCw5BkzCsdouBoV8pBsJ8VsOkmB4NouBsE4SsJ41BwCsTkDokBwCsvCkDkkC4DgoBkDoagKw5B0FgZ8GgZ4Isd8fsvCwlBgrC0_Cg5FkIoQ4NwboQofsyDk_G4hBsgC4NwW8Q8VwgB0jBwqBgjB4_B8pBgP8L8LoL8L8LgK8L4Skc4NgZgKoV0F4N4IkckI8kBwC0UwCofUwgB8BknDoB8V4D8a4D4XwCoLsE4S4DwM4D8LsJsYwMoasTwgB0ZkhBw8C4sDkS4XwRwbgPgeoLsdgKsiBoGof4DwlBUsnBnB0UjD0ZjDkS_EwW7wFs4UzKkmB7GoVrOkmB_O4hB7QwgB_O0ZnQsYzPoVzP4S_dkhB3gE8oEjX4Xv-B8iCjSoV7VkcnQkX3Ssd3XkrBnLsYnV0yBjSgyBzF0P_OssBrYw5BjSkhBrYwlBnVsdrYgerYgjB3NoV7GoLzFkI_J4SnQwlBjI4SzK0enGsTrY4zCjN0oB_JwbzU0yB7fghCjpCsmEnzBk9CzZ8uBn4B4nD7L0UzjBk6BrsB8iC3hB8zBvMwRrE8Gj4CsmEzPgZ3N4XnQkhBjNwgBvM0oBvlBgxE_Ok_BrEgZ3D8kBToQU0ekD4c0F0e0ZolD0KwvBoG0oBkDgjBU0oBT0jBT8aA8GnBoiCUoVkD0jBoGkhB0FoV0FwRwM0e8QkhB8LkSwHgKgU4X8LoLgPwMgZ8QgZwMkxDwqB8aoLkSsJ0UkN0PoLwRsOkNwMsT8V4NwR8QsY0PkcwM0ZsJkXgK0ekIof4D4SsE4c8BwR8BkhBAwb7B0e7BoQrE4crEwW_7BsvHzKkwBzF8f3DoarE0oBvC4hBvC4pCTo2CvCouGTsxBToxCAgZrEovIA8pBoBsdwC8fkDsd0FkmB8a0qF4_BsvMgPs5CgKgrCwCwboB8aAsxB3I03GjDslCTkSTgeA4SA0U8B4X4Ik1B4IsnBoQw0BgoB85D0FsToLkwB4Ig3BwCsY8BopBA0jBvCwqB7Q47DrgC4lOjI8iCnB4hBA8pB8BkrB4D0jB0P01C4hB8rFokB8wFsY47DgoBgjG0P89BkNwqBsO0oBgpDwwIkmB8lDsTgtBwbslCkmBgkD4jFolN0Ug3BkN4rB4DwR4DoVwCoV8B4rBnBwbrEokBzFwgB7GwbzUw-BjwB8oEjIkhBnGkcnGgoB3DkhB7BoaTk1BoBkcwCoaoL0mCgpDsmOkD4N0U82CwH8a8L4hBsO4hBgPge03BsoDsdk6B4I0PkD0FsEkIkDoG8LsY4IwW8GoV4IgjBoGwlBoBkSU4c7B8fvCwWvCgP3IsnB_d4xDrJsnBrJwvB_EgejIsgCjD4mBvC8uBTg3BUkXkD03BwC4c4DgjBwHgyBsEgZ4IwqBsOw5BoLkmBwMkmB8QgtBwMsdwqBg6C0xE0sJs2Go5N0ZouBkIkNwb0oBoa0jB8lDojE0PoVwM8Q4IsOkhB08BgU4wBkNsnBkhB4xD0UoiCwW0rC4S8iCgFwRsdgkD4NsxBsiBk7DkmBojE0F0U8Lw0BsJw5BsE8kBwCof8B41BTssB7Q4rLjDwvB_EokBzFge3DsOzKsiBjNsiB_d8sC3NopBnGgZ_E0ejDgeToQU4hBoBoQ0FwlBsJopBwMwvB4N84BsEgZwC8VoB8VT0jBjD4cjDoV3I0jB3IoajN0e3NsY_J0PnL0PjmB4wBrhEomFrT0UvRoQ7QkNnLwH3c0PrYgK7vD0oBjXsJ_Y8L3NwH_iBoVnuG0xEvRsOvR8Q_TkX_JkN3N0UvMoVnQsiB_JwbjI8anGwb_EsdjDgeTwlBUwWsEgtB0FgewHsdsJkcsJkXgPgekN8VoL8QwMoQsxBw5BgZsdoQ8VkNgUgPsdsJ4X0KgjB0F0Z0FwqBUopB7B8a7B0PrE0Z3D0PvH0ZzZosCrmEoxMnkBksD7GwW_J4mBrJ8zB3DgjBnB4cUssB0F46BsE8a4IsnB8GsY4I0ZgK8agoB0kD4I4XgKofwHwgBsEgZkDkcwCwgBgFsqC4DkhBoG0ewHwb4IkXsxB4nDkc89BsOsiBsJ0Z8G8V0FoV4DoVsE0ZkDkc8B4XAkc7BwlB3IwrDnQozGzF8xCvH49CrE0oB_EgjBzKs2B_JouBnV06CzFgUvM0jBrO4hBjI0PzUsiB_JgP7vDg2E3IwM7VgjB7GwM_Oof3N4mB3IsdzKwqB7pB00FzF0e7LkuCrOk2D3DwgBjNsyDzFssBvCkXzKs0CrT88EjNw1DzFouB_JwyCjIsvC7B8fnBwWTg6CT4zCjDkqE7B8zGrEkiIAkwBoBokB8B0ZwC0U4D0UoL41Bsdo-D4SkuCoQkkCsJsiB0KwgBwR8uBsOofwgBs7BwRkc4Soa4SsYkNsOk9C0_C4hBokBwW0ZkrB41B4csnBouBkkCoawqBgtBsvCwlBghC8iC42DozB44CsOgZ4XssBoQ0jBwRkrB4N0oBkN8zBkI4mB8Q01CkDkSgKwvB8aojE0KssB0FgU8L8kBwM4hB0e8iCkNgZsJoQsJsO0Usd0oBw0Bw-BwtCkrB03BssBg3B8awgBw0B4_B44CksDsoIkoK4vEk3FwjCs0CgPsTkpCg6C89BkuCoQgUgoBgyB0jB4rBoasiBwMwR4XokB8QkcsYgtBoLwWge8nCgKkc0KsiB4DoL0Zk9C85D09NopB4qEwb4iD8pBwnFoLk_BgFwlB4D0jBkD4wB4DwtCwCsdwC4SoG0e8GgZgFsOoGoQ0KkX4NsYsJ4NsOsT4IgKsJgK0UkS4S4NkIgF0ZkN4wBkSknD8kBge0K8a0KwWgKgZwMkSgKoa8Q0P8LsT8QsYgZoV0Z0P8VkNgUwR0e4Nkc0FkNwM8f0PgtBgF0P0U08B8akkC0PkhBwW0oB4S8f4S4c8GsJ0oBo4BgyBkkC0PwWwgB4wBssBonCo1F8tJkhBo4B4N8akIgUwH8V4DkN8G8foG0yBkN40EsJ87C4NotE4D4rBkD0oBUk1B3D8iCvC4X_EsiBrJ8uB_TgmC_Jsd7Vk1B_J0UrYgtBnLsT3c4wBnVkhB3uC8jE3NgU7Q0UjSwRvM0K_OoL7LwHrlCgoBzUkN_JwHnLsJ3NkNvRsTrJ8LzPwWzPwb_J8V_iB44C_T0yB_E4NvjC4tFnQouB3I4hBnG4hBzFkrBzZo7H3XghH3DwbjD0PvH0ezFsTrJoa7QgjB3mBwoC_iBwjCjNkhB3IkcnGkc3D4XvC4hBA0e8Bsd8L87C8akrGgF8fwHwlBkIge0K4hB8nCw7FkmBgkDoQopBkI8Q0K4SkN4SwR0U0PsOkNgKoa0PgZkNkSsJkNkI0P8L8V4XkSgZ8LgU0KkX0KwbkXkpC0tB4vEwW8iC8GoQoLoVwRoa8VgZ8LoLwMgKsJoGwRgKkI4D8VkI4SsE0UwC0UT8arE8Q_Esd7LkX7LsO3Isd_T4cnVgyBnkBwRzK0ZnLoavH4mBrE0PU0KoBkpCsO0Z4DkIU0ZTwMnB8azF8sCnakmBvM8a3I8LjD4SjD8QnBgPAkNoBwRwCkXoGoQoG4c4NoQ0KsYsT8sC4uCkcsdkS8QsOoLsYgPwWgKkNsEwMkDkNwC0U8B0PAwMnBsOvCsYzF4_BvR4N_EwR3IgPrJkXjSwRjSoL3NsOnVgP_YkrBjpCwHzKoQ_T4S3S8QjNoQzKkXzK4N_EwMjDwb3Dg2EvHwWnBkcjDsdvHkhBrOo4BrdgU_J8azKsOrEofnGsvCzKkX_E0UnGkX_JwM7GoL7G8VzPkuH_sG4X7VsTrTwH3I84BniCkN_OkNjNoQjNkSvMsOvHoL_EkSzF0UrE0UnB8V8BoVsE0UoGoVkI46BkXovD4rBguD4rBkS4IkNkI0PoLkXoVsJgKsOwR4IwMsOkXokBoiCwlBwjCozBg1Cg1H41Lg3B4zCoakmBk_BogDoQgZ0KkSkNoa0KsYsTo4B0U0hC0P0yBoLkhBwM8f4N4c4IoQsY8kBoVkc8VkX0UsT4N0KwW0P4I0FsYkNwMgFoVkIwjC0UslC0U89BwRwW0FoasEwbkDsYUgwHvHg8BvC4_BT8VU0UwCkrB4I8QsE0PgF4mB0P85D84B8a4N0jB0UkmLonHsnBkcsO0K8LgKsxB8pB87CosCsYoVwWwWgPkSsOoVgjBw-B0KwR0P8V4NoQ8QoQ4SsO0ZsOsiB4NgpDgjBgtB8QkwB8Qg1Ckc0_Cge8asJouBsOsTgFokBkI8V4DsTwCopB4DkXU8pBTgjBvCg3BjI4hBvH8f3Io4BrTsjDvlBw-Gz1C8gDnkBkkCrY4cjIsiBjIotE7a84GzoBozBrJsJ7BgUvC8kBvCgZUgekD8VgF0ZwHgKkD4SwHgF8BgKgFwW8L0PsJ8LkIwRkN4cgZ0Zwb4X0eoLoQkX8kB8GkN8sC88E0FoLsOsdwCsEsiB0mC0Z03BkIsTkIsT4NsnBoVoiC4DsOwHkcwM41BwH8kB0F8kB8Gg3B0F0hC8BssBA4rB7B0hC_EoiC3IsgC7LsgC7zBo9GrJgoB3DoQ_E0UnQwjCnV06C_E8V3X4nDrd09D3XwhD_T87CvH0oB3Dge7BkNT4STgZUkrB4I8nCwMkpC4IozBsOgwC8Qg_C0egvF0KwjCgF8zBUwqB7BofnBgKvCwRjD8arE4XrOozBrJwbzjBs5CvMof7G0U3Ss2B3I8f_J8kB_E0ZzFof7GozB7BouBAwlBkDghC8G46BwHkrBkN46BoQkwBoQwqB8Q8pBgegmC4wB4sDk1BsyDgeg8B49CwsFoa8zBoGsOwC0FwHwW8G0ZgKopBkD0U4D8kBU0jB7BwbvHw-B_ds3DnGgZrEoQvqB4-Ev0BgtGvMk_BjN82CnG0hC3D0hC7BoiCUssB4DoiC4D4rBkI8iCgZ88E4Ik1B4XgxEgjBs2GoLwjCwvB47Io4B8mKgP87C0Ug9DgF0e8G0oB8L08BkXs-CwHoakSk6BkNwlB8awoCsdslCwRsnBoQ8f8jEsvHoqDgjGopBosC8aw0BoV8zBsOgoBwM0oBkXw8C8GkhBkD4SkIs2BwCkXgFwyCoBgjBU8uBwC0xEoBk6BsEo-DoBgPU0FAkDUokBwCouBgFknD8L0iJ8BoiCkDsgCwC0jBUgPsEsnBgFofgKouB0K0jBsOgoB8Q4mBsYwvB0ZopB8Q0ZgmCovDsJgUsYonC0UgmCkNsxBkIsd4X0wCwH8VwM0jBkS4mBsnBs5CoLwlB8G0UoG4S4D4NsE0UgKk6B4Is7BgFgeoG8pB8B0KvWwHvHwCnQgF7L4D7GwCrToGna4IrYwHjwB0PjIwC7V8GjXwHnLkDjX8GjckI",
+     "spans": [
+      {
+       "offset": 0,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 12,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 20.2777786,
+        "baseSpeed": 20.2777786,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 13,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 21.9444447,
+        "baseSpeed": 21.9444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 17,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 14.7222223,
+        "baseSpeed": 14.7222223,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 22,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 10.833334,
+        "baseSpeed": 10.833334,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 28,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 9.7222223,
+        "baseSpeed": 9.7222223,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 35,
+       "maxSpeed": 11.1111116,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 7.7777781,
+        "baseSpeed": 7.7777781,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 36,
+       "maxSpeed": 11.1111116,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 11.1111116,
+        "baseSpeed": 11.1111116,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 38,
+       "maxSpeed": 11.1111116,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 6.666667,
+        "baseSpeed": 11.1111116,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 39,
+       "maxSpeed": 11.1111116,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 9.7222223,
+        "baseSpeed": 11.1111116,
+        "turnTime": 20
+       }
+      },
+      {
+       "offset": 40,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 8.333334,
+        "baseSpeed": 9.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 41,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 13.0555563,
+        "baseSpeed": 13.0555563,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 47,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 11.666667,
+        "baseSpeed": 11.666667,
+        "turnTime": 10
+       }
+      },
+      {
+       "offset": 49,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 12.7777777,
+        "baseSpeed": 12.7777777,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 50,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 16.3888893,
+        "baseSpeed": 16.3888893,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 64,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 71,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 18.8888893,
+        "baseSpeed": 18.8888893,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 72,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 15.0,
+        "baseSpeed": 15.0,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 77,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 15.5555563,
+        "baseSpeed": 15.5555563,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 78,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 19.4444447,
+        "baseSpeed": 19.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 83,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 84,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 18.6111107,
+        "baseSpeed": 18.6111107,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 86,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 22.2222233,
+        "baseSpeed": 22.2222233,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 87,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 94,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 21.3888893,
+        "baseSpeed": 21.3888893,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 96,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 110,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 14.7222223,
+        "baseSpeed": 14.7222223,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 111,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 14.4444447,
+        "baseSpeed": 14.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 112,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 125,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 17.7777786,
+        "baseSpeed": 17.7777786,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 135,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 144,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 14.166667,
+        "baseSpeed": 14.166667,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 145,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 22.7777786,
+        "baseSpeed": 22.7777786,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 165,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 196,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 13.0555563,
+        "baseSpeed": 13.0555563,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 203,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 11.666667,
+        "baseSpeed": 11.666667,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 204,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 14.166667,
+        "baseSpeed": 14.166667,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 213,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 215,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 19.1666679,
+        "baseSpeed": 19.1666679,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 217,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 15.5555563,
+        "baseSpeed": 15.5555563,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 219,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 22.2222233,
+        "baseSpeed": 22.2222233,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 223,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 280,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 23.0555553,
+        "baseSpeed": 23.0555553,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 282,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 17.7777786,
+        "baseSpeed": 17.7777786,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 296,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 13.6111116,
+        "baseSpeed": 13.6111116,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 303,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 23.333334,
+        "baseSpeed": 23.333334,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 305,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 328,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 13.333334,
+        "baseSpeed": 13.333334,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 340,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 13.6111116,
+        "baseSpeed": 13.6111116,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 403,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 493,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.1666679,
+        "baseSpeed": 24.1666679,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 498,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 23.8888893,
+        "baseSpeed": 23.8888893,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 500,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 17.2222233,
+        "baseSpeed": 17.2222233,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 510,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 11.666667,
+        "baseSpeed": 11.666667,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 511,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 11.9444447,
+        "baseSpeed": 11.9444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 513,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 17.5,
+        "baseSpeed": 17.5,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 523,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       },
+       "incidents": [
+        0
+       ]
+      },
+      {
+       "offset": 533,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 21.1111126,
+        "baseSpeed": 21.1111126,
+        "turnTime": 0
+       },
+       "incidents": [
+        0
+       ]
+      },
+      {
+       "offset": 542,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       },
+       "incidents": [
+        0
+       ]
+      },
+      {
+       "offset": 552,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 22.5,
+        "baseSpeed": 22.5,
+        "turnTime": 0
+       },
+       "incidents": [
+        0
+       ]
+      },
+      {
+       "offset": 566,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 12.2222223,
+        "baseSpeed": 12.2222223,
+        "turnTime": 0
+       },
+       "incidents": [
+        0
+       ]
+      },
+      {
+       "offset": 591,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 17.5,
+        "baseSpeed": 17.5,
+        "turnTime": 0
+       },
+       "incidents": [
+        0
+       ]
+      },
+      {
+       "offset": 593,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       },
+       "incidents": [
+        0
+       ]
+      },
+      {
+       "offset": 597,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 22.7777786,
+        "baseSpeed": 22.7777786,
+        "turnTime": 0
+       },
+       "incidents": [
+        0
+       ]
+      },
+      {
+       "offset": 598,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 17.2222233,
+        "baseSpeed": 17.2222233,
+        "turnTime": 0
+       },
+       "incidents": [
+        0
+       ]
+      },
+      {
+       "offset": 602,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 13.6111116,
+        "baseSpeed": 13.6111116,
+        "turnTime": 0
+       },
+       "incidents": [
+        0
+       ]
+      },
+      {
+       "offset": 609,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 17.7777786,
+        "baseSpeed": 17.7777786,
+        "turnTime": 0
+       },
+       "incidents": [
+        0
+       ]
+      },
+      {
+       "offset": 645,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 16.1111107,
+        "baseSpeed": 22.2222233,
+        "turnTime": 0
+       },
+       "incidents": [
+        0
+       ]
+      },
+      {
+       "offset": 649,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 19.7222233,
+        "baseSpeed": 20.2777786,
+        "turnTime": 0
+       },
+       "incidents": [
+        0
+       ]
+      },
+      {
+       "offset": 662,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 17.7777786,
+        "baseSpeed": 17.7777786,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 664,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 14.7222223,
+        "baseSpeed": 14.7222223,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 668,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 13.333334,
+        "baseSpeed": 13.333334,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 702,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 13.333334,
+        "baseSpeed": 13.333334,
+        "turnTime": 0
+       },
+       "incidents": [
+        1
+       ]
+      },
+      {
+       "offset": 739,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 13.8888893,
+        "baseSpeed": 13.8888893,
+        "turnTime": 0
+       },
+       "incidents": [
+        1
+       ]
+      },
+      {
+       "offset": 741,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 18.0555553,
+        "baseSpeed": 20.2777786,
+        "turnTime": 0
+       },
+       "incidents": [
+        1
+       ]
+      },
+      {
+       "offset": 746,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 18.0555553,
+        "baseSpeed": 23.8888893,
+        "turnTime": 0
+       },
+       "incidents": [
+        1
+       ]
+      },
+      {
+       "offset": 754,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 18.0555553,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       },
+       "incidents": [
+        1
+       ]
+      },
+      {
+       "offset": 755,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 23.333334,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       },
+       "incidents": [
+        1
+       ]
+      },
+      {
+       "offset": 762,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       },
+       "incidents": [
+        1
+       ]
+      },
+      {
+       "offset": 800,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 806,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 20.2777786,
+        "baseSpeed": 20.2777786,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 810,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 23.0555553,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 816,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 20.2777786,
+        "baseSpeed": 20.2777786,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 817,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 17.2222233,
+        "baseSpeed": 17.2222233,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 818,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 12.7777777,
+        "baseSpeed": 12.7777777,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 851,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 910,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 23.6111126,
+        "baseSpeed": 23.6111126,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 918,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 930,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 23.0555553,
+        "baseSpeed": 23.0555553,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 938,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 15.0,
+        "baseSpeed": 15.0,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 942,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 967,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 15.833334,
+        "baseSpeed": 15.833334,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 978,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 13.6111116,
+        "baseSpeed": 13.6111116,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 982,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 23.8888893,
+        "baseSpeed": 23.8888893,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1027,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1047,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 17.2222233,
+        "baseSpeed": 17.2222233,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1051,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1069,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 23.0555553,
+        "baseSpeed": 23.0555553,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1073,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 18.333334,
+        "baseSpeed": 18.333334,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1074,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 16.9444447,
+        "baseSpeed": 16.9444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1108,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 23.0555553,
+        "baseSpeed": 23.0555553,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1114,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 13.8888893,
+        "baseSpeed": 13.8888893,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1116,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 14.166667,
+        "baseSpeed": 14.166667,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1152,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 17.5,
+        "baseSpeed": 17.5,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1155,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 22.2222233,
+        "baseSpeed": 22.2222233,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1158,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 22.5,
+        "baseSpeed": 22.5,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1159,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 20.2777786,
+        "baseSpeed": 20.2777786,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1162,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1180,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 21.9444447,
+        "baseSpeed": 21.9444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1224,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1346,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 19.7222233,
+        "baseSpeed": 19.7222233,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1352,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1372,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 18.0555553,
+        "baseSpeed": 18.0555553,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1373,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1386,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 23.0555553,
+        "baseSpeed": 23.0555553,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1390,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1496,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 20.833334,
+        "baseSpeed": 20.833334,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1498,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 13.0555563,
+        "baseSpeed": 13.0555563,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1504,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 20.0,
+        "baseSpeed": 20.0,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1523,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1555,
+       "maxSpeed": 22.2222233,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 22.2222233,
+        "baseSpeed": 22.2222233,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1656,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1714,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 18.0555553,
+        "baseSpeed": 18.0555553,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1728,
+       "maxSpeed": 24.4444447,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1752,
+       "maxSpeed": 24.7222233,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.7222233,
+        "baseSpeed": 24.7222233,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1754,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 29.1666679,
+        "baseSpeed": 29.1666679,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1785,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 27.2222233,
+        "baseSpeed": 27.2222233,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1787,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 29.1666679,
+        "baseSpeed": 29.1666679,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1813,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 21.3888893,
+        "baseSpeed": 21.3888893,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1821,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 21.6666679,
+        "baseSpeed": 21.6666679,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1827,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 24.4444447,
+        "baseSpeed": 24.4444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1830,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 28.8888893,
+        "baseSpeed": 29.1666679,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1840,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 29.1666679,
+        "baseSpeed": 29.1666679,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1851,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 28.8888893,
+        "baseSpeed": 29.1666679,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1856,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 29.1666679,
+        "baseSpeed": 29.1666679,
+        "turnTime": 0
+       },
+       "incidents": [
+        2
+       ]
+      },
+      {
+       "offset": 1873,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 28.8888893,
+        "baseSpeed": 29.1666679,
+        "turnTime": 0
+       },
+       "incidents": [
+        2
+       ]
+      },
+      {
+       "offset": 1874,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 29.1666679,
+        "baseSpeed": 29.1666679,
+        "turnTime": 0
+       },
+       "incidents": [
+        2
+       ]
+      },
+      {
+       "offset": 1908,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 22.7777786,
+        "baseSpeed": 22.7777786,
+        "turnTime": 0
+       },
+       "incidents": [
+        2
+       ]
+      },
+      {
+       "offset": 1909,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 20.5555553,
+        "baseSpeed": 20.5555553,
+        "turnTime": 0
+       },
+       "incidents": [
+        2
+       ]
+      },
+      {
+       "offset": 1923,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 22.5,
+        "baseSpeed": 22.5,
+        "turnTime": 0
+       },
+       "incidents": [
+        2
+       ]
+      },
+      {
+       "offset": 1924,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 29.1666679,
+        "baseSpeed": 29.1666679,
+        "turnTime": 0
+       },
+       "incidents": [
+        2
+       ]
+      },
+      {
+       "offset": 1925,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 29.1666679,
+        "baseSpeed": 29.1666679,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1933,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 22.2222233,
+        "baseSpeed": 22.2222233,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1939,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 29.1666679,
+        "baseSpeed": 29.1666679,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1988,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 8.333334,
+        "baseSpeed": 11.666667,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1990,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 7.7777781,
+        "baseSpeed": 11.3888893,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1991,
+       "maxSpeed": 29.1666679,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 6.666667,
+        "baseSpeed": 11.666667,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1995,
+       "maxSpeed": 13.333334,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 5.8333335,
+        "baseSpeed": 6.9444447,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 1996,
+       "maxSpeed": 13.333334,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 3.0555556,
+        "baseSpeed": 6.1111112,
+        "turnTime": 4
+       }
+      },
+      {
+       "offset": 1998,
+       "maxSpeed": 11.1111116,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 6.3888888,
+        "baseSpeed": 8.0555553,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 2003,
+       "maxSpeed": 11.1111116,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 5.8333335,
+        "baseSpeed": 8.333334,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 2005,
+       "maxSpeed": 11.1111116,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 5.5555558,
+        "baseSpeed": 7.5,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 2008,
+       "maxSpeed": 11.1111116,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 5.5555558,
+        "baseSpeed": 8.333334,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 2011,
+       "maxSpeed": 11.1111116,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 5.5555558,
+        "baseSpeed": 7.5,
+        "turnTime": 0
+       }
+      },
+      {
+       "offset": 2012,
+       "maxSpeed": 11.1111116,
+       "dynamicSpeedInfo": {
+        "trafficSpeed": 5.8333335,
+        "baseSpeed": 7.5,
+        "turnTime": 0
+       }
+      }
+     ],
+     "notices": [
+      {
+       "title": "Violated start direction.",
+       "code": "violatedStartDirection",
+       "severity": "critical"
+      }
+     ],
+     "language": "en-us",
+     "transport": {
+      "mode": "truck"
+     },
+     "incidents": [
+      {
+       "type": "construction",
+       "criticality": "major",
+       "validFrom": "2026-10-27T13:01:00Z",
+       "validUntil": "2026-10-28T01:00:00Z",
+       "description": "Road construction. Two lanes closed",
+       "id": "here:traffic:incident:2276018097531859275"
+      },
+      {
+       "type": "construction",
+       "criticality": "minor",
+       "validFrom": "2026-10-27T13:01:00Z",
+       "validUntil": "2026-10-27T23:01:00Z",
+       "description": "Road maintenance operations",
+       "id": "here:traffic:incident:942258002374406087"
+      },
+      {
+       "type": "construction",
+       "criticality": "minor",
+       "validFrom": "2026-10-26T12:31:17Z",
+       "validUntil": "2026-11-25T13:31:18Z",
+       "description": "Major road construction",
+       "id": "here:traffic:incident:1552679493528925256"
+      }
+     ]
+    }
+   ],
+   "routeHandle": "AIgA_v___w4AAQCuAAAAeNpjWMfAzsTAwMCekVqUapWcW7iwWAbIZSi3zajk4mFg4H34XDM3cnU0jK57_1zzmO_qaAWwKlQAM-PL09NmIL7I68eBTEAzzCec0XqoIhMDo30bz2hdkpOJYcABzHmrmRcD6YaphgwKECEBENHgwMPIAAA3Yyg3j7HYxw"
+  }
+ ]
+}

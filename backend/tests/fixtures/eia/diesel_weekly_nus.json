@@ -1,0 +1,202 @@
+{
+ "_meta": {
+  "recorded_at": "2026-10-27",
+  "provider": "eia",
+  "scenario": "weekly No 2 diesel retail, NUS, last 12"
+ },
+ "warnings": [
+  {
+   "warning": "incomplete return",
+   "description": "The API can only return 5000 rows in JSON format.  Please consider constraining your request with facet, start, or end, or using offset to paginate results."
+  }
+ ],
+ "response": {
+  "total": "1702",
+  "dateFormat": "YYYY-MM-DD",
+  "frequency": "weekly",
+  "data": [
+   {
+    "period": "2026-10-26",
+    "duoarea": "NUS",
+    "area-name": "U.S.",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_NUS_DPG",
+    "series-description": "U.S. No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "6.352",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-10-19",
+    "duoarea": "NUS",
+    "area-name": "U.S.",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_NUS_DPG",
+    "series-description": "U.S. No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "6.276",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-10-12",
+    "duoarea": "NUS",
+    "area-name": "U.S.",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_NUS_DPG",
+    "series-description": "U.S. No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "6.179",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-10-05",
+    "duoarea": "NUS",
+    "area-name": "U.S.",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_NUS_DPG",
+    "series-description": "U.S. No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "6.199",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-09-28",
+    "duoarea": "NUS",
+    "area-name": "U.S.",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_NUS_DPG",
+    "series-description": "U.S. No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "6.382",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-09-21",
+    "duoarea": "NUS",
+    "area-name": "U.S.",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_NUS_DPG",
+    "series-description": "U.S. No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "6.529",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-09-14",
+    "duoarea": "NUS",
+    "area-name": "U.S.",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_NUS_DPG",
+    "series-description": "U.S. No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "6.285",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-09-07",
+    "duoarea": "NUS",
+    "area-name": "U.S.",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_NUS_DPG",
+    "series-description": "U.S. No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "5.967",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-08-31",
+    "duoarea": "NUS",
+    "area-name": "U.S.",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_NUS_DPG",
+    "series-description": "U.S. No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "5.599",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-08-24",
+    "duoarea": "NUS",
+    "area-name": "U.S.",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_NUS_DPG",
+    "series-description": "U.S. No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "5.652",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-08-17",
+    "duoarea": "NUS",
+    "area-name": "U.S.",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_NUS_DPG",
+    "series-description": "U.S. No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "5.454",
+    "units": "$/GAL"
+   },
+   {
+    "period": "2026-08-10",
+    "duoarea": "NUS",
+    "area-name": "U.S.",
+    "product": "EPD2D",
+    "product-name": "No 2 Diesel",
+    "process": "PTE",
+    "process-name": "Retail Sales",
+    "series": "EMD_EPD2D_PTE_NUS_DPG",
+    "series-description": "U.S. No 2 Diesel Retail Prices (Dollars per Gallon)",
+    "value": "5.257",
+    "units": "$/GAL"
+   }
+  ]
+ },
+ "request": {
+  "command": "/v2/petroleum/pri/gnd/data/",
+  "params": {
+   "frequency": "weekly",
+   "data": [
+    "value"
+   ],
+   "facets": {
+    "product": [
+     "EPD2D"
+    ],
+    "duoarea": [
+     "NUS"
+    ]
+   },
+   "sort": [
+    {
+     "column": "period",
+     "direction": "desc"
+    }
+   ],
+   "length": "12"
+  }
+ },
+ "apiVersion": "2.1.14",
+ "ExcelAddInVersion": "2.1.0"
+}

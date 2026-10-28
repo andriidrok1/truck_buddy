@@ -1,0 +1,156 @@
+[
+ {
+  "Id": 1,
+  "siteId": "WI00039IS0011300SRSTARE11",
+  "timeStamp": "2026-10-28T02:44:00Z",
+  "timeStampStatic": "2020-07-31T18:57:57Z",
+  "reportedAvailable": "56",
+  "trend": "STEADY",
+  "open": true,
+  "trustData": true,
+  "capacity": 68
+ },
+ {
+  "Id": 2,
+  "siteId": "WI00094IS0012400ERSTARE53",
+  "timeStamp": "2026-10-28T02:44:00Z",
+  "timeStampStatic": "2025-05-14T21:30:36Z",
+  "reportedAvailable": "27",
+  "trend": "CLEARING",
+  "open": true,
+  "trustData": true,
+  "capacity": 39
+ },
+ {
+  "Id": 3,
+  "siteId": "WI00090IS0007400ERSTARE09",
+  "timeStamp": "2026-10-28T02:44:00Z",
+  "timeStampStatic": "2025-05-14T21:27:53Z",
+  "reportedAvailable": "18",
+  "trend": "STEADY",
+  "open": true,
+  "trustData": true,
+  "capacity": 26
+ },
+ {
+  "Id": 7,
+  "siteId": "WI00090IS0016800ERSTARE17",
+  "timeStamp": "2026-10-28T02:44:00Z",
+  "timeStampStatic": "2024-02-15T20:37:28Z",
+  "reportedAvailable": "55",
+  "trend": "STEADY",
+  "open": true,
+  "trustData": true,
+  "capacity": 76
+ },
+ {
+  "Id": 8,
+  "siteId": "WI00094IS0026100ERSTARE13",
+  "timeStamp": "2026-10-28T02:44:00Z",
+  "timeStampStatic": "2025-05-14T21:29:14Z",
+  "reportedAvailable": "22",
+  "trend": "FILLING",
+  "open": true,
+  "trustData": true,
+  "capacity": 28
+ },
+ {
+  "Id": 9,
+  "siteId": "WI00094IS0012100WRSTARE54",
+  "timeStamp": "2026-10-28T02:44:00Z",
+  "timeStampStatic": "2024-02-15T20:40:12Z",
+  "reportedAvailable": "32",
+  "trend": "CLEARING",
+  "open": true,
+  "trustData": true,
+  "capacity": 42
+ },
+ {
+  "Id": 10,
+  "siteId": "WI00090IS0007500WRSTARE10",
+  "timeStamp": "2026-10-28T02:44:00Z",
+  "timeStampStatic": "2025-05-14T21:28:34Z",
+  "reportedAvailable": "24",
+  "trend": "STEADY",
+  "open": true,
+  "trustData": true,
+  "capacity": 27
+ },
+ {
+  "Id": 11,
+  "siteId": "WI00094IS0026300WRSTARE14",
+  "timeStamp": "2026-10-28T02:44:00Z",
+  "timeStampStatic": "2025-05-14T21:29:54Z",
+  "reportedAvailable": "24",
+  "trend": "CLEARING",
+  "open": true,
+  "trustData": true,
+  "capacity": 30
+ },
+ {
+  "Id": 12,
+  "siteId": "WI00090IS0011300WRSTARE12",
+  "timeStamp": "2026-10-28T02:44:00Z",
+  "timeStampStatic": "2020-07-31T18:58:57Z",
+  "reportedAvailable": "47",
+  "trend": "FILLING",
+  "open": true,
+  "trustData": true,
+  "capacity": 63
+ },
+ {
+  "Id": 19,
+  "siteId": "WI00094IS0004300WRSTARE62",
+  "timeStamp": "2026-10-28T02:44:00Z",
+  "timeStampStatic": "2024-02-15T20:41:04Z",
+  "reportedAvailable": "10",
+  "trend": "FILLING",
+  "open": true,
+  "trustData": true,
+  "capacity": 24
+ },
+ {
+  "Id": 20,
+  "siteId": "WI00090IS0018700WRSTARE22",
+  "timeStamp": "2026-10-28T02:44:00Z",
+  "timeStampStatic": "2024-02-15T20:39:17Z",
+  "reportedAvailable": "29",
+  "trend": "FILLING",
+  "open": true,
+  "trustData": true,
+  "capacity": 60
+ },
+ {
+  "Id": 40,
+  "siteId": "WI00090IS0002200WHYPOIN16",
+  "timeStamp": "2026-10-28T02:44:00Z",
+  "timeStampStatic": "2025-12-02T22:08:36Z",
+  "reportedAvailable": "64",
+  "trend": "FILLING",
+  "open": true,
+  "trustData": true,
+  "capacity": 70
+ },
+ {
+  "Id": 46,
+  "siteId": "WI00043IS0016800SRSTARE51",
+  "timeStamp": "2026-10-28T02:44:00Z",
+  "timeStampStatic": "2026-08-01T00:00:00Z",
+  "reportedAvailable": "49",
+  "trend": "FILLING",
+  "open": true,
+  "trustData": true,
+  "capacity": 60
+ },
+ {
+  "Id": 48,
+  "siteId": "WI00043IS0016800NRSTARE52",
+  "timeStamp": "2026-10-28T02:44:00Z",
+  "timeStampStatic": "2026-08-01T00:00:00Z",
+  "reportedAvailable": "49",
+  "trend": "STEADY",
+  "open": true,
+  "trustData": true,
+  "capacity": 60
+ }
+]

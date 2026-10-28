@@ -49,6 +49,32 @@ def _thin(points: List[List[float]]) -> List[List[float]]:
     return points[::step] + [points[-1]]
 
 
+def _thin_index(off: int, n: int) -> int:
+    """Index into _thin(points) of the point at offset `off` in the original n points.
+
+    Mirrors _thin exactly: with step > 1 the thinned list is points[::step] + [points[-1]], so the
+    last original point lands at a dedicated final slot; anything else maps to off // step.
+    """
+    if n <= 0:
+        return 0
+    off = max(0, min(off, n - 1))
+    step = math.ceil(n / MAX_POINTS) if n > MAX_POINTS else 1
+    last = (n - 1) // step + (1 if step > 1 else 0)
+    return last if off == n - 1 else min(off // step, last)
+
+
+def _span_ranges(spans: List[dict], n_points: int):
+    """(start, end, span) for every HERE span of one section; end is the offset of the next span.
+
+    The span's `offset` is an index into the section polyline; the span covers points
+    [start, end] inclusive, where end is the next span's offset or the last point.
+    """
+    for i, sp in enumerate(spans):
+        start = int(sp.get("offset", 0))
+        end = int(spans[i + 1].get("offset", n_points - 1)) if i + 1 < len(spans) else n_points - 1
+        yield start, end, sp
+
+
 def _info(geometry: List[List[float]], meters: float, seconds: float, source: str, notices: List[str],
           truck_aware: bool, traffic: Optional[List[TrafficSegment]] = None) -> RouteInfo:
     mi = km_to_mi(meters / 1000)
@@ -70,12 +96,10 @@ def _traffic_level(span: dict) -> Optional[str]:
 def _traffic(points: List[List[float]], spans: List[dict]) -> List[TrafficSegment]:
     """Merge consecutive slow/jam spans of one section into polylines."""
     out: List[TrafficSegment] = []
-    for i, sp in enumerate(spans):
+    for start, end, sp in _span_ranges(spans, len(points)):
         level = _traffic_level(sp)
         if not level:
             continue
-        start = sp["offset"]
-        end = spans[i + 1]["offset"] if i + 1 < len(spans) else len(points) - 1
         seg = points[start:end + 1]
         if len(seg) < 2:
             continue
@@ -88,33 +112,39 @@ def _traffic(points: List[List[float]], spans: List[dict]) -> List[TrafficSegmen
     return out
 
 
-async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile) -> RouteInfo:
-    params = {
-        "transportMode": "truck",
-        "origin": f"{fl},{fg}",
-        "destination": f"{tl},{tg}",
-        "return": "polyline,summary,actions,instructions",
-        "lang": "en-US",
-        "units": "imperial",
-        "spans": "dynamicSpeedInfo",
-        "vehicle[height]": round(t.height_in * 2.54),  # cm
-        "vehicle[length]": round(t.total_length_ft * 30.48),  # cm
-        "vehicle[grossWeight]": round(t.weight_lb * 0.4536),  # kg
-        "apiKey": os.environ["HERE_API_KEY"],
-    }
+HERE_RETURN = "polyline,summary,actions,instructions"
+HERE_SPANS = "dynamicSpeedInfo"
+
+
+def _here_params(t: TruckProfile, origin: tuple[float, float], dest: tuple[float, float]) -> list[tuple[str, str]]:
+    """Query for HERE Routing v8 as (key, value) pairs, so a key can repeat (via=...&via=...)."""
+    params: list[tuple[str, str]] = [
+        ("transportMode", "truck"),
+        ("origin", f"{origin[0]},{origin[1]}"),
+        ("destination", f"{dest[0]},{dest[1]}"),
+        ("return", HERE_RETURN),
+        ("lang", "en-US"),
+        ("units", "imperial"),
+        ("spans", HERE_SPANS),
+        ("vehicle[height]", str(round(t.height_in * 2.54))),  # cm
+        ("vehicle[length]", str(round(t.total_length_ft * 30.48))),  # cm
+        ("vehicle[grossWeight]", str(round(t.weight_lb * 0.4536))),  # kg
+    ]
     if t.hazmat:
-        params["vehicle[shippedHazardousGoods]"] = HERE_HAZMAT
+        params.append(("vehicle[shippedHazardousGoods]", HERE_HAZMAT))
     avoid = (["tollRoad"] if t.avoid_tolls else []) + (["ferry", "tunnel"] if t.avoid_ferries_tunnels else [])
     if avoid:
-        params["avoid[features]"] = ",".join(avoid)
-    r = await client().get(HERE_URL, params=params, timeout=20)
-    if r.is_error:
-        raise RuntimeError(f"HERE {r.status_code}: {r.text[:200]}")
-    routes = r.json().get("routes") or []
-    if not routes or not routes[0].get("sections"):
-        raise RuntimeError("HERE returned no truck route")
+        params.append(("avoid[features]", ",".join(avoid)))
+    return params
+
+
+def _parse_route(route: dict) -> RouteInfo:
+    """One HERE route object -> RouteInfo (pure; no I/O). Sections are concatenated in order."""
+    sections = route.get("sections") or []
+    if not sections:
+        raise RuntimeError("HERE route has no sections")
     geometry, meters, seconds, raw, traffic, actions = [], 0.0, 0.0, [], [], []
-    for s in routes[0]["sections"]:
+    for s in sections:
         pts = [[round(p[0], 6), round(p[1], 6)] for p in flexpolyline.decode(s["polyline"])]
         for a in s.get("actions") or []:
             actions.append((len(geometry) + int(a.get("offset", 0)), a))
@@ -128,24 +158,38 @@ async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile) -> 
     return info
 
 
+def _here_parse(data: dict) -> RouteInfo:
+    """HERE Routing v8 response body -> the primary route (pure; no I/O)."""
+    routes = (data or {}).get("routes") or []
+    if not routes or not routes[0].get("sections"):
+        raise RuntimeError("HERE returned no truck route")
+    return _parse_route(routes[0])
+
+
+async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile) -> RouteInfo:
+    params = _here_params(t, (fl, fg), (tl, tg)) + [("apiKey", os.environ["HERE_API_KEY"])]
+    r = await client().get(HERE_URL, params=params, timeout=20)
+    if r.is_error:
+        raise RuntimeError(f"HERE {r.status_code}: {r.text[:200]}")
+    return _here_parse(r.json())
+
+
 _GO_FOR = re.compile(r"\s+Go for .*$")
 
 
 def _maneuvers(geometry: List[List[float]], actions: list) -> List[Maneuver]:
     """HERE actions -> maneuvers whose index points into the thinned geometry."""
-    step = math.ceil(len(geometry) / MAX_POINTS) if len(geometry) > MAX_POINTS else 1
-    last = (len(geometry) - 1) // step + (1 if step > 1 else 0)
+    n = len(geometry)
     out = []
     for off, a in actions:
         if a.get("action") == "depart":
             continue
-        off = min(off, len(geometry) - 1)
+        off = min(off, n - 1)
         text = _GO_FOR.sub("", str(a.get("instruction") or "")).rstrip(".").strip()
         if not text:
             continue
-        idx = last if off == len(geometry) - 1 else min(off // step, last)
         out.append(Maneuver(action=str(a.get("action")), direction=a.get("direction"), instruction=text,
-                            lat=geometry[off][0], lng=geometry[off][1], index=idx))
+                            lat=geometry[off][0], lng=geometry[off][1], index=_thin_index(off, n)))
     return out
 
 
