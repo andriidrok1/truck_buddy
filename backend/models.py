@@ -2,8 +2,10 @@ from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
-Category = Literal["truck_stop", "hotel", "rest_area"]
-PlaceCategory = Literal["truck_stop", "hotel", "rest_area", "destination", "service"]  # service = breakdown provider
+# Searchable categories. The first three are the core; the rest are gated by CATEGORIES_EXTRA (see agent).
+Category = Literal["truck_stop", "hotel", "rest_area", "walmart", "cat_scale", "truck_wash", "weigh_station"]
+PlaceCategory = Literal["truck_stop", "hotel", "rest_area", "walmart", "cat_scale", "truck_wash", "weigh_station",
+                        "destination", "service"]  # service = breakdown provider
 
 
 class LatLng(BaseModel):

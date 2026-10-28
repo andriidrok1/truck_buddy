@@ -7,6 +7,7 @@ Route answers are templated (one sentence) and parking directions follow from th
 import asyncio
 import json
 import logging
+import os
 import re
 from collections import OrderedDict
 from typing import Optional
@@ -69,7 +70,20 @@ def control_phrase(text: str) -> Optional[dict]:
             return action
     return None
 NO_PLACES = "I couldn't find one nearby"
-CATEGORY_WORD = {"truck_stop": "truck stop", "hotel": "hotel", "rest_area": "rest area"}
+CATEGORY_WORD = {"truck_stop": "truck stop", "hotel": "hotel", "rest_area": "rest area", "walmart": "Walmart",
+                 "cat_scale": "CAT scale", "truck_wash": "truck wash", "weigh_station": "weigh station"}
+CORE_CATEGORIES = ("truck_stop", "hotel", "rest_area")
+EXTRA_CATEGORIES = ("walmart", "cat_scale", "truck_wash", "weigh_station")
+# Satellite parking checks only where a truck would park; a scale or a wash is not a place to spend the night.
+PARKING_CATEGORIES = {"truck_stop", "hotel", "rest_area", "walmart", "destination"}
+CATEGORY_OFF = "I can't look up {what}s yet. Ask me for a truck stop, a hotel or a rest area."
+
+
+def enabled_categories() -> tuple[str, ...]:
+    """Core categories plus whatever CATEGORIES_EXTRA lists (comma-separated, e.g. 'walmart,cat_scale').
+    Off by default until the app knows how to draw them."""
+    extra = {c.strip() for c in os.environ.get("CATEGORIES_EXTRA", "").split(",") if c.strip()}
+    return CORE_CATEGORIES + tuple(c for c in EXTRA_CATEGORIES if c in extra or "all" in extra)
 ALL_REJECTED = "That's every one I found nearby. Want me to go back to one of them?"
 _STREET_ONLY = re.compile(r"^\s*\d+[a-z]?\s+[\w .'-]+$", re.I)  # "2828 El Centro Rd" (no town after a comma)
 _ZIP_COUNTRY = re.compile(r"^\s*(?:[A-Z]{2}(?:\s+\d{5}(?:-\d{4})?)?|\d{5}|United States|USA)\s*$")
@@ -105,7 +119,7 @@ TRUCK_TAGS = ("truck parking", "53 ft", "truck lot", "hgv")
 def is_fuel_stop(p: Place) -> bool:
     """A truck_stop result with no truck-stop name and a satellite "unlikely": just a gas station."""
     return p.category == "truck_stop" and not TRUCK_STOP_NAME.search(p.name) and _verdict(p) == "unlikely"
-CATEGORIES = ("truck_stop", "hotel", "rest_area")
+CATEGORIES = CORE_CATEGORIES + EXTRA_CATEGORIES  # all the classifier may name; enabled_categories() gates
 
 SYSTEM = """You are TruckBuddy, a hands-free voice copilot for a long-haul truck driver who is driving.
 Truck: {truck}.
@@ -117,12 +131,16 @@ makes sense for a trucker and act on the corrected meaning, e.g. "I need a few" 
 "these all". Only fix words that clearly don't fit; never invent a destination. If you can't tell, use "unclear".
 
 Classify the driver's LAST utterance and answer with JSON only, no other text:
-{{"intent": "find"|"go"|"pick"|"alternative"|"add_stop"|"clear_stops"|"reviews"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|null, "near": string|null, "query": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
+{{"intent": "find"|"go"|"pick"|"alternative"|"add_stop"|"clear_stops"|"reviews"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|"walmart"|"cat_scale"|"truck_wash"|"weigh_station"|null, "near": string|null, "query": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
 
 - find: the driver needs a place. Pick the category yourself, never ask:
   truck_stop = fuel, diesel, DEF, food, showers, truck stop;
   hotel = sleep, tired, overnight, bed, motel, hotel, room;
-  rest_area = quick break, stretch, restroom, short nap, rest area.
+  rest_area = quick break, stretch, restroom, short nap, rest area;
+  walmart = a Walmart, "park at a Walmart", overnight in a Walmart lot;
+  cat_scale = CAT scale, certified scale, weigh the load or axles;
+  truck_wash = truck wash, wash the truck or trailer, Blue Beacon;
+  weigh_station = weigh station, scale house, DOT inspection station, port of entry, chicken coop.
   near = the address, town or landmark the driver wants it close to ("find a truck stop near 2828 El Centro Rd" ->
   "2828 El Centro Rd"; "where can I park close to my delivery in Stockton" -> "Stockton, CA"; "staging near the
   shipper on Maritime St" -> "Maritime St"); digits for numbers; null when they mean near themselves/on the way.
@@ -208,6 +226,26 @@ TEMPLATES = {
         ("Alright", "Route to {dest} is set, {time}, about {mi} miles."),
         ("Okay, we're headed to {dest}", "That's {time}, {mi} miles."),
         ("Got it", "{dest} it is, {time} and {mi} miles."),
+    ],
+    "walmart": [
+        ("Found a Walmart", "{name}{off}, about {mi} miles out. Big lot, but overnight is up to the store manager."),
+        ("Okay", "{name} is about {mi} miles ahead{up}. Ask inside before you stay the night."),
+        ("Here's one", "{name}{off}, {mi} miles away. Check with the store about parking overnight."),
+    ],
+    "cat_scale": [
+        ("Got a scale for you", "CAT scale at {name}{off}, about {mi} miles out."),
+        ("Okay", "Nearest CAT scale is at {name}, about {mi} miles ahead{up}."),
+        ("Here's one", "CAT scale at {name}{off}, {mi} miles away."),
+    ],
+    "truck_wash": [
+        ("Found a wash", "{name}{off}, about {mi} miles out."),
+        ("Okay", "{name} is about {mi} miles ahead{up}."),
+        ("Here's one", "{name}{off}, {mi} miles away."),
+    ],
+    "weigh_station": [
+        ("Got one", "{name}{off}, about {mi} miles out. Open or closed, watch the sign."),
+        ("Okay", "{name} is about {mi} miles ahead{up}. I can't see if it's open."),
+        ("Here's the nearest", "{name}{off}, {mi} miles away. Check the sign for open or closed."),
     ],
     # truck_stop results that are really gas stations: honest wording.
     "fuel_stop": [
@@ -435,7 +473,8 @@ class LlmAgentProvider:
                 route = await get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile)
             except Exception as e:  # noqa: BLE001
                 raise RouteFailed(f"{type(e).__name__}: {e}") from e
-        _background(check_parking(place, route.approach))  # destinations too; entry tip relative to the approach
+        if place.category in PARKING_CATEGORIES:
+            _background(check_parking(place, route.approach))  # destinations too; entry tip relative to the approach
         others = [p for p in found if p.id != place.id][:MAX_OPTIONS]
         counter = _SESSIONS[req.session_id] if req.session_id in _SESSIONS else _turns
         n = counter.get("n", 0)
@@ -593,6 +632,9 @@ class LlmAgentProvider:
     async def _find_near(self, req: AgentRequest, category: str, near: str, text: str, exclude: set[str],
                          sess: dict) -> AgentResponse:
         """Places around a point the driver named (delivery, shipper, town); route from the driver."""
+        if category not in enabled_categories():
+            return AgentResponse(status="chat", transcript=text, category=category, source=self.source,
+                                 reply=CATEGORY_OFF.format(what=CATEGORY_WORD.get(category, "that")))
         query = with_city(near, sess.get("city"))
         with stage("tools"):
             matches = await geocode(query, req.lat, req.lng)
@@ -634,14 +676,19 @@ class LlmAgentProvider:
         return res
 
     async def _find(self, req: AgentRequest, category: str, text: str, exclude: set[str]) -> AgentResponse:
+        if category not in enabled_categories():
+            return AgentResponse(status="chat", transcript=text, category=category, source=self.source,
+                                 reply=CATEGORY_OFF.format(what=CATEGORY_WORD.get(category, "that")))
         with stage("tools"):
             res = await get_places_provider().search(category, req.lat, req.lng)
         found = res.places[:MAX_OPTIONS + 2]
         if not found:
+            msg = res.message or NO_PLACES
             return AgentResponse(status="no_results", transcript=text, category=category,
-                                 reply=f"{NO_PLACES}.", message=NO_PLACES, source=self.source)
-        for p in found[:PRECHECK]:
-            _background(check_parking(p))  # warm satellite checks; never wait for them here
+                                 reply=f"{msg.rstrip('.')}.", message=msg, source=self.source)
+        if category in PARKING_CATEGORIES:
+            for p in found[:PRECHECK]:
+                _background(check_parking(p))  # warm satellite checks; never wait for them here
         if all(p.id in exclude for p in found):
             # Everything was turned down: offer them again (the driver can now pick or search anew).
             _SESSIONS.get(req.session_id or "", {}).pop("rejected", None)

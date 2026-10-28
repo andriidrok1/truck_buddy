@@ -14,6 +14,7 @@ from services.http import client
 from models import Category, Place, PlacesResponse, Review
 from services.flags import on
 from services.geo import haversine_km, km_to_mi
+from services.places import DATA_ONLY, search_data
 
 logger = logging.getLogger("truckbuddy.google")
 
@@ -70,9 +71,17 @@ TEXT_QUERY = {
     "hotel": "hotel motel with truck parking",
     "truck_stop": "truck stop",
     "rest_area": "rest area",
+    "walmart": "Walmart Supercenter",
+    "truck_wash": "truck wash",
 }
 # Strict Google place types so "truck stop" doesn't return diners or city gas stations.
-INCLUDED_TYPE = {"hotel": "lodging", "truck_stop": "truck_stop", "rest_area": "rest_stop"}
+# Categories without a type are text-only searches filtered by name (KEEP_NAME).
+INCLUDED_TYPE = {"hotel": "lodging", "truck_stop": "truck_stop", "rest_area": "rest_stop", "truck_wash": "car_wash"}
+# A result of these categories is kept only when its name says what it is.
+KEEP_NAME = {
+    "walmart": re.compile(r"\bwalmart\s+supercenter\b", re.I),  # Neighborhood Markets have no lot to speak of
+    "truck_wash": re.compile(r"\btruck|\btrailer|blue beacon|\bsemi\b|\brig\b", re.I),
+}
 DEFAULT_RADIUS_KM = 25.0
 WIDE_RADIUS_KM = 50.0  # Google max bias radius is 50 km
 MAX_RESULTS = 10
@@ -150,11 +159,12 @@ class GooglePlacesProvider:
     async def _query(self, category: Category, lat: float, lng: float, radius_km: float) -> list[Place]:
         body = {
             "textQuery": TEXT_QUERY[category],
-            "includedType": INCLUDED_TYPE[category],
-            "strictTypeFiltering": True,
             "pageSize": MAX_RESULTS,
             "locationBias": {"circle": {"center": {"latitude": lat, "longitude": lng}, "radius": radius_km * 1000}},
         }
+        if category in INCLUDED_TYPE:
+            body["includedType"] = INCLUDED_TYPE[category]
+            body["strictTypeFiltering"] = True
         headers = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": os.environ["GOOGLE_MAPS_API_KEY"],
@@ -176,8 +186,10 @@ class GooglePlacesProvider:
             name = (p.get("displayName") or {}).get("text") or "Unnamed place"
             types = p.get("types") or []
             primary = p.get("primaryType") or ""
+            keep = KEEP_NAME.get(category)
             drop = "far" if km > radius_km else (
-                truck_stop_reject(name, types, primary) if category == "truck_stop" else None)
+                truck_stop_reject(name, types, primary) if category == "truck_stop" else
+                "name" if keep and not keep.search(name) else None)
             raw.append(f"{name} [{primary}: {','.join(types[:5])}] {km:.1f}km{' DROP ' + drop if drop else ''}")
             if drop:  # bias can return far-away results
                 continue
@@ -218,6 +230,11 @@ class GooglePlacesProvider:
         return dedupe_nearby(found + mine)
 
     async def search(self, category: Category, lat: float, lng: float) -> PlacesResponse:
+        if category in DATA_ONLY:  # CAT scales, weigh stations: our data file, no billable search
+            res = search_data(category, lat, lng, "data")
+            for p in res.places:
+                self._remember(p)
+            return res
         # ~1 km grid cache so repeated taps/turns don't trigger new billable searches.
         ck = (category, round(lat, 2), round(lng, 2))
         hit = self._searches.get(ck)
