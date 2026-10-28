@@ -51,6 +51,15 @@ async function json<T>(res: Response, path: string): Promise<T> {
 
 const DEFAULT_TIMEOUT_MS = 30000;
 
+/** AgentRequest.speed_mps accepts 0..60; the GPS reports null or a negative value when it has no idea. */
+const MAX_SPEED_MPS = 60;
+
+/** GPS speed as the agent takes it: m/s to one decimal, capped; undefined (left out) when unknown. */
+export function speedForAgent(speed: number | null | undefined): number | undefined {
+  if (typeof speed !== "number" || !Number.isFinite(speed) || speed < 0) return undefined;
+  return Math.round(Math.min(speed, MAX_SPEED_MPS) * 10) / 10;
+}
+
 /** Aborts after `ms`, or as soon as the caller's own signal aborts (no AbortSignal.any on Hermes). */
 function deadline(ms: number, outer?: AbortSignal | null) {
   const ctrl = new AbortController();
@@ -220,6 +229,7 @@ export const api = {
     activeSpeedLimitMph: number | null = null, // posted limit where the truck is, when the route knows it
     sttMs: number | null = null, // how long speech-to-text took on this turn (server stage, else measured); null for typed text
     sttConfidence: number | null = null, // 0..1 from /voice/transcribe; null for typed text or when the recogniser gives none
+    speedMps: number | null = null, // GPS speed in m/s as the location hook reports it; left out of the body when unknown
   ) =>
     request<AgentResponse>(`/agent?speak=true`, {
       method: "POST",
@@ -240,6 +250,7 @@ export const api = {
         ui,
         stt_ms: sttMs,
         stt_confidence: sttConfidence,
+        speed_mps: speedForAgent(speedMps),
       }),
     }),
   /**

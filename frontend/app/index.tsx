@@ -38,7 +38,7 @@ import { offlineTurn } from "@/src/state/offlineTurn";
 import { clearSavedRoute, loadActiveRoute, saveActiveRoute } from "@/src/state/routeStore";
 import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
 import { storage } from "@/src/utils/storage";
-import { planFiller } from "@/src/voice/fillers";
+import { planFiller, type FillerPlan } from "@/src/voice/fillers";
 import { PRIORITY } from "@/src/voice/queue";
 import { buildSttHint, streetFromInstruction } from "@/src/voice/sttHint";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
@@ -156,6 +156,7 @@ export default function MapScreen() {
   const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const inflight = useRef<AbortController | null>(null);
+  const filler = useRef<FillerPlan | null>(null); // the acknowledgement planned for the turn in flight
   const activeRef = useRef<ActiveRoute | null>(null);
   useLayoutEffect(() => {
     activeRef.current = active;
@@ -433,6 +434,22 @@ export default function MapScreen() {
     stageTimer.current = null;
   };
 
+  /**
+   * Drops the turn in flight: the late answer is discarded (turn counter), the request is aborted,
+   * the acknowledgement clip never starts (or is cut), the thinking stages stop. The dialog session
+   * stays, so the next turn lands on the same backend conversation. The phase is the caller's to set.
+   */
+  const cancelTurn = () => {
+    clearTimers();
+    turn.current++;
+    inflight.current?.abort();
+    inflight.current = null;
+    filler.current?.cancel();
+    filler.current = null;
+    voice.stopSpeaking();
+    setThinkingText(undefined);
+  };
+
   const startStages = () => {
     let i = 0;
     setThinkingText(STAGES[0]);
@@ -623,12 +640,9 @@ export default function MapScreen() {
   };
 
   /** Typed request: same pipeline and session as voice, without recording or reopening the mic.
-   *  Returns false (text kept by the caller) while the copilot is still on the last request. */
+   *  Sent while the copilot is still on the last request, it replaces that request (barge-in). */
   const onSubmitText = (text: string): boolean => {
-    if (phaseRef.current === "thinking") {
-      showToast("One second, finishing the last request", "info");
-      return false;
-    }
+    if (phaseRef.current === "thinking") cancelTurn();
     voice.stopSpeaking();
     voice.cancelRecording().catch(() => {});
     pauseDialog();
@@ -654,7 +668,7 @@ export default function MapScreen() {
     const ctrl = new AbortController();
     inflight.current = ctrl;
     const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
-    let filler: ReturnType<typeof scheduleFiller> | null = null;
+    let plan: FillerPlan | null = null;
     let sttMs: number | null = null;
     let sttConfidence: number | null = null;
     try {
@@ -664,7 +678,8 @@ export default function MapScreen() {
         if (!uri) throw new Error("no recording");
         // Planned before STT, so the driver hears something ~300 ms after they stop talking
         // (the transcript alone takes 1-1.5 s to come back).
-        filler = scheduleFiller();
+        plan = scheduleFiller();
+        filler.current = plan;
         // Names the recogniser should expect: what is on screen and on the route, most useful first.
         const cur = activeRef.current;
         const hint = buildSttHint([
@@ -679,7 +694,7 @@ export default function MapScreen() {
         sttMs = stt.stt_ms;
         sttConfidence = stt.stt_confidence;
         transcript = stt.transcript;
-        if (!transcript) filler.cancel(); // nothing heard: no "Hang on." for silence
+        if (!transcript) plan.cancel(); // nothing heard: no "Hang on." for silence
       }
       if (myTurn !== turn.current) return;
       if (transcript) setCaption({ reply: "…", heard: transcript });
@@ -699,24 +714,25 @@ export default function MapScreen() {
         limitRef.current,
         sttMs,
         sttConfidence,
+        loc.speed,
       );
       if (myTurn !== turn.current) return;
       lastTurnSlow.current = (res.timings?.total ?? 0) > SLOW_TURN_MS;
       // Fast answer: the filler never starts. Otherwise the answer waits for it to finish.
-      filler?.cancel();
-      const afterFiller = filler?.done ?? Promise.resolve();
-      if (__DEV__ && filler) {
+      plan?.cancel();
+      const afterFiller = plan?.done ?? Promise.resolve();
+      if (__DEV__ && plan) {
         // Ms after the driver stopped talking. No filler on air: the reply is the first sound, about now.
-        const at = filler.startedAt();
-        const line = `[turn] filler=${at === null ? "none" : filler.picked} at=${at ?? "-"} first_audio=${at ?? filler.elapsed()}`;
+        const at = plan.startedAt();
+        const line = `[turn] filler=${at === null ? "none" : plan.picked} at=${at ?? "-"} first_audio=${at ?? plan.elapsed()}`;
         console.log(line);
         logAnnouncement(line, "system");
       }
       const speak = () => afterFiller.then(() => (myTurn === turn.current ? sayReply(res) : undefined));
       await applyAgentResponse(res, myTurn, ctrl.signal, afterFiller, speak);
     } catch (e) {
-      filler?.cancel();
-      if (myTurn !== turn.current) return;
+      plan?.cancel();
+      if (myTurn !== turn.current) return; // cancelled by the driver (barge-in, close): nothing to report
       const err = String(e);
       const msg = err.includes("422")
         ? "Check your truck profile and try again."
@@ -734,8 +750,9 @@ export default function MapScreen() {
       continueDialog(myTurn, null, wait(1200));
     } finally {
       clearTimeout(timer);
-      if (myTurn !== turn.current) filler?.cancel(); // turn abandoned: never start its filler
+      if (myTurn !== turn.current) plan?.cancel(); // turn abandoned: never start its filler
       if (myTurn === turn.current) clearTimers();
+      if (filler.current === plan) filler.current = null;
     }
   };
 
@@ -889,10 +906,15 @@ export default function MapScreen() {
 
 
   const onAvatarPress = async () => {
-    if (phase === "thinking") return;
     if (phase === "listening") {
       voice.finishListening();
       return;
+    }
+    // Barge-in: a tap while the copilot is still working drops that turn and listens again
+    // (same session, so "no, the other one" lands where it should).
+    if (phase === "thinking") {
+      cancelTurn();
+      backToIdle();
     }
     voice.stopSpeaking();
     const perm = await voice.micPermission();
@@ -929,10 +951,7 @@ export default function MapScreen() {
 
   const onClose = () => {
     pauseDialog();
-    voice.stopSpeaking();
-    clearTimers();
-    turn.current++; // discard any in-flight turn
-    inflight.current?.abort();
+    cancelTurn(); // discard any in-flight turn
     voice.cancelRecording().catch(() => {});
     if (phase === "providers") {
       setProviders(null);

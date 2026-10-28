@@ -1,4 +1,4 @@
-import { api } from "../api";
+import { api, speedForAgent } from "../api";
 
 const jsonResponse = (body: unknown) => ({
   ok: true,
@@ -44,6 +44,46 @@ describe("api.agentSpeak", () => {
     const body = JSON.parse(init.body as string);
     expect(body.stt_ms).toBe(700);
     expect(body.stt_confidence).toBe(0.42);
+  });
+
+  const speak = async (speed: number | null) => {
+    const fetchMock = jest.fn(async () => jsonResponse({ status: "chat", reply: "ok" }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await api.agentSpeak("hello", { lat: 0, lng: 0 }, null, undefined, "s1", undefined, null, null, null, null, speed);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    return JSON.parse(init.body as string) as Record<string, unknown>;
+  };
+
+  test("sends the GPS speed as speed_mps to one decimal", async () => {
+    const body = await speak(12.34);
+    expect(body.speed_mps).toBe(12.3);
+  });
+
+  test("leaves speed_mps out when the GPS has no speed", async () => {
+    for (const speed of [null, -1, NaN, Infinity]) {
+      const body = await speak(speed);
+      expect(body).not.toHaveProperty("speed_mps");
+    }
+  });
+
+  test("caps speed_mps at 60 (the backend's upper bound)", async () => {
+    expect((await speak(71.9)).speed_mps).toBe(60);
+    expect((await speak(0)).speed_mps).toBe(0);
+  });
+});
+
+describe("speedForAgent", () => {
+  test("one decimal, 0..60, undefined when unknown", () => {
+    expect(speedForAgent(12.34)).toBe(12.3);
+    expect(speedForAgent(12.35)).toBe(12.4);
+    expect(speedForAgent(0)).toBe(0);
+    expect(speedForAgent(60)).toBe(60);
+    expect(speedForAgent(60.04)).toBe(60);
+    expect(speedForAgent(200)).toBe(60);
+    expect(speedForAgent(-0.5)).toBeUndefined();
+    expect(speedForAgent(null)).toBeUndefined();
+    expect(speedForAgent(undefined)).toBeUndefined();
+    expect(speedForAgent(NaN)).toBeUndefined();
   });
 });
 
