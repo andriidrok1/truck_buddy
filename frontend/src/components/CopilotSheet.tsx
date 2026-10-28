@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import { KeyboardStickyView } from "@/src/keyboard";
-import Animated, { FadeIn, FadeInDown, runOnJS, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 
 import { routesChipText } from "../geo/routeChoice";
 import type { OfflineMapState } from "../hooks/useOfflineMap";
@@ -251,7 +251,7 @@ export function CopilotSheet(props: Props) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-      <Animated.View key={`head-${phase}`} entering={FadeIn.duration(220)} style={styles.header}>
+      <View style={styles.header}>
         {phase === "ready" && (
           <Text testID="sheet-title" style={[styles.title, { color: colors.onSurface }]}>
             Ask your copilot
@@ -286,18 +286,18 @@ export function CopilotSheet(props: Props) {
         )}
         {navigating && active && !driving && (
           <View style={styles.navInfo}>
-            <Animated.Text key={`sum-${active.route.summary}`} entering={FadeInDown.springify().damping(15)} testID="route-summary" style={[styles.eta, { color: colors.onSurface }]}>
+            <Text testID="route-summary" style={[styles.eta, { color: colors.onSurface }]}>
               {active.route.summary}
-            </Animated.Text>
+            </Text>
             {(() => {
               const e = entrySpot(active.parking);
               return e && routeEndsAt(active.route, e) ? (
-                <Animated.View key={`to-entry-${active.place.id}`} entering={FadeIn} style={styles.entryRow}>
+                <View style={styles.entryRow}>
                   <Icon name="login-variant" size={16} color={colors.info} />
                   <Text testID="route-to-entry" style={[styles.notice, { color: colors.info }]}>
                     Route ends at truck entrance
                   </Text>
-                </Animated.View>
+                </View>
               ) : null;
             })()}
             {active.route.truck_aware === false && (
@@ -310,9 +310,9 @@ export function CopilotSheet(props: Props) {
                 {active.route.notices.slice(0, 2).join(" · ")}
               </Text>
             )}
-            <Animated.Text key={`name-${active.place.id}`} entering={FadeInDown.delay(70).springify().damping(15)} testID="route-place-name" numberOfLines={1} style={[styles.placeName, { color: colors.onSurface }]}>
+            <Text testID="route-place-name" numberOfLines={1} style={[styles.placeName, { color: colors.onSurface }]}>
               {active.place.name}
-            </Animated.Text>
+            </Text>
             <View style={styles.tagRow}>
               <Icon name={active.place.tags.length ? "truck" : "map-marker-outline"} size={18} color={colors.onSurfaceSecondary} />
               <Text testID="route-place-tags" numberOfLines={1} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
@@ -368,12 +368,12 @@ export function CopilotSheet(props: Props) {
             </PressableScale>
           </View>
         )}
-      </Animated.View>
+      </View>
       </ScrollView>
       </GestureDetector>
 
       {typing && canType ? (
-        <Animated.View entering={FadeIn.duration(180)} style={styles.inputRow}>
+        <View style={styles.inputRow}>
           <TextInput
             testID="copilot-text-input"
             value={draft}
@@ -402,7 +402,7 @@ export function CopilotSheet(props: Props) {
           >
             <Icon name="microphone" size={22} color={colors.onSurface} />
           </PressableScale>
-        </Animated.View>
+        </View>
       ) : (
       <View style={styles.actions}>
         {canType ? (
