@@ -149,7 +149,7 @@ export async function redeemAccessCode(code: string) {
   if (res.status === 401) throw new Error("That code isn't right. Check it and try again.");
   if (!res.ok) throw new Error("Something went wrong. Try again.");
   const data = await json<{ access_token: string; role?: "driver" | "tester" }>(res, "/auth");
-  await setToken(data.access_token, data.role === "tester" ? "tester" : "driver");
+  await setToken(data.access_token, data.role === "tester" ? "tester" : "driver", "code");
   requestCode(false);
 }
 

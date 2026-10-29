@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,6 +9,7 @@ import { absoluteUrl, api } from "@/src/api";
 import { Avatar } from "@/src/components/Avatar";
 import { Icon } from "@/src/components/Icon";
 import { MicPermissionCard } from "@/src/components/MicPermissionCard";
+import { PrefsForm, ToggleRow } from "@/src/components/PrefsForm";
 import { PressableScale } from "@/src/components/PressableScale";
 import { Waveform } from "@/src/components/Waveform";
 import { saveTruckProfile, setOnboarded, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
@@ -18,8 +19,6 @@ import { fonts, radius, spacing, useTheme } from "@/src/theme";
 type Step = "name" | "truck" | "prefs" | "done";
 type Mode = "speaking" | "listening" | "thinking" | "waiting";
 const STEPS: Step[] = ["name", "truck", "prefs", "done"];
-const CHAINS = ["Pilot", "Flying J", "Love's", "TA", "Petro", "Sapp Bros", "Kwik Trip", "Buc-ee's"];
-const BREAKS: (number | null)[] = [null, 2, 3, 4, 6, 8];
 const NOT_CAUGHT = "Sorry, I didn't catch that.";
 const TAP_TO_TALK = "Tap me to answer by voice, or type.";
 
@@ -69,30 +68,6 @@ function Num({ label, value, onChange, unit, testID }: { label: string; value: s
   );
 }
 
-function ToggleRow({ title, value, onChange, testID }: { title: string; value: boolean; onChange: (v: boolean) => void; testID: string }) {
-  const { colors } = useTheme();
-  return (
-    <PressableScale testID={`${testID}-row`} onPress={() => onChange(!value)} style={[styles.toggle, { backgroundColor: colors.surfaceSecondary }]}>
-      <Text style={[styles.toggleTitle, { color: colors.onSurface }]}>{title}</Text>
-      <Switch testID={testID} value={value} onValueChange={onChange} trackColor={{ true: colors.info, false: colors.surfaceTertiary }} />
-    </PressableScale>
-  );
-}
-
-function Chip({ label, on, onPress, testID }: { label: string; on: boolean; onPress: () => void; testID: string }) {
-  const { colors } = useTheme();
-  return (
-    <PressableScale
-      testID={testID}
-      onPress={onPress}
-      accessibilityState={{ selected: on }}
-      aria-selected={on}
-      style={[styles.chip, { backgroundColor: on ? colors.info : colors.surface, borderColor: on ? colors.info : colors.border }]}
-    >
-      <Text style={[styles.chipText, { color: on ? colors.onInfo : colors.onSurface }]}>{label}</Text>
-    </PressableScale>
-  );
-}
 
 export default function Onboarding() {
   const router = useRouter();
@@ -361,7 +336,6 @@ export default function Onboarding() {
   };
 
   const nextDisabled = (step === "name" && !name) || (step === "truck" && !truckOk);
-  const chains = draft.favorite_chains ?? [];
   const status =
     mode === "listening" ? "Listening… just talk" : mode === "thinking" ? "Thinking…" : heard ?? "";
 
@@ -420,27 +394,8 @@ export default function Onboarding() {
 
         {/* The preferences are a list the driver can just talk about (or tap). */}
         {step === "prefs" && (
-          <Animated.View entering={FadeInDown.duration(260)} style={styles.body}>
-            <ToggleRow title="Avoid toll roads" value={!!draft.avoid_tolls} onChange={(v) => set({ avoid_tolls: v })} testID="pref-avoid-tolls-switch" />
-            <ToggleRow title="Avoid ferries and tunnels" value={!!draft.avoid_ferries_tunnels} onChange={(v) => set({ avoid_ferries_tunnels: v })} testID="pref-avoid-ferries-switch" />
-            <Text style={[styles.section, { color: colors.onSurface }]}>Favorite truck stops</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-              {CHAINS.map((c) => (
-                <Chip
-                  key={c}
-                  label={c}
-                  on={chains.includes(c)}
-                  testID={`pref-chain-${c.replace(/[^a-z]/gi, "").toLowerCase()}`}
-                  onPress={() => set({ favorite_chains: chains.includes(c) ? chains.filter((x) => x !== c) : [...chains, c] })}
-                />
-              ))}
-            </ScrollView>
-            <Text style={[styles.section, { color: colors.onSurface }]}>Break reminder</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-              {BREAKS.map((b) => (
-                <Chip key={String(b)} label={b ? `Every ${b} h` : "Off"} on={(draft.break_hours ?? null) === b} testID={`pref-break-${b ?? "off"}`} onPress={() => set({ break_hours: b })} />
-              ))}
-            </ScrollView>
+          <Animated.View entering={FadeInDown.duration(260)}>
+            <PrefsForm value={draft} onChange={set} />
           </Animated.View>
         )}
 
