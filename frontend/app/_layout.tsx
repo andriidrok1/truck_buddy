@@ -21,7 +21,7 @@ import { queryClient } from "@/src/query-client";
 LogBox.ignoreAllLogs(true);
 
 export default function RootLayout() {
-  const { scheme, colors } = useTheme();
+  const { scheme } = useTheme();
   const auth = useAuthState();
   const consent = useConsent();
   // The Motive key is read alongside the auth token so the first copilot request already carries it.
@@ -48,7 +48,7 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <KeyboardProvider>
-            <StatusBar style={scheme === "dark" ? "light" : "dark"} backgroundColor={colors.surface} />
+            <StatusBar style={scheme === "dark" ? "light" : "dark"} />
             {consent !== "yes" ? <ConsentGate /> : auth !== "in" ? <DeviceGate /> : <Stack screenOptions={{ headerShown: false }} />}
           </KeyboardProvider>
         </QueryClientProvider>
