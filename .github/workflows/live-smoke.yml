@@ -1,19 +1,18 @@
 name: live smoke
 
-# Nightly check of the deployed backend. Needs two repository secrets:
+# On-demand check of the deployed backend (Actions -> live smoke -> Run workflow). The nightly schedule
+# was dropped on purpose: the owner decided not to run it and no repository secrets will be added, so
+# the two values below have to be provided by whoever runs it:
 #   SMOKE_BASE_URL    e.g. https://<railway-domain>
 #   SMOKE_ACCESS_CODE the backend's ACCESS_CODE (any code works with OPEN_ACCESS=1 as long as it exists)
 # Never blocks a PR; a red run means the deployment, not the code.
 
 on:
-  schedule:
-    - cron: "0 9 * * *"
   workflow_dispatch:
 
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    if: ${{ vars.SMOKE_ENABLED == 'true' }}
     defaults:
       run:
         working-directory: backend
