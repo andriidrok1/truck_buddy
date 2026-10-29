@@ -82,7 +82,7 @@ const NUDGE_KEY_PREFIX = "nudge-";
 const APPROACH_TIPS_M = 800; // about half a mile: the entry tip is useful here, not six miles out
 /** One short line about the lot right after the answer; "" when there is nothing certain to say. */
 const statusLine = (pk: ParkingCheck) => {
-  if (pk.verdict === "likely" || pk.verdict === "listed") return "Parking looks good there. I'll point you to the entrance when we're close.";
+  if (pk.verdict === "likely" || pk.verdict === "listed") return "Parking looks good there.";
   return "";
 };
 /** The entry and parking tips as one spoken line, for the approach and for "how do I get in". */
