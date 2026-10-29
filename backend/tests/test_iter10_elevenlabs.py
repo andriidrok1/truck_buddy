@@ -29,7 +29,8 @@ def fetch_audio(path):
     return r.content
 
 
-# Health: TTS provider
+# Health: TTS provider (skipped unless the backend is configured for ElevenLabs; OpenAI TTS is the default)
+@pytest.mark.usefixtures("elevenlabs_tts")
 def test_health_tts_elevenlabs():
     r = requests.get(f"{BASE_URL}/api/health", timeout=30)
     assert r.status_code == 200

@@ -1,11 +1,11 @@
 # Iteration 28 review (T1): town parking line, "take the second one", control phrases with a route, find-near follow-up
+import os
 import uuid
 
 import pytest
 import requests
 
-from conftest import BASE_URL
-
+BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "").rstrip("/")
 API = f"{BASE_URL}/api"
 SAC = {"lat": 38.58, "lng": -121.49}
 BAD = ("unlikely", "tight", "can't find", "didn't catch")

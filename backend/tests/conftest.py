@@ -4,9 +4,15 @@ Two kinds of tests live here:
 - `tests/offline/` (and the files in OFFLINE_FILES): no network, no keys. These run in CI with
   `python -m pytest -n 0 -m "not live"`.
 - everything else directly in `tests/`: live tests against a running backend. They need
-  EXPO_PUBLIC_BACKEND_URL (or frontend/.env) and ACCESS_CODE, and are marked `live`
-  automatically; without a backend URL they are skipped, not failed.
-- `tests/smoke/`: the nightly smoke against the deployed backend, marked `smoke`.
+  EXPO_PUBLIC_BACKEND_URL and ACCESS_CODE in the environment (frontend/.env is deliberately not
+  read: the tunnel URLs in it go stale and would break the whole run), and are marked `live`
+  automatically; without a backend URL they are skipped, not failed. If the URL is set but the
+  backend does not answer /api/health, the run exits once with a clear message.
+- `tests/smoke/`: the on-demand smoke against the deployed backend, marked `smoke`.
+
+Live modules take the backend URL from the `base_url` fixture or read EXPO_PUBLIC_BACKEND_URL
+themselves; `from conftest import BASE_URL` is unreliable because pytest may resolve `conftest`
+to tests/offline/conftest.py when the whole tree is collected.
 """
 import io
 import math
@@ -19,15 +25,10 @@ import pytest
 import requests
 
 TESTS_DIR = Path(__file__).resolve().parent
-_FRONT_ENV = TESTS_DIR.parents[1] / "frontend" / ".env"
-if not os.environ.get("EXPO_PUBLIC_BACKEND_URL") and _FRONT_ENV.exists():
-    for line in _FRONT_ENV.read_text().splitlines():
-        k, _, v = line.partition("=")
-        if k.strip() == "EXPO_PUBLIC_BACKEND_URL":
-            os.environ["EXPO_PUBLIC_BACKEND_URL"] = v.strip().strip('"')
 os.environ.setdefault("EXPO_BACKEND_URL", os.environ.get("EXPO_PUBLIC_BACKEND_URL", ""))
 
 BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "").rstrip("/")
+HEALTH_TIMEOUT_S = 3
 
 # Files directly in tests/ that run without a backend (pure functions or monkeypatched services).
 OFFLINE_FILES = {
@@ -90,8 +91,50 @@ def pytest_collection_modifyitems(config, items):
                 _live_selected = True
             else:
                 item.add_marker(skip)
-    if _live_selected and config.option.markexpr != "not live":
+    if _live_selected and config.option.markexpr != "not live" and not config.option.collectonly:
+        _require_backend()
         _auth_everything()
+
+
+def _require_backend() -> None:
+    """One clear exit when EXPO_PUBLIC_BACKEND_URL points at nothing, instead of a ConnectionError per test."""
+    if health() is None:
+        pytest.exit(f"backend at {BASE_URL} is not answering /api/health within {HEALTH_TIMEOUT_S}s; "
+                    "unset EXPO_PUBLIC_BACKEND_URL for offline tests", returncode=2)
+
+
+_health: dict = {}
+
+
+def health() -> dict | None:
+    """GET /api/health once per process (no auth needed); None when the backend is not reachable."""
+    if "body" not in _health:
+        try:
+            r = requests.get(f"{BASE_URL}/api/health", timeout=HEALTH_TIMEOUT_S)
+            _health["body"] = r.json() if r.status_code == 200 else None
+        except (requests.RequestException, ValueError):
+            _health["body"] = None
+    return _health["body"]
+
+
+def tts_provider() -> str | None:
+    """`providers.tts` from /api/health ("elevenlabs" or "openai"), None when the backend is down."""
+    body = health()
+    return ((body or {}).get("providers") or {}).get("tts")
+
+
+@pytest.fixture(scope="session")
+def base_url() -> str:
+    """The backend under test (EXPO_PUBLIC_BACKEND_URL without a trailing slash)."""
+    return BASE_URL
+
+
+@pytest.fixture
+def elevenlabs_tts():
+    """Skips the test unless the backend reports ElevenLabs as its TTS provider (OpenAI is the default now)."""
+    provider = tts_provider()
+    if provider != "elevenlabs":
+        pytest.skip(f"TTS provider is {provider!r}, test expects elevenlabs")
 
 
 def _auth_everything() -> None:
