@@ -364,6 +364,16 @@ export default function MapScreen() {
     if (w && Math.hypot(w.lat - loc.coords.lat, (w.lng - loc.coords.lng) * 0.8) < 0.045) return;
     warmedAt.current = loc.coords;
     api.warm(loc.coords).catch(() => {});
+    // The first map is not empty: the truck stops around the driver go on it as pins (a tap routes there),
+    // without a sheet or a word. Only while nothing else is on the map (QA 2026-10-28, U4).
+    if (phaseRef.current === "ready" && optionsRef.current.length === 0 && !providersRef.current) {
+      api
+        .places("truck_stop", loc.coords)
+        .then((res) => {
+          if (phaseRef.current === "ready" && optionsRef.current.length === 0 && !activeRef.current) setPlaces(res.places.slice(0, 8));
+        })
+        .catch(() => {});
+    }
   }, [loc.coords, loc.isDemo, loc.resolved, appActive, active]);
 
   /** Satellite parking check runs after the route is set; its directions are spoken when the reply ends. */

@@ -59,11 +59,13 @@ function OptionCard({ place, state, onParking, onRoute, index }: { place: Place;
           <View style={styles.metaRow}>
             <Rating place={place} />
             {place.distance_mi != null && (
-              <Text style={[styles.meta, { color: colors.onSurfaceSecondary }]}>· {place.distance_mi.toFixed(1)} mi</Text>
+              <Text style={[styles.meta, { color: colors.onSurfaceSecondary }]}>
+                <Text style={{ color: colors.muted }}>·</Text> {place.distance_mi.toFixed(1)} mi
+              </Text>
             )}
             {place.diesel_price != null && (
               <Text testID={`option-diesel-${place.id}`} style={[styles.meta, { color: colors.onSurface }]}>
-                · Diesel ${place.diesel_price.toFixed(2)}{place.diesel_kind === "auto" ? " (car pumps)" : ""}
+                <Text style={{ color: colors.muted }}>·</Text> Diesel ${place.diesel_price.toFixed(2)}{place.diesel_kind === "auto" ? " (car pumps)" : ""}
               </Text>
             )}
           </View>
@@ -140,7 +142,7 @@ const styles = StyleSheet.create({
   catIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   titleCol: { flex: 1 },
   name: { fontFamily: fonts.bold, fontSize: 16 },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
+  metaRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 4, marginTop: 2 },
   ratingRow: { flexDirection: "row", alignItems: "center", gap: 3 },
   ratingText: { fontFamily: fonts.semibold, fontSize: 14 },
   meta: { fontFamily: fonts.medium, fontSize: 13 },
