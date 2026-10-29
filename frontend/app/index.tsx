@@ -45,6 +45,9 @@ import { buildSttHint, streetFromInstruction } from "@/src/voice/sttHint";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 
+// Below this much visible map (layout units) the bubble would cover the route; the sheet shows the text.
+// The route card leaves about 220 at the default font, about 120 at 130 %.
+const MIN_MAP_FOR_BUBBLE = 180;
 type Caption = { reply: string; heard?: string; kind?: "reply" | "line"; at?: number };
 /** The copilot's answer: kept until the next turn (a driver who looks later must still see it). */
 const replyCaption = (reply: string, heard?: string): Caption => ({ reply, heard, kind: "reply", at: Date.now() });
@@ -1373,7 +1376,7 @@ export default function MapScreen() {
         <Icon name={following ? "navigation-variant" : "crosshairs-gps"} size={24} color={following ? colors.onInfo : colors.info} />
       </PressableScale>
 
-      <CaptionBubble text={mapWindow >= 220 ? (caption?.reply ?? null) : null} heard={caption?.heard} bottom={chromeBottom} />
+      <CaptionBubble text={mapWindow >= MIN_MAP_FOR_BUBBLE ? (caption?.reply ?? null) : null} heard={caption?.heard} bottom={chromeBottom} />
 
       <CopilotSheet
         phase={phase}
