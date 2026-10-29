@@ -370,7 +370,11 @@ export default function MapScreen() {
       api
         .places("truck_stop", loc.coords)
         .then((res) => {
-          if (phaseRef.current === "ready" && optionsRef.current.length === 0 && !activeRef.current) setPlaces(res.places.slice(0, 8));
+          if (phaseRef.current !== "ready" || optionsRef.current.length > 0 || activeRef.current || !res.places.length) return;
+          const nearest = res.places.slice(0, 8);
+          setPlaces(nearest);
+          // The idle camera sits at street level; the closest stops are miles out, so widen once to show them.
+          setFit({ key: "start-pins", points: [loc.coords, ...nearest.slice(0, 3)] });
         })
         .catch(() => {});
     }
