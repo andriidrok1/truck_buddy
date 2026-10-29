@@ -153,7 +153,7 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
 - go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV". Write numbers as digits ("2828 El Centro Rd, Sacramento"). If the driver gives only a street address and named a town earlier in the conversation, add that town to query.
 - pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something closer", "the cheapest diesel": lowest "diesel $" in the list). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. If no earlier place fits, use find with the same category instead.
 - alternative: a different road to the SAME destination ("another way", "different route", "is there a faster way", "can we skip the grade", "go around that"). Never a new place. Only meaningful while a route is active; otherwise answer as chat.
-- add_stop: a stop ON THE WAY to the current destination, keeping that destination ("stop at the Pilot in Fernley on the way", "swing by Love's first", "add a fuel stop", "I need a rest area before that"). query = the place or address named (digits for numbers), else category = the kind of stop (truck_stop for fuel/food/showers, rest_area, hotel); never both null. Only while a route is active; with no route it's a plain find or go.
+- add_stop: a stop ON THE WAY to the current destination, keeping that destination ("stop at the Pilot in Fernley on the way", "swing by Love's first", "add a fuel stop", "cheapest diesel on my route", "fuel on the way", "I need a rest area before that"). query = the place or address named (digits for numbers), else category = the kind of stop (truck_stop for fuel/food/showers, rest_area, hotel); never both null. Only while a route is active; with no route it's a plain find or go.
 - clear_stops: drop the stops added on the way ("skip the stops", "forget the stop", "no stops, straight there").
 - reviews: what other drivers say about a place ("what do drivers say about it", "is it any good", "reviews for the Pilot", "how are the showers there"). place_index = the place asked about from "Places found earlier", or null for the current route / the last one mentioned.
 - memory: what the copilot remembers about the driver ("what do you know about me", "what have you learned about me") -> query = "show"; or erasing it ("forget that", "forget what you know about me", "stop remembering") -> query = "forget".
@@ -256,6 +256,15 @@ def _street(address: Optional[str]) -> str:
     return first if first and not first[0].isdigit() else ""
 
 
+def arrival_street(place: Place, route: RouteInfo) -> str:
+    """The street the driver turns off to get in: the last maneuver's street when the route knows it (the
+    same one the entry tip on the card names), else the street of the address."""
+    ap = route.approach
+    if ap and ap.street:
+        return re.sub(r"\s*\([^)]*\)", "", ap.street).strip() or _street(place.address)  # "(US-395-BR)" is for the card
+    return _street(place.address)
+
+
 def _miles(mi: float) -> str:
     return f"{mi:.1f}".removesuffix(".0") if mi < 10 else f"{mi:,.0f}"
 
@@ -320,7 +329,7 @@ CLOSURE = "Heads up, there's a road closure on this route: {description}."
 ALT_REPLY = "Here's another way{via}, {time}, {mi} miles{tolls}."
 NO_ALT = "That's the only truck route I've got."
 ALT_NO_ROUTE = "Set a route first and I'll look for other ways."
-VIA_ADDED = "Added {name}. New total {time}, {mi} miles."
+VIA_ADDED = "Added {name}{ahead}. New total {time}, {mi} miles."
 VIA_NO_ROUTE = "Set a route first, then I can add stops on the way."
 VIA_FULL = "I can only add three stops. Say 'clear the stops' to start over."
 VIA_CLEARED = "Stops cleared. Straight there, {time}, {mi} miles."
@@ -360,6 +369,21 @@ def _diesel_note(p: Place) -> str:
     return f", diesel ${p.diesel_price:.2f}" + ("" if p.diesel_kind == "truck" else " (car pumps)")
 
 
+PRICE_WORDS = re.compile(r"\b(cheap(?:est|er)?|price|prices|cost|how much)\b", re.I)
+NO_PRICE = " I don't have a diesel price for it."
+# A fuel/rest stop asked for "on my route" while a route is active is a stop on the way, never a new destination.
+ON_THE_WAY = re.compile(r"\b(?:on|along) (?:my|the|our) (?:route|way)\b|\ben route\b|\bon the way\b"
+                        r"|\bbefore (?:I|we) (?:get|arrive)\b", re.I)
+STOP_CATEGORIES = {"truck_stop", "rest_area", "cat_scale", "truck_wash", "weigh_station", "walmart"}
+
+
+def price_caveat(text: str, place: Optional[Place]) -> str:
+    """The driver asked about the price and the place has none: say so instead of going quiet about it."""
+    if not place or place.category != "truck_stop" or place.diesel_price is not None:
+        return ""
+    return NO_PRICE if PRICE_WORDS.search(text or "") else ""
+
+
 def _diesel_sentence(place: Place, regional: str = "") -> str:
     """Spoken price for a fuel-type place (+ the regional comparison when known); nothing without a fresh price."""
     if place.diesel_price is None or place.category != "truck_stop":
@@ -382,7 +406,7 @@ def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[st
     The driver's name is used about every third answer. `regional` = EIA comparison for the diesel price."""
     kind = "fuel_stop" if is_fuel_stop(place) else place.category
     intro, body = TEMPLATES[kind][n % len(TEMPLATES[kind])]
-    street = _street(place.address)
+    street = arrival_street(place, route)
     dest = place.name.split(",")[0]
     vals = {"name": place.name, "dest": dest, "mi": _miles(route.distance_mi), "time": route.summary.split(" · ")[0],
             "off": f", right off {street}" if street else "", "up": f", just up {street}" if street else ""}
@@ -465,7 +489,7 @@ def _parse(raw: str) -> dict:
 # (0.1x input price on the cached prefix, faster first token). Everything that varies, the truck, the
 # preferences and the conversation context, travels in the user message, in that order.
 SYSTEM_STATIC = SYSTEM.format(controls=controls.PROMPT, parking=approach.PROMPT, breakdown=breakdown.PROMPT)
-PROMPT_VERSION = 2  # bump when SYSTEM changes, so the cache key and the eval baseline move together
+PROMPT_VERSION = 3  # bump when SYSTEM changes, so the cache key and the eval baseline move together
 PROMPT_CACHE_KEY = f"agent-v{PROMPT_VERSION}"
 
 
@@ -616,7 +640,7 @@ class LlmAgentProvider:
         self._remember_alternatives(req, place, route)
         regional, weather_line, chain_line = await asyncio.gather(
             self._regional_note(place), self._route_weather(route), self._route_chains(route))
-        reply = _route_reply(place, route, n, req.truck_profile.driver_name, regional)
+        reply = _route_reply(place, route, n, req.truck_profile.driver_name, regional) + price_caveat(text, place)
         sess_now = _SESSIONS.get(req.session_id or "")
         learned = sess_now.pop("say_learned", None) if sess_now else None
         for line in (chain_line, weather_line, learned):
@@ -766,11 +790,18 @@ class LlmAgentProvider:
             except Exception:  # noqa: BLE001 - a malformed offer falls through to the normal path
                 pass
         query = str(d.get("query") or "").strip()
+        category = d.get("category") if d.get("category") in CATEGORIES else None
         if query:
             with stage("tools"):
                 matches = await geocode(with_city(query, sess.get("city")), req.lat, req.lng)
-            return matches[0] if matches else None
-        category = d.get("category") if d.get("category") in CATEGORIES else "truck_stop"
+            if matches:
+                return matches[0]
+            if not category:
+                return None
+            # "cheapest diesel on my route" came back as the query: not a place name. The category search
+            # is what the driver meant; a real name that doesn't geocode still ends in "can't find it".
+            logger.info("add_stop query %r is not a place; searching %s instead", query, category)
+        category = category or "truck_stop"
         with stage("tools"):
             res = await get_places_provider().search(category, req.lat, req.lng)
         found = sorted(res.places, key=lambda p: p.distance_mi or 0)
@@ -802,8 +833,9 @@ class LlmAgentProvider:
         stops = stops + [stop]
         route = await self._route_with_stops(req, stops)
         sess["via"] = {"place": place.id, "stops": stops}
-        reply = VIA_ADDED.format(name=stop.name.split(",")[0], time=route.summary.split(" · ")[0],
-                                 mi=_miles(route.distance_mi))
+        ahead = f", about {_miles(stop.distance_mi)} miles ahead" if stop.distance_mi else ""
+        reply = VIA_ADDED.format(name=stop.name.split(",")[0], ahead=ahead, time=route.summary.split(" · ")[0],
+                                 mi=_miles(route.distance_mi)) + price_caveat(text, stop)
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
                              route=route, parking=approach.best(place), options=stops, source=self.source)
 
@@ -1006,6 +1038,10 @@ class LlmAgentProvider:
         # Parking question about a town destination answered as chat: give the town line, never a guess.
         if intent == "chat" and req.active_place and is_town(req.active_place) and re.search(r"\bpark", text, re.I):
             intent = "parking"
+        # "Cheapest diesel on my route" with a route set: a stop on the way; the destination stays.
+        if intent == "find" and req.active_place and d.get("category") in STOP_CATEGORIES and ON_THE_WAY.search(text):
+            logger.info("agent find %s %r with a route active -> add_stop", d.get("category"), text)
+            intent, d = "add_stop", {**d, "intent": "add_stop"}
         # Current pick: the active route, or the last place chosen in this dialog.
         last = req.active_place or (sess["places"][0] if sess["places"] else None)
         current = last.id if last else None

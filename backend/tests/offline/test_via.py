@@ -84,7 +84,7 @@ def test_add_stop_by_name_then_clear(agent_sandbox, fake_http):
 
     res = run(prov.handle(_req("stop at the Pilot in Fernley on the way"), None))
     assert res.status == "route_set" and res.place.id == RENO.id
-    assert res.reply == "Added Pilot Travel Center. New total 2 h 52 min, 132 miles."
+    assert res.reply == "Added Pilot Travel Center, about 80 miles ahead. New total 2 h 52 min, 132 miles."
     assert res.route.via == [[PILOT.lat, PILOT.lng]] and res.route.alternatives == []
     assert [o.id for o in res.options] == [PILOT.id]
     call = fake_http.calls_to("router.hereapi.com")[-1]
@@ -93,7 +93,7 @@ def test_add_stop_by_name_then_clear(agent_sandbox, fake_http):
     assert p["destination"] == f"{RENO.lat},{RENO.lng}" and "alternatives" not in p
 
     res = run(prov.handle(_req("and swing by Love's first"), None))
-    assert res.reply.startswith("Added Love's Travel Stop.")
+    assert res.reply.startswith("Added Love's Travel Stop,")
     assert _vias(fake_http.calls_to("router.hereapi.com")[-1]) == [
         f"{PILOT.lat},{PILOT.lng}!stopDuration=1800", f"{LOVES.lat},{LOVES.lng}!stopDuration=1800"]
     ctx = prov._context(_req("hi"), agent._SESSIONS["v1"])
@@ -127,7 +127,7 @@ def test_add_stop_by_category_uses_places(agent_sandbox, fake_http):
     prov = _sandbox(agent_sandbox, fake_http)
     agent_sandbox.places_provider.places = [LOVES, PILOT]
     res = run(prov.handle(_req("add a fuel stop on the way", sid="cat"), None))
-    assert res.status == "route_set" and res.reply.startswith("Added Love's Travel Stop.")  # the closest truck stop
+    assert res.status == "route_set" and res.reply.startswith("Added Love's Travel Stop, about 30 miles ahead.")  # the closest
     assert agent_sandbox.places_provider.calls == [("truck_stop", SAC["lat"], SAC["lng"])]
 
 

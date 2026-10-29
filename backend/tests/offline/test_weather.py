@@ -1,5 +1,6 @@
 """NWS weather: sampling along the route, alert filtering/dedupe, degradation, spoken lines, the forecast intent."""
 import copy
+import functools
 import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -175,6 +176,36 @@ def test_forecast_speech_end_to_end(fake_http):
     assert len(fake_http.calls) == 3
 
 
+def test_wind_wording():
+    assert weather._wind({"windSpeed": "0 mph", "windDirection": ""}) == ", calm"
+    assert weather._wind({"windSpeed": "0 mph", "windDirection": "N"}) == ", calm"  # NWS gives a direction for calm too
+    assert weather._wind({"windSpeed": "5 to 10 mph", "windDirection": "SW"}) == ", wind 5 to 10 miles an hour from the sw"
+    assert weather._wind({"windSpeed": "12 mph", "windDirection": None, "windGust": "25 mph"}) == \
+        ", wind 12 miles an hour, gusting 25"
+    assert weather._wind({}) == ""
+
+
+def test_when_label_names_the_day():
+    now = datetime(2026, 10, 28, 21, 27, tzinfo=PT)
+    assert weather._when_label(datetime(2026, 10, 28, 22, 0, tzinfo=PT), now) == "at 10 pm"
+    assert weather._when_label(datetime(2026, 10, 29, 15, 0, tzinfo=PT), now) == "tomorrow at 3 pm"
+    assert weather._when_label(datetime(2026, 10, 30, 15, 30, tzinfo=PT), now) == "Friday at 3:30 pm"
+
+
+def test_calm_period_and_tomorrow_are_spoken_plainly(fake_http):
+    calm = copy.deepcopy(HOURLY)
+    for p in calm["properties"]["periods"]:
+        p["windSpeed"], p["windDirection"] = "0 mph", "NW"
+    fake_http.add("api.weather.gov", "/points/", json=POINTS)
+    fake_http.add("api.weather.gov", "/gridpoints/REV/45,106/forecast/hourly", json=calm)
+    fake_http.add("api.weather.gov", "/alerts/active", json={"features": []})
+    now = datetime(2026, 10, 27, 21, 27, tzinfo=PT)  # "3pm" said at night = tomorrow afternoon
+    out = run(weather.forecast_speech("Reno", RENO.lat, RENO.lng, "3pm", now=now))
+    p = pick_period(calm["properties"]["periods"], datetime(2026, 10, 28, 15, 0, tzinfo=PT))
+    assert out == f"Reno tomorrow at 3 pm: {p['temperature']} degrees and {p['shortForecast'].lower()}, calm."
+    assert "no direction" not in out
+
+
 def test_forecast_failures_are_honest(fake_http):
     fake_http.add("api.weather.gov", "/points/", status=503, text="down")
     out = run(weather.forecast_speech("Reno", RENO.lat, RENO.lng, None))
@@ -188,7 +219,10 @@ def test_forecast_failures_are_honest(fake_http):
 
 # ---- agent + endpoint ----
 
-def test_weather_intent_in_the_dialog(agent_sandbox, fake_http):
+def test_weather_intent_in_the_dialog(agent_sandbox, fake_http, monkeypatch):
+    # The fixture covers 2026-10-27 13:00 to 10-29 01:00: pin "now" so the test doesn't age out.
+    monkeypatch.setattr(weather, "forecast_speech",
+                        functools.partial(weather.forecast_speech, now=datetime(2026, 10, 27, 13, 5, tzinfo=PT)))
     fake_http.add("api.weather.gov", "/points/", json=POINTS)
     fake_http.add("api.weather.gov", "/gridpoints/REV/45,106/forecast/hourly", json=HOURLY)
     fake_http.add("api.weather.gov", "/alerts/active", json={"features": []})
