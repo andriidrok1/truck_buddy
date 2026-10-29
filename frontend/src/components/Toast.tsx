@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInUp, FadeOutUp } from "react-native-reanimated";
 
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
@@ -29,8 +30,10 @@ export function Toast({ toast, top }: { toast: ToastData | null; top: number }) 
   );
 }
 
+/** The spoken line over the map: two lines by default so the route stays visible, a tap shows all of it. */
 export function CaptionBubble({ text, heard, bottom }: { text: string | null; heard?: string; bottom: number }) {
   const { colors } = useTheme();
+  const [expanded, setExpanded] = useState(false);
   if (!text) return null;
   return (
     <Animated.View
@@ -38,16 +41,24 @@ export function CaptionBubble({ text, heard, bottom }: { text: string | null; he
       entering={FadeInUp.duration(260)}
       exiting={FadeOutUp.duration(180)}
       style={[styles.captionWrap, { bottom }]}
-      pointerEvents="none"
+      pointerEvents="box-none"
     >
-      <View testID="agent-reply-caption" style={[styles.caption, shadow(colors), { backgroundColor: colors.surface }]}>
+      <Pressable
+        testID="agent-reply-caption"
+        accessibilityRole="button"
+        accessibilityLabel={expanded ? "Collapse the reply" : "Show the whole reply"}
+        onPress={() => setExpanded((e) => !e)}
+        style={[styles.caption, shadow(colors), { backgroundColor: colors.surface }]}
+      >
         {heard ? (
-          <Text testID="heard-transcript" numberOfLines={2} style={[styles.heardText, { color: colors.onSurfaceSecondary }]}>
+          <Text testID="heard-transcript" numberOfLines={1} style={[styles.heardText, { color: colors.onSurfaceSecondary }]}>
             You said: “{heard}”
           </Text>
         ) : null}
-        <Text testID="agent-reply-text" numberOfLines={3} style={[styles.captionText, { color: colors.onSurface }]}>{text}</Text>
-      </View>
+        <Text testID="agent-reply-text" numberOfLines={expanded ? undefined : 2} style={[styles.captionText, { color: colors.onSurface }]}>
+          {text}
+        </Text>
+      </Pressable>
       <View style={[styles.tail, { backgroundColor: colors.surface }]} />
     </Animated.View>
   );
@@ -65,7 +76,7 @@ const styles = StyleSheet.create({
     maxWidth: 420,
   },
   text: { fontFamily: fonts.semibold, fontSize: 14, flexShrink: 1 },
-  captionWrap: { position: "absolute", left: spacing.lg, right: 88, alignItems: "flex-start" },
+  captionWrap: { position: "absolute", left: spacing.lg, right: 88, maxWidth: "72%", alignItems: "flex-start" },
   caption: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: radius.lg, borderBottomLeftRadius: radius.sm },
   captionText: { fontFamily: fonts.medium, fontSize: 15, lineHeight: 21 },
   heardText: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 18, marginBottom: 4 },

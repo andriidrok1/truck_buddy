@@ -15,7 +15,8 @@ type Props = {
   onDismiss: () => void;
 };
 
-/** "Route restored: Pilot Sacramento" after a restart, with Resume (drive) and Dismiss (forget it). */
+/** "Route restored: Pilot Sacramento" after a restart: Resume (drive) or Drop route (forget it); left alone,
+ *  the banner goes after 20 s and the route stays in preview (the screen's timer). */
 export function RestoredBanner({ placeName, note, top, onResume, onDismiss }: Props) {
   const { colors } = useTheme();
   return (
@@ -23,7 +24,7 @@ export function RestoredBanner({ placeName, note, top, onResume, onDismiss }: Pr
       <View testID="restored-banner" style={[styles.card, shadow(colors, 2), { backgroundColor: colors.surface }]}>
         <Icon name="history" size={22} color={colors.info} />
         <View style={styles.text}>
-          <Text testID="restored-title" numberOfLines={1} style={[styles.title, { color: colors.onSurface }]}>
+          <Text testID="restored-title" numberOfLines={2} style={[styles.title, { color: colors.onSurface }]}>
             Route restored: {placeName}
           </Text>
           {!!note && (
@@ -32,8 +33,8 @@ export function RestoredBanner({ placeName, note, top, onResume, onDismiss }: Pr
             </Text>
           )}
         </View>
-        <PressableScale testID="restored-dismiss" accessibilityLabel="Dismiss restored route" onPress={onDismiss} style={styles.btn}>
-          <Text style={[styles.btnText, { color: colors.onSurfaceSecondary }]}>Dismiss</Text>
+        <PressableScale testID="restored-dismiss" accessibilityLabel="Drop the restored route" onPress={onDismiss} style={styles.btn}>
+          <Text style={[styles.btnText, { color: colors.error }]}>Drop route</Text>
         </PressableScale>
         <PressableScale testID="restored-resume" accessibilityLabel="Resume route" onPress={onResume} style={[styles.btn, styles.primary, { backgroundColor: colors.info }]}>
           <Text style={[styles.btnText, { color: colors.onInfo }]}>Resume</Text>

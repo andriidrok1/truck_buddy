@@ -46,6 +46,8 @@ type Props = {
   bottomInset: number;
   onAvatarPress: () => void;
   onSubmitText: (text: string) => void;
+  /** The copilot's last answer, shown under the title while idle (the caption on the map fades). */
+  lastReply?: string | null;
   onClose: () => void;
   onEndRoute: () => void;
   /** Drop one via stop (the route is re-planned without it). */
@@ -143,7 +145,7 @@ function durationLabel(seconds: number) {
 }
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel } = props;
+  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel } = props;
   const routesChip = active && !driving ? routesChipText(active.route) : null;
   const { colors } = useTheme();
   const navigating = phase === "navigating";
@@ -315,6 +317,11 @@ export function CopilotSheet(props: Props) {
             <Text testID="sheet-title" style={[styles.title, { color: colors.onSurface }]}>
               Ask your copilot
             </Text>
+            {!!lastReply && (
+              <Text testID="sheet-last-reply" numberOfLines={3} style={[styles.lastReply, { color: colors.onSurfaceSecondary }]}>
+                {lastReply}
+              </Text>
+            )}
           </View>
         )}
         {phase === "listening" && (
@@ -543,6 +550,7 @@ const styles = StyleSheet.create({
   body: { flexGrow: 1, flexShrink: 1 },
   header: { minHeight: 36, justifyContent: "center" },
   title: { fontFamily: fonts.bold, fontSize: 22, textAlign: "center" },
+  lastReply: { fontFamily: fonts.regular, fontSize: 15, lineHeight: 21, textAlign: "center", marginTop: spacing.xs },
   listenRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.md },
   navInfo: { gap: 2 },
   eta: { fontFamily: fonts.extrabold, fontSize: 24, letterSpacing: -0.3 },
