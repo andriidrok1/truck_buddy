@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AppState, Keyboard, Platform, StyleSheet, View } from "react-native";
+import { AppState, BackHandler, Keyboard, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { absoluteUrl, api } from "@/src/api";
@@ -38,6 +38,7 @@ import { offlineTurn } from "@/src/state/offlineTurn";
 import { clearSavedRoute, loadActiveRoute, saveActiveRoute } from "@/src/state/routeStore";
 import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
 import { storage } from "@/src/utils/storage";
+import { backAction } from "@/src/utils/backAction";
 import { planFiller, type FillerPlan } from "@/src/voice/fillers";
 import { PRIORITY } from "@/src/voice/queue";
 import { buildSttHint, streetFromInstruction } from "@/src/voice/sttHint";
@@ -996,6 +997,7 @@ export default function MapScreen() {
     clearRoute();
   };
 
+
   /** Route state reset without touching audio (used by the copilot so its reply isn't cut). */
   const clearRoute = () => {
     routeStart.current = null;
@@ -1014,6 +1016,58 @@ export default function MapScreen() {
     setPhase(prov ? "providers" : "ready");
     setFit({ key: `end-${Date.now()}`, points: [loc.coords] });
   };
+
+  // Hardware Back closes the top layer (src/utils/backAction.ts); only with nothing of ours open does
+  // it leave the app. While driving it does nothing: one stray press must not drop the route.
+  // State and handlers are mirrored at commit (like phaseRef above), so the one listener registered on
+  // mount always acts on the current render, never on a stale closure.
+  const backRefs = useRef({
+    state: { micCard: false, routesOpen: false, phase: "ready" as Phase, hasRoute: false, driving: false },
+    cancel: () => {},
+    closeOptions: () => {},
+    endRoute: () => {},
+  });
+  useLayoutEffect(() => {
+    backRefs.current = {
+      state: { micCard: !!micCard, routesOpen, phase, hasRoute: !!active, driving },
+      cancel: () => {
+        cancelTurn();
+        voice.cancelRecording().catch(() => {});
+        pauseDialog();
+        backToIdle();
+      },
+      closeOptions: onClose,
+      endRoute: onEndRoute,
+    };
+  });
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      const { state, cancel, closeOptions, endRoute } = backRefs.current;
+      switch (backAction(state)) {
+        case "closeMicCard":
+          setMicCard(null);
+          return true;
+        case "closeRoutes":
+          setRoutesOpen(false);
+          return true;
+        case "cancelTurn":
+          cancel();
+          return true;
+        case "closeOptions":
+          closeOptions();
+          return true;
+        case "endRoute":
+          endRoute();
+          return true;
+        case "ignore":
+          return true;
+        default:
+          return false;
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   /** Re-plans the active route with the current truck profile (after a voice change). */
   const reroute = async (myTurn: number, failMsg = "Couldn't update the route. Try again.") => {
