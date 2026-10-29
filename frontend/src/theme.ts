@@ -1,9 +1,10 @@
-// Design tokens for TruckBuddy. Light theme only (light map, white chips/sheet).
+// Design tokens for TruckBuddy, light and dark. The scheme follows the system (a driver's phone goes
+// dark at night; until 2026-10-29 the app stayed white, UI review B-UI-3).
 // Keys match the "color" block of /app/design_guidelines.json.
 // A plain key is a background; its `on` partner is the text/icon color on top of it.
 
 import { useMemo } from "react";
-import { Appearance, StyleSheet, type ImageStyle, type TextStyle, type ViewStyle } from "react-native";
+import { Appearance, StyleSheet, useColorScheme, type ImageStyle, type TextStyle, type ViewStyle } from "react-native";
 
 export type ColorScheme = "light" | "dark";
 
@@ -68,21 +69,78 @@ const light = {
 
 export type ThemeColors = typeof light;
 
+// Dark: iOS system greys for the surfaces, the brighter dark-mode variants of the status colours (they
+// read on #1C1C1E), the "black" buttons become light, the route keeps its blue with a dark casing.
+const dark: ThemeColors = {
+  surface: "#1C1C1E",
+  onSurface: "#F2F2F7",
+  surfaceSecondary: "#2C2C2E",
+  onSurfaceSecondary: "#D1D1D6",
+  surfaceTertiary: "#3A3A3C",
+  onSurfaceTertiary: "#98989D",
+  surfaceInverse: "#F2F2F7",
+  onSurfaceInverse: "#1C1C1E",
+  muted: "#98989D",
+
+  brand: "#F2F2F7",
+  onBrand: "#1C1C1E",
+  brandPrimary: "#F2F2F7",
+  onBrandPrimary: "#1C1C1E",
+  brandSecondary: "#2C2C2E",
+  onBrandSecondary: "#F2F2F7",
+  brandTertiary: "#3A3A3C",
+  onBrandTertiary: "#F2F2F7",
+
+  success: "#30D158",
+  onSuccess: "#0B1F10",
+  warning: "#FF9F0A",
+  onWarning: "#1C1C1E",
+  error: "#FF453A",
+  onError: "#FFFFFF",
+  info: "#0A84FF",
+  onInfo: "#FFFFFF",
+
+  border: "#3A3A3C",
+  borderStrong: "#48484A",
+  divider: "#3A3A3C",
+
+  truckStop: "#0A84FF",
+  hotel: "#BF5AF2",
+  restArea: "#30D158",
+  walmart: "#3B8CE6",
+  catScale: "#FF9F0A",
+  truckWash: "#64D2FF",
+  weighStation: "#98989D",
+  onCategory: "#FFFFFF",
+  routeLine: "#0A84FF",
+  routeCasing: "#0E0E10",
+  trafficSlow: "#FFD60A",
+  trafficJam: "#FF453A",
+  avatarGlow: "#0A84FF",
+  avatarGlowSoft: "rgba(10,132,255,0.22)",
+  avatarBg: "#3A332B",
+  userHalo: "rgba(10,132,255,0.25)",
+  mapPlaceholder: "#121214",
+  shadow: "#000000",
+  scrim: "rgba(0,0,0,0.4)",
+};
+
 export const defaultScheme = "light" satisfies ColorScheme;
 
-export const themes: { light: ThemeColors; dark?: ThemeColors } = { light };
+export const themes: { light: ThemeColors; dark: ThemeColors } = { light, dark };
 
+/** Force a scheme (a future in-app switch); null = back to following the system. */
 export function setColorScheme(scheme: ColorScheme | null) {
   Appearance.setColorScheme?.(scheme ?? "unspecified");
 }
 
-setColorScheme?.("light");
-
-/** Light only (owner's choice): the map and panels stay the same day and night. */
+/** The system scheme, light when the platform reports none. */
 export function useTheme(): { scheme: ColorScheme; colors: ThemeColors } {
-  return { scheme: "light", colors: themes.light };
+  const scheme: ColorScheme = useColorScheme() === "dark" ? "dark" : "light";
+  return { scheme, colors: themes[scheme] };
 }
 
+/** Light tokens for code that cannot use the hook (tests, constants); components use useTheme(). */
 export const colors = light;
 
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 };

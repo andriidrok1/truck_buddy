@@ -8,6 +8,7 @@ import type { MapLayerHandle, MapLayerProps } from "./mapTypes";
 import { DestinationLabel, EntryMarker, Pin, UserArrow } from "./Pin";
 import { entrySpot } from "../utils/entry";
 import { fitCamera } from "../map/fitCamera";
+import { NIGHT_MAP_STYLE } from "../map/nightStyle";
 
 const toCoord = (p: LatLng) => ({ latitude: p.lat, longitude: p.lng });
 const FOLLOW_ZOOM = 17;
@@ -38,7 +39,7 @@ export function ViewMarker({ children, redraw, ...rest }: React.ComponentProps<t
 
 const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(props, ref) {
   const { driver, heading, places, active, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch } = props;
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
   const { width: winW, height: winH } = useWindowDimensions();
   const mapRef = useRef<MapView>(null);
   const padding = { top: topInset, bottom: bottomInset, left: 0, right: 0 };
@@ -104,6 +105,8 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
       testID="map-view"
       style={StyleSheet.absoluteFill}
       initialRegion={{ ...toCoord(driver), latitudeDelta: 0.015, longitudeDelta: 0.015 }}
+      customMapStyle={scheme === "dark" ? NIGHT_MAP_STYLE : undefined}
+      userInterfaceStyle={scheme}
       mapPadding={padding}
       showsUserLocation={false}
       showsCompass={false}

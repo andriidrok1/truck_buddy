@@ -46,7 +46,7 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <KeyboardProvider>
-            <StatusBar style="dark" />
+            <StatusBar style="auto" />
             {consent !== "yes" ? <ConsentGate /> : auth !== "in" ? <DeviceGate /> : <Stack screenOptions={{ headerShown: false }} />}
           </KeyboardProvider>
         </QueryClientProvider>

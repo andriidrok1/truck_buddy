@@ -16,7 +16,7 @@ const config: ExpoConfig = {
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "truckbuddy",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "io.truckbuddy.app",
