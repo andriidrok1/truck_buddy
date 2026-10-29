@@ -251,9 +251,12 @@ async def _eleven(text: str, voice_id: str, previous_text: Optional[str] = None,
 # gpt-4o-mini-tts takes a speaking-style instruction (tts-1 ignores it).
 INSTRUCTIONS = "Calm, warm, confident co-pilot talking to a truck driver on the road. Natural pace, clear and friendly."
 
-# OpenAI TTS comes out ~-26 LUFS, ElevenLabs ~-15: on a phone speaker in a cab OpenAI is barely audible.
-# +13 dB with a peak limiter brings it to ~-15 LUFS (measured), same loudness as ElevenLabs.
-OPENAI_GAIN_DB = 13
+# OpenAI TTS is quiet and uneven: gpt-4o-mini-tts/sage measures -31 to -35 LUFS raw depending on the sentence
+# (tts-1 was ~-26), ElevenLabs ~-15, so on a phone speaker in a cab it is barely audible. The spec
+# (tests/test_iter25/26) is >= -19 LUFS integrated. +13 dB measured -21.2 / -20.7 / -19.9 on three clips;
+# +15 dB measures -16 to -21 (2026-10-29), true peak -1.0 to -5.6 dBTP, so the limiter is not what holds
+# the quiet ones back; a fixed gain cannot pin every sentence above -19, that would take loudnorm.
+OPENAI_GAIN_DB = 15
 _FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
 
