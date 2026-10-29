@@ -79,6 +79,18 @@ const NUDGE_EVERY_MS = 5 * 60 * 1000;
 const NUDGE_ANSWER_MS = 7000;
 const NUDGE_KEY_PREFIX = "nudge-";
 /** " There's a lot with trailers to the southeast, looks like a private yard." (or "") */
+const APPROACH_TIPS_M = 800; // about half a mile: the entry tip is useful here, not six miles out
+/** One short line about the lot right after the answer; "" when there is nothing certain to say. */
+const statusLine = (pk: ParkingCheck) => {
+  if (pk.verdict === "likely" || pk.verdict === "listed") return "Parking looks good there. I'll point you to the entrance when we're close.";
+  return "";
+};
+/** The entry and parking tips as one spoken line, for the approach and for "how do I get in". */
+const tipsLine = (pk: ParkingCheck) => {
+  const entry = pk.entry_tip && pk.relative ? `The truck entrance is ${pk.entry_tip.charAt(0).toLowerCase()}${pk.entry_tip.slice(1)}` : pk.entry_tip;
+  const tips = [entry, pk.park_tip].filter(Boolean).join(". ");
+  return tips ? `${tips}.` : "";
+};
 const nearbyLine = (pk: ParkingCheck) => {
   if (!pk.nearby) return "";
   const look = pk.nearby.kind === "unclear" ? "" : `, looks like a ${pk.nearby.kind}`;
@@ -405,14 +417,10 @@ export default function MapScreen() {
       const e = entrySpot(pk);
       if (e && activeRef.current?.place.id === place.id && !routeEndsAt(activeRef.current.route, e)) reroute(myTurn); // route to E
       if (myTurn !== turn.current || activeRef.current?.place.id !== place.id) return;
-      const entry = pk.entry_tip && pk.relative ? `The truck entrance is ${pk.entry_tip.charAt(0).toLowerCase()}${pk.entry_tip.slice(1)}` : pk.entry_tip;
-      const tips = [entry, pk.park_tip].filter(Boolean).join(". ");
-      const text =
-        pk.verdict === "unlikely"
-          ? `Heads up: from the satellite, parking there looks tight for a rig.${nearbyLine(pk)}`
-          : tips
-            ? `${tips}.`
-            : "";
+      // Spoken right after the answer: the verdict only. The entry and parking tips stay on the card and
+      // are said when the truck is within half a mile (approachTips below) or on "how do I get in".
+      // The whole set after every answer ran 17 s (QA 2026-10-28, U5).
+      const text = pk.verdict === "unlikely" ? `Heads up: from the satellite, parking there looks tight for a rig.${nearbyLine(pk)}` : statusLine(pk);
       if (!text) return;
       const audio = api.speak(text); // generate while the first answer is still playing
       await replyDone;
@@ -604,6 +612,19 @@ export default function MapScreen() {
     [loc.coords, loc.speed, loc.accuracy, loc.ts],
   );
   const guidance = useGuidance(active, fix, driving, voiceOn, say, rerouteOffRoute);
+
+  // Half a mile out, once per destination: the entry and parking tips from the card, through the speech
+  // queue (a due turn still comes first).
+  const tipsSaidFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!driving || !active?.parking || guidance.remainingM == null || guidance.remainingM > APPROACH_TIPS_M) return;
+    if (tipsSaidFor.current === active.place.id) return;
+    const text = tipsLine(active.parking);
+    if (!text) return;
+    tipsSaidFor.current = active.place.id;
+    say(text, { priority: PRIORITY.CLOSURE_CHAIN, kind: "system", key: "approach-tips", ttlMs: 5 * 60 * 1000 });
+  }, [driving, active, guidance.remainingM, say]);
+
   // Lost signal: "I'll keep you on the loaded route", and where the line is when off it.
   const driverPos = useMemo(() => ({ ...loc.coords, heading: loc.heading }), [loc.coords, loc.heading]);
   const offline = useOfflineGuidance(active, online, driving, guidance, driverPos, say, rerouteOffRoute);
