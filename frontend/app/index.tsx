@@ -157,6 +157,7 @@ export default function MapScreen() {
   };
 
   const turn = useRef(0);
+  const searchBlurGuard = useRef(false); // while set, "Where to?" gives a focus it gets back (see onSubmitText)
   const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const inflight = useRef<AbortController | null>(null);
@@ -648,6 +649,11 @@ export default function MapScreen() {
   /** Typed request: same pipeline and session as voice, without recording or reopening the mic.
    *  Sent while the copilot is still on the last request, it replaces that request (barge-in). */
   const onSubmitText = (text: string): boolean => {
+    Keyboard.dismiss();
+    // Android hands the focus to the next TextInput when the focused one is cleared or unmounts: the
+    // "Where to?" box took it after every typed request and kept the keyboard over the answer.
+    searchBlurGuard.current = true;
+    setTimeout(() => (searchBlurGuard.current = false), 1500);
     if (phaseRef.current === "thinking") cancelTurn();
     voice.stopSpeaking();
     voice.cancelRecording().catch(() => {});
@@ -1258,6 +1264,7 @@ export default function MapScreen() {
           // A bare place ("Reno") becomes "Take me to Reno"; a full request ("I need fuel") goes as typed.
           onSubmitText(/\b(?:i|i'm|me|my|need|find|take|go|where|show|get|park|near|any|truck ?stops?|hotels?|motels?|rest ?areas?|fuel|diesel|gas|parking)\b/i.test(q) ? q : `Take me to ${q}`)
         }
+        blurGuard={searchBlurGuard}
         onTruckPress={() => router.push("/truck-profile")}
         onHistoryPress={() => router.push("/history")}
         tester={isTester()}

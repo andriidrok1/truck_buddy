@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Platform, StyleSheet, Text, TextInput, View } from "react-native";
+import { useRef, useState, type ElementRef, type MutableRefObject } from "react";
+import { Keyboard, Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
@@ -14,6 +14,8 @@ type Props = {
   destination?: string | null;
   /** Returns false when the query wasn't accepted yet (copilot busy): the text stays in the field. */
   onSearch: (text: string) => boolean;
+  /** While set, a focus the box gets was handed to it by Android (a typed request was just sent), not tapped: it is given back. */
+  blurGuard?: MutableRefObject<boolean>;
   onTruckPress: () => void;
   onHistoryPress: () => void;
   /** Tester login: shows the test-scenarios button. */
@@ -28,15 +30,24 @@ type Props = {
 };
 
 /** Google-Maps-style top: "Where to?" search bar, truck settings on the right, memory below it. */
-export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, onTruckPress, onHistoryPress, tester, simLabel, onTesterPress, isDemo, onLocationPress, onLayout }: Props) {
+export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, blurGuard, onTruckPress, onHistoryPress, tester, simLabel, onTesterPress, isDemo, onLocationPress, onLayout }: Props) {
   const { colors } = useTheme();
   const card = [shadow(colors), { backgroundColor: colors.surface }];
   const [text, setText] = useState("");
+  const input = useRef<ElementRef<typeof TextInput>>(null);
 
   const submit = () => {
     const q = text.trim();
     if (!q) return;
+    input.current?.blur();
+    Keyboard.dismiss(); // the answer lands on the map and the sheet; the keyboard would cover both
     if (onSearch(q)) setText(""); // kept while the copilot is still busy (no silent drop)
+  };
+  const onFocus = () => {
+    if (blurGuard?.current) {
+      input.current?.blur();
+      Keyboard.dismiss();
+    }
   };
 
   return (
@@ -45,10 +56,12 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, on
         <View style={[card, styles.search]}>
           <Icon name="magnify" size={24} color={colors.muted} />
           <TextInput
+            ref={input}
             testID="search-input"
             value={text}
             onChangeText={setText}
             onSubmitEditing={submit}
+            onFocus={onFocus}
         placeholder={destination ? `To: ${destination.split(",")[0]}` : "Where to?"}
             placeholderTextColor={destination ? colors.onSurface : colors.muted}
             returnKeyType="search"

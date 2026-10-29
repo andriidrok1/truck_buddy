@@ -40,7 +40,7 @@ describe("reduceAgentResponse", () => {
     const route = { ...routeSetRes.route!, summary: "I-80 E via Fernley", via: [[39.6, -119.25]] as [number, number][] };
     const res: AgentResponse = { ...routeSetRes, route, options: [stop] };
     const { patch, effects } = reduceAgentResponse(res, onRoute);
-    expect(types(effects)).toEqual(["speak"]); // no startRoute, no followParking, no pauseDialog
+    expect(types(effects)).toEqual(["backToIdle", "speak"]); // no startRoute, no followParking, no pauseDialog
     expect(patch).toEqual({ activeRoute: { route, stops: [stop] } });
     expect(patch.options).toBeUndefined(); // the options sheet is left alone
     expect(patch.parking).toBeUndefined();
@@ -51,7 +51,7 @@ describe("reduceAgentResponse", () => {
     // Even if the backend echoed something in `options`, no via means no stops.
     const res: AgentResponse = { ...routeSetRes, route, options: [optionsRes.options![0]] };
     const { patch, effects } = reduceAgentResponse(res, onRoute);
-    expect(types(effects)).toEqual(["speak"]);
+    expect(types(effects)).toEqual(["backToIdle", "speak"]);
     expect(patch.activeRoute).toEqual({ route, stops: [] });
     // "another way?": no via field at all is the same thing.
     const other = reduceAgentResponse({ ...routeSetRes, options: [] }, onRoute);

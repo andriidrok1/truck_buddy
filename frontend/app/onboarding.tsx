@@ -103,6 +103,9 @@ export default function Onboarding() {
   const [step, setStep] = useState<Step>("name");
   const [mode, setMode] = useState<Mode>("waiting");
   const [typing, setTyping] = useState(false);
+  // Small avatar beside the line: while typing, and on the preferences step, whose form otherwise
+  // pushed its last row under the Save button.
+  const compact = typing || step === "prefs";
   const [draft, setDraft] = useState<TruckProfile>(saved);
   const [feet, setFeet] = useState(String(Math.floor(saved.height_in / 12)));
   const [inches, setInches] = useState(String(saved.height_in % 12));
@@ -369,19 +372,19 @@ export default function Onboarding() {
         contentContainerStyle={[styles.content, !typing && step !== "prefs" && styles.centered]}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={[styles.agent, typing && styles.agentRow]}>
-          <Animated.View key={step} entering={FadeIn.duration(320)} style={[styles.thoughtWrap, typing && styles.flexShrink]}>
-            <View style={[styles.thought, typing && styles.thoughtSmall, { backgroundColor: colors.surfaceSecondary }]}>
-              <Text testID="onboarding-agent-line" style={[styles.thoughtText, typing && styles.thoughtTextSmall, { color: colors.onSurface }]}>
+        <View style={[styles.agent, compact && styles.agentRow]}>
+          <Animated.View key={step} entering={FadeIn.duration(320)} style={[styles.thoughtWrap, compact && styles.flexShrink]}>
+            <View style={[styles.thought, compact && styles.thoughtSmall, { backgroundColor: colors.surfaceSecondary }]}>
+              <Text testID="onboarding-agent-line" style={[styles.thoughtText, compact && styles.thoughtTextSmall, { color: colors.onSurface }]}>
                 {thought(step, name)}
               </Text>
             </View>
-            {!typing && <View style={[styles.puff1, { backgroundColor: colors.surfaceSecondary }]} />}
-            {!typing && <View style={[styles.puff2, { backgroundColor: colors.surfaceSecondary }]} />}
+            {!compact && <View style={[styles.puff1, { backgroundColor: colors.surfaceSecondary }]} />}
+            {!compact && <View style={[styles.puff2, { backgroundColor: colors.surfaceSecondary }]} />}
           </Animated.View>
 
           <PressableScale testID="onboarding-avatar-button" accessibilityLabel="Talk to copilot" onPress={onAvatar}>
-            <Avatar size={typing ? 64 : 150} mode={mode === "listening" ? "listening" : mode === "thinking" ? "thinking" : voice.speaking ? "speaking" : "idle"} showMic={false} />
+            <Avatar size={compact ? 64 : 150} mode={mode === "listening" ? "listening" : mode === "thinking" ? "thinking" : voice.speaking ? "speaking" : "idle"} showMic={false} />
           </PressableScale>
 
           {!typing && (
@@ -509,7 +512,7 @@ const styles = StyleSheet.create({
   dot: { height: 8, borderRadius: 4 },
   skip: { minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.sm },
   skipText: { fontFamily: fonts.semibold, fontSize: 15 },
-  content: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingBottom: spacing.xl, gap: spacing.lg },
+  content: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.lg },
   centered: { justifyContent: "center" },
   agent: { alignItems: "center", gap: spacing.md, marginTop: spacing.sm },
   thoughtWrap: { alignItems: "center", maxWidth: 320 },

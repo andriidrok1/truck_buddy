@@ -38,3 +38,6 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+# a symlink named node_modules too (the "node_modules/" rule matches directories only)
+node_modules

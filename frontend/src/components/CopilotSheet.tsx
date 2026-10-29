@@ -259,6 +259,7 @@ export function CopilotSheet(props: Props) {
     const text = draft.trim();
     if (!text) return;
     haptic("medium");
+    Keyboard.dismiss(); // before the input unmounts, or Android hands the focus to "Where to?" and keeps the keyboard up
     setDraft("");
     setTyping(false);
     onSubmitText(text);
