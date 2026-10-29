@@ -822,6 +822,19 @@ class LlmAgentProvider:
     async def _add_stop(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
         place = req.active_place
         if not place:
+            # "add a fuel stop" with nothing to add it to: the model sometimes says add_stop anyway (eval
+            # h_stop_no_route). A category is a plain find, a named place a plain go; only nothing is "set a route".
+            category = d.get("category") if d.get("category") in CATEGORIES else None
+            query = str(d.get("query") or "").strip()
+            if query:
+                with stage("tools"):
+                    matches = await geocode(with_city(query, sess.get("city")), req.lat, req.lng)
+                if matches:
+                    return await self._route_to(req, matches[0], [], text)
+                if not category:
+                    return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query), source=self.source)
+            if category:
+                return await self._find(req, category, text, set())
             return AgentResponse(status="chat", transcript=text, reply=VIA_NO_ROUTE, source=self.source)
         stops = self._stops(req, sess)
         if len(stops) >= MAX_VIA:

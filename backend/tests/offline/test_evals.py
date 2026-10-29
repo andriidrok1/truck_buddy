@@ -228,8 +228,9 @@ def test_compare_finds_regressions_and_fixes():
 
 def test_compare_with_the_empty_placeholder_baseline():
     rep = Report(model="m", date="d", intent_acc=1.0)
-    placeholder = json.loads(evals.BASELINE_FILE.read_text())
-    assert placeholder == {"intent_acc": None}
+    placeholder = {"intent_acc": None}  # the shape of baseline.json before the first --promote
+    committed = json.loads(evals.BASELINE_FILE.read_text())
+    assert committed == placeholder or isinstance(committed.get("intent_acc"), float)  # promoted on 2026-10-29
     for baseline in (placeholder, None, {}):
         cmp = compare(rep, baseline)
         assert cmp["has_baseline"] is False and cmp["regressions"] == [] and cmp["fixes"] == []
