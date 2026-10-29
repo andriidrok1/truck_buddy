@@ -2,13 +2,13 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { LogBox, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "@/src/keyboard";
 
 import { useAuthState } from "@/src/auth";
-import { useTheme } from "@/src/theme";
+import { loadThemePref, useTheme } from "@/src/theme";
 import { ConsentGate } from "@/src/components/ConsentGate";
 import { DeviceGate } from "@/src/components/DeviceGate";
 import { ErrorBoundary } from "@/src/components/error-boundary";
@@ -22,6 +22,11 @@ LogBox.ignoreAllLogs(true);
 
 export default function RootLayout() {
   const { scheme } = useTheme();
+  // The stored theme choice must be in before the first screen, or a dark user sees a white flash.
+  const [themeReady, setThemeReady] = useState(false);
+  useEffect(() => {
+    loadThemePref().finally(() => setThemeReady(true));
+  }, []);
   const auth = useAuthState();
   const consent = useConsent();
   // The Motive key is read alongside the auth token so the first copilot request already carries it.
@@ -38,7 +43,7 @@ export default function RootLayout() {
     "PlusJakartaSans-ExtraBold": require("../assets/fonts/PlusJakartaSans-ExtraBold.ttf"),
   });
 
-  if ((!loaded && !error) || auth === "loading" || consent === "loading") return null;
+  if ((!loaded && !error) || auth === "loading" || consent === "loading" || !themeReady) return null;
 
   // One app level ErrorBoundary; a render crash shows a reload screen
   // instead of a blank app. GestureHandlerRootView must wrap the whole tree

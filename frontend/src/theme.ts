@@ -3,8 +3,10 @@
 // Keys match the "color" block of /app/design_guidelines.json.
 // A plain key is a background; its `on` partner is the text/icon color on top of it.
 
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { Appearance, StyleSheet, useColorScheme, type ImageStyle, type TextStyle, type ViewStyle } from "react-native";
+
+import { storage } from "./utils/storage";
 
 export type ColorScheme = "light" | "dark";
 
@@ -129,14 +131,60 @@ export const defaultScheme = "light" satisfies ColorScheme;
 
 export const themes: { light: ThemeColors; dark: ThemeColors } = { light, dark };
 
-/** Force a scheme (a future in-app switch); null = back to following the system. */
+/** Force a scheme at the platform level; null = back to the system. Kept for tooling, the app uses the preference below. */
 export function setColorScheme(scheme: ColorScheme | null) {
   Appearance.setColorScheme?.(scheme ?? "unspecified");
 }
 
-/** The system scheme, light when the platform reports none. */
+// The driver's choice, from the profile screen: Light (the default, the owner's call), Dark, or Auto
+// (follow the system). Stored on the phone; loaded once at startup before the first screen renders.
+export type ThemePref = ColorScheme | "system";
+const PREF_KEY = "theme_pref_v1";
+let pref: ThemePref = "light";
+let prefLoaded = false;
+const listeners = new Set<() => void>();
+const subscribe = (l: () => void) => {
+  listeners.add(l);
+  return () => listeners.delete(l);
+};
+const emit = () => listeners.forEach((l) => l());
+
+export const isThemePref = (v: unknown): v is ThemePref => v === "light" || v === "dark" || v === "system";
+
+export async function loadThemePref(): Promise<ThemePref> {
+  if (!prefLoaded) {
+    try {
+      const v = await storage.getItem(PREF_KEY, "light" as string);
+      pref = isThemePref(v) ? v : "light";
+    } catch {
+      pref = "light";
+    }
+    prefLoaded = true;
+    emit();
+  }
+  return pref;
+}
+
+export function setThemePref(p: ThemePref) {
+  pref = p;
+  emit();
+  storage.setItem(PREF_KEY, p).catch(() => {});
+}
+
+export function useThemePref(): ThemePref {
+  return useSyncExternalStore(subscribe, () => pref, () => pref);
+}
+
+/** The scheme in force for a preference and the system's scheme. */
+export function resolveScheme(p: ThemePref, system: string | null | undefined): ColorScheme {
+  if (p === "system") return system === "dark" ? "dark" : "light";
+  return p;
+}
+
 export function useTheme(): { scheme: ColorScheme; colors: ThemeColors } {
-  const scheme: ColorScheme = useColorScheme() === "dark" ? "dark" : "light";
+  const p = useThemePref();
+  const system = useColorScheme();
+  const scheme = resolveScheme(p, system);
   return { scheme, colors: themes[scheme] };
 }
 
