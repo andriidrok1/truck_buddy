@@ -21,6 +21,7 @@ const STEPS: Step[] = ["name", "truck", "prefs", "done"];
 const CHAINS = ["Pilot", "Flying J", "Love's", "TA", "Petro", "Sapp Bros", "Kwik Trip", "Buc-ee's"];
 const BREAKS: (number | null)[] = [null, 2, 3, 4, 6, 8];
 const NOT_CAUGHT = "Sorry, I didn't catch that.";
+const TAP_TO_TALK = "Tap me to answer by voice, or type.";
 
 const toInt = (s: string) => parseInt(s.replace(/[^0-9]/g, ""), 10);
 // Rough speaking time, used as a fallback when audio can't autoplay.
@@ -103,6 +104,10 @@ export default function Onboarding() {
   const [step, setStep] = useState<Step>("name");
   const [mode, setMode] = useState<Mode>("waiting");
   const [typing, setTyping] = useState(false);
+  const typingRef = useRef(false); // read inside converse() after awaits
+  useLayoutEffect(() => {
+    typingRef.current = typing;
+  }, [typing]);
   // Small avatar beside the line: while typing, and on the preferences step, whose form otherwise
   // pushed its last row under the Save button.
   const compact = typing || step === "prefs";
@@ -195,7 +200,8 @@ export default function Onboarding() {
 
   const advance = (from: Step) => {
     setHeard(null);
-    setTyping(false); // each new question starts as a conversation again
+    // The driver's choice of typing stays for the next question (QA 2026-10-28, U3); a tap on the
+    // copilot brings the voice back at any step.
     setStep(STEPS[STEPS.indexOf(from) + 1]);
   };
 
@@ -208,12 +214,19 @@ export default function Onboarding() {
       if (run.current === token) finish(draftRef.current);
       return;
     }
+    if (typingRef.current && !listenOnly) {
+      setMode("waiting"); // the driver chose to type: the question is read, the mic stays shut
+      return;
+    }
     for (let attempt = 0; attempt < 2; attempt++) {
       if (micOk.current === null) {
         const p = await voice.micPermission();
         micOk.current = p === "granted";
         if (!micOk.current) {
-          if (p === "ask") setMic("ask");
+          // The permission card only after a tap on the copilot (U1: not a third dialog in the first
+          // five seconds); until then the question waits with a hint.
+          if (p === "ask" && listenOnly) setMic("ask");
+          else if (p === "ask") setHeard(TAP_TO_TALK);
           else setTyping(true);
           setMode("waiting");
           return;

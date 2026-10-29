@@ -48,7 +48,7 @@ export function categoryColor(c: ThemeColors, cat: Category | string) {
 }
 
 export const MESSAGES = {
-  notUnderstood: "Sorry, I didn't catch that. Try again.",
+  notUnderstood: "Sorry, I didn't catch that. Tap the copilot and try again.",
   noPlaces: "No places found nearby",
   micNeeded: "Microphone access is needed to talk to your copilot",
   placesUnavailable: "Places are unavailable right now. Try again.",
