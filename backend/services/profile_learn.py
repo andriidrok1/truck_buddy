@@ -32,6 +32,13 @@ PROMPT = (
 )
 KNOW = "Here's what I know: {facts}."
 KNOW_NOTHING = "I don't know anything about you yet. Tell me what you like and I'll remember."
+# Before the facts exist (fewer than 5 turns), a memory question is answered from the raw lines instead.
+RECALL_PROMPT = (
+    "You are TruckBuddy, a truck driver's voice copilot. Answer the driver's question in one short spoken "
+    "sentence using only what the driver said in earlier conversations (listed, oldest first). If the answer "
+    "is not there, say you don't know that yet. No preamble."
+)
+RECALL_TIMEOUT_S = 4.0
 FORGOT = "Done, I've forgotten what I'd learned about you."
 LEARNED_AVOID = " Got it, I'll stop suggesting {chain}."
 
@@ -121,6 +128,23 @@ async def refresh_if_due(driver: str) -> Optional[dict]:
     except Exception as e:  # noqa: BLE001 - learning is best effort
         logger.warning("profile refresh failed: %s", type(e).__name__)
         return None
+
+
+async def recall(question: str, past: list[str]) -> Optional[str]:
+    """"What's my dog's name?" with no learned facts yet: one short answer from the driver's earlier lines."""
+    lines = [ln.strip()[:200] for ln in past if ln and ln.strip()][-MAX_LINES:]
+    if not lines or not question.strip():
+        return None
+    try:
+        import asyncio
+        raw = await asyncio.wait_for(
+            llm.complete(RECALL_PROMPT, "Driver said earlier:\n" + "\n".join(f"- {ln}" for ln in lines)
+                         + f"\nQuestion: {question.strip()}"), RECALL_TIMEOUT_S)
+    except Exception as e:  # noqa: BLE001 - fall back to "nothing yet"
+        logger.info("recall failed: %s", type(e).__name__)
+        return None
+    text = " ".join(str(raw or "").split())
+    return text[:240] or None
 
 
 async def learn_avoid(driver: Optional[str], facts: dict, chain: str) -> dict:

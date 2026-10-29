@@ -739,7 +739,13 @@ class LlmAgentProvider:
                     logger.warning("clear_facts failed: %s", type(e).__name__)
             return AgentResponse(status="chat", transcript=text, reply=profile_learn.FORGOT, source=self.source)
         line = profile_learn.facts_line(sess.get("facts"))
-        reply = profile_learn.KNOW.format(facts=line) if line else profile_learn.KNOW_NOTHING
+        if line:
+            reply = profile_learn.KNOW.format(facts=line)
+        else:
+            # No facts yet (they need ~5 turns) but earlier lines exist: "what's my dog's name?" is answered
+            # from them, as it was before facts existed (live test test_long_term_recall_across_sessions).
+            _adopt_past(sess)
+            reply = await profile_learn.recall(text, sess.get("past") or []) or profile_learn.KNOW_NOTHING
         return AgentResponse(status="chat", transcript=text, reply=reply, source=self.source)
 
     @staticmethod

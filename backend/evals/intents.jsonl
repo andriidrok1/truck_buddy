@@ -159,3 +159,4 @@
 {"id": "l_22_google_flying_j", "text": "Take me to the Flying J instead", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [3]}, "tags": ["follow_up"], "source": "legacy"}
 {"id": "h_stop_cheapest_diesel_route", "text": "cheapest diesel on my route", "context_preset": "route_active", "expected": {"intent": "add_stop", "category": "truck_stop"}, "tags": ["core"], "source": "hand"}
 {"id": "h_stop_fuel_on_the_way", "text": "I need fuel on the way", "context_preset": "route_active", "expected": {"intent": "add_stop", "category": "truck_stop"}, "tags": ["core"], "source": "hand"}
+{"id": "h_pick_something_else", "text": "something else", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2, 3]}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}

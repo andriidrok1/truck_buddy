@@ -157,6 +157,40 @@ def test_memory_intents(agent_sandbox, monkeypatch):
     assert res.reply == profile_learn.FORGOT and cleared == ["drv"] and agent._SESSIONS["mm"]["facts"] is None
 
 
+def test_memory_question_before_facts_answers_from_the_past(agent_sandbox, monkeypatch):
+    """Fewer than 5 turns = no facts yet; "what's my dog's name?" still gets an answer from the raw lines."""
+    async def recent(driver, limit):
+        return [{"role": "driver", "text": "Remember this: my dog's name is Biscuit.", "at": "x"}]
+
+    async def get_facts(driver):
+        return None
+
+    monkeypatch.setattr(memory, "recent", recent)
+    monkeypatch.setattr(memory, "get_facts", get_facts)
+    agent_sandbox.llm.on(r"^Driver said earlier", "Your dog's name is Biscuit.")  # the recall call, matched first
+    agent_sandbox.llm.on(r"^What is my dog", {"intent": "memory", "query": "show"})  # anchored: the recall text has "dog" too
+    prov = agent_sandbox.provider()
+    res = run(prov.handle(AgentRequest(text="What is my dog's name?", session_id="rc", **SAC), "drv"))
+    assert res.status == "chat" and res.reply == "Your dog's name is Biscuit."
+    sys_prompt, user_text, _ = agent_sandbox.llm.calls[-1]
+    assert sys_prompt == profile_learn.RECALL_PROMPT and "- Remember this: my dog's name is Biscuit." in user_text
+    assert user_text.endswith("Question: What is my dog's name?")
+
+    # nothing said before: the old line
+    async def nothing(driver, limit):
+        return []
+
+    monkeypatch.setattr(memory, "recent", nothing)
+    res = run(prov.handle(AgentRequest(text="What is my dog's name?", session_id="rc2", **SAC), "drv2"))
+    assert res.reply == profile_learn.KNOW_NOTHING
+
+    # the recall model down (no canned reply = the fake raises): the old line, never an error
+    monkeypatch.setattr(memory, "recent", recent)
+    agent_sandbox.llm.rules = [r for r in agent_sandbox.llm.rules if "earlier" not in r[0].pattern]
+    res = run(prov.handle(AgentRequest(text="What is my dog's name?", session_id="rc3", **SAC), "drv3"))
+    assert res.status == "chat" and res.reply == profile_learn.KNOW_NOTHING
+
+
 def test_facts_load_with_the_past(agent_sandbox, monkeypatch):
     async def recent(driver, limit):
         return [{"role": "driver", "text": "hello", "at": "x"}]
