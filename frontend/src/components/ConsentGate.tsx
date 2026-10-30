@@ -1,6 +1,7 @@
+import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
 import { useState } from "react";
-import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PRIVACY_URL } from "../constants";
@@ -37,6 +38,9 @@ export function ConsentGate() {
   const agree = async (withCode = false) => {
     setBusy(true);
     if (withCode) requestCode();
+    // The screen just explained what the location is for: ask for it here, once, instead of the
+    // onboarding opening with a system dialog on top of its first question (U1).
+    if (Platform.OS !== "web") await Location.requestForegroundPermissionsAsync().catch(() => null);
     await giveConsent();
   };
 

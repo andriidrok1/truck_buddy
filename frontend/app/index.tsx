@@ -940,7 +940,12 @@ export default function MapScreen() {
   };
 
   const onAllowMic = async () => {
-    const perm = await voice.requestMic();
+    // A request that never answers (seen in Expo Go) must not leave the card dead: after 5 s it is
+    // treated as blocked, and the card offers Settings.
+    const perm = await Promise.race([
+      voice.requestMic(),
+      new Promise<MicPermission>((r) => setTimeout(() => r("blocked"), 5000)),
+    ]);
     if (perm === "granted") {
       setMicCard(null);
       setMicOk(true);
