@@ -96,6 +96,7 @@ def speak(text, vid=None):
     return requests.post(f"{BASE_URL}/api/speak", json=body, timeout=60)
 
 
+@pytest.mark.usefixtures("elevenlabs_tts")  # eleven_voice_id only changes the audio with ElevenLabs
 def test_speak_voices_distinct_and_cached():
     text = f"TEST voice compare {uuid.uuid4().hex[:6]}. Pilot is about four miles out."
     urls = {}
@@ -125,7 +126,8 @@ def test_speak_parallel_8():
     assert len({r.json()["audio_url"] for r in res}) == 8
 
 
-# Health: ElevenLabs is the TTS provider
+# Health: ElevenLabs is the TTS provider (skipped when the backend runs OpenAI TTS)
+@pytest.mark.usefixtures("elevenlabs_tts")
 def test_health_tts():
     r = requests.get(f"{BASE_URL}/api/health", timeout=15)
     assert r.status_code == 200 and r.json()["providers"]["tts"] == "elevenlabs"

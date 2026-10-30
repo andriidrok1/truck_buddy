@@ -1,8 +1,10 @@
 # Iteration 28: find near a named point (delivery address, town, shipper street)
+import os
+import uuid
+
 import requests
 
-from conftest import BASE_URL
-
+BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "").rstrip("/")
 API = f"{BASE_URL}/api"
 DRIVER = {"lat": 38.58, "lng": -121.49}  # Sacramento
 
@@ -14,13 +16,13 @@ def _ask(text, sid):
 
 
 def test_near_address():
-    r = _ask("find a truck stop near 2828 El Centro Rd, Sacramento", "t28-addr")
+    r = _ask("find a truck stop near 2828 El Centro Rd, Sacramento", f"t28-addr-{uuid.uuid4().hex[:6]}")
     assert r["status"] == "route_set", r
     assert "miles from" in r["reply"] and "miles from you" in r["reply"], r["reply"]
 
 
 def test_near_town_delivery_and_follow_up_reuses_point():
-    sid = "t28-town"
+    sid = f"t28-town-{uuid.uuid4().hex[:6]}"
     r = _ask("where can I park close to my delivery in Stockton", sid)
     assert r["status"] == "route_set", r
     assert "from your delivery" in r["reply"] and "miles from you" in r["reply"], r["reply"]

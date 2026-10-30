@@ -1,17 +1,19 @@
 # Iteration 27: distinct infra-error lines, towns never get a parking verdict, control phrases never geocoded,
 # found places survive a route (same session), "take the second one"
 import asyncio
+import os
+import uuid
 from unittest.mock import patch
 
 import pytest
 import requests
 
-from conftest import BASE_URL
 from models import AgentRequest, Place
 from services import agent, parking
 from services.agent import LLM_DOWN, PLACES_DOWN, ROUTE_DOWN, control_phrase
 from services.google_places import PlacesUnavailable
 
+BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "").rstrip("/")
 SAC = {"lat": 38.58, "lng": -121.49}
 API = f"{BASE_URL}/api"
 
@@ -93,7 +95,7 @@ def test_town_never_gets_a_verdict():
 
 
 def test_town_parking_question_live():
-    sid = "t27-town"
+    sid = f"t27-town-{uuid.uuid4().hex[:6]}"
     r1 = _ask("take me to Sacramento", sid)
     assert r1["status"] == "route_set", r1
     assert r1["place"]["id"].startswith("here-town-"), r1["place"]["id"]
@@ -103,7 +105,7 @@ def test_town_parking_question_live():
 
 
 def test_start_the_ride_with_route_is_navigation_not_geocode():
-    sid = "t27-ctl"
+    sid = f"t27-ctl-{uuid.uuid4().hex[:6]}"
     r1 = _ask("take me to Reno", sid)
     assert r1["status"] == "route_set"
     for text in ("start the ride", "the stars are out"):
@@ -113,7 +115,7 @@ def test_start_the_ride_with_route_is_navigation_not_geocode():
 
 
 def test_take_the_second_one_after_route_same_session():
-    sid = "t27-second"
+    sid = f"t27-second-{uuid.uuid4().hex[:6]}"
     r1 = _ask("I need fuel", sid)
     assert r1["status"] == "route_set" and r1["options"], r1
     shown = [r1["place"], *r1["options"]]  # the list on screen, in order

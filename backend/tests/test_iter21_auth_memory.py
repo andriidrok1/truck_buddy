@@ -106,7 +106,8 @@ class TestProtection:
 
     def test_all_openapi_routes_protected(self):
         spec = requests.get(f"{BASE_URL}/api/openapi.json", headers=NO_AUTH, timeout=30).json()
-        public = {"/api/health", "/api/auth/access-code", "/api/voice/audio/{audio_id}"}
+        # /auth/device is public by design since 3eecbe3 (drivers get in without an access code)
+        public = {"/api/health", "/api/auth/access-code", "/api/auth/device", "/api/voice/audio/{audio_id}"}
         open_routes = []
         for path, ops in spec["paths"].items():
             if path in public:
@@ -135,7 +136,7 @@ class TestMemory:
 
     def test_agent_turn_saved_and_isolated(self, tok_a, tok_b):
         r = requests.post(f"{BASE_URL}/api/agent", headers=_h(tok_a), timeout=90,
-                          json={"text": "find me a truck stop", **LOC, "session_id": "s-a1"})
+                          json={"text": "find me a truck stop", **LOC, "session_id": f"s-a1-{uuid.uuid4().hex[:6]}"})
         assert r.status_code == 200, r.text
         assert r.json()["place"] is not None
         turns = requests.get(f"{BASE_URL}/api/memory", headers=_h(tok_a), timeout=30).json()["turns"]
