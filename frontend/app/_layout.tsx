@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "@/src/keyboard";
 
 import { useAuthState } from "@/src/auth";
+import { useTheme } from "@/src/theme";
 import { ConsentGate } from "@/src/components/ConsentGate";
 import { DeviceGate } from "@/src/components/DeviceGate";
 import { ErrorBoundary } from "@/src/components/error-boundary";
@@ -20,6 +21,7 @@ import { queryClient } from "@/src/query-client";
 LogBox.ignoreAllLogs(true);
 
 export default function RootLayout() {
+  const { scheme } = useTheme();
   const auth = useAuthState();
   const consent = useConsent();
   // The Motive key is read alongside the auth token so the first copilot request already carries it.
@@ -46,7 +48,7 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <KeyboardProvider>
-            <StatusBar style="dark" />
+            <StatusBar style={scheme === "dark" ? "light" : "dark"} />
             {consent !== "yes" ? <ConsentGate /> : auth !== "in" ? <DeviceGate /> : <Stack screenOptions={{ headerShown: false }} />}
           </KeyboardProvider>
         </QueryClientProvider>
