@@ -43,7 +43,7 @@ EVENTS = {
 }
 WARNING_ONE = "Weather warning: {event} ahead near {area}."
 WARNING_MANY = "{event} and {n} more weather alerts along the route."
-HOURLY = "{place} at {when}: {temp} degrees and {forecast}, wind {wind} from the {direction}."
+HOURLY = "{place} {when}: {temp} degrees and {forecast}{wind}."
 HOURLY_ALERT = " Heads up, there's a {event} in effect there."
 NO_FORECAST = "I couldn't get a forecast for {place} right now."
 
@@ -236,17 +236,35 @@ def resolve_when(text: Optional[str], now: datetime) -> datetime:
     return at
 
 
-def _wind(p: dict) -> tuple[str, str]:
-    wind = str(p.get("windSpeed") or "calm").replace(" mph", " miles an hour")
+def _wind(p: dict) -> str:
+    """", wind 12 miles an hour from the southwest, gusting 25" / ", calm" / "" when NWS gave no wind.
+    A direction is only spoken when there is one: a calm period has none, and "from the no direction"
+    is what the driver used to hear."""
+    raw = str(p.get("windSpeed") or "").strip()
+    speeds = [int(x) for x in re.findall(r"\d+", raw)]
+    if not speeds:
+        return ""
+    if max(speeds) == 0:
+        return ", calm"
+    out = ", wind " + raw.replace(" mph", " miles an hour")
+    direction = str(p.get("windDirection") or "").strip().lower()
+    if direction:
+        out += f" from the {direction}"
     gust = p.get("windGust")
     if gust:
-        wind += f", gusting {str(gust).replace(' mph', '')}"
-    return wind, str(p.get("windDirection") or "").lower() or "no direction"
+        out += f", gusting {str(gust).replace(' mph', '')}"
+    return out
 
 
-def _when_label(at: datetime) -> str:
-    h = at.strftime("%-I %p").lower()
-    return h if at.minute == 0 else at.strftime("%-I:%M %p").lower()
+def _when_label(at: datetime, now: datetime) -> str:
+    """"at 3 pm", "tomorrow at 3 pm", "Thursday at 3 pm": the day is said whenever it isn't today."""
+    h = at.strftime("%-I %p").lower() if at.minute == 0 else at.strftime("%-I:%M %p").lower()
+    days = (at.date() - now.date()).days
+    if days == 0:
+        return f"at {h}"
+    if days == 1:
+        return f"tomorrow at {h}"
+    return f"{at.strftime('%A')} at {h}"
 
 
 async def forecast_speech(place: str, lat: float, lng: float, when_text: Optional[str],
@@ -264,10 +282,8 @@ async def forecast_speech(place: str, lat: float, lng: float, when_text: Optiona
         period = pick_period(periods, at)
         if not period:
             return NO_FORECAST.format(place=place)
-        wind, direction = _wind(period)
-        out = HOURLY.format(place=place, when=_when_label(at), temp=period.get("temperature", "?"),
-                            forecast=str(period.get("shortForecast") or "no details").lower(), wind=wind,
-                            direction=direction)
+        out = HOURLY.format(place=place, when=_when_label(at, now), temp=period.get("temperature", "?"),
+                            forecast=str(period.get("shortForecast") or "no details").lower(), wind=_wind(period))
         alerts = await _alerts_at(lat, lng, mono)
         if alerts:
             out += HOURLY_ALERT.format(event=alerts[0]["event"])

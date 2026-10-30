@@ -38,7 +38,7 @@ def test_classify_uses_the_cache_key_and_static_system(agent_sandbox):
     run(agent.classify("I need fuel", "ctx", truck))
     system, user, model = agent_sandbox.llm.calls[-1]
     assert system == SYSTEM_STATIC and user.startswith("Truck: ") and model == "gpt-5.4-mini"
-    assert agent_sandbox.llm.cache_keys[-1] == PROMPT_CACHE_KEY == "agent-v2"
+    assert agent_sandbox.llm.cache_keys[-1] == PROMPT_CACHE_KEY == "agent-v3"
 
 
 def test_static_prefix_is_long_enough_to_cache():

@@ -1,1 +1,1881 @@
-{"intent_acc": null}
+{
+ "model": "gpt-5.4-mini",
+ "date": "2026-10-29",
+ "adapter": "chat_json",
+ "n_cases": 292,
+ "n_results": 292,
+ "intent_acc": 0.9589,
+ "case_acc": 0.9315,
+ "by_tag": {
+  "address": {
+   "n": 6,
+   "intent_acc": 1.0,
+   "case_acc": 1.0
+  },
+  "ambiguous": {
+   "n": 5,
+   "intent_acc": 1.0,
+   "case_acc": 0.8
+  },
+  "core": {
+   "n": 87,
+   "intent_acc": 0.977,
+   "case_acc": 0.954
+  },
+  "disfluency": {
+   "n": 87,
+   "intent_acc": 0.9655,
+   "case_acc": 0.9425
+  },
+  "edge": {
+   "n": 16,
+   "intent_acc": 0.9375,
+   "case_acc": 0.9375
+  },
+  "follow_up": {
+   "n": 47,
+   "intent_acc": 0.9787,
+   "case_acc": 0.9149
+  },
+  "memory": {
+   "n": 7,
+   "intent_acc": 1.0,
+   "case_acc": 1.0
+  },
+  "near": {
+   "n": 16,
+   "intent_acc": 1.0,
+   "case_acc": 0.9375
+  },
+  "noisy_stt": {
+   "n": 44,
+   "intent_acc": 0.8864,
+   "case_acc": 0.8182
+  }
+ },
+ "by_preset": {
+  "idle": {
+   "n": 161,
+   "intent_acc": 0.9503,
+   "case_acc": 0.9317
+  },
+  "near_follow_up": {
+   "n": 5,
+   "intent_acc": 1.0,
+   "case_acc": 1.0
+  },
+  "options_shown": {
+   "n": 49,
+   "intent_acc": 0.9796,
+   "case_acc": 0.9184
+  },
+  "past_memory": {
+   "n": 7,
+   "intent_acc": 1.0,
+   "case_acc": 1.0
+  },
+  "route_active": {
+   "n": 65,
+   "intent_acc": 0.9538,
+   "case_acc": 0.9231
+  },
+  "stops": {
+   "n": 5,
+   "intent_acc": 1.0,
+   "case_acc": 1.0
+  }
+ },
+ "by_intent": {
+  "add_stop": {
+   "n": 17,
+   "intent_acc": 1.0,
+   "case_acc": 1.0,
+   "confusions": {}
+  },
+  "alternative": {
+   "n": 7,
+   "intent_acc": 1.0,
+   "case_acc": 1.0,
+   "confusions": {}
+  },
+  "breakdown": {
+   "n": 15,
+   "intent_acc": 1.0,
+   "case_acc": 1.0,
+   "confusions": {}
+  },
+  "bye": {
+   "n": 11,
+   "intent_acc": 0.9091,
+   "case_acc": 0.9091,
+   "confusions": {
+    "chat": 1
+   }
+  },
+  "chat": {
+   "n": 17,
+   "intent_acc": 0.9412,
+   "case_acc": 0.9412,
+   "confusions": {
+    "bye": 1
+   }
+  },
+  "clear_stops": {
+   "n": 5,
+   "intent_acc": 1.0,
+   "case_acc": 1.0,
+   "confusions": {}
+  },
+  "control": {
+   "n": 42,
+   "intent_acc": 1.0,
+   "case_acc": 0.9762,
+   "confusions": {}
+  },
+  "find": {
+   "n": 90,
+   "intent_acc": 0.9444,
+   "case_acc": 0.9333,
+   "confusions": {
+    "breakdown": 2,
+    "add_stop": 1,
+    "control": 1,
+    "unclear": 1
+   }
+  },
+  "go": {
+   "n": 21,
+   "intent_acc": 0.8571,
+   "case_acc": 0.8571,
+   "confusions": {
+    "unclear": 3
+   }
+  },
+  "hos": {
+   "n": 8,
+   "intent_acc": 1.0,
+   "case_acc": 1.0,
+   "confusions": {}
+  },
+  "parking": {
+   "n": 9,
+   "intent_acc": 1.0,
+   "case_acc": 1.0,
+   "confusions": {}
+  },
+  "pick": {
+   "n": 25,
+   "intent_acc": 0.96,
+   "case_acc": 0.84,
+   "confusions": {
+    "go": 1
+   }
+  },
+  "reviews": {
+   "n": 8,
+   "intent_acc": 1.0,
+   "case_acc": 1.0,
+   "confusions": {}
+  },
+  "unclear": {
+   "n": 8,
+   "intent_acc": 0.875,
+   "case_acc": 0.875,
+   "confusions": {
+    "chat": 1
+   }
+  },
+  "weather": {
+   "n": 9,
+   "intent_acc": 1.0,
+   "case_acc": 0.6667,
+   "confusions": {}
+  }
+ },
+ "confusions": {
+  "go→unclear": 3,
+  "find→breakdown": 2,
+  "pick→go": 1,
+  "find→add_stop": 1,
+  "bye→chat": 1,
+  "find→control": 1,
+  "find→unclear": 1,
+  "chat→bye": 1,
+  "unclear→chat": 1
+ },
+ "p50_ms": 986.0,
+ "p95_ms": 1846.0,
+ "cached_ratio": 0.8941,
+ "cost_usd": 0.0695,
+ "failures": [
+  {
+   "id": "h_find_def",
+   "text": "I'm low on DEF",
+   "preset": "idle",
+   "expected": {
+    "intent": "find",
+    "category": "truck_stop"
+   },
+   "got": {
+    "intent": "breakdown",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null,
+    "kind": "fuel",
+    "detail": "low on DEF",
+    "mode": "unknown",
+    "tire_position": null,
+    "tire_size": null
+   },
+   "mismatches": [
+    "intent: expected 'find', got 'breakdown'",
+    "category: expected 'truck_stop', got None"
+   ]
+  },
+  {
+   "id": "h_pick_reno_one",
+   "text": "the one in Reno",
+   "preset": "options_shown",
+   "expected": {
+    "intent": "pick",
+    "place_index": [
+     3
+    ]
+   },
+   "got": {
+    "intent": "go",
+    "category": null,
+    "near": null,
+    "query": "Reno, NV",
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "intent: expected 'pick', got 'go'",
+    "place_index: expected one of [3], got None"
+   ]
+  },
+  {
+   "id": "h_stop_no_route",
+   "text": "add a fuel stop",
+   "preset": "idle",
+   "expected": {
+    "intent": "find",
+    "category": "truck_stop"
+   },
+   "got": {
+    "intent": "add_stop",
+    "category": "truck_stop",
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "intent: expected 'find', got 'add_stop'"
+   ]
+  },
+  {
+   "id": "h_wx_ahead",
+   "text": "is it snowing ahead",
+   "preset": "route_active",
+   "expected": {
+    "intent": "weather",
+    "query": null
+   },
+   "got": {
+    "intent": "weather",
+    "category": null,
+    "near": null,
+    "query": "ahead",
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "query: expected null, got 'ahead'"
+   ]
+  },
+  {
+   "id": "h_ctl_break_off",
+   "text": "stop reminding me about breaks",
+   "preset": "idle",
+   "expected": {
+    "intent": "control",
+    "actions": [
+     "set_break_hours"
+    ]
+   },
+   "got": {
+    "intent": "control",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": [
+     {
+      "type": "set_nudges",
+      "value": false
+     }
+    ],
+    "reply": null
+   },
+   "mismatches": [
+    "actions: missing ['set_break_hours'], got ['set_nudges']"
+   ]
+  },
+  {
+   "id": "h_bye_nothing_else",
+   "text": "nothing else",
+   "preset": "route_active",
+   "expected": {
+    "intent": "bye"
+   },
+   "got": {
+    "intent": "chat",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": "Got it. Say the word if you need anything else."
+   },
+   "mismatches": [
+    "intent: expected 'bye', got 'chat'"
+   ]
+  },
+  {
+   "id": "l_13_not_that_one",
+   "text": "Not that one",
+   "preset": "options_shown",
+   "expected": {
+    "intent": "pick",
+    "place_index": [
+     2,
+     3
+    ]
+   },
+   "got": {
+    "intent": "pick",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": 1,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "place_index: expected one of [2, 3], got 1"
+   ]
+  },
+  {
+   "id": "h_find_def__stt_def",
+   "text": "I'm low on Deaf",
+   "preset": "idle",
+   "expected": {
+    "intent": "find",
+    "category": "truck_stop"
+   },
+   "got": {
+    "intent": "control",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": [
+     {
+      "type": "set_hazmat",
+      "value": false
+     }
+    ],
+    "reply": null
+   },
+   "mismatches": [
+    "intent: expected 'find', got 'control'",
+    "category: expected 'truck_stop', got None"
+   ]
+  },
+  {
+   "id": "h_find_def__dis_uh",
+   "text": "uh, I'm low on DEF",
+   "preset": "idle",
+   "expected": {
+    "intent": "find",
+    "category": "truck_stop"
+   },
+   "got": {
+    "intent": "breakdown",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null,
+    "kind": "fuel",
+    "detail": "low on DEF",
+    "mode": "unknown",
+    "tire_position": null,
+    "tire_size": null
+   },
+   "mismatches": [
+    "intent: expected 'find', got 'breakdown'",
+    "category: expected 'truck_stop', got None"
+   ]
+  },
+  {
+   "id": "h_find_near_lodi__stt_lodi",
+   "text": "get me a truck stop near Lady",
+   "preset": "idle",
+   "expected": {
+    "intent": "find",
+    "category": "truck_stop",
+    "near": {
+     "contains": "lodi"
+    }
+   },
+   "got": {
+    "intent": "find",
+    "category": "truck_stop",
+    "near": "Lady",
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "near: expected to contain 'lodi', got 'Lady'"
+   ]
+  },
+  {
+   "id": "h_find_scale_house__stt_scale",
+   "text": "is there a skill house ahead",
+   "preset": "idle",
+   "expected": {
+    "intent": "find",
+    "category": "weigh_station"
+   },
+   "got": {
+    "intent": "unclear",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "intent: expected 'find', got 'unclear'",
+    "category: expected 'weigh_station', got None"
+   ]
+  },
+  {
+   "id": "h_go_lodi__stt_lodi",
+   "text": "route me to Lady",
+   "preset": "idle",
+   "expected": {
+    "intent": "go",
+    "query": {
+     "contains": "lodi"
+    }
+   },
+   "got": {
+    "intent": "unclear",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "intent: expected 'go', got 'unclear'",
+    "query: expected to contain 'lodi', got None"
+   ]
+  },
+  {
+   "id": "h_go_reno_instead__stt_reno",
+   "text": "take me to Rina instead",
+   "preset": "route_active",
+   "expected": {
+    "intent": "go",
+    "query": {
+     "contains": "reno"
+    }
+   },
+   "got": {
+    "intent": "unclear",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "intent: expected 'go', got 'unclear'",
+    "query: expected to contain 'reno', got None"
+   ]
+  },
+  {
+   "id": "h_pick_reno_one__stt_reno",
+   "text": "the one in Rina",
+   "preset": "options_shown",
+   "expected": {
+    "intent": "pick",
+    "place_index": [
+     3
+    ]
+   },
+   "got": {
+    "intent": "pick",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "place_index: expected one of [3], got None"
+   ]
+  },
+  {
+   "id": "h_pick_reno_one__dis_hey",
+   "text": "hey buddy the one in Reno",
+   "preset": "options_shown",
+   "expected": {
+    "intent": "pick",
+    "place_index": [
+     3
+    ]
+   },
+   "got": {
+    "intent": "pick",
+    "category": "truck_stop",
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "place_index: expected one of [3], got None"
+   ]
+  },
+  {
+   "id": "h_wx_reno_3pm__stt_reno",
+   "text": "weather in Rina at 3pm",
+   "preset": "idle",
+   "expected": {
+    "intent": "weather",
+    "query": {
+     "contains": "reno"
+    },
+    "when": {
+     "contains": "3"
+    }
+   },
+   "got": {
+    "intent": "weather",
+    "category": null,
+    "near": null,
+    "query": "Rina",
+    "when": "3pm",
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "query: expected to contain 'reno', got 'Rina'"
+   ]
+  },
+  {
+   "id": "h_wx_ahead__dis_uh",
+   "text": "uh, is it snowing ahead",
+   "preset": "route_active",
+   "expected": {
+    "intent": "weather",
+    "query": null
+   },
+   "got": {
+    "intent": "weather",
+    "category": null,
+    "near": null,
+    "query": "ahead",
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "query: expected null, got 'ahead'"
+   ]
+  },
+  {
+   "id": "h_chat_thanks__dis_uh",
+   "text": "uh, thanks",
+   "preset": "route_active",
+   "expected": {
+    "intent": "chat"
+   },
+   "got": {
+    "intent": "bye",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": "You bet, safe travels."
+   },
+   "mismatches": [
+    "intent: expected 'chat', got 'bye'"
+   ]
+  },
+  {
+   "id": "h_unclear_music__dis_please",
+   "text": "music playing please",
+   "preset": "idle",
+   "expected": {
+    "intent": "unclear"
+   },
+   "got": {
+    "intent": "chat",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": "Got it."
+   },
+   "mismatches": [
+    "intent: expected 'unclear', got 'chat'"
+   ]
+  },
+  {
+   "id": "l_08_reno__stt_reno",
+   "text": "Take me to Rina",
+   "preset": "idle",
+   "expected": {
+    "intent": "go",
+    "query": {
+     "contains": "reno"
+    }
+   },
+   "got": {
+    "intent": "unclear",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "intent: expected 'go', got 'unclear'",
+    "query: expected to contain 'reno', got None"
+   ]
+  }
+ ],
+ "flaky": [],
+ "per_case": {
+  "h_find_truckstop_nearest": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_diesel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_shower": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_loves": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_food": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_pilot": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_def": {
+   "ok_intent": false,
+   "ok_all": false
+  },
+  "h_find_fuel_stop": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_near_lodi": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_near_address": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_park_delivery": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_staging": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_park_near_port": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_motel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_room": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_bed": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_overnight": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_rest_area": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_restroom": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_nap": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_stretch": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_walmart": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_walmart_overnight": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_walmart_nearest": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_cat_scale": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_weigh_load": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_certified_scale": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_axles": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_truck_wash": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_wash_trailer": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_blue_beacon": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_weigh_station": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_scale_house": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_chicken_coop": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_port_of_entry": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_near_hotel_there": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_near_rest_area_same": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_go_bakersfield": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_go_address_sf": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_go_flyingj_fernley": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_go_lodi": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_go_lets_go_sac": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_go_exit": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_go_reno_instead": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_pilot": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_first": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_loves": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_cheapest": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_other": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_reno_one": {
+   "ok_intent": false,
+   "ok_all": false
+  },
+  "h_pick_third": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_loves_instead": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_another_way": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_different_route": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_skip_grade": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_faster": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_no_route": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_fuel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_pilot_fernley": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_rest_area": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_loves_first": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_no_route": {
+   "ok_intent": false,
+   "ok_all": false
+  },
+  "h_clear_skip": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_clear_forget": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_clear_no_stops": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_rev_drivers_say": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_rev_any_good": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_rev_loves": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_rev_showers": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_wx_reno_3pm": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_wx_donner": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_wx_ahead": {
+   "ok_intent": true,
+   "ok_all": false
+  },
+  "h_wx_here": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_wx_destination_tomorrow": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_hos_hours": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_hos_drive_time": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_hos_stop": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_hos_clock": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_hos_break": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_park_get_in": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_park_where": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_park_fit": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_park_loves": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_start_ride": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_lets_go": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_start_driving": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_end_route": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_show_options": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_recenter": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_overview": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_zoom_in": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_zoom_out": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_voice_off": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_wake_word_on": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_stop_talking": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_quiet": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_height": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_trailer": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_weight": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_hazmat": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_name": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_avoid_tolls": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_no_ferries": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_fav_chain": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_remove_chain": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_break_hours": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_break_off": {
+   "ok_intent": true,
+   "ok_all": false
+  },
+  "h_bd_tire": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bd_flat_trailer": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bd_wont_start": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bd_tow": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bd_reefer": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bd_out_of_fuel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bd_brake_light": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bd_landing_gear": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bd_who_can_fix": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_chat_thanks": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_chat_speed_limit": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_chat_where_am_i": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_chat_place_name": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_chat_how_far_no_route": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_chat_joke": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_chat_hows_it_going": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bye_bye": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bye_thats_it": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bye_done": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bye_see_you": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bye_nothing_else": {
+   "ok_intent": false,
+   "ok_all": false
+  },
+  "h_unclear_siren": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_unclear_music": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_unclear_engine": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_unclear_gibberish": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_mem_fuel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_mem_thanks": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_mem_hos": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_mem_rest_area": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_mem_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_01_tired": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_02_need_fuel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_03_diesel_def": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_04_sleep_tonight": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_05_quick_break": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_06_restroom": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_07_hungry": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_08_reno": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_09_dallas_address": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_10_port_of_oakland": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_11_how_far": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_12_how_long": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_13_not_that_one": {
+   "ok_intent": true,
+   "ok_all": false
+  },
+  "l_14_second_one": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_15_flying_j_instead": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_16_bye": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_17_thats_all": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_18_im_good": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_19_beeping": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_20_thanks_man": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_21_google_second_one": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_22_google_flying_j": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_cheapest_diesel_route": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_fuel_on_the_way": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_truckstop_nearest__stt_truck_stop": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_truckstop_nearest__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_diesel__stt_diesel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_diesel__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_shower__stt_shower": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_shower__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_loves__stt_love_s": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_loves__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_pilot__stt_pilot": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_pilot__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_def__stt_def": {
+   "ok_intent": false,
+   "ok_all": false
+  },
+  "h_find_def__dis_uh": {
+   "ok_intent": false,
+   "ok_all": false
+  },
+  "h_find_near_lodi__stt_lodi": {
+   "ok_intent": true,
+   "ok_all": false
+  },
+  "h_find_near_lodi__stt_truck_stop": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_near_lodi__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_near_address__stt_truck_stop": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_near_address__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_park_delivery__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_motel__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_rest_area__stt_rest_area": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_rest_area__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_restroom__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_walmart__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_cat_scale__stt_scale": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_cat_scale__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_weigh_load__stt_weigh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_weigh_load__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_truck_wash__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_weigh_station__stt_weigh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_weigh_station__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_find_scale_house__stt_scale": {
+   "ok_intent": false,
+   "ok_all": false
+  },
+  "h_find_scale_house__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_near_hotel_there__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_near_rest_area_same__stt_rest_area": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_near_rest_area_same__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_go_bakersfield__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_go_address_sf__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_go_lodi__stt_lodi": {
+   "ok_intent": false,
+   "ok_all": false
+  },
+  "h_go_lodi__stt_route": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_go_lodi__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_go_exit__stt_exit": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_go_exit__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_go_reno_instead__stt_reno": {
+   "ok_intent": false,
+   "ok_all": false
+  },
+  "h_go_reno_instead__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_pilot__stt_pilot": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_pilot__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_loves__stt_love_s": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_loves__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_cheapest__stt_diesel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_cheapest__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_other__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_reno_one__stt_reno": {
+   "ok_intent": true,
+   "ok_all": false
+  },
+  "h_pick_reno_one__dis_hey": {
+   "ok_intent": true,
+   "ok_all": false
+  },
+  "h_alt_another_way__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_different_route__stt_route": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_different_route__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_fuel__stt_fuel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_fuel__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_pilot_fernley__stt_pilot": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_pilot_fernley__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_loves_first__stt_love_s": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_loves_first__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_clear_skip__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_clear_forget__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_rev_drivers_say__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_rev_loves__stt_love_s": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_rev_loves__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_rev_showers__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_wx_reno_3pm__stt_reno": {
+   "ok_intent": true,
+   "ok_all": false
+  },
+  "h_wx_reno_3pm__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_wx_donner__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_wx_ahead__dis_uh": {
+   "ok_intent": true,
+   "ok_all": false
+  },
+  "h_hos_hours__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_hos_break__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_park_get_in__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_park_where__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_park_loves__stt_love_s": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_park_loves__stt_parking": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_park_loves__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_start_ride__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_end_route__stt_route": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_end_route__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_show_options__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_recenter__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_overview__stt_route": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_overview__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_zoom_in__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_voice_off__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_wake_word_on__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_stop_talking__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_height__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_avoid_tolls__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_fav_chain__stt_love_s": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_fav_chain__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_remove_chain__stt_pilot": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_remove_chain__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_ctl_break_hours__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bd_tire__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bd_wont_start__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bd_reefer__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bd_out_of_fuel__stt_fuel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bd_out_of_fuel__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bd_landing_gear__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_chat_thanks__dis_uh": {
+   "ok_intent": false,
+   "ok_all": false
+  },
+  "h_chat_where_am_i__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_chat_place_name__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bye_bye__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_bye_thats_it__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_unclear_siren__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_unclear_music__dis_please": {
+   "ok_intent": false,
+   "ok_all": false
+  },
+  "h_mem_fuel__stt_fuel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_mem_fuel__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_01_tired__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_02_need_fuel__stt_fuel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_02_need_fuel__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_03_diesel_def__stt_diesel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_03_diesel_def__stt_def": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_03_diesel_def__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_08_reno__stt_reno": {
+   "ok_intent": false,
+   "ok_all": false
+  },
+  "l_08_reno__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_11_how_far__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_13_not_that_one__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_14_second_one__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_15_flying_j_instead__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_16_bye__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "l_19_beeping__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_cheapest_diesel_route__stt_diesel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_cheapest_diesel_route__stt_route": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_cheapest_diesel_route__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_fuel_on_the_way__stt_fuel": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_stop_fuel_on_the_way__dis_uh": {
+   "ok_intent": true,
+   "ok_all": true
+  }
+ },
+ "errors": 0,
+ "comparison": {
+  "has_baseline": false,
+  "deltas": {},
+  "regressions": [],
+  "fixes": [],
+  "note": "no baseline yet (promote a run with --promote)"
+ }
+}

@@ -65,9 +65,9 @@ def test_agent_reply_is_split_at_the_clause(api_client, agent_sandbox, fake_http
     r = api_client.post("/api/agent?speak=true", json={"text": "find a truck stop", **SAC})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["reply"].startswith("Alright, got one. Pilot Travel Center, right off W Capitol Ave,")
+    assert body["reply"].startswith("Alright, got one. Pilot Travel Center, right off N Virginia St,")
     assert body["reply_parts"][0] == "Alright, got one."
-    assert body["reply_parts"][1].startswith("Pilot Travel Center, right off W Capitol Ave,")
+    assert body["reply_parts"][1].startswith("Pilot Travel Center, right off N Virginia St,")
     assert len(body["reply_parts"]) == 2 and body["audio_url"] and body["audio_url_2"]
     assert "Alright, got one." in tts  # the first clip is the short first sentence
 
