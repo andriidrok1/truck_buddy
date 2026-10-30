@@ -20,6 +20,19 @@ const confirm = (msg: string, onYes: () => void) => {
 };
 
 /** Everything the copilot remembers from past conversations, with a "clear" button. */
+const dayKey = (iso: string) => new Date(iso).toDateString();
+
+/** "Today", "Yesterday", else "Oct 28": one separator per day instead of a date under every bubble. */
+function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return "Today";
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 export default function HistoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -28,6 +41,8 @@ export default function HistoryScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
   const listRef = useRef<FlatList<MemoryTurn>>(null);
+  // The Clear button floats over the list: the list ends above it, whatever the font size (QA U13).
+  const [footerH, setFooterH] = useState(100);
 
   const load = useCallback(
     () =>
@@ -82,7 +97,7 @@ export default function HistoryScreen() {
           data={turns}
           keyExtractor={(t, i) => `${t.at}-${i}`}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
-          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 120 }]}
+          contentContainerStyle={[styles.list, { paddingBottom: footerH + spacing.md }]}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Icon name="chat-outline" size={40} color={colors.muted} />
@@ -91,22 +106,34 @@ export default function HistoryScreen() {
               </Text>
             </View>
           }
-          renderItem={({ item }) => {
+          renderItem={({ item, index }) => {
             const me = item.role === "driver";
+            const prev = index > 0 ? turns[index - 1] : null;
+            const newDay = !prev || dayKey(prev.at) !== dayKey(item.at);
             return (
-              <View style={[styles.bubble, me ? styles.mine : styles.theirs, { backgroundColor: me ? colors.brandPrimary : colors.surfaceSecondary }]}>
-                <Text style={[styles.text, { color: me ? colors.onBrandPrimary : colors.onSurface }]}>{item.text}</Text>
-                <Text style={[styles.time, { color: me ? colors.onBrandPrimary : colors.muted }]}>
-                  {new Date(item.at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                </Text>
-              </View>
+              <>
+                {newDay && (
+                  <Text testID="history-day" style={[styles.day, { color: colors.muted }]}>
+                    {dayLabel(item.at)}
+                  </Text>
+                )}
+                <View style={[styles.bubble, me ? styles.mine : styles.theirs, { backgroundColor: me ? colors.brandPrimary : colors.surfaceSecondary }]}>
+                  <Text style={[styles.text, { color: me ? colors.onBrandPrimary : colors.onSurface }]}>{item.text}</Text>
+                  <Text style={[styles.time, { color: me ? colors.onBrandPrimary : colors.muted }]}>
+                    {new Date(item.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                  </Text>
+                </View>
+              </>
             );
           }}
         />
       )}
 
       {!!turns?.length && (
-        <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg, backgroundColor: colors.surface }]}>
+        <View
+          onLayout={(e) => setFooterH(e.nativeEvent.layout.height)}
+          style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg, backgroundColor: colors.surface }]}
+        >
           <PressableScale testID="history-clear" accessibilityLabel="Clear memory" onPress={clear} style={[styles.clear, { borderColor: colors.error }]}>
             <Icon name="delete-outline" size={20} color={colors.error} />
             <Text style={[styles.clearText, { color: colors.error }]}>Clear memory</Text>
@@ -129,6 +156,7 @@ const styles = StyleSheet.create({
   theirs: { alignSelf: "flex-start", borderBottomLeftRadius: radius.sm },
   text: { fontFamily: fonts.regular, fontSize: 16, lineHeight: 22 },
   time: { fontFamily: fonts.regular, fontSize: 11, opacity: 0.7 },
+  day: { fontFamily: fonts.semibold, fontSize: 12, textAlign: "center", marginTop: spacing.md, marginBottom: spacing.xs, textTransform: "uppercase", letterSpacing: 0.6 },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md, paddingHorizontal: spacing.xxl, paddingTop: spacing.xxxl },
   emptyText: { fontFamily: fonts.medium, fontSize: 15, textAlign: "center" },
   footer: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
