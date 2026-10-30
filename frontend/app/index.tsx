@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AppState, BackHandler, Keyboard, Platform, StyleSheet, View } from "react-native";
+import { AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { absoluteUrl, api } from "@/src/api";
@@ -44,6 +44,16 @@ import { PRIORITY } from "@/src/voice/queue";
 import { buildSttHint, streetFromInstruction } from "@/src/voice/sttHint";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
+
+// Below this much visible map (layout units) the bubble would cover the route; the sheet shows the text.
+// The route card leaves about 220 at the default font, about 120 at 130 %.
+const MIN_MAP_FOR_BUBBLE = 180;
+type Caption = { reply: string; heard?: string; kind?: "reply" | "line"; at?: number };
+/** The copilot's answer: kept until the next turn (a driver who looks later must still see it). */
+const replyCaption = (reply: string, heard?: string): Caption => ({ reply, heard, kind: "reply", at: Date.now() });
+/** A spoken line (turn, nudge, parking tip): gone 8 s after it is said, and never over an answer under 6 s old. */
+const lineCaption = (text: string, prev: Caption | null): Caption =>
+  prev?.kind === "reply" && Date.now() - (prev.at ?? 0) < 6000 ? prev : { reply: text, kind: "line", at: Date.now() };
 
 const VOICE_GUIDANCE_KEY = "voice_guidance_v1";
 const RESEARCH_INTERIM = "Reading reviews now, almost there.";
@@ -102,6 +112,8 @@ export default function MapScreen() {
 
   const [topH, setTopH] = useState(140);
   const [sheetH, setSheetH] = useState(260);
+  const { height: windowH } = useWindowDimensions();
+  const mapWindow = windowH - topH - sheetH; // the map the chrome leaves visible; small at 130 % font
   // The sheet's peek height while the driver has pulled it down; the map keeps sheetH as its inset
   // (no camera refit on a drag) but the chrome above the sheet moves down into the freed room.
   const [peekH, setPeekH] = useState<number | null>(null);
@@ -116,7 +128,11 @@ export default function MapScreen() {
   const [active, setActive] = useState<ActiveRoute | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [toast, setToast] = useState<ToastData | null>(null);
-  const [caption, setCaption] = useState<{ reply: string; heard?: string } | null>(null);
+  // kind "reply" = the copilot's answer, kept until the next turn (a driver who looks later must still
+  // see it); kind "line" = a spoken line (turn, nudge, parking tip), gone 8 s after it is said.
+  const [caption, setCaption] = useState<Caption | null>(null);
+  /** A spoken line's caption; it never covers an answer that is less than 6 s old. */
+  const showLine = (text: string) => setCaption((prev) => lineCaption(text, prev));
   const [micCard, setMicCard] = useState<Exclude<MicPermission, "granted"> | null>(null);
   const [fit, setFit] = useState<{ key: string; points: LatLng[] }>({ key: "init", points: [] });
   const [thinkingText, setThinkingText] = useState<string | undefined>(undefined);
@@ -185,7 +201,7 @@ export default function MapScreen() {
   const { say, clear: clearSpeech } = useSpeechQueue(
     voice,
     () => phaseRef.current === "listening" || phaseRef.current === "thinking",
-    (item) => setCaption({ reply: item.text }),
+    (item) => showLine(item.text),
     (item) => {
       if (item.key?.startsWith(NUDGE_KEY_PREFIX)) nudgeAnswer.current();
     },
@@ -198,7 +214,7 @@ export default function MapScreen() {
   }, [toast]);
 
   useEffect(() => {
-    if (!caption || voice.speaking) return;
+    if (!caption || voice.speaking || caption.kind === "reply") return; // answers stay until the next turn
     const t = setTimeout(() => setCaption(null), 8000);
     return () => clearTimeout(t);
   }, [caption, voice.speaking]);
@@ -258,7 +274,7 @@ export default function MapScreen() {
   }
 
   const sayReply = (res: AgentResponse) => {
-    setCaption({ reply: res.reply, heard: res.transcript || undefined });
+    setCaption(replyCaption(res.reply, res.transcript || undefined));
     if (!res.audio_url) return Promise.resolve();
     // The playback timeouts are sized from the text behind each clip: the server says how it split
     // the reply when it can; older backends leave that to the sentence split.
@@ -282,7 +298,7 @@ export default function MapScreen() {
       if (!(await available)) {
         console.warn(`[voice] second half unavailable (${url2}); showing the full text instead`);
         next.remove();
-        setCaption({ reply: res.reply, heard: res.transcript || undefined });
+        setCaption(replyCaption(res.reply, res.transcript || undefined));
         return;
       }
       if (myTurn !== turn.current) {
@@ -372,7 +388,7 @@ export default function MapScreen() {
       const audio = api.speak(text); // generate while the first answer is still playing
       await replyDone;
       if (myTurn !== turn.current || activeRef.current?.place.id !== place.id) return;
-      setCaption({ reply: text });
+      showLine(text);
       const r = await audio;
       if (myTurn === turn.current && activeRef.current?.place.id === place.id) {
         await voice.playAndWait(absoluteUrl(r.audio_url), Math.min(15000, 1500 + text.length * 65));
@@ -493,6 +509,12 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const restored = restoredId !== null && active?.place.id === restoredId && !driving;
+  useEffect(() => {
+    // Nothing pressed in 20 s: the banner goes, the route stays in preview (same as "Keep").
+    if (!restored) return;
+    const t = setTimeout(() => setRestoredId(null), 20000);
+    return () => clearTimeout(t);
+  }, [restored]);
 
   /**
    * The tracker says the truck left the route: ask the engine to resume the plan from here
@@ -758,7 +780,7 @@ export default function MapScreen() {
               : /abort|network|timed? ?out|failed to fetch/i.test(err)
                 ? NO_CONNECTION
                 : MESSAGES.notUnderstood;
-      setCaption({ reply: msg });
+      setCaption(replyCaption(msg));
       backToIdle();
       continueDialog(myTurn, null, wait(1200));
     } finally {
@@ -1202,7 +1224,7 @@ export default function MapScreen() {
             isCurrent: () => myTurn === turn.current,
             busy: () => phaseRef.current === "listening" || phaseRef.current === "thinking",
             say: async (text, url) => {
-              setCaption({ reply: text });
+              showLine(text);
               const a = toAudio(url);
               if (a) await voice.playAndWait(a, 6000);
             },
@@ -1354,7 +1376,7 @@ export default function MapScreen() {
         <Icon name={following ? "navigation-variant" : "crosshairs-gps"} size={24} color={following ? colors.onInfo : colors.info} />
       </PressableScale>
 
-      <CaptionBubble text={caption?.reply ?? null} heard={caption?.heard} bottom={chromeBottom} />
+      <CaptionBubble text={mapWindow >= MIN_MAP_FOR_BUBBLE ? (caption?.reply ?? null) : null} heard={caption?.heard} bottom={chromeBottom} />
 
       <CopilotSheet
         phase={phase}
@@ -1372,6 +1394,7 @@ export default function MapScreen() {
         bottomInset={insets.bottom}
         onAvatarPress={onAvatarPress}
         onSubmitText={onSubmitText}
+        lastReply={caption?.kind === "reply" ? caption.reply : null}
         onClose={onClose}
         onEndRoute={onEndRoute}
         onRemoveStop={onRemoveStop}
