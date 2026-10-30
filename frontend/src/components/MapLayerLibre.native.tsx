@@ -35,7 +35,7 @@ const DEFAULT_ZOOM = 15;
 const FIT_PADDING = { top: 48, right: 56, bottom: 48, left: 56 };
 
 const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayerLibre(props, ref) {
-  const { driver, heading, places, active, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan } = props;
+  const { driver, heading, places, active, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch } = props;
   const { colors, scheme } = useTheme();
   const camera = useRef<CameraRef>(null);
   const map = useRef<MapRef>(null);
@@ -88,8 +88,11 @@ const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLaye
         attributionPosition={{ bottom: bottomInset + 8, right: 8 }}
         logo={false}
         compass={false}
+        onPress={onMapTouch}
         onRegionIsChanging={(e) => {
-          if (follow && e.nativeEvent.userInteraction) onUserPan?.();
+          if (!e.nativeEvent.userInteraction) return;
+          onMapTouch?.();
+          if (follow) onUserPan?.();
         }}
         onRegionDidChange={(e) => onCenterChange({ lat: e.nativeEvent.center[1], lng: e.nativeEvent.center[0] })}
       >

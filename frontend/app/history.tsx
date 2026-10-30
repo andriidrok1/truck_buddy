@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Platform, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, type MemoryTurn } from "@/src/api";
@@ -44,9 +44,13 @@ export default function HistoryScreen() {
     [],
   );
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  // Reload every time the screen is in front, so turns saved during the current dialog
+  // show up when the driver comes back from the map (and not only on first mount).
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   const clear = () =>
     confirm("Your copilot will forget everything you've talked about.", async () => {

@@ -13,9 +13,11 @@ export type TruckProfile = {
   avoid_ferries_tunnels?: boolean;
   favorite_chains?: string[];
   break_hours?: number | null;
+  /** Tire chains on the truck; null = never asked (the copilot asks when a chain control is ahead). */
+  chains_on_board?: boolean | null;
 };
 
-export const DEFAULT_TRUCK: TruckProfile = { height_in: 162, trailer_ft: 53, weight_lb: 80000, hazmat: false };
+export const DEFAULT_TRUCK: TruckProfile = { height_in: 162, trailer_ft: 53, weight_lb: 80000, hazmat: false, chains_on_board: null };
 const KEY = "truck_profile_v1";
 const ONBOARDED_KEY = "onboarded_v1";
 
@@ -111,6 +113,37 @@ export function useHandsFree() {
     }
     return () => {
       handsFreeListeners.delete(setValue);
+    };
+  }, []);
+  return value;
+}
+
+// Nudges while driving (on by default): "break coming due", "chains ahead", parking offers.
+// The copilot's set_nudges action and a future settings switch share this.
+const NUDGES_KEY = "nudges_v1";
+let nudgesEnabled = true;
+let nudgesLoaded = false;
+const nudgesListeners = new Set<(v: boolean) => void>();
+
+export async function setNudgesEnabled(v: boolean) {
+  nudgesEnabled = v;
+  nudgesListeners.forEach((l) => l(v));
+  await storage.setItem(NUDGES_KEY, v);
+}
+
+export function useNudgesEnabled() {
+  const [value, setValue] = useState(nudgesEnabled);
+  useEffect(() => {
+    nudgesListeners.add(setValue);
+    if (!nudgesLoaded) {
+      nudgesLoaded = true;
+      storage.getItem(NUDGES_KEY, true as boolean).then((v) => {
+        nudgesEnabled = v !== false;
+        nudgesListeners.forEach((l) => l(nudgesEnabled));
+      });
+    }
+    return () => {
+      nudgesListeners.delete(setValue);
     };
   }, []);
   return value;

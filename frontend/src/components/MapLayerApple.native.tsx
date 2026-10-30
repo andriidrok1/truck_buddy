@@ -31,7 +31,7 @@ export function ViewMarker({ children, redraw, ...rest }: React.ComponentProps<t
 }
 
 const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(props, ref) {
-  const { driver, heading, places, active, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan } = props;
+  const { driver, heading, places, active, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch } = props;
   const { colors } = useTheme();
   const mapRef = useRef<MapView>(null);
   const padding = { top: topInset, bottom: bottomInset, left: 0, right: 0 };
@@ -83,7 +83,11 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
       showsMyLocationButton={false}
       toolbarEnabled={false}
       showsPointsOfInterests={false}
-      onPanDrag={follow ? onUserPan : undefined}
+      onPress={onMapTouch}
+      onPanDrag={() => {
+        onMapTouch?.();
+        if (follow) onUserPan?.();
+      }}
       onRegionChangeComplete={(r) => onCenterChange({ lat: r.latitude, lng: r.longitude })}
     >
       {active && (

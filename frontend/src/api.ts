@@ -3,7 +3,7 @@ import { eldHeader } from "./eld";
 import { getTruckProfile } from "./hooks/useTruckProfile";
 import { isNetworkError, offlineHint } from "./net/offlineHint";
 import { uploadForm } from "./utils/upload";
-import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
+import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, Nudge, NudgeRequest, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
 import { BASE } from "./url";
 
 // ./url throws at load time when EXPO_PUBLIC_BACKEND_URL is missing, so importing this module still fails loudly.
@@ -50,6 +50,15 @@ async function json<T>(res: Response, path: string): Promise<T> {
 }
 
 const DEFAULT_TIMEOUT_MS = 30000;
+
+/** AgentRequest.speed_mps accepts 0..60; the GPS reports null or a negative value when it has no idea. */
+const MAX_SPEED_MPS = 60;
+
+/** GPS speed as the agent takes it: m/s to one decimal, capped; undefined (left out) when unknown. */
+export function speedForAgent(speed: number | null | undefined): number | undefined {
+  if (typeof speed !== "number" || !Number.isFinite(speed) || speed < 0) return undefined;
+  return Math.round(Math.min(speed, MAX_SPEED_MPS) * 10) / 10;
+}
 
 /** Aborts after `ms`, or as soon as the caller's own signal aborts (no AbortSignal.any on Hermes). */
 function deadline(ms: number, outer?: AbortSignal | null) {
@@ -184,19 +193,26 @@ export const api = {
   speak: (text: string) => request<{ audio_url: string }>(`/speak`, { method: "POST", body: JSON.stringify({ text }) }),
   /** Pre-fetch nearby places (+ parking checks) so the next voice turn hits warm caches. */
   warm: (at: LatLng) => request<{ ok: boolean }>(`/warm?lat=${at.lat}&lng=${at.lng}`, { method: "POST" }),
-  /** Voice turn step 1: speech -> text, shown to the driver right away. */
-  transcribe: async (uri: string, signal?: AbortSignal) => {
+  /**
+   * Voice turn step 1: speech -> text, shown to the driver right away. `stt_ms` is the server's
+   * STT stage when it reports one, else the wall time of this call; agentSpeak forwards it along
+   * with `stt_confidence` (null when the recogniser reports none). `hint` = names to expect,
+   * comma-separated (voice/sttHint.ts); the server takes at most 600 chars.
+   */
+  transcribe: async (uri: string, signal?: AbortSignal, hint?: string) => {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
     const d = deadline(20000, signal); // upload + STT; the server itself gives up on STT after 12 s
+    const t0 = Date.now();
     try {
       const res = await uploadForm(`${BASE}/voice/transcribe`, {
-        fields: {},
+        fields: hint ? { hint: hint.slice(0, 600) } : {},
         files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
         headers: { ...authHeader(), ...eldHeader() },
         signal: d.signal,
       });
       check(res as Response, "/voice/transcribe");
-      return json<{ transcript: string; timings?: Record<string, number> }>(res, "/voice/transcribe");
+      const out = await json<{ transcript: string; timings?: Record<string, number>; stt_confidence?: number | null }>(res, "/voice/transcribe");
+      return { ...out, stt_ms: out.timings?.stt ?? Date.now() - t0, stt_confidence: out.stt_confidence ?? null };
     } finally {
       d.done();
     }
@@ -211,6 +227,9 @@ export const api = {
     ui?: UiState,
     heading: number | null = null, // degrees from the GPS fix, null when the truck is standing still
     activeSpeedLimitMph: number | null = null, // posted limit where the truck is, when the route knows it
+    sttMs: number | null = null, // how long speech-to-text took on this turn (server stage, else measured); null for typed text
+    sttConfidence: number | null = null, // 0..1 from /voice/transcribe; null for typed text or when the recogniser gives none
+    speedMps: number | null = null, // GPS speed in m/s as the location hook reports it; left out of the body when unknown
   ) =>
     request<AgentResponse>(`/agent?speak=true`, {
       method: "POST",
@@ -229,7 +248,22 @@ export const api = {
         active_distance_mi: active?.route.distance_mi,
         active_duration_min: active?.route.duration_min,
         ui,
+        stt_ms: sttMs,
+        stt_confidence: sttConfidence,
+        speed_mps: speedForAgent(speedMps),
       }),
+    }),
+  /**
+   * "Anything to say?" while driving (every few minutes): break and parking nudges, spoken as
+   * ambient lines. The backend keeps an offer pending for the next turn of the same session.
+   */
+  nudges: (body: NudgeRequest, signal?: AbortSignal) =>
+    request<{ nudges: Nudge[] }>(`/nudges`, {
+      method: "POST",
+      signal,
+      timeoutMs: 20000,
+      headers: eldHeader(), // Motive key: hours of service decide when a break is due
+      body: JSON.stringify({ ...body, truck_profile: getTruckProfile() }),
     }),
   /** Breakdown research result (long-poll: waits until the research is done). */
   breakdownResult: (id: string, signal?: AbortSignal) =>

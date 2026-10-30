@@ -32,6 +32,7 @@ const STATUSES = Object.keys({
   options: true,
   route_set: true,
   chat: true,
+  confirm: true,
   no_results: true,
   not_understood: true,
   researching: true,

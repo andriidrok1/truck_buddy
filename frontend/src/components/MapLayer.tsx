@@ -28,9 +28,11 @@ function unproject(x: number, y: number, z: number): LatLng {
 }
 
 const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(props, ref) {
-  const { driver, heading, places, active, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan } = props;
+  const { driver, heading, places, active, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch } = props;
   const panCb = useRef(onUserPan);
   panCb.current = follow ? onUserPan : undefined;
+  const touchCb = useRef(onMapTouch);
+  touchCb.current = onMapTouch;
   const { colors } = useTheme();
   const [size, setSize] = useState({ w: 390, h: 844 });
   const [view, setView] = useState({ center: driver, zoom: DEFAULT_ZOOM });
@@ -82,6 +84,7 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
     return PanResponder.create({
       onMoveShouldSetPanResponder: (e, g) => e.nativeEvent.touches.length === 2 || Math.abs(g.dx) + Math.abs(g.dy) > 4,
       onPanResponderGrant: () => {
+        touchCb.current?.();
         panCb.current?.();
         start = project(viewRef.current.center, viewRef.current.zoom);
         pinch = null;

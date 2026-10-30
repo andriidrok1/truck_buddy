@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { fonts, radius, spacing, useTheme, type ThemeColors } from "../theme";
@@ -214,7 +214,6 @@ function ProviderCard({ p, index, onRoute }: { p: Provider; index: number; onRou
 /** Breakdown research result: filters, sort, provider cards, "what to tell them", share location. */
 export function ProvidersList({ data, onRoute }: { data: ProvidersResult; onRoute: (p: Provider) => void }) {
   const { colors } = useTheme();
-  const { height } = useWindowDimensions();
   const [filters, setFilters] = useState<Filter[]>([]);
   const [sort, setSort] = useState<Sort>("best");
 
@@ -241,7 +240,7 @@ export function ProvidersList({ data, onRoute }: { data: ProvidersResult; onRout
         ))}
       </ScrollView>
 
-      <ScrollView style={{ maxHeight: height * 0.42 }} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+      <View style={styles.list}>
         {data.summary && (
           <Text testID="providers-summary" numberOfLines={3} style={[styles.summary, { color: colors.onSurface }]}>{data.summary}</Text>
         )}
@@ -262,7 +261,7 @@ export function ProvidersList({ data, onRoute }: { data: ProvidersResult; onRout
             <Text style={[styles.btnText, { color: colors.onSurface }]}>Share my location</Text>
           </PressableScale>
         )}
-      </ScrollView>
+      </View>
     </View>
   );
 }

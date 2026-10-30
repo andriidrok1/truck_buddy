@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from "react";
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useState, type ReactNode } from "react";
+import { Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View, type LayoutChangeEvent } from "react-native";
+import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import { KeyboardStickyView } from "@/src/keyboard";
-import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 
 import { routesChipText } from "../geo/routeChoice";
 import type { OfflineMapState } from "../hooks/useOfflineMap";
@@ -17,6 +18,16 @@ import { haptic, PressableScale } from "./PressableScale";
 import { ReviewsGist } from "./ReviewsGist";
 import { Waveform } from "./Waveform";
 import { entrySpot, routeEndsAt } from "../utils/entry";
+import { dragHeight, sheetHeights, snapTarget, stateHeight, type SheetHeights, type SnapState } from "../utils/sheetSnap";
+
+/** Sheet height while nothing pins it: whatever the content needs (Yoga treats this as no cap). */
+const AUTO_MAX_HEIGHT = 100000;
+/** Body cap in auto, so a long list or route card leaves map above the sheet; the rest is `full`. */
+const AUTO_BODY_SHARE = 0.5;
+const SNAP_SPRING = { damping: 22, stiffness: 240, mass: 0.9, overshootClamping: true };
+/** Vertical travel before the drag takes over; sideways travel that hands the touch to a chip row. */
+const PAN_ACTIVE_Y: [number, number] = [-8, 8];
+const PAN_FAIL_X: [number, number] = [-24, 24];
 
 type Props = {
   phase: Phase;
@@ -45,6 +56,8 @@ type Props = {
   offlineMap?: OfflineMapState | null;
   onDownloadMap?: () => void;
   onLayout: (h: number) => void;
+  /** The sheet's height while peeked (map chrome may move down into the room), null otherwise. */
+  onPeekHeight?: (h: number | null) => void;
   /** Set while the wake word is actively listening (shows the privacy dot + phrase). */
   wakePhrase?: string | null;
   /** Breakdown results (phase "providers"). */
@@ -130,13 +143,118 @@ function durationLabel(seconds: number) {
 }
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, wakePhrase, panel } = props;
+  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel } = props;
   const routesChip = active && !driving ? routesChipText(active.route) : null;
   const { colors } = useTheme();
   const navigating = phase === "navigating";
   const canType = phase === "ready" || phase === "navigating" || phase === "options" || phase === "providers";
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState("");
+
+  // Drag: three resting heights, all derived from the content (src/utils/sheetSnap.ts): peek
+  // (grabber + first header line + controls), auto (the content's own height, where every phase
+  // starts) and full (only when auto clips the body). While the sheet rests in auto nothing pins
+  // it and the height is the content's, exactly as before; from the first drag frame on it is
+  // pinned (`pinnedH`), so the body shrinks (peek) or grows and scrolls (full). Everything the
+  // geometry needs is measured with onLayout while resting in auto.
+  const { height: windowH } = useWindowDimensions();
+  const pinnedH = useSharedValue(0); // 0 = resting in auto, unpinned
+  const autoH = useSharedValue(0);
+  const bodyVisibleH = useSharedValue(0);
+  const bodyContentH = useSharedValue(0);
+  const firstLineBottom = useSharedValue(0);
+  const dragStart = useSharedValue(0);
+  const [bodyMeasure, setBodyMeasure] = useState({ visible: 0, content: 0 });
+  const clipped = bodyMeasure.content > bodyMeasure.visible + 1;
+  // Remembered with the phase it was reached in: a new phase swaps the content and starts in auto.
+  const [snap, setSnap] = useState<{ phase: Phase; state: SnapState }>({ phase, state: "auto" });
+  const state: SnapState = snap.phase === phase ? snap.state : "auto";
+  // A clipped body scrolls on its own; a pan over it would steal that scroll (the grabber still drags).
+  const bodyDraggable = !clipped;
+
+  const heights = (): SheetHeights => {
+    "worklet";
+    const a = autoH.get();
+    const visible = bodyVisibleH.get();
+    const hidden = Math.max(0, visible - firstLineBottom.get());
+    return sheetHeights({ peek: a - hidden, auto: a, content: a - visible + bodyContentH.get(), window: windowH });
+  };
+  const markSnap = (s: SnapState, peekH: number) => {
+    setSnap({ phase, state: s });
+    onPeekHeight?.(s === "peek" ? peekH : null);
+  };
+  const settle = (target: SnapState, h: SheetHeights) => {
+    "worklet";
+    pinnedH.set(
+      withSpring(stateHeight(target, h), SNAP_SPRING, (finished) => {
+        "worklet";
+        if (finished && target === "auto") pinnedH.set(0); // back to auto: let the content size it again
+      }),
+    );
+    runOnJS(markSnap)(target, h.peek);
+  };
+  const onActivate = () => {
+    "worklet";
+    dragStart.set(pinnedH.get() || autoH.get());
+  };
+  const onUpdate = (e: { translationY: number }) => {
+    "worklet";
+    pinnedH.set(dragHeight(dragStart.get(), e.translationY, heights()));
+  };
+  const onDeactivate = (e: { velocityY: number }) => {
+    "worklet";
+    const h = heights();
+    settle(snapTarget(pinnedH.get(), e.velocityY, h, state), h);
+  };
+  // Two detectors, one behaviour (a gesture object cannot be attached twice). The worklets babel
+  // plugin wants object literals here, so the config is spelled out for each.
+  const handlePan = usePanGesture({ activeOffsetY: PAN_ACTIVE_Y, failOffsetX: PAN_FAIL_X, onActivate, onUpdate, onDeactivate });
+  const bodyPan = usePanGesture({ activeOffsetY: PAN_ACTIVE_Y, failOffsetX: PAN_FAIL_X, enabled: bodyDraggable, onActivate, onUpdate, onDeactivate });
+
+  /** One tap on the grabber: peek <-> auto (a one-handed collapse in the cab). */
+  const toggleGrabber = () => {
+    const h = heights();
+    const target: SnapState = state === "peek" ? "auto" : "peek";
+    if (target === "peek" && h.peek >= h.auto) return; // nothing to hide
+    haptic("light");
+    settle(target, h);
+  };
+
+  const sheetStyle = useAnimatedStyle(() => {
+    const p = pinnedH.get();
+    return p > 0 ? { minHeight: p, maxHeight: p } : { minHeight: 0, maxHeight: AUTO_MAX_HEIGHT };
+  });
+  // In auto the body is capped (this is what used to be the lists' own maxHeight); pinned, the
+  // sheet's height bounds it instead.
+  const bodyStyle = useAnimatedStyle(() => ({ maxHeight: pinnedH.get() > 0 ? AUTO_MAX_HEIGHT : windowH * AUTO_BODY_SHARE }));
+
+  // A new phase swaps the content: unpin, forget the old first line, and the map gets its inset back.
+  useEffect(() => {
+    pinnedH.set(0);
+    firstLineBottom.set(0);
+    onPeekHeight?.(null);
+  }, [phase, pinnedH, firstLineBottom, onPeekHeight]);
+
+  const resting = () => pinnedH.get() === 0;
+  const onSheetLayout = (h: number) => {
+    // Only the auto height is the map's bottom inset; peek/full do not move the camera (that
+    // would refit the options on every drag frame). The screen gets peek separately.
+    if (!resting()) return;
+    autoH.set(h);
+    onLayout(h);
+  };
+  const onBodyLayout = (h: number) => {
+    if (!resting()) return;
+    bodyVisibleH.set(h);
+    setBodyMeasure((m) => (m.visible === h ? m : { ...m, visible: h }));
+  };
+  const onBodyContent = (h: number) => {
+    bodyContentH.set(h);
+    setBodyMeasure((m) => (m.content === h ? m : { ...m, content: h }));
+  };
+  /** The header line that stays visible in peek; `y` is relative to the header. */
+  const onFirstLine = (e: LayoutChangeEvent) => firstLineBottom.set(e.nativeEvent.layout.y + e.nativeEvent.layout.height);
+
   const send = () => {
     const text = draft.trim();
     if (!text) return;
@@ -161,21 +279,45 @@ export function CopilotSheet(props: Props) {
 
   return (
     <KeyboardStickyView offset={{ closed: 0, opened: bottomInset }} style={styles.wrap}>
-    <View
+    <Animated.View
       testID="copilot-sheet"
-      onLayout={(e) => onLayout(e.nativeEvent.layout.height)}
-      style={[styles.sheet, shadow(colors, 2), { backgroundColor: colors.surface, paddingBottom: bottomInset + spacing.lg }]}
+      onLayout={(e) => onSheetLayout(e.nativeEvent.layout.height)}
+      style={[styles.sheet, shadow(colors, 2), sheetStyle, { backgroundColor: colors.surface, paddingBottom: bottomInset + spacing.lg }]}
     >
-      <View style={[styles.handle, { backgroundColor: colors.surfaceTertiary }]} />
+      <GestureDetector gesture={handlePan}>
+        <Pressable
+          testID="sheet-grabber"
+          accessibilityRole="button"
+          accessibilityLabel={state === "peek" ? "Show details" : "Hide details"}
+          onPress={toggleGrabber}
+          hitSlop={{ top: 12, bottom: 4 }}
+          style={styles.grab}
+        >
+          <View style={[styles.handle, { backgroundColor: colors.surfaceTertiary }]} />
+        </Pressable>
+      </GestureDetector>
 
-      <Animated.View key={`head-${phase}`} entering={FadeIn.duration(220)} style={styles.header}>
+      <GestureDetector gesture={bodyPan}>
+      <Animated.ScrollView
+        testID="sheet-body"
+        style={[styles.body, bodyStyle]}
+        onLayout={(e) => onBodyLayout(e.nativeEvent.layout.height)}
+        onContentSizeChange={(_w, h) => onBodyContent(h)}
+        scrollEnabled={clipped && state !== "peek"}
+        bounces={clipped}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+      <View style={styles.header}>
         {phase === "ready" && (
-          <Text testID="sheet-title" style={[styles.title, { color: colors.onSurface }]}>
-            Ask your copilot
-          </Text>
+          <View onLayout={onFirstLine}>
+            <Text testID="sheet-title" style={[styles.title, { color: colors.onSurface }]}>
+              Ask your copilot
+            </Text>
+          </View>
         )}
         {phase === "listening" && (
-          <View style={styles.listenRow}>
+          <View onLayout={onFirstLine} style={styles.listenRow}>
             <Text testID="sheet-title" style={[styles.title, { color: colors.onSurface }]}>
               I&apos;m listening
             </Text>
@@ -183,19 +325,23 @@ export function CopilotSheet(props: Props) {
           </View>
         )}
         {phase === "thinking" && (
-          <Text testID="sheet-title" style={[styles.title, { color: colors.onSurface }]}>
-            {thinkingText ?? "Finding the best spot…"}
-          </Text>
+          <View onLayout={onFirstLine}>
+            <Text testID="sheet-title" style={[styles.title, { color: colors.onSurface }]}>
+              {thinkingText ?? "Finding the best spot…"}
+            </Text>
+          </View>
         )}
         {phase === "providers" && panel}
         {phase === "options" && (
-          <OptionsList options={options} parking={parking} onParking={onOptionParking} onRoute={onOptionRoute} />
+          <OptionsList options={options} parking={parking} onParking={onOptionParking} onRoute={onOptionRoute} onTitleLayout={onFirstLine} />
         )}
         {navigating && active && driving && remaining && (
           <View testID="driving-info" style={styles.driveInfo}>
-            <Text testID="arrival-time" style={[styles.eta, { color: colors.success }]}>
-              {arrivalClock(remaining.s)}
-            </Text>
+            <View onLayout={onFirstLine}>
+              <Text testID="arrival-time" style={[styles.eta, { color: colors.success }]}>
+                {arrivalClock(remaining.s)}
+              </Text>
+            </View>
             <Text testID="remaining-info" numberOfLines={1} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
               {durationLabel(remaining.s)} · {(remaining.m / 1609.34).toFixed(remaining.m < 16093 ? 1 : 0)} mi · {active.place.name}
             </Text>
@@ -203,18 +349,20 @@ export function CopilotSheet(props: Props) {
         )}
         {navigating && active && !driving && (
           <View style={styles.navInfo}>
-            <Animated.Text key={`sum-${active.route.summary}`} entering={FadeInDown.springify().damping(15)} testID="route-summary" style={[styles.eta, { color: colors.onSurface }]}>
-              {active.route.summary}
-            </Animated.Text>
+            <View onLayout={onFirstLine}>
+              <Text testID="route-summary" style={[styles.eta, { color: colors.onSurface }]}>
+                {active.route.summary}
+              </Text>
+            </View>
             {(() => {
               const e = entrySpot(active.parking);
               return e && routeEndsAt(active.route, e) ? (
-                <Animated.View key={`to-entry-${active.place.id}`} entering={FadeIn} style={styles.entryRow}>
+                <View style={styles.entryRow}>
                   <Icon name="login-variant" size={16} color={colors.info} />
                   <Text testID="route-to-entry" style={[styles.notice, { color: colors.info }]}>
                     Route ends at truck entrance
                   </Text>
-                </Animated.View>
+                </View>
               ) : null;
             })()}
             {active.route.truck_aware === false && (
@@ -227,9 +375,9 @@ export function CopilotSheet(props: Props) {
                 {active.route.notices.slice(0, 2).join(" · ")}
               </Text>
             )}
-            <Animated.Text key={`name-${active.place.id}`} entering={FadeInDown.delay(70).springify().damping(15)} testID="route-place-name" numberOfLines={1} style={[styles.placeName, { color: colors.onSurface }]}>
+            <Text testID="route-place-name" numberOfLines={1} style={[styles.placeName, { color: colors.onSurface }]}>
               {active.place.name}
-            </Animated.Text>
+            </Text>
             <View style={styles.tagRow}>
               <Icon name={active.place.tags.length ? "truck" : "map-marker-outline"} size={18} color={colors.onSurfaceSecondary} />
               <Text testID="route-place-tags" numberOfLines={1} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
@@ -285,15 +433,21 @@ export function CopilotSheet(props: Props) {
             </PressableScale>
           </View>
         )}
-      </Animated.View>
+      </View>
+      </Animated.ScrollView>
+      </GestureDetector>
 
       {typing && canType ? (
-        <Animated.View entering={FadeIn.duration(180)} style={styles.inputRow}>
+        <View style={styles.inputRow}>
           <TextInput
             testID="copilot-text-input"
             value={draft}
             onChangeText={setDraft}
             onSubmitEditing={send}
+            // The keyboard went away (map tap, swipe, Done): an empty field has nothing to keep open.
+            onBlur={() => {
+              if (!draft.trim()) setTyping(false);
+            }}
             placeholder="Type a request…"
             placeholderTextColor={colors.onSurfaceSecondary}
             returnKeyType="send"
@@ -310,18 +464,21 @@ export function CopilotSheet(props: Props) {
             <Icon name="send" size={22} color={draft.trim() ? colors.onInfo : colors.onSurfaceSecondary} />
           </PressableScale>
           <PressableScale
-            testID="copilot-text-cancel"
-            accessibilityLabel="Cancel typing"
-            onPress={() => setTyping(false)}
+            testID="copilot-text-close"
+            accessibilityLabel="Done typing"
+            onPress={() => {
+              Keyboard.dismiss();
+              setTyping(false);
+            }}
             style={[styles.roundBtn, { backgroundColor: colors.surfaceSecondary }]}
           >
-            <Icon name="microphone" size={22} color={colors.onSurface} />
+            <Icon name="close" size={22} color={colors.onSurface} />
           </PressableScale>
-        </Animated.View>
+        </View>
       ) : (
       <View style={styles.actions}>
         {canType ? (
-          <SideButton icon="keyboard-outline" label="Type" testID="type-button" onPress={() => setTyping(true)} />
+          <SideButton icon="keyboard-outline" label="Type" testID="type-button" onPress={() => setTyping((t) => !t)} />
         ) : (
           <View style={styles.side} />
         )}
@@ -360,7 +517,7 @@ export function CopilotSheet(props: Props) {
         {navigating && <SideButton icon="close" label="End route" testID="end-route-button" onPress={onEndRoute} danger />}
       </View>
       )}
-    </View>
+    </Animated.View>
     </KeyboardStickyView>
   );
 }
@@ -379,7 +536,10 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingHorizontal: spacing.xl,
   },
-  handle: { alignSelf: "center", width: 40, height: 5, borderRadius: 3, marginBottom: spacing.md },
+  grab: { alignItems: "center", paddingBottom: spacing.md },
+  handle: { width: 40, height: 5, borderRadius: 3 },
+  // Shrinks (peek) or grows and scrolls (full) once the sheet is pinned; sized by its content otherwise.
+  body: { flexGrow: 1, flexShrink: 1 },
   header: { minHeight: 36, justifyContent: "center" },
   title: { fontFamily: fonts.bold, fontSize: 22, textAlign: "center" },
   listenRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.md },
