@@ -139,7 +139,7 @@ def test_find_speaks_the_category_template(agent_sandbox, fake_http, monkeypatch
     prov = agent_sandbox.provider()
     res = run(prov.handle(AgentRequest(text="find me a CAT scale", session_id="c1", **SAC), None))
     assert res.status == "route_set" and res.category == "cat_scale"
-    assert res.reply == ("Got a scale for you. CAT scale at CAT Scale at Maverik #654, right off N Virginia St, "
+    assert res.reply == ("Got a scale for you. CAT scale at Maverik #654, right off N Virginia St, "
                          "about 132 miles out.")
     res = run(prov.handle(AgentRequest(text="is there a Walmart nearby", session_id="c2", **SAC), None))
     assert res.reply == ("Found a Walmart. Walmart Supercenter, right off N Virginia St, about 132 miles out. Big lot, "

@@ -408,7 +408,10 @@ def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[st
     intro, body = TEMPLATES[kind][n % len(TEMPLATES[kind])]
     street = arrival_street(place, route)
     dest = place.name.split(",")[0]
-    vals = {"name": place.name, "dest": dest, "mi": _miles(route.distance_mi), "time": route.summary.split(" · ")[0],
+    name = place.name
+    if kind == "cat_scale":  # the data names them "CAT Scale at Maverik #654": the template says "CAT scale at" already
+        name = re.sub(r"^CAT\s+Scales?\s+(?:at\s+)?", "", name, flags=re.I) or name
+    vals = {"name": name, "dest": dest, "mi": _miles(route.distance_mi), "time": route.summary.split(" · ")[0],
             "off": f", right off {street}" if street else "", "up": f", just up {street}" if street else ""}
     intro = intro.format(**vals)
     first_name = (driver or "").split(" ")[0]
