@@ -5,13 +5,14 @@ import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
-import { requestCode, setToken } from "@/src/auth";
+import { requestCode, setToken, signedInWithCode } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
 import { setEldToken, useEldToken } from "@/src/eld";
 import { PressableScale } from "@/src/components/PressableScale";
 import { removePack, usePacks } from "@/src/hooks/useOfflineMap";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
-import { DEFAULT_TRUCK, requestTruckReroute, saveTruckProfile, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { DEFAULT_TRUCK, requestTruckReroute, saveTruckProfile, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
+import { PrefsForm, type Prefs } from "@/src/components/PrefsForm";
 import { formatBytes } from "@/src/map/bounds";
 import { setSim } from "@/src/sim";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
@@ -88,6 +89,13 @@ const deleteMyData = async () => {
   await setToken(null);
 };
 
+const pickPrefs = (t: TruckProfile): Prefs => ({
+  avoid_tolls: t.avoid_tolls,
+  avoid_ferries_tunnels: t.avoid_ferries_tunnels,
+  favorite_chains: t.favorite_chains,
+  break_hours: t.break_hours,
+});
+
 export default function TruckProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -105,6 +113,7 @@ export default function TruckProfileScreen() {
   const [trailer, setTrailer] = useState(String(truck.trailer_ft));
   const [weight, setWeight] = useState(String(truck.weight_lb));
   const [hazmat, setHazmat] = useState(truck.hazmat);
+  const [prefs, setPrefs] = useState<Prefs>(pickPrefs(truck));
 
   // The saved profile loads async (e.g. when this screen is opened directly): sync the fields once it arrives.
   const [synced, setSynced] = useState(truck);
@@ -115,6 +124,7 @@ export default function TruckProfileScreen() {
     setTrailer(String(truck.trailer_ft));
     setWeight(String(truck.weight_lb));
     setHazmat(truck.hazmat);
+    setPrefs(pickPrefs(truck));
   }
 
   const close = () => (router.canGoBack() ? router.back() : router.replace("/"));
@@ -130,7 +140,7 @@ export default function TruckProfileScreen() {
 
   const onSave = async () => {
     if (!valid) return;
-    await saveTruckProfile({ ...truck, height_in: v.feet * 12 + v.inches, trailer_ft: v.trailer, weight_lb: v.weight, hazmat });
+    await saveTruckProfile({ ...truck, ...prefs, height_in: v.feet * 12 + v.inches, trailer_ft: v.trailer, weight_lb: v.weight, hazmat });
     requestTruckReroute(); // the map reroutes an active route for the new size (silently)
     close();
   };
@@ -223,6 +233,9 @@ export default function TruckProfileScreen() {
           />
         </View>
 
+        <Text style={[styles.section, { color: colors.onSurface }]}>Preferences</Text>
+        <PrefsForm value={prefs} onChange={(patch) => setPrefs((p) => ({ ...p, ...patch }))} />
+
         <Text style={[styles.section, { color: colors.onSurface }]}>Hours of service (Motive)</Text>
         <View testID="eld-section" style={[styles.eldBox, { backgroundColor: colors.surfaceSecondary }]}>
           <View style={styles.eldStatusRow}>
@@ -247,9 +260,13 @@ export default function TruckProfileScreen() {
               style={[styles.input, { color: colors.onSurface }]}
             />
           </View>
+          <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
+            The key comes from the Motive Fleet Dashboard: Admin → API keys → create a key, then paste it here.
+          </Text>
           <View style={styles.row}>
             <PressableScale
               testID="eld-save-button"
+              containerStyle={styles.flex}
               disabled={!eldDraft.trim()}
               onPress={async () => {
                 await setEldToken(eldDraft);
@@ -262,6 +279,7 @@ export default function TruckProfileScreen() {
             {eldConnected && (
               <PressableScale
                 testID="eld-remove-button"
+                containerStyle={styles.flex}
                 onPress={async () => {
                   await setEldToken(null);
                   setEldDraft("");
@@ -316,19 +334,22 @@ export default function TruckProfileScreen() {
           </Text>
         )}
 
-        <PressableScale
-          testID="sign-out"
-          accessibilityLabel="Sign out"
-          onPress={async () => {
-            setSim(null);
-            requestCode(); // back to the access-code screen, not an automatic sign-in
-            await setToken(null);
-          }}
-          style={[styles.signOut, { borderColor: colors.error }]}
-        >
-          <Icon name="logout" size={20} color={colors.error} />
-          <Text style={[styles.signOutText, { color: colors.error }]}>Sign out (enter a code again)</Text>
-        </PressableScale>
+        {/* Only a driver who typed an access code has somewhere to sign out to; open sign-ups don't. */}
+        {signedInWithCode() && (
+          <PressableScale
+            testID="sign-out"
+            accessibilityLabel="Sign out"
+            onPress={async () => {
+              setSim(null);
+              requestCode(); // back to the access-code screen, not an automatic sign-in
+              await setToken(null);
+            }}
+            style={[styles.signOut, { borderColor: colors.border }]}
+          >
+            <Icon name="logout" size={20} color={colors.onSurface} />
+            <Text style={[styles.signOutText, { color: colors.onSurface }]}>Sign out</Text>
+          </PressableScale>
+        )}
 
         {/* 5.1.1(v): a device identity with server records counts as an account; deletion must be in-app. */}
         <PressableScale
