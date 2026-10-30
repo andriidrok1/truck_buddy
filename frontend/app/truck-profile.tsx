@@ -12,10 +12,10 @@ import { PressableScale } from "@/src/components/PressableScale";
 import { removePack, usePacks } from "@/src/hooks/useOfflineMap";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { DEFAULT_TRUCK, requestTruckReroute, saveTruckProfile, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
-import { PrefsForm, type Prefs } from "@/src/components/PrefsForm";
+import { Chip, PrefsForm, type Prefs } from "@/src/components/PrefsForm";
 import { formatBytes } from "@/src/map/bounds";
 import { setSim } from "@/src/sim";
-import { fonts, radius, spacing, useTheme } from "@/src/theme";
+import { fonts, radius, spacing, useTheme, setThemePref, useThemePref, type ThemePref } from "@/src/theme";
 
 const LIMITS = {
   feet: [5, 16],
@@ -89,6 +89,12 @@ const deleteMyData = async () => {
   await setToken(null);
 };
 
+const THEME_CHOICES: { value: ThemePref; label: string }[] = [
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+  { value: "system", label: "Auto" },
+];
+
 const pickPrefs = (t: TruckProfile): Prefs => ({
   avoid_tolls: t.avoid_tolls,
   avoid_ferries_tunnels: t.avoid_ferries_tunnels,
@@ -100,6 +106,7 @@ export default function TruckProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const themePref = useThemePref();
   const truck = useTruckProfile();
   const handsFree = useHandsFree();
   const speedAlerts = useSpeedAlerts();
@@ -232,6 +239,14 @@ export default function TruckProfileScreen() {
             {...(Platform.OS === "web" ? { activeThumbColor: colors.surface } : {})}
           />
         </View>
+
+        <Text style={[styles.section, { color: colors.onSurface }]}>Appearance</Text>
+        <View style={styles.row}>
+          {THEME_CHOICES.map((c) => (
+            <Chip key={c.value} label={c.label} on={themePref === c.value} onPress={() => setThemePref(c.value)} testID={`theme-${c.value}`} />
+          ))}
+        </View>
+        <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>Auto follows the phone&apos;s light or dark mode.</Text>
 
         <Text style={[styles.section, { color: colors.onSurface }]}>Preferences</Text>
         <PrefsForm value={prefs} onChange={(patch) => setPrefs((p) => ({ ...p, ...patch }))} />
