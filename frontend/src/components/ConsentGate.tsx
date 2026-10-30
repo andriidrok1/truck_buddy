@@ -55,11 +55,12 @@ export function ConsentGate() {
             </View>
           </View>
         ))}
-        <PressableScale testID="consent-privacy-link" accessibilityRole="link" onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL).catch(() => {})}>
-          <Text style={[styles.link, { color: colors.info }]}>Read the privacy policy</Text>
-        </PressableScale>
       </ScrollView>
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg }]}>
+        {/* In the footer, not at the end of the scroll: there it sat half under the button on a phone screen. */}
+        <PressableScale testID="consent-privacy-link" accessibilityRole="link" onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL).catch(() => {})}>
+          <Text style={[styles.link, styles.center, { color: colors.info }]}>Read the privacy policy</Text>
+        </PressableScale>
         <PressableScale
           testID="consent-agree"
           accessibilityLabel="Agree and continue"
@@ -79,7 +80,7 @@ export function ConsentGate() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  wrap: { alignItems: "center", paddingHorizontal: spacing.xl, gap: spacing.md, paddingBottom: spacing.xl },
+  wrap: { alignItems: "center", paddingHorizontal: spacing.xl, gap: spacing.md, paddingBottom: spacing.md },
   avatar: { width: 96, height: 96, borderRadius: 48, marginBottom: spacing.sm },
   title: { fontFamily: fonts.bold, fontSize: 26, textAlign: "center" },
   sub: { fontFamily: fonts.regular, fontSize: 16, textAlign: "center", marginBottom: spacing.sm },

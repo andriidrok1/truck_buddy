@@ -76,6 +76,33 @@ export function useVoice() {
   // that sees a newer generation after any await gives up.
   const prepared = useRef(false);
   const prewarm = useRef(false);
+  /**
+   * Prepare the recorder unless it already is. Android keeps a MediaRecorder prepared across a reply's
+   * playback and throws "already been prepared" on the next prepare, while the JS flag had been cleared
+   * by play(): that is how the mic died after the first spoken answer (QA 2026-10-28). The native status
+   * (`canRecord` = prepared) is the truth there; iOS tolerates a second prepare, so it keeps its path.
+   */
+  const ensurePrepared = useCallback(async () => {
+    if (prepared.current) return;
+    if (Platform.OS === "android") {
+      let native = false;
+      try {
+        native = !!recorder.getStatus().canRecord;
+      } catch {
+        native = false;
+      }
+      if (native) {
+        prepared.current = true;
+        return;
+      }
+    }
+    try {
+      await recorder.prepareToRecordAsync();
+    } catch (e) {
+      if (!/already been prepared/i.test(String(e))) throw e;
+    }
+    prepared.current = true;
+  }, [recorder]);
   // The speech queue holds the playback session between its lines: without the hold every clip
   // end re-arms the recorder (RECORD_MODE) and the next clip switches back (PLAYBACK_MODE).
   const playbackHold = useRef(false);
@@ -89,13 +116,22 @@ export function useVoice() {
       if (!p.granted || stale()) return;
       await setAudioModeAsync(RECORD_MODE);
       if (stale()) return;
-      await recorder.prepareToRecordAsync();
-      if (stale()) return;
-      prepared.current = true;
+      try {
+        await ensurePrepared();
+      } catch (first) {
+        // iOS "Session activation failed" right after a clip: the session needs a moment. One more try.
+        await new Promise((r) => setTimeout(r, 300));
+        if (stale()) return;
+        try {
+          await ensurePrepared();
+        } catch (e) {
+          console.log(`[voice] idle prepare failed: ${String(e)} (first: ${String(first)})`);
+        }
+      }
     } catch (e) {
       console.log(`[voice] idle prepare failed: ${String(e)}`);
     }
-  }, [recorder]);
+  }, [recorder, ensurePrepared]);
 
   const stopSpeaking = useCallback(() => {
     const p = player.current;
@@ -137,10 +173,10 @@ export function useVoice() {
     stopSpeaking();
     audioGen.current++;
     await setAudioModeAsync(RECORD_MODE);
-    if (!prepared.current) await recorder.prepareToRecordAsync();
+    await ensurePrepared();
     prepared.current = false;
     recorder.record();
-  }, [recorder, stopSpeaking]);
+  }, [recorder, stopSpeaking, ensurePrepared]);
 
   // Returns the local file uri, or null if nothing was recorded.
   const stopRecording = useCallback(async (): Promise<string | null> => {

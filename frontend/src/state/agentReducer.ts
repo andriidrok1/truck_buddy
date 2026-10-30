@@ -160,7 +160,9 @@ export function reduceAgentResponse(res: AgentResponse, ctx: AgentContext): Agen
     // Route update, not a new destination: the parking check, the sheet and the dialog state stay.
     // With via stops, `options` lists the stop places in order; without them it is empty.
     const stops = res.route.via?.length ? (res.options ?? []) : [];
-    effects.push({ type: "speak" });
+    // backToIdle: the turn is over. Without it the sheet stayed on "Thinking..." after "add a fuel stop"
+    // while navigating (QA 2026-10-28).
+    effects.push({ type: "backToIdle" }, { type: "speak" });
     return { patch: { activeRoute: { route: res.route, stops } }, effects };
   }
 
