@@ -30,7 +30,7 @@ the Bearer token the app gets by redeeming the access code.
 | Variable | Purpose |
 | --- | --- |
 | `OPENAI_API_KEY` | Speech-to-text, the agent, satellite vision and TTS (required) |
-| `DATABASE_URL` | Postgres (Neon) for per-driver conversation memory; the app runs without it, memory off |
+| `DATABASE_URL` | Postgres (Neon) for per-driver conversation memory. Without it memory lives in a local SQLite file (`MEMORY_SQLITE_PATH`, default `backend/data/memory.sqlite`); `MEMORY_STORE=pg\|sqlite\|off` forces a store |
 | `JWT_SECRET` | Signs the device tokens (required) |
 | `ACCESS_CODE`, `TESTER_CODE` | Shared access codes; the tester code also unlocks simulated locations |
 | `GOOGLE_MAPS_API_KEY` | Places search and geocoding (mock places without it) |

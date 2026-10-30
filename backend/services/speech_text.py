@@ -96,20 +96,46 @@ _MILES = re.compile(r"\b(about\s+|around\s+)?(\d[\d,]*(?:\.\d+)?)\s*(?:mi|miles?
 
 # Sentence boundary for speech: ". " before a capital, but not after St./Dr./U.S. abbreviations.
 SENTENCE_END = re.compile(r"(?<!\bSt\.)(?<!\bDr\.)(?<!U\.S\.)(?<=[.!?])\s+(?=[A-Z])")
+# Clause boundary: a comma or dash followed by a space. Used to hand the voice its first clip sooner.
+CLAUSE_END = re.compile(r"(?<=,)\s+|\s+[—–-]\s+")
+MIN_CLAUSE_WORDS = 4  # the first clip must carry some meaning ("Alright, got one" is fine; "Okay," alone is not)
+MIN_REST_WORDS = 3  # and the remainder must be worth a second clip
+
+
+def split_reply(text: str, clause: bool = True) -> tuple[str, str]:
+    """(first clip, rest) for TTS. With `clause`, the first clip ends at the first comma or dash once it
+    has MIN_CLAUSE_WORDS words and leaves MIN_REST_WORDS behind; otherwise at the first sentence end.
+    The rest may be empty."""
+    t = " ".join((text or "").split())
+    if not t:
+        return "", ""
+    first, *rest = SENTENCE_END.split(t, maxsplit=1)
+    sentence_rest = rest[0] if rest else ""
+    if clause:
+        for m in CLAUSE_END.finditer(first):
+            head, tail = first[:m.start()], first[m.end():]
+            if len(head.split()) >= MIN_CLAUSE_WORDS and len((tail + " " + sentence_rest).split()) >= MIN_REST_WORDS:
+                return head, (tail + " " + sentence_rest).strip()
+    return first, sentence_rest
+
+
 REPLY_MAX_SENTENCES = 2
 REPLY_MAX_CHARS = 220
 
 
 def fit_reply(text: str, max_sentences: int = REPLY_MAX_SENTENCES, max_chars: int = REPLY_MAX_CHARS) -> str:
     """Keeps a free-form model reply short enough to listen to at the wheel: whole sentences only,
-    at most `max_sentences`, and never past `max_chars` (a sentence that would cross the cap is dropped,
-    unless it's the first one, which is kept whole). Templated replies never go through here."""
+    at most `max_sentences` (0 or less = no sentence cap), and never past `max_chars` (a sentence that
+    would cross the cap is dropped, unless it's the first one, which is kept whole). Templated replies
+    never go through here."""
     t = re.sub(r"\s+", " ", text or "").strip()
     if not t:
         return ""
     parts = SENTENCE_END.split(t)
+    if max_sentences >= 1:
+        parts = parts[:max_sentences]
     out: list[str] = []
-    for s in parts[:max_sentences]:
+    for s in parts:
         candidate = " ".join(out + [s])
         if out and len(candidate) > max_chars:
             break

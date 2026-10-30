@@ -6,3 +6,6 @@ __pycache__/
 .tts_cache/
 .parking_cache/
 test_reports/
+
+# local conversation memory
+data/memory.sqlite*
