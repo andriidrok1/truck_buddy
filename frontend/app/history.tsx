@@ -93,6 +93,7 @@ export default function HistoryScreen() {
         <FlatList
           ref={listRef}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+          onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
           testID="history-list"
           data={turns}
           keyExtractor={(t, i) => `${t.at}-${i}`}
