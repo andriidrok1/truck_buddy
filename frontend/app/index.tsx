@@ -366,6 +366,35 @@ export default function MapScreen() {
     api.warm(loc.coords).catch(() => {});
   }, [loc.coords, loc.isDemo, loc.resolved, appActive, active]);
 
+  // The first map is not empty: while nothing is on it (no route, no search, no pins yet) the truck stops
+  // around the driver go on as pins, a tap routes there, and the camera widens once to show the nearest
+  // three. They make way for any search or route and come back when the map is empty again (QA 10-28, U4).
+  const startPinsEmptyAt = useRef<LatLng | null>(null); // where a fetch found nothing: no retry at the same spot
+  useEffect(() => {
+    if (active || phase !== "ready" || options.length || providers || places.length) return;
+    if (loc.isDemo && !loc.resolved) return;
+    const e = startPinsEmptyAt.current;
+    if (e && Math.hypot(e.lat - loc.coords.lat, (e.lng - loc.coords.lng) * 0.8) < 0.045) return;
+    const at = loc.coords;
+    let cancelled = false;
+    api
+      .places("truck_stop", at)
+      .then((res) => {
+        if (cancelled || activeRef.current || phaseRef.current !== "ready" || optionsRef.current.length) return;
+        if (!res.places.length) {
+          startPinsEmptyAt.current = at;
+          return;
+        }
+        const nearest = res.places.slice(0, 8);
+        setPlaces(nearest);
+        setFit({ key: `start-pins-${at.lat.toFixed(3)},${at.lng.toFixed(3)}`, points: [at, ...nearest.slice(0, 3)] });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [active, phase, options.length, providers, places.length, loc.coords, loc.isDemo, loc.resolved]);
+
   /** Satellite parking check runs after the route is set; its directions are spoken when the reply ends. */
   const followParking = async (place: Place, replyDone: Promise<void>, myTurn: number, approach = activeRef.current?.route.approach) => {
     if (place.category === "service") return; // breakdown provider: no truck-parking check
