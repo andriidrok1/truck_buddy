@@ -120,6 +120,7 @@ export default function TruckProfileScreen() {
   const [trailer, setTrailer] = useState(String(truck.trailer_ft));
   const [weight, setWeight] = useState(String(truck.weight_lb));
   const [hazmat, setHazmat] = useState(truck.hazmat);
+  const [name, setName] = useState(truck.driver_name ?? "");
   const [prefs, setPrefs] = useState<Prefs>(pickPrefs(truck));
 
   // The saved profile loads async (e.g. when this screen is opened directly): sync the fields once it arrives.
@@ -131,6 +132,7 @@ export default function TruckProfileScreen() {
     setTrailer(String(truck.trailer_ft));
     setWeight(String(truck.weight_lb));
     setHazmat(truck.hazmat);
+    setName(truck.driver_name ?? "");
     setPrefs(pickPrefs(truck));
   }
 
@@ -147,7 +149,15 @@ export default function TruckProfileScreen() {
 
   const onSave = async () => {
     if (!valid) return;
-    await saveTruckProfile({ ...truck, ...prefs, height_in: v.feet * 12 + v.inches, trailer_ft: v.trailer, weight_lb: v.weight, hazmat });
+    await saveTruckProfile({
+      ...truck,
+      ...prefs,
+      driver_name: name.trim() || null,
+      height_in: v.feet * 12 + v.inches,
+      trailer_ft: v.trailer,
+      weight_lb: v.weight,
+      hazmat,
+    });
     requestTruckReroute(); // the map reroutes an active route for the new size (silently)
     close();
   };
@@ -158,6 +168,7 @@ export default function TruckProfileScreen() {
     setTrailer(String(DEFAULT_TRUCK.trailer_ft));
     setWeight(String(DEFAULT_TRUCK.weight_lb));
     setHazmat(DEFAULT_TRUCK.hazmat);
+    setName("");
   };
 
   return (
@@ -176,6 +187,25 @@ export default function TruckProfileScreen() {
         <Text style={[styles.hint, { color: colors.onSurfaceSecondary }]}>
           Routes avoid low bridges and roads closed to trucks of this size and weight.
         </Text>
+
+        {/* Skipped in the onboarding, or just wrong: the copilot uses the name in about every third answer. */}
+        <View style={styles.field}>
+          <Text style={[styles.label, { color: colors.onSurfaceSecondary }]}>Your name</Text>
+          <View style={[styles.inputRow, { backgroundColor: colors.surfaceSecondary, borderColor: colors.surfaceSecondary }]}>
+            <TextInput
+              testID="truck-name-input"
+              value={name}
+              onChangeText={(v) => setName(v.slice(0, 40))}
+              placeholder="First name"
+              placeholderTextColor={colors.muted}
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="done"
+              style={[styles.input, { color: colors.onSurface }]}
+            />
+          </View>
+          <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>The copilot uses it now and then.</Text>
+        </View>
 
         <Text style={[styles.section, { color: colors.onSurface }]}>Height</Text>
         <View style={styles.row}>
