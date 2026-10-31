@@ -68,6 +68,24 @@ def test_the_second_one_is_a_pick_never_a_geocode(agent_sandbox, fake_http):
     assert all("geocode" not in str(c) for c in fake_http.calls)
 
 
+def test_a_named_pick_may_go_back_to_a_rejected_place(agent_sandbox, fake_http):
+    """Live on the emulator: Crossroads -> "not that one" -> Crest -> "something else" -> Motel 6 -> "the second one"
+    (= Crest, index 2) answered "That's every one I found nearby" because Crest sat in the rejected set."""
+    prov = _sandbox(agent_sandbox, fake_http)
+    agent_sandbox.llm.on(r"^the second one please$", {"intent": "pick", "place_index": 2})
+    first = run(prov.handle(_req("where can I park tonight", sid="h4f"), None))
+    second = run(prov.handle(_req("not that one", active=first.place, sid="h4f"), None))
+    third = run(prov.handle(_req("something else", active=second.place, sid="h4f"), None))
+    places = agent._SESSIONS["h4f"]["places"]
+    assert places[1].id in agent._SESSIONS["h4f"]["rejected"]  # the second place was turned down
+    back = run(prov.handle(_req("the second one please", active=third.place, sid="h4f"), None))
+    assert back.status == "route_set" and back.place.id == places[1].id, back.reply
+    assert places[1].id not in agent._SESSIONS["h4f"]["rejected"]
+    # a bare rejection still never returns to a rejected place
+    again = run(prov.handle(_req("not that one", active=back.place, sid="h4f"), None))
+    assert again.place is None or again.place.id not in (places[1].id, back.place.id)
+
+
 def test_real_route_questions_still_get_an_alternative(agent_sandbox, fake_http):
     prov = _sandbox(agent_sandbox, fake_http)
     first = run(prov.handle(_req("where can I park tonight", sid="h4c"), None))

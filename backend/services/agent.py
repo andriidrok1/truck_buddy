@@ -1173,7 +1173,13 @@ class LlmAgentProvider:
                 return await self._memory_intent(req, sess, d, text)
             if intent == "pick":
                 place = pick_place(d, sess["places"])
-                if place and place.id not in exclude:
+                # A named pick ("the second one", "the Pilot") may go back to a place turned down earlier: the
+                # driver changed their mind, and "want me to go back to one of them?" is what we offer. Only
+                # a bare rejection skips the rejected set.
+                explicit = d.get("place_index") is not None
+                if place and place.id != current and (explicit or place.id not in exclude):
+                    if explicit:
+                        sess.get("rejected", set()).discard(place.id)
                     return await self._route_to(req, place, sess["places"], text)
                 category = d.get("category") or (last.category if last else None)
                 if category in CATEGORIES:
