@@ -151,8 +151,8 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
   "park near X" / "where can I park close to my delivery in X" / "staging near X" = find truck_stop with near X
   (never rest_area or parking for these).
 - go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV". Write numbers as digits ("2828 El Centro Rd, Sacramento"). If the driver gives only a street address and named a town earlier in the conversation, add that town to query.
-- pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something closer", "the cheapest diesel": lowest "diesel $" in the list). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. If no earlier place fits, use find with the same category instead.
-- alternative: a different road to the SAME destination ("another way", "different route", "is there a faster way", "can we skip the grade", "go around that"). Never a new place. Only meaningful while a route is active; otherwise answer as chat.
+- pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something else", "another one", "something closer", "the cheapest diesel": lowest "diesel $" in the list). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. These are about PLACES even while a route is active and alternative routes exist: "not that one" / "something else" / "the second one" are never alternative and never go ("nothing else" / "that's all" / "I'm good" are bye, not pick). If no earlier place fits, use find with the same category instead.
+- alternative: a different ROAD to the SAME destination, only when the driver talks about the road, way or route itself ("another way", "different route", "is there a faster way", "can we skip the grade", "go around that"). Never a new place; a rejected place ("not that one") is pick. Only meaningful while a route is active; otherwise answer as chat.
 - add_stop: a stop ON THE WAY to the current destination, keeping that destination ("stop at the Pilot in Fernley on the way", "swing by Love's first", "add a fuel stop", "cheapest diesel on my route", "fuel on the way", "I need a rest area before that"). query = the place or address named (digits for numbers), else category = the kind of stop (truck_stop for fuel/food/showers, rest_area, hotel); never both null. Only while a route is active; with no route it's a plain find or go.
 - clear_stops: drop the stops added on the way ("skip the stops", "forget the stop", "no stops, straight there").
 - reviews: what other drivers say about a place ("what do drivers say about it", "is it any good", "reviews for the Pilot", "how are the showers there"). place_index = the place asked about from "Places found earlier", or null for the current route / the last one mentioned.
@@ -421,6 +421,80 @@ def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[st
     return f"{out} {warning}" if warning else out
 
 
+# "Not that one" and friends: the driver turns a PLACE down. With a route active the classifier sometimes
+# reads it as "another road" (it sees "N alternative routes not yet offered"); the words decide instead.
+REJECT_PLACE = re.compile(
+    r"\b(?:not (?:that|this) one|something else|somewhere else|another one|a different one|different one|"
+    r"(?:the )?next one|not there|no,? not that)\b", re.I)
+ROAD_WORDS = re.compile(r"\b(?:way|road|route|highway|freeway|interstate|detour|grade|pass|toll)s?\b", re.I)
+# "The second one", "number two", "the last one": a reference into the list, never something to geocode
+# (HERE once turned "the second one" into W 21st Pl, The Dalles, OR, 598 miles out).
+LIST_REF = re.compile(
+    r"^(?:the |that |this |number |no\.? ?|#)?"
+    r"(?P<ord>first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|one|two|three|four|five|1|2|3|4|5|last|closest|nearest)"
+    r"(?: one| place| stop| option)?\.?$", re.I)
+ORDINALS = {"first": 1, "1st": 1, "one": 1, "1": 1, "second": 2, "2nd": 2, "two": 2, "2": 2, "third": 3, "3rd": 3,
+            "three": 3, "3": 3, "fourth": 4, "4th": 4, "four": 4, "4": 4, "fifth": 5, "5th": 5, "five": 5, "5": 5}
+# A bare pronoun or deictic the model turned into a destination: nothing to geocode either.
+NOT_A_PLACE = re.compile(r"^(?:that|this|it|there|here|that one|this one|the other one|other one)\.?$", re.I)
+# "Nothing else" is the end of the conversation; next to "something else" the model can read it as a pick.
+BYE_PHRASE = re.compile(r"^(?:no,? )?(?:nothing else|that'?s (?:all|it)|i'?m (?:good|all set)|all set|no thanks?)[.!]?$", re.I)
+
+
+def list_reference(query: str, places: list[Place], current_id: Optional[str]) -> Optional[int]:
+    """1-based index into `places` for "the second one" & co, counted over the places the driver can see
+    (the current route excluded, as on the options list); None when the query is not a reference."""
+    m = LIST_REF.match((query or "").strip())
+    if not m:
+        return None
+    shown = [p for p in places if p.id != current_id] or list(places)
+    if not shown:
+        return None
+    word = m.group("ord").lower()
+    if word == "last":
+        chosen = shown[-1]
+    elif word in ("closest", "nearest"):
+        chosen = min(shown, key=lambda p: p.distance_mi if p.distance_mi is not None else 1e9)
+    else:
+        n = ORDINALS.get(word)
+        if not n or n > len(shown):
+            return None
+        chosen = shown[n - 1]
+    return places.index(chosen) + 1
+
+
+def reject_or_reference_guard(intent: str, d: dict, text: str, places: list[Place],
+                              active: Optional[Place]) -> tuple[str, dict]:
+    """Rewrites two classifier mistakes before anything acts on them:
+    - alternative + a rejection phrase (and no road word) -> pick without an index (= the next place);
+    - go + a list reference ("the second one", place_index given) -> pick with that index;
+    - go + a bare pronoun -> not_understood instead of a geocode of "that".
+    Everything else passes through untouched."""
+    current_id = active.id if active else None
+    if intent == "pick" and BYE_PHRASE.match(text.strip()):
+        logger.info("agent pick %r is a goodbye -> bye", text)
+        return "bye", {**d, "intent": "bye", "place_index": None}
+    if intent == "alternative" and places and REJECT_PLACE.search(text) and not ROAD_WORDS.search(text):
+        logger.info("agent alternative %r reads as a rejected place -> pick", text)
+        return "pick", {**d, "intent": "pick", "place_index": None}
+    if intent == "go":
+        query = str(d.get("query") or "").strip()
+        ref = list_reference(query, places, current_id) if places else None
+        if ref is None and places and LIST_REF.match(text.strip()):
+            ref = list_reference(text.strip(), places, current_id)
+        if ref is not None:
+            logger.info("agent go %r is a list reference -> pick %s", query or text, ref)
+            return "pick", {**d, "intent": "pick", "place_index": ref}
+        idx = d.get("place_index")
+        if places and isinstance(idx, int) and 1 <= idx <= len(places) and (not query or LIST_REF.match(query) or NOT_A_PLACE.match(query)):
+            logger.info("agent go with place_index=%s and no real destination -> pick", idx)
+            return "pick", {**d, "intent": "pick", "place_index": idx}
+        if LIST_REF.match(query) or NOT_A_PLACE.match(query):
+            logger.info("agent go %r is not a place; nothing to pick from", query)
+            return ("pick", {**d, "intent": "pick", "place_index": None}) if places else ("not_understood", d)
+    return intent, d
+
+
 def pick_place(d: dict, places: list[Place]) -> Optional[Place]:
     """Resolves the model's 1-based place_index into a place found earlier."""
     try:
@@ -492,7 +566,7 @@ def _parse(raw: str) -> dict:
 # (0.1x input price on the cached prefix, faster first token). Everything that varies, the truck, the
 # preferences and the conversation context, travels in the user message, in that order.
 SYSTEM_STATIC = SYSTEM.format(controls=controls.PROMPT, parking=approach.PROMPT, breakdown=breakdown.PROMPT)
-PROMPT_VERSION = 3  # bump when SYSTEM changes, so the cache key and the eval baseline move together
+PROMPT_VERSION = 4  # bump when SYSTEM changes, so the cache key and the eval baseline move together
 PROMPT_CACHE_KEY = f"agent-v{PROMPT_VERSION}"
 
 
@@ -1064,6 +1138,11 @@ class LlmAgentProvider:
         if intent == "find" and req.active_place and d.get("category") in STOP_CATEGORIES and ON_THE_WAY.search(text):
             logger.info("agent find %s %r with a route active -> add_stop", d.get("category"), text)
             intent, d = "add_stop", {**d, "intent": "add_stop"}
+        # The model's word is not the last word on two things the driver says a lot (QA 2026-10-30, H4):
+        # a rejected place read as "another road", and a reference into the list read as an address.
+        intent, d = reject_or_reference_guard(intent, d, text, sess["places"], req.active_place)
+        if intent == "not_understood":
+            return _not_understood(text, self.source)
         # Current pick: the active route, or the last place chosen in this dialog.
         last = req.active_place or (sess["places"][0] if sess["places"] else None)
         current = last.id if last else None
@@ -1094,7 +1173,13 @@ class LlmAgentProvider:
                 return await self._memory_intent(req, sess, d, text)
             if intent == "pick":
                 place = pick_place(d, sess["places"])
-                if place and place.id not in exclude:
+                # A named pick ("the second one", "the Pilot") may go back to a place turned down earlier: the
+                # driver changed their mind, and "want me to go back to one of them?" is what we offer. Only
+                # a bare rejection skips the rejected set.
+                explicit = d.get("place_index") is not None
+                if place and place.id != current and (explicit or place.id not in exclude):
+                    if explicit:
+                        sess.get("rejected", set()).discard(place.id)
                     return await self._route_to(req, place, sess["places"], text)
                 category = d.get("category") or (last.category if last else None)
                 if category in CATEGORIES:

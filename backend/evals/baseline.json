@@ -1,11 +1,11 @@
 {
  "model": "gpt-5.4-mini",
- "date": "2026-10-29",
+ "date": "2026-10-30",
  "adapter": "chat_json",
- "n_cases": 292,
- "n_results": 292,
- "intent_acc": 0.9589,
- "case_acc": 0.9315,
+ "n_cases": 304,
+ "n_results": 304,
+ "intent_acc": 0.9572,
+ "case_acc": 0.9211,
  "by_tag": {
   "address": {
    "n": 6,
@@ -13,34 +13,34 @@
    "case_acc": 1.0
   },
   "ambiguous": {
-   "n": 5,
+   "n": 11,
    "intent_acc": 1.0,
-   "case_acc": 0.8
+   "case_acc": 0.8182
   },
   "core": {
-   "n": 87,
-   "intent_acc": 0.977,
-   "case_acc": 0.954
+   "n": 93,
+   "intent_acc": 0.957,
+   "case_acc": 0.9355
   },
   "disfluency": {
-   "n": 87,
-   "intent_acc": 0.9655,
-   "case_acc": 0.9425
+   "n": 93,
+   "intent_acc": 0.9677,
+   "case_acc": 0.9247
   },
   "edge": {
    "n": 16,
-   "intent_acc": 0.9375,
-   "case_acc": 0.9375
+   "intent_acc": 1.0,
+   "case_acc": 1.0
   },
   "follow_up": {
-   "n": 47,
-   "intent_acc": 0.9787,
-   "case_acc": 0.9149
+   "n": 59,
+   "intent_acc": 0.9661,
+   "case_acc": 0.8983
   },
   "memory": {
    "n": 7,
-   "intent_acc": 1.0,
-   "case_acc": 1.0
+   "intent_acc": 0.8571,
+   "case_acc": 0.8571
   },
   "near": {
    "n": 16,
@@ -50,14 +50,14 @@
   "noisy_stt": {
    "n": 44,
    "intent_acc": 0.8864,
-   "case_acc": 0.8182
+   "case_acc": 0.7727
   }
  },
  "by_preset": {
   "idle": {
    "n": 161,
-   "intent_acc": 0.9503,
-   "case_acc": 0.9317
+   "intent_acc": 0.9565,
+   "case_acc": 0.9379
   },
   "near_follow_up": {
    "n": 5,
@@ -65,19 +65,24 @@
    "case_acc": 1.0
   },
   "options_shown": {
-   "n": 49,
-   "intent_acc": 0.9796,
-   "case_acc": 0.9184
+   "n": 51,
+   "intent_acc": 0.9608,
+   "case_acc": 0.9216
   },
   "past_memory": {
    "n": 7,
-   "intent_acc": 1.0,
-   "case_acc": 1.0
+   "intent_acc": 0.8571,
+   "case_acc": 0.8571
   },
   "route_active": {
    "n": 65,
    "intent_acc": 0.9538,
-   "case_acc": 0.9231
+   "case_acc": 0.8923
+  },
+  "route_active_alts": {
+   "n": 10,
+   "intent_acc": 1.0,
+   "case_acc": 0.8
   },
   "stops": {
    "n": 5,
@@ -89,11 +94,11 @@
   "add_stop": {
    "n": 17,
    "intent_acc": 1.0,
-   "case_acc": 1.0,
+   "case_acc": 0.9412,
    "confusions": {}
   },
   "alternative": {
-   "n": 7,
+   "n": 11,
    "intent_acc": 1.0,
    "case_acc": 1.0,
    "confusions": {}
@@ -106,18 +111,16 @@
   },
   "bye": {
    "n": 11,
-   "intent_acc": 0.9091,
-   "case_acc": 0.9091,
-   "confusions": {
-    "chat": 1
-   }
+   "intent_acc": 1.0,
+   "case_acc": 1.0,
+   "confusions": {}
   },
   "chat": {
    "n": 17,
-   "intent_acc": 0.9412,
-   "case_acc": 0.9412,
+   "intent_acc": 0.8235,
+   "case_acc": 0.8235,
    "confusions": {
-    "bye": 1
+    "bye": 3
    }
   },
   "clear_stops": {
@@ -129,26 +132,25 @@
   "control": {
    "n": 42,
    "intent_acc": 1.0,
-   "case_acc": 0.9762,
+   "case_acc": 1.0,
    "confusions": {}
   },
   "find": {
    "n": 90,
-   "intent_acc": 0.9444,
-   "case_acc": 0.9333,
+   "intent_acc": 0.9333,
+   "case_acc": 0.9222,
    "confusions": {
-    "breakdown": 2,
-    "add_stop": 1,
-    "control": 1,
-    "unclear": 1
+    "breakdown": 4,
+    "unclear": 1,
+    "chat": 1
    }
   },
   "go": {
    "n": 21,
-   "intent_acc": 0.8571,
+   "intent_acc": 0.9524,
    "case_acc": 0.8571,
    "confusions": {
-    "unclear": 3
+    "unclear": 1
    }
   },
   "hos": {
@@ -159,31 +161,33 @@
   },
   "parking": {
    "n": 9,
-   "intent_acc": 1.0,
-   "case_acc": 1.0,
-   "confusions": {}
+   "intent_acc": 0.8889,
+   "case_acc": 0.8889,
+   "confusions": {
+    "chat": 1
+   }
   },
   "pick": {
-   "n": 25,
-   "intent_acc": 0.96,
-   "case_acc": 0.84,
+   "n": 33,
+   "intent_acc": 0.9697,
+   "case_acc": 0.8485,
    "confusions": {
     "go": 1
    }
   },
   "reviews": {
    "n": 8,
-   "intent_acc": 1.0,
-   "case_acc": 1.0,
-   "confusions": {}
-  },
-  "unclear": {
-   "n": 8,
    "intent_acc": 0.875,
    "case_acc": 0.875,
    "confusions": {
     "chat": 1
    }
+  },
+  "unclear": {
+   "n": 8,
+   "intent_acc": 1.0,
+   "case_acc": 1.0,
+   "confusions": {}
   },
   "weather": {
    "n": 9,
@@ -193,20 +197,19 @@
   }
  },
  "confusions": {
-  "go→unclear": 3,
-  "find→breakdown": 2,
+  "find→breakdown": 4,
+  "chat→bye": 3,
   "pick→go": 1,
-  "find→add_stop": 1,
-  "bye→chat": 1,
-  "find→control": 1,
+  "parking→chat": 1,
   "find→unclear": 1,
-  "chat→bye": 1,
-  "unclear→chat": 1
+  "find→chat": 1,
+  "reviews→chat": 1,
+  "go→unclear": 1
  },
- "p50_ms": 986.0,
- "p95_ms": 1846.0,
- "cached_ratio": 0.8941,
- "cost_usd": 0.0695,
+ "p50_ms": 753.0,
+ "p95_ms": 1028.0,
+ "cached_ratio": 0.9047,
+ "cost_usd": 0.0717,
  "failures": [
   {
    "id": "h_find_def",
@@ -218,13 +221,6 @@
    },
    "got": {
     "intent": "breakdown",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": null,
-    "reply": null,
     "kind": "fuel",
     "detail": "low on DEF",
     "mode": "unknown",
@@ -262,28 +258,6 @@
    ]
   },
   {
-   "id": "h_stop_no_route",
-   "text": "add a fuel stop",
-   "preset": "idle",
-   "expected": {
-    "intent": "find",
-    "category": "truck_stop"
-   },
-   "got": {
-    "intent": "add_stop",
-    "category": "truck_stop",
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": null,
-    "reply": null
-   },
-   "mismatches": [
-    "intent: expected 'find', got 'add_stop'"
-   ]
-  },
-  {
    "id": "h_wx_ahead",
    "text": "is it snowing ahead",
    "preset": "route_active",
@@ -306,40 +280,11 @@
    ]
   },
   {
-   "id": "h_ctl_break_off",
-   "text": "stop reminding me about breaks",
-   "preset": "idle",
-   "expected": {
-    "intent": "control",
-    "actions": [
-     "set_break_hours"
-    ]
-   },
-   "got": {
-    "intent": "control",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": [
-     {
-      "type": "set_nudges",
-      "value": false
-     }
-    ],
-    "reply": null
-   },
-   "mismatches": [
-    "actions: missing ['set_break_hours'], got ['set_nudges']"
-   ]
-  },
-  {
-   "id": "h_bye_nothing_else",
-   "text": "nothing else",
+   "id": "h_park_get_in",
+   "text": "how do I get in",
    "preset": "route_active",
    "expected": {
-    "intent": "bye"
+    "intent": "parking"
    },
    "got": {
     "intent": "chat",
@@ -349,16 +294,58 @@
     "when": null,
     "place_index": null,
     "actions": null,
-    "reply": "Got it. Say the word if you need anything else."
+    "reply": "I haven’t checked the parking there yet, so I can’t confirm the entrance or how to get in."
    },
    "mismatches": [
-    "intent: expected 'bye', got 'chat'"
+    "intent: expected 'parking', got 'chat'"
    ]
   },
   {
-   "id": "l_13_not_that_one",
-   "text": "Not that one",
-   "preset": "options_shown",
+   "id": "h_chat_thanks",
+   "text": "thanks",
+   "preset": "route_active",
+   "expected": {
+    "intent": "chat"
+   },
+   "got": {
+    "intent": "bye",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": "You’re welcome."
+   },
+   "mismatches": [
+    "intent: expected 'chat', got 'bye'"
+   ]
+  },
+  {
+   "id": "h_mem_thanks",
+   "text": "thanks",
+   "preset": "past_memory",
+   "expected": {
+    "intent": "chat"
+   },
+   "got": {
+    "intent": "bye",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": "You bet, drive safe."
+   },
+   "mismatches": [
+    "intent: expected 'chat', got 'bye'"
+   ]
+  },
+  {
+   "id": "h_pick_not_that_one_alts",
+   "text": "not that one",
+   "preset": "route_active_alts",
    "expected": {
     "intent": "pick",
     "place_index": [
@@ -381,6 +368,29 @@
    ]
   },
   {
+   "id": "h_find_shower__stt_shower",
+   "text": "I need a sour",
+   "preset": "idle",
+   "expected": {
+    "intent": "find",
+    "category": "truck_stop"
+   },
+   "got": {
+    "intent": "unclear",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "intent: expected 'find', got 'unclear'",
+    "category: expected 'truck_stop', got None"
+   ]
+  },
+  {
    "id": "h_find_def__stt_def",
    "text": "I'm low on Deaf",
    "preset": "idle",
@@ -389,22 +399,15 @@
     "category": "truck_stop"
    },
    "got": {
-    "intent": "control",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": [
-     {
-      "type": "set_hazmat",
-      "value": false
-     }
-    ],
-    "reply": null
+    "intent": "breakdown",
+    "kind": "fuel",
+    "detail": "low on diesel",
+    "mode": "unknown",
+    "tire_position": null,
+    "tire_size": null
    },
    "mismatches": [
-    "intent: expected 'find', got 'control'",
+    "intent: expected 'find', got 'breakdown'",
     "category: expected 'truck_stop', got None"
    ]
   },
@@ -470,17 +473,17 @@
     "category": "weigh_station"
    },
    "got": {
-    "intent": "unclear",
+    "intent": "chat",
     "category": null,
     "near": null,
     "query": null,
     "when": null,
     "place_index": null,
     "actions": null,
-    "reply": null
+    "reply": "I’m not sure what you mean by “skill house.” If you want, I can look for a truck stop or rest area ahead."
    },
    "mismatches": [
-    "intent: expected 'find', got 'unclear'",
+    "intent: expected 'find', got 'chat'",
     "category: expected 'weigh_station', got None"
    ]
   },
@@ -495,18 +498,17 @@
     }
    },
    "got": {
-    "intent": "unclear",
+    "intent": "go",
     "category": null,
     "near": null,
-    "query": null,
+    "query": "Lady",
     "when": null,
     "place_index": null,
     "actions": null,
     "reply": null
    },
    "mismatches": [
-    "intent: expected 'go', got 'unclear'",
-    "query: expected to contain 'lodi', got None"
+    "query: expected to contain 'lodi', got 'Lady'"
    ]
   },
   {
@@ -520,18 +522,17 @@
     }
    },
    "got": {
-    "intent": "unclear",
+    "intent": "go",
     "category": null,
     "near": null,
-    "query": null,
+    "query": "Rina",
     "when": null,
     "place_index": null,
     "actions": null,
     "reply": null
    },
    "mismatches": [
-    "intent: expected 'go', got 'unclear'",
-    "query: expected to contain 'reno', got None"
+    "query: expected to contain 'reno', got 'Rina'"
    ]
   },
   {
@@ -580,6 +581,51 @@
    },
    "mismatches": [
     "place_index: expected one of [3], got None"
+   ]
+  },
+  {
+   "id": "h_stop_pilot_fernley__dis_uh",
+   "text": "uh, stop at the Pilot in Fernley on the way",
+   "preset": "route_active",
+   "expected": {
+    "intent": "add_stop",
+    "query": {
+     "contains": "fernley"
+    }
+   },
+   "got": {
+    "intent": "add_stop",
+    "category": "truck_stop",
+    "near": "Fernley, NV",
+    "query": "Pilot",
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "query: expected to contain 'fernley', got 'Pilot'"
+   ]
+  },
+  {
+   "id": "h_rev_showers__dis_hey",
+   "text": "hey buddy how are the showers there",
+   "preset": "options_shown",
+   "expected": {
+    "intent": "reviews"
+   },
+   "got": {
+    "intent": "chat",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": "I haven’t checked the showers there yet."
+   },
+   "mismatches": [
+    "intent: expected 'reviews', got 'chat'"
    ]
   },
   {
@@ -646,31 +692,38 @@
     "when": null,
     "place_index": null,
     "actions": null,
-    "reply": "You bet, safe travels."
+    "reply": "You got it. Drive safe."
    },
    "mismatches": [
     "intent: expected 'chat', got 'bye'"
    ]
   },
   {
-   "id": "h_unclear_music__dis_please",
-   "text": "music playing please",
+   "id": "l_03_diesel_def__stt_diesel",
+   "text": "Need these all and DEF",
    "preset": "idle",
    "expected": {
-    "intent": "unclear"
+    "intent": "find",
+    "category": "truck_stop"
    },
    "got": {
-    "intent": "chat",
+    "intent": "breakdown",
     "category": null,
     "near": null,
     "query": null,
     "when": null,
     "place_index": null,
     "actions": null,
-    "reply": "Got it."
+    "reply": null,
+    "kind": "fuel",
+    "detail": "need diesel and DEF",
+    "mode": "mobile_needed",
+    "tire_position": null,
+    "tire_size": null
    },
    "mismatches": [
-    "intent: expected 'unclear', got 'chat'"
+    "intent: expected 'find', got 'breakdown'",
+    "category: expected 'truck_stop', got None"
    ]
   },
   {
@@ -696,6 +749,31 @@
    "mismatches": [
     "intent: expected 'go', got 'unclear'",
     "query: expected to contain 'reno', got None"
+   ]
+  },
+  {
+   "id": "h_pick_not_that_one_alts__dis_hey",
+   "text": "hey buddy not that one",
+   "preset": "route_active_alts",
+   "expected": {
+    "intent": "pick",
+    "place_index": [
+     2,
+     3
+    ]
+   },
+   "got": {
+    "intent": "pick",
+    "category": "truck_stop",
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null
+   },
+   "mismatches": [
+    "place_index: expected one of [2, 3], got None"
    ]
   }
  ],
@@ -946,8 +1024,8 @@
    "ok_all": true
   },
   "h_stop_no_route": {
-   "ok_intent": false,
-   "ok_all": false
+   "ok_intent": true,
+   "ok_all": true
   },
   "h_clear_skip": {
    "ok_intent": true,
@@ -1018,8 +1096,8 @@
    "ok_all": true
   },
   "h_park_get_in": {
-   "ok_intent": true,
-   "ok_all": true
+   "ok_intent": false,
+   "ok_all": false
   },
   "h_park_where": {
    "ok_intent": true,
@@ -1127,7 +1205,7 @@
   },
   "h_ctl_break_off": {
    "ok_intent": true,
-   "ok_all": false
+   "ok_all": true
   },
   "h_bd_tire": {
    "ok_intent": true,
@@ -1166,8 +1244,8 @@
    "ok_all": true
   },
   "h_chat_thanks": {
-   "ok_intent": true,
-   "ok_all": true
+   "ok_intent": false,
+   "ok_all": false
   },
   "h_chat_speed_limit": {
    "ok_intent": true,
@@ -1210,8 +1288,8 @@
    "ok_all": true
   },
   "h_bye_nothing_else": {
-   "ok_intent": false,
-   "ok_all": false
+   "ok_intent": true,
+   "ok_all": true
   },
   "h_unclear_siren": {
    "ok_intent": true,
@@ -1234,8 +1312,8 @@
    "ok_all": true
   },
   "h_mem_thanks": {
-   "ok_intent": true,
-   "ok_all": true
+   "ok_intent": false,
+   "ok_all": false
   },
   "h_mem_hos": {
    "ok_intent": true,
@@ -1299,7 +1377,7 @@
   },
   "l_13_not_that_one": {
    "ok_intent": true,
-   "ok_all": false
+   "ok_all": true
   },
   "l_14_second_one": {
    "ok_intent": true,
@@ -1345,6 +1423,30 @@
    "ok_intent": true,
    "ok_all": true
   },
+  "h_pick_something_else": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_not_that_one_alts": {
+   "ok_intent": true,
+   "ok_all": false
+  },
+  "h_pick_something_else_alts": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_second_one_alts": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_another_way_alts": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_faster_alts": {
+   "ok_intent": true,
+   "ok_all": true
+  },
   "h_find_truckstop_nearest__stt_truck_stop": {
    "ok_intent": true,
    "ok_all": true
@@ -1362,8 +1464,8 @@
    "ok_all": true
   },
   "h_find_shower__stt_shower": {
-   "ok_intent": true,
-   "ok_all": true
+   "ok_intent": false,
+   "ok_all": false
   },
   "h_find_shower__dis_uh": {
    "ok_intent": true,
@@ -1494,7 +1596,7 @@
    "ok_all": true
   },
   "h_go_lodi__stt_lodi": {
-   "ok_intent": false,
+   "ok_intent": true,
    "ok_all": false
   },
   "h_go_lodi__stt_route": {
@@ -1514,7 +1616,7 @@
    "ok_all": true
   },
   "h_go_reno_instead__stt_reno": {
-   "ok_intent": false,
+   "ok_intent": true,
    "ok_all": false
   },
   "h_go_reno_instead__dis_please": {
@@ -1583,7 +1685,7 @@
   },
   "h_stop_pilot_fernley__dis_uh": {
    "ok_intent": true,
-   "ok_all": true
+   "ok_all": false
   },
   "h_stop_loves_first__stt_love_s": {
    "ok_intent": true,
@@ -1614,8 +1716,8 @@
    "ok_all": true
   },
   "h_rev_showers__dis_hey": {
-   "ok_intent": true,
-   "ok_all": true
+   "ok_intent": false,
+   "ok_all": false
   },
   "h_wx_reno_3pm__stt_reno": {
    "ok_intent": true,
@@ -1782,8 +1884,8 @@
    "ok_all": true
   },
   "h_unclear_music__dis_please": {
-   "ok_intent": false,
-   "ok_all": false
+   "ok_intent": true,
+   "ok_all": true
   },
   "h_mem_fuel__stt_fuel": {
    "ok_intent": true,
@@ -1806,8 +1908,8 @@
    "ok_all": true
   },
   "l_03_diesel_def__stt_diesel": {
-   "ok_intent": true,
-   "ok_all": true
+   "ok_intent": false,
+   "ok_all": false
   },
   "l_03_diesel_def__stt_def": {
    "ok_intent": true,
@@ -1868,14 +1970,65 @@
   "h_stop_fuel_on_the_way__dis_uh": {
    "ok_intent": true,
    "ok_all": true
+  },
+  "h_pick_something_else__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_not_that_one_alts__dis_hey": {
+   "ok_intent": true,
+   "ok_all": false
+  },
+  "h_pick_something_else_alts__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_second_one_alts__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_another_way_alts__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_faster_alts__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
   }
  },
  "errors": 0,
  "comparison": {
-  "has_baseline": false,
-  "deltas": {},
-  "regressions": [],
-  "fixes": [],
-  "note": "no baseline yet (promote a run with --promote)"
+  "has_baseline": true,
+  "baseline_model": "gpt-5.4-mini",
+  "baseline_date": "2026-10-30",
+  "baseline_intent_acc": 0.9638,
+  "deltas": {
+   "intent_acc": -0.0066,
+   "case_acc": 0.0066,
+   "p50_ms": -6.0,
+   "p95_ms": -19.0,
+   "cached_ratio": 0.0089,
+   "cost_usd": -0.0018
+  },
+  "regressions": [
+   "h_chat_thanks",
+   "h_find_shower__stt_shower",
+   "h_mem_thanks",
+   "h_park_get_in",
+   "h_pick_not_that_one_alts",
+   "h_rev_showers__dis_hey",
+   "h_stop_pilot_fernley__dis_uh"
+  ],
+  "fixes": [
+   "h_bye_nothing_else",
+   "h_ctl_fav_chain__dis_uh",
+   "h_park_get_in__dis_hey",
+   "h_pick_something_else__dis_hey",
+   "h_pick_something_else_alts__dis_please",
+   "h_stop_pilot_fernley",
+   "h_unclear_music__dis_please",
+   "l_13_not_that_one",
+   "l_13_not_that_one__dis_uh"
+  ]
  }
 }

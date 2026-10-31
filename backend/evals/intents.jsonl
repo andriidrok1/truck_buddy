@@ -160,3 +160,8 @@
 {"id": "h_stop_cheapest_diesel_route", "text": "cheapest diesel on my route", "context_preset": "route_active", "expected": {"intent": "add_stop", "category": "truck_stop"}, "tags": ["core"], "source": "hand"}
 {"id": "h_stop_fuel_on_the_way", "text": "I need fuel on the way", "context_preset": "route_active", "expected": {"intent": "add_stop", "category": "truck_stop"}, "tags": ["core"], "source": "hand"}
 {"id": "h_pick_something_else", "text": "something else", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2, 3]}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
+{"id": "h_pick_not_that_one_alts", "text": "not that one", "context_preset": "route_active_alts", "expected": {"intent": "pick", "place_index": [2, 3]}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
+{"id": "h_pick_something_else_alts", "text": "something else", "context_preset": "route_active_alts", "expected": {"intent": "pick", "place_index": [2, 3]}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
+{"id": "h_pick_second_one_alts", "text": "the second one", "context_preset": "route_active_alts", "expected": {"intent": "pick", "place_index": [2, 3]}, "tags": ["core", "follow_up"], "source": "hand"}
+{"id": "h_alt_another_way_alts", "text": "is there another way", "context_preset": "route_active_alts", "expected": {"intent": "alternative"}, "tags": ["core", "follow_up"], "source": "hand"}
+{"id": "h_alt_faster_alts", "text": "is there a faster way", "context_preset": "route_active_alts", "expected": {"intent": "alternative"}, "tags": ["core", "follow_up"], "source": "hand"}
