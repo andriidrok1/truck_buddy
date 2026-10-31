@@ -2,7 +2,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BackHandler, Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
-import Animated, { FadeIn, FadeInDown, ReduceMotion } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { absoluteUrl, api } from "@/src/api";
@@ -381,7 +381,7 @@ export default function Onboarding() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={[styles.agent, compact && styles.agentRow]}>
-          <Animated.View key={step} entering={FadeIn.duration(320).reduceMotion(ReduceMotion.Never)} style={[styles.thoughtWrap, compact && styles.flexShrink]}>
+          <Animated.View key={step} entering={FadeIn.duration(320)} style={[styles.thoughtWrap, compact && styles.flexShrink]}>
             <View style={[styles.thought, compact && styles.thoughtSmall, { backgroundColor: colors.surfaceSecondary }]}>
               <Text testID="onboarding-agent-line" style={[styles.thoughtText, compact && styles.thoughtTextSmall, { color: colors.onSurface }]}>
                 {thought(step, name)}

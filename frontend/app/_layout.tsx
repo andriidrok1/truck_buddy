@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import { LogBox, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { ReducedMotionConfig, ReduceMotion } from "react-native-reanimated";
 import { KeyboardProvider } from "@/src/keyboard";
 
 import { useAuthState } from "@/src/auth";
@@ -53,6 +54,11 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <KeyboardProvider>
+            {/* Reanimated 4 under the system's "remove animations" (Android: TRANSITION_ANIMATION_SCALE 0) leaves a
+                view with an `entering` animation invisible on its first mount: the truck form of the onboarding
+                came up empty 4 times out of 5 (QA 2026-10-30), the first question before it (#69). Our entering
+                animations are 200-320 ms fades, so they always play; this replaces the per-view flag from #69. */}
+            <ReducedMotionConfig mode={ReduceMotion.Never} />
             <StatusBar style={scheme === "dark" ? "light" : "dark"} />
             {consent !== "yes" ? <ConsentGate /> : auth !== "in" ? <DeviceGate /> : <Stack screenOptions={{ headerShown: false }} />}
           </KeyboardProvider>
