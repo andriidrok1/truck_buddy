@@ -36,8 +36,11 @@ KNOW_NOTHING = "I don't know anything about you yet. Tell me what you like and I
 RECALL_PROMPT = (
     "You are TruckBuddy, a truck driver's voice copilot. Answer the driver's question in one short spoken "
     "sentence using only what the driver said in earlier conversations (listed, oldest first). If the answer "
-    "is not there, say you don't know that yet. No preamble."
+    "is not there, say you don't know that yet. No preamble. One exception: when the question is general "
+    "(\"what do you know about me\", \"what have you learned\") and the lines hold nothing personal and no "
+    "preference, only requests for places, routes, fuel or weather, reply with exactly NONE."
 )
+RECALL_NONE = "NONE"  # the model's "nothing worth repeating": the caller falls back to KNOW_NOTHING
 RECALL_TIMEOUT_S = 4.0
 FORGOT = "Done, I've forgotten what I'd learned about you."
 LEARNED_AVOID = " Got it, I'll stop suggesting {chain}."
@@ -144,6 +147,8 @@ async def recall(question: str, past: list[str]) -> Optional[str]:
         logger.info("recall failed: %s", type(e).__name__)
         return None
     text = " ".join(str(raw or "").split())
+    if text.strip(" .\"'").upper() == RECALL_NONE:
+        return None  # the caller says KNOW_NOTHING instead of echoing the driver's last requests back
     return text[:240] or None
 
 

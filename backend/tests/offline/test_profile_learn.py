@@ -176,6 +176,22 @@ def test_memory_question_before_facts_answers_from_the_past(agent_sandbox, monke
     assert sys_prompt == profile_learn.RECALL_PROMPT and "- Remember this: my dog's name is Biscuit." in user_text
     assert user_text.endswith("Question: What is my dog's name?")
 
+    # general question, lines are only requests: the model says NONE and the driver hears the old line
+    # (QA 2026-10-30 heard "You're looking for a place to park tonight, and you want a truck stop.")
+    async def requests_only(driver, limit):
+        return [{"role": "driver", "text": "where can I park tonight", "at": "x"},
+                {"role": "driver", "text": "find me a truck stop", "at": "x"}]
+
+    monkeypatch.setattr(memory, "recent", requests_only)
+    agent_sandbox.llm.rules = [r for r in agent_sandbox.llm.rules if "earlier" not in r[0].pattern]
+    agent_sandbox.llm.on(r"^Driver said earlier", "NONE.")
+    agent_sandbox.llm.on(r"^what do you know", {"intent": "memory", "query": "show"})
+    res = run(prov.handle(AgentRequest(text="what do you know about me", session_id="rc4", **SAC), "drv4"))
+    assert res.reply == profile_learn.KNOW_NOTHING
+    assert "NONE" in profile_learn.RECALL_PROMPT and "preference" in profile_learn.RECALL_PROMPT
+    agent_sandbox.llm.rules = [r for r in agent_sandbox.llm.rules if "earlier" not in r[0].pattern]
+    agent_sandbox.llm.on(r"^Driver said earlier", "Your dog's name is Biscuit.")
+
     # nothing said before: the old line
     async def nothing(driver, limit):
         return []
