@@ -28,10 +28,18 @@ def setup_function():
     weather._forecast_cache.clear()
 
 
-def _alert(event, area="Greater Lake Tahoe Area; Donner Pass", aid=None, **extra):
+def box(lat0, lat1, lng0=-123.0, lng1=-118.0):
+    """A GeoJSON polygon covering a band of latitude (the whole Sacramento-Reno route by default)."""
+    return {"type": "Polygon", "coordinates": [[[lng0, lat0], [lng1, lat0], [lng1, lat1], [lng0, lat1], [lng0, lat0]]]}
+
+
+def _alert(event, area="Greater Lake Tahoe Area; Donner Pass", aid=None, geometry="all", **extra):
+    """An NWS alert feature. `geometry`: "all" = a polygon over the whole test route (so the feed path places
+    it), a GeoJSON dict, or None (zone-based: the feed path needs `affectedZones` then)."""
     p = {"id": aid or f"urn:{event}:{area}", "event": event, "severity": "Severe", "status": "Actual",
          "messageType": "Alert", "headline": f"{event} issued", "areaDesc": area, **extra}
-    return {"type": "Feature", "properties": p}
+    g = box(37.0, 41.0) if geometry == "all" else geometry
+    return {"type": "Feature", "properties": p, "geometry": g}
 
 
 def _geometry():
@@ -47,7 +55,7 @@ def test_sample_points_every_40km_with_ends():
     assert pts[0][0] == 0 and pts[-1][0] == len(g) - 1
     idx = [p[0] for p in pts]
     assert idx == sorted(idx) and len(set(idx)) == len(idx)
-    assert 4 <= len(pts) <= 8  # 212 km / 40 km + ends
+    assert 10 <= len(pts) <= 14  # 212 km / 20 km + ends
     assert sample_points([[38.5, -121.4]]) == [(0, 38.5, -121.4)]
     assert sample_points([]) == []
     two = [[38.5, -121.4], [38.6, -121.3]]
@@ -57,7 +65,8 @@ def test_sample_points_every_40km_with_ends():
 def test_sample_points_capped():
     long = [[30.0 + i * 0.5, -100.0] for i in range(200)]  # ~55 km apart: 200 candidates
     pts = sample_points(long)
-    assert len(pts) == weather.MAX_SAMPLES and pts[-1][0] == 199
+    assert weather.MAX_SAMPLES - 6 <= len(pts) <= weather.MAX_SAMPLES and pts[-1][0] == 199  # the step widens
+    assert len(sample_points(long, every_km=40.0)) == weather.MAX_SAMPLES  # a fixed step hits the cap
 
 
 # ---- alerts ----

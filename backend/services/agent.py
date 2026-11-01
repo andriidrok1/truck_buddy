@@ -115,6 +115,7 @@ MODEL = ("openai", "gpt-5.4-mini")
 MAX_OPTIONS = 4
 ALTERNATIVES_FRESH = 2  # when "another way?" comes with no cached alternatives: ask HERE for this many
 WEATHER_BUDGET_S = 2.0  # NWS lookups on a new route may add at most this much to the reply
+DETOUR_BUDGET_S = 2.0  # the alternatives' weather may take this much longer; past it the detour line is skipped
 PRECHECK = 1  # nearest candidates satellite-checked in the background (each = one vision call)
 FAVORITE_EXTRA_MI = 5.0
 TRUCK_TAGS = ("truck parking", "53 ft", "truck lot", "hgv")
@@ -364,10 +365,11 @@ def _alt_reply(route: RouteInfo, current: Optional[RouteInfo] = None) -> str:
         d = route.duration_min - current.duration_min
         if abs(d) >= 5:
             diff = f", about {_minutes_said(abs(d))} {'longer' if d > 0 else 'faster'}"
-        # The weather is why most drivers ask: say when the other way misses it, or runs into it.
-        if current.weather and not route.weather:
+        # The weather is why most drivers ask: say when the other way misses it, or runs into it. Only
+        # a completed lookup counts as clear; an unknown road gets no claim either way.
+        if current.weather and route.weather_known and not route.weather:
             diff += f", and it misses the {current.weather[0].event}"
-        elif route.weather and not current.weather:
+        elif route.weather and current.weather_known and not current.weather:
             diff += f", but it runs into a {route.weather[0].event}"
     return ALT_REPLY.format(via=via, time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi), tolls=tolls + diff)
 _turns: dict = {"n": 0}  # rotation when there's no dialog session
@@ -859,17 +861,18 @@ class LlmAgentProvider:
         ETA ("you'd hit it around 4 pm"); bounded so it never delays the reply. When another truck route misses
         the weather, it is offered and moved to the front of "another way", so "take the other way" gets it."""
         try:
-            await asyncio.wait_for(weather.for_route(route), WEATHER_BUDGET_S)
-        except Exception as e:  # noqa: BLE001 - incl. timeout
-            logger.info("route weather skipped: %s", e)
+            alts_known = await weather.for_route(route, WEATHER_BUDGET_S, DETOUR_BUDGET_S)
+        except Exception as e:  # noqa: BLE001 - never the route itself
+            logger.info("route weather failed: %s", e)
+            alts_known = False
             route.weather = []
             for alt in route.alternatives:
                 alt.weather = []
         line = weather.speech(route.weather, route)
         if not line:
-            return ""
-        detour = weather.detour_speech(route)
-        best = weather.better_route(route)
+            return weather.later_speech(route)  # nothing on the way now; a storm after the truck is through still gets a word
+        detour = weather.detour_speech(route, alts_known=alts_known)
+        best = weather.better_route(route) if alts_known else None
         cached = (sess or {}).get("alternatives")
         if cached and cached.get("current") is not None:
             cached["current"].weather = list(route.weather)  # the copy was taken before the lookup

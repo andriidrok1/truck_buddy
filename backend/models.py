@@ -145,6 +145,8 @@ class RouteInfo(BaseModel):
     via: List[List[float]] = Field(default_factory=list)  # stops on the way, [[lat, lng], ...], in order
     section_starts: List[int] = Field(default_factory=list)  # geometry index where each HERE section begins
     weather: List[WeatherAlert] = Field(default_factory=list)  # active NWS alerts along the route
+    weather_known: bool = False  # the NWS lookup for this route completed; only then does an empty list mean clear
+    weather_later: List[WeatherAlert] = Field(default_factory=list)  # alerts on the route that start after the truck is through
     chain_controls: List[ChainControl] = Field(default_factory=list)  # active Caltrans chain controls on the route
 
 
