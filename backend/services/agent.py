@@ -1059,7 +1059,7 @@ class LlmAgentProvider:
         if prev is not None and all(r is not prev for r in cached["routes"]):
             cached["routes"].append(prev)
         cached["current"] = route
-        route.alternatives = [r.model_copy(update={"alternatives": []}) for r in cached["routes"][cached["i"]:]]
+        route.alternatives = [r.model_copy(update={"alternatives": []}) for r in cached["routes"] if r is not route]
         return AgentResponse(status="route_set", transcript=text, category=place.category,
                              reply=_alt_reply(route, prev), place=place, route=route, parking=approach.best(place),
                              source=self.source)

@@ -102,16 +102,17 @@ def test_dialog_walks_through_the_alternatives(agent_sandbox, fake_http):
     longer = _minutes_said(second.route.duration_min - first.route.duration_min)
     assert second.reply == f"Here's another way via I-80 and CA-89, 4 h 38 min, 204 miles, about {longer} longer."
     assert second.route.labels == ["I-80", "CA-89"] and second.route.maneuvers
-    # the Routes sheet keeps the other alternative and the route just left (QA 2026-10-31, H12)
+    # the Routes sheet keeps every other way, the route just left included (QA 2026-10-31, H12)
     assert [r.labels for r in second.route.alternatives] == [["I-80", "I-580"], ["I-80"]]
     assert all(r.alternatives == [] for r in second.route.alternatives)
 
     third = run(prov.handle(_req("is there another way?", active=RENO), None))
     assert third.status == "route_set" and third.route.labels == ["I-80", "I-580"]
-    assert [r.labels for r in third.route.alternatives] == [["I-80"]]
+    assert [r.labels for r in third.route.alternatives] == [["I-80", "CA-89"], ["I-80"]]
 
     back = run(prov.handle(_req("another way", active=RENO), None))  # the way back to the fastest one
-    assert back.status == "route_set" and back.route.labels == ["I-80"] and back.route.alternatives == []
+    assert back.status == "route_set" and back.route.labels == ["I-80"]
+    assert [r.labels for r in back.route.alternatives] == [["I-80", "CA-89"], ["I-80", "I-580"]]
     assert back.reply.endswith("faster."), back.reply
 
     fourth = run(prov.handle(_req("another way", active=RENO), None))
