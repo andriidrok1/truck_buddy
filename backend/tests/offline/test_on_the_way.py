@@ -127,3 +127,82 @@ def test_the_same_stop_twice_is_said_not_added(agent_sandbox, fake_http):
     again = run(prov.handle(req, None))
     assert again.status == "chat" and again.reply == "Roady's Truck Stop is already one of your stops."
     assert [s.id for s in agent._SESSIONS["dup"]["via"]["stops"]] == [ROADYS.id]
+
+
+def test_a_named_stop_from_the_list_is_not_geocoded(agent_sandbox, fake_http):
+    """The model echoed "Pilot" as the query with no index (on the emulator "49er" went to HERE and came
+    back as a street in Placerville). A listed place named by the driver is that place."""
+    from services.agent import named_place
+    prov = _prov(agent_sandbox, fake_http)
+    pilot = Place(id="pilot", name="Pilot Travel Center #412", category="truck_stop", lat=38.62, lng=-121.52,
+                  distance_mi=2.7, address="4601 W Capitol Ave, West Sacramento, CA")
+    agent_sandbox.llm.on(r"park", {"intent": "find", "category": "truck_stop"})
+    agent_sandbox.llm.on(r"stop at", {"intent": "add_stop", "category": "truck_stop", "query": "Pilot"})
+    agent_sandbox.places_provider.places = [PARK, ROADYS, pilot]
+    first = run(prov.handle(AgentRequest(text="where can I park", session_id="named-q", **SAC), None))
+    assert first.place.id == pilot.id  # the closest; the named stop below is one of the others
+    agent_sandbox.llm.on(r"swing by", {"intent": "add_stop", "category": "truck_stop", "query": "Roady's"})
+    res = run(prov.handle(AgentRequest(text="swing by Roady's on the way", session_id="named-q",
+                                       active_place=first.place, **SAC), None))
+    assert res.status == "route_set" and [o.id for o in res.options] == [ROADYS.id], res.reply
+    assert all("geocode" not in str(c) for c in fake_http.calls)
+    # the town in the name is not enough to name the place; a word of the name is
+    sac49 = Place(id="49er", name="Sacramento 49er Travel Plaza", category="truck_stop", lat=38.62, lng=-121.52,
+                  address="2828 El Centro Rd, Sacramento, CA")
+    assert named_place("Sacramento", [sac49]) is None
+    assert named_place("the 49er", [sac49]) is sac49 and named_place("49er travel plaza", [sac49]) is sac49
+    assert named_place("Roady's", [sac49, ROADYS]) is ROADYS and named_place("Love's", [sac49, ROADYS]) is None
+    assert named_place("Roady's Truck Stops", [sac49, ROADYS]) is ROADYS  # the model's plural (emulator)
+
+
+def test_go_to_a_named_listed_place_routes_there(agent_sandbox, fake_http):
+    prov = _prov(agent_sandbox, fake_http)
+    agent_sandbox.llm.on(r"park", {"intent": "find", "category": "truck_stop"})
+    agent_sandbox.llm.on(r"take me to", {"intent": "go", "query": "Roady's"})
+    agent_sandbox.places_provider.places = [PARK, ROADYS]
+    first = run(prov.handle(AgentRequest(text="where can I park", session_id="go-named", **SAC), None))
+    other = ROADYS if first.place.id != ROADYS.id else PARK
+    agent_sandbox.llm.on(r"take me to", {"intent": "go", "query": other.name})
+    res = run(prov.handle(AgentRequest(text=f"take me to {other.name}", session_id="go-named",
+                                       active_place=first.place, **SAC), None))
+    assert res.status == "route_set" and res.place.id == other.id, res.reply
+    assert all("geocode" not in str(c) for c in fake_http.calls)
+
+
+def test_the_place_named_in_the_text_beats_the_models_index(agent_sandbox, fake_http):
+    """Second "stop at the 49er on the way" with the 49er already a stop: the model answered pick with the
+    index of the next place (Roady's) on the emulator. The word the driver said wins."""
+    from services.agent import named_in_text
+    prov = _prov(agent_sandbox, fake_http)
+    flying = Place(id="flyingj", name="Flying J Travel Center", category="truck_stop", lat=38.62, lng=-121.52,
+                   distance_mi=9.0, address="3001 Hwy 99, Sacramento, CA")
+    agent_sandbox.llm.on(r"park", {"intent": "find", "category": "truck_stop"})
+    agent_sandbox.places_provider.places = [PARK, ROADYS, flying]
+    first = run(prov.handle(AgentRequest(text="where can I park", session_id="said", **SAC), None))
+    assert first.place.id == PARK.id
+    shown = agent._SESSIONS["said"]["places"]
+    wrong = next(i for i, p in enumerate(shown, 1) if p.id == ROADYS.id)
+    agent_sandbox.llm.on(r"flying", {"intent": "pick", "place_index": wrong})
+    res = run(prov.handle(AgentRequest(text="stop at the Flying J on the way", session_id="said",
+                                       active_place=first.place, **SAC), None))
+    assert res.status == "route_set" and [o.id for o in res.options] == [flying.id], res.reply
+    again = run(prov.handle(AgentRequest(text="stop at the Flying J on the way", session_id="said",
+                                         active_place=first.place, **SAC), None))
+    assert again.status == "chat" and again.reply == "Flying J Travel Center is already one of your stops."
+    # generic words and the town never name a place
+    assert named_in_text("add a truck stop on the way", [flying, ROADYS]) is None
+    assert named_in_text("stop in Sacramento", [flying]) is None
+    assert named_in_text("swing by Roady's first", [flying, ROADYS]) is ROADYS
+
+
+def test_a_stop_at_the_destination_itself_is_said_not_added(agent_sandbox, fake_http):
+    """Going to the 49er, "stop at the 49er on the way": the model echoed the destination's name and address
+    as the query and its geocode came back as a new place, which was then added as a stop (emulator)."""
+    prov = _prov(agent_sandbox, fake_http)
+    agent_sandbox.llm.on(r"stop at", {"intent": "add_stop", "category": "truck_stop",
+                                      "query": "49er Travel Plaza, 2828 El Centro Rd, Sacramento"})
+    agent_sandbox.geocode["El Centro"] = [Place(id="here-1", name="2828 El Centro Rd, Sacramento, CA", category="destination",
+                                                lat=PARK.lat + 0.0003, lng=PARK.lng)]
+    res = run(prov.handle(AgentRequest(text="stop at the 49er on the way", session_id="dest", active_place=PARK, **SAC), None))
+    assert res.status == "chat" and res.reply == "That's where we're headed, 49er Travel Plaza.", res.reply
+    assert "via" not in agent._SESSIONS["dest"]

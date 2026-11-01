@@ -333,6 +333,7 @@ VIA_ADDED = "Added {name}{ahead}. New total {time}, {mi} miles."
 VIA_NO_ROUTE = "Set a route first, then I can add stops on the way."
 VIA_FULL = "I can only add three stops. Say 'clear the stops' to start over."
 VIA_DUPLICATE = "{name} is already one of your stops."
+VIA_IS_DESTINATION = "That's where we're headed, {name}."
 VIA_CLEARED = "Stops cleared. Straight there, {time}, {mi} miles."
 VIA_NONE = "There are no stops on this route."
 WHICH_PLACE = "Which place? Find one or set a route first."
@@ -463,6 +464,45 @@ def list_reference(query: str, places: list[Place], current_id: Optional[str]) -
             return None
         chosen = shown[n - 1]
     return places.index(chosen) + 1
+
+
+_NAME_TOKEN = re.compile(r"[a-z0-9]+")
+
+
+def _tokens(s: str) -> set[str]:
+    """Lowercase words, apostrophes dropped, a plural "s" trimmed: the model said "Roady's Truck Stops"."""
+    return {w[:-1] if len(w) > 3 and w.endswith("s") else w for w in _NAME_TOKEN.findall((s or "").lower().replace("'", ""))}
+
+
+def named_place(query: str, places: list[Place]) -> Optional[Place]:
+    """The listed place the driver named ("the 49er", "the Pilot"), or None. Every word of the query has to
+    be in the place name, and at least one of them must not be a word of the address (the town): "take me
+    to Sacramento" never matches "Sacramento 49er Travel Plaza", "the 49er" does. Geocoding "49er" gave a
+    street in Placerville (QA 2026-10-31, H9)."""
+    words = _tokens(re.sub(r"^\s*(?:the|a|an)\s+", "", query or "", flags=re.I))
+    if not words:
+        return None
+    for p in places:
+        name = _tokens(p.name)
+        if words <= name and words - _tokens(p.address or ""):
+            return p
+    return None
+
+
+GENERIC_NAME_WORDS = {"truck", "stop", "stops", "travel", "center", "centre", "plaza", "inn", "motel", "hotel",
+                      "rest", "area", "the", "and", "of", "at", "north", "south", "east", "west", "northbound",
+                      "southbound", "eastbound", "westbound", "station", "fuel", "gas", "diesel"}
+
+
+def named_in_text(text: str, places: list[Place]) -> Optional[Place]:
+    """The listed place whose own word the driver said ("stop at the 49er on the way" -> the 49er), or None.
+    A word counts when it is the place's, not its town's and not a generic ("truck stop", "travel plaza")."""
+    said = _tokens(text)
+    for p in places:
+        own = {w for w in _tokens(p.name) - _tokens(p.address or "") - GENERIC_NAME_WORDS if len(w) >= 3}
+        if own & said:
+            return p
+    return None
 
 
 def reject_or_reference_guard(intent: str, d: dict, text: str, places: list[Place],
@@ -877,19 +917,30 @@ class LlmAgentProvider:
             return []
         return list(via["stops"])
 
-    async def _resolve_stop(self, req: AgentRequest, d: dict, sess: dict) -> Optional[Place]:
-        """The place the driver wants to stop at: a place offered earlier (nudges), a named place/address, else
-        the best place of a category."""
+    async def _resolve_stop(self, req: AgentRequest, d: dict, sess: dict, text: str = "") -> Optional[Place]:
+        """The place the driver wants to stop at: a place offered earlier (nudges), a listed place the driver
+        named, a named place/address, else the best place of a category."""
         if isinstance(d.get("place"), dict):
             try:
                 return Place(**d["place"])
             except Exception:  # noqa: BLE001 - a malformed offer falls through to the normal path
                 pass
-        picked = pick_place(d, sess["places"])  # "stop at the 49er on the way": a place from the list
-        if picked and (not req.active_place or picked.id != req.active_place.id):
+        # "Stop at the 49er on the way": the driver's word beats the model's index (it pointed at the next
+        # place once the 49er was already a stop) and beats a geocode ("49er" is a street in Placerville).
+        # The destination itself may come back here: _add_stop answers "that's where we're headed".
+        said = named_in_text(text, sess["places"])
+        if said:
+            logger.info("add_stop: the driver named %s", said.name)
+            return said
+        picked = pick_place(d, sess["places"])
+        if picked:
             return picked
         query = str(d.get("query") or "").strip()
         category = d.get("category") if d.get("category") in CATEGORIES else None
+        named = named_place(query, sess["places"]) if query else None
+        if named:
+            logger.info("add_stop query %r names a listed place -> %s", query, named.name)
+            return named
         if query:
             with stage("tools"):
                 matches = await geocode(with_city(query, sess.get("city")), req.lat, req.lng)
@@ -938,10 +989,15 @@ class LlmAgentProvider:
         stops = self._stops(req, sess)
         if len(stops) >= MAX_VIA:
             return AgentResponse(status="chat", transcript=text, reply=VIA_FULL, source=self.source)
-        stop = await self._resolve_stop(req, d, sess)
+        stop = await self._resolve_stop(req, d, sess, text)
         if not stop:
             what = str(d.get("query") or CATEGORY_WORD.get(str(d.get("category")), "a stop")).strip()
             return AgentResponse(status="chat", transcript=text, reply=heard_not_found(what), source=self.source)
+        if stop.id == place.id or haversine_km(stop.lat, stop.lng, place.lat, place.lng) < 0.15:
+            # "stop at the 49er" while going to the 49er: the model echoed the destination's address and the
+            # geocode of it came back as a new place (QA 2026-10-31, H9)
+            return AgentResponse(status="chat", transcript=text, source=self.source,
+                                 reply=VIA_IS_DESTINATION.format(name=place.name.split(",")[0]))
         if any(s.id == stop.id for s in stops):  # "stop at the 49er" when it already is one (QA 2026-10-31, H9)
             return AgentResponse(status="chat", transcript=text, source=self.source,
                                  reply=VIA_DUPLICATE.format(name=stop.name.split(",")[0]))
@@ -1227,6 +1283,10 @@ class LlmAgentProvider:
             if intent == "go" and isinstance(d.get("place"), dict):  # a place offered by a nudge, accepted
                 return await self._route_to(req, Place(**d["place"]), [], text)
             if intent == "go" and str(d.get("query") or "").strip():
+                named = named_place(str(d["query"]), sess["places"])
+                if named and named.id != current:  # "take me to the 49er": the one on the list, not a geocode
+                    logger.info("agent go %r names a listed place -> %s", d["query"], named.name)
+                    return await self._route_to(req, named, sess["places"], text)
                 query = with_city(str(d["query"]).strip(), sess.get("city"))
                 with stage("tools"):
                     matches = await geocode(query, req.lat, req.lng)
