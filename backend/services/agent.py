@@ -328,6 +328,10 @@ NOTICES = (
 CLOSURE = "Heads up, there's a road closure on this route: {description}."
 ALT_REPLY = "Here's another way{via}, {time}, {mi} miles{tolls}."
 NO_ALT = "That's the only truck route I've got."
+CHAIN_QUESTION = re.compile(r"\bchain[ -]?(?:control|law|requirement|restriction)s?\b|\bchains?\s+(?:ahead|required|needed|on the (?:pass|route|way)|up ahead)\b|\b(?:any|are there|is there|do I need)\b.*\bchains?\b", re.I)
+CHAINS_NO_ROUTE = "Set a route and I'll check Caltrans chain controls along it."
+CHAINS_OUTSIDE = "I only have chain controls for California, and this route doesn't go through it."
+CHAINS_NONE = "No chain controls on your route right now."
 ALT_NO_ROUTE = "Set a route first and I'll look for other ways."
 VIA_ADDED = "Added {name}{ahead}. New total {time}, {mi} miles."
 VIA_NO_ROUTE = "Set a route first, then I can add stops on the way."
@@ -792,6 +796,17 @@ class LlmAgentProvider:
                              place=place, route=route, parking=approach.best(place),
                              options=others, source=self.source)
 
+    async def _chains_question(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
+        """Chain controls along the route the driver is on, from Caltrans; without a route, say what is needed."""
+        cached = sess.get("alternatives") or {}
+        route = cached.get("current") if req.active_place and cached.get("place") == req.active_place.id else None
+        if route is None:
+            return AgentResponse(status="chat", transcript=text, reply=CHAINS_NO_ROUTE, source=self.source)
+        if not chains.touches_california(route.geometry):
+            return AgentResponse(status="chat", transcript=text, reply=CHAINS_OUTSIDE, source=self.source)
+        line = await self._route_chains(route)
+        return AgentResponse(status="chat", transcript=text, reply=line or CHAINS_NONE, source=self.source)
+
     @staticmethod
     async def _route_chains(route: RouteInfo) -> str:
         """Caltrans chain controls on a new route (California only), spoken once; bounded like the weather."""
@@ -1230,6 +1245,10 @@ class LlmAgentProvider:
         # Parking question about a town destination answered as chat: give the town line, never a guess.
         if intent == "chat" and req.active_place and is_town(req.active_place) and re.search(r"\bpark", text, re.I):
             intent = "parking"
+        # "Any chain controls ahead?" is a data question, not small talk: the model answered "there may be"
+        # on its own (QA 2026-10-31, H17). Caltrans has the answer for the route the driver is on.
+        if intent in ("chat", "unclear", "weather") and CHAIN_QUESTION.search(text) and not re.search(r"\b(on board|carry|have chains|got chains)\b", text, re.I):
+            return await self._chains_question(req, sess, text)
         # "Cheapest diesel on my route" with a route set: a stop on the way; the destination stays. With a
         # list on screen the model answers pick instead of find (QA 2026-10-31, H9): same rewrite. A pick on
         # "cheapest" over a list without prices points at nothing, so the stop finder chooses along the route.

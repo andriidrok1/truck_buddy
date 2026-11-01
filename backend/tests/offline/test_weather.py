@@ -170,7 +170,7 @@ def test_forecast_speech_end_to_end(fake_http):
     p = pick_period(HOURLY["properties"]["periods"], datetime(2026, 10, 27, 15, 0, tzinfo=PT))
     wind = p["windSpeed"].replace(" mph", " miles an hour")
     assert out == (f"Reno at 3 pm: {p['temperature']} degrees and {p['shortForecast'].lower()}, wind {wind} from the "
-                   f"{p['windDirection'].lower()}. Heads up, there's a High Wind Warning in effect there.")
+                   f"{weather.compass_words(p['windDirection'])}. Heads up, there's a High Wind Warning in effect there.")
     assert dict(params_of(fake_http.calls_to("api.weather.gov", "/alerts/active")[0]))["point"] == "39.5296,-119.8138"
     # points + forecast cached: a second question costs only the alerts call (cached too within 10 min)
     run(weather.forecast_speech("Reno", RENO.lat, RENO.lng, "4pm", now=now))
@@ -180,7 +180,10 @@ def test_forecast_speech_end_to_end(fake_http):
 def test_wind_wording():
     assert weather._wind({"windSpeed": "0 mph", "windDirection": ""}) == ", calm"
     assert weather._wind({"windSpeed": "0 mph", "windDirection": "N"}) == ", calm"  # NWS gives a direction for calm too
-    assert weather._wind({"windSpeed": "5 to 10 mph", "windDirection": "SW"}) == ", wind 5 to 10 miles an hour from the sw"
+    assert weather._wind({"windSpeed": "5 to 10 mph", "windDirection": "SW"}) == ", wind 5 to 10 miles an hour from the southwest"
+    assert weather._wind({"windSpeed": "5 mph", "windDirection": "N"}) == ", wind 5 miles an hour from the north"
+    assert weather.compass_words("NNE") == "north-northeast" and weather.compass_words("ESE") == "east-southeast"
+    assert weather.compass_words("Variable") == "variable" and weather.compass_words("") == ""
     assert weather._wind({"windSpeed": "12 mph", "windDirection": None, "windGust": "25 mph"}) == \
         ", wind 12 miles an hour, gusting 25"
     assert weather._wind({}) == ""

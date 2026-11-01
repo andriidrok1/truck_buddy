@@ -236,6 +236,22 @@ def resolve_when(text: Optional[str], now: datetime) -> datetime:
     return at
 
 
+_COMPASS = {"n": "north", "s": "south", "e": "east", "w": "west"}
+
+
+def compass_words(abbr: str) -> str:
+    """NWS gives the wind direction as "N", "SW", "NNE"; spoken that was "from the n" (QA 2026-10-31, H17).
+    "N" -> "north", "SW" -> "southwest", "NNE" -> "north-northeast"; anything else is passed through lowercased."""
+    a = abbr.strip().lower()
+    if not a:
+        return ""
+    if all(c in _COMPASS for c in a) and 1 <= len(a) <= 3:
+        if len(a) == 3:
+            return f"{_COMPASS[a[0]]}-{_COMPASS[a[1]]}{_COMPASS[a[2]]}"
+        return "".join(_COMPASS[c] for c in a)
+    return a
+
+
 def _wind(p: dict) -> str:
     """", wind 12 miles an hour from the southwest, gusting 25" / ", calm" / "" when NWS gave no wind.
     A direction is only spoken when there is one: a calm period has none, and "from the no direction"
@@ -247,7 +263,7 @@ def _wind(p: dict) -> str:
     if max(speeds) == 0:
         return ", calm"
     out = ", wind " + raw.replace(" mph", " miles an hour")
-    direction = str(p.get("windDirection") or "").strip().lower()
+    direction = compass_words(str(p.get("windDirection") or ""))
     if direction:
         out += f" from the {direction}"
     gust = p.get("windGust")
