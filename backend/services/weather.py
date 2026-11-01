@@ -550,17 +550,19 @@ def _diff(alt: RouteInfo, route: RouteInfo) -> str:
     return f", about {said} {'longer' if d > 0 else 'faster'}"
 
 
-def detour_speech(route: RouteInfo, now: Optional[datetime] = None, alts_known: bool = True) -> str:
+def detour_speech(route: RouteInfo, now: Optional[datetime] = None, alts_known: bool = True,
+                  said_till: bool = False) -> str:
     """What to do about the weather on `route`: the alternative that misses it (or meets less of it), or an
-    honest "no way around", with the clearing time when the alert has one. With the alternatives' weather
-    unknown (lookup cut off) nothing is claimed either way."""
+    honest "no way around", with the clearing time when the alert has one and the warning line hasn't
+    just said it (`said_till`; "in effect till 3:45 pm. ... it should clear by 3:45 pm" was heard on the
+    stand). With the alternatives' weather unknown (lookup cut off) nothing is claimed either way."""
     if not route.weather or not alts_known:
         return ""
     alt = better_route(route)
     if alt is None:
         last = latest_end(route.weather)
         end = _iso(last.ends) if last.ends else None
-        if end is not None and end.tzinfo is not None:
+        if end is not None and end.tzinfo is not None and not said_till:
             return NO_DETOUR_CLEARS.format(till=_clock(end, _now(now)))
         return NO_DETOUR
     diff = _diff(alt, route)
