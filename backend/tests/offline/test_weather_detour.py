@@ -240,6 +240,9 @@ def test_detour_wording():
     assert weather.detour_speech(r, NOW) == "No truck route around it; it should clear by 7 pm."
     r.weather = [_alert("High Wind Warning", 300)]
     assert weather.detour_speech(r, NOW) == "No truck route around it."
+    r.alternatives = []
+    assert weather.detour_speech(r, NOW) == "I don't have another truck route to try."  # nothing to compare: no "around it"
+    r.alternatives = [ca89, i580]
     same = ca89.model_copy(update={"duration_min": r.duration_min + 2, "weather": [], "labels": [], "weather_known": True})
     r.alternatives = [same]
     assert weather.detour_speech(r, NOW) == "The other way misses it and takes about the same time. Say 'take the other way' if you want it."

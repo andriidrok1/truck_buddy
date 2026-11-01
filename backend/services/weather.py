@@ -59,6 +59,7 @@ DETOUR_CLEAR = "The way via {via} misses it{diff}. Say 'take the other way' if y
 DETOUR_CLEAR_NO_ROAD = "The other way misses it{diff}. Say 'take the other way' if you want it."
 DETOUR_LIGHTER = "The way via {via} only runs into a {event}{diff}. Say 'take the other way' if you want it."
 NO_DETOUR = "No truck route around it."
+NO_OTHER_ROAD = "I don't have another truck route to try."  # the router offered no alternative at all: nothing was compared
 NO_DETOUR_CLEARS = "No truck route around it; it should clear by {till}."
 SAME_TIME = " and takes about the same time"
 LATER = "Heads up, a {event} near {area} starts {onset}; at this pace you're through there by {hit}."
@@ -559,6 +560,8 @@ def detour_speech(route: RouteInfo, now: Optional[datetime] = None, alts_known: 
     if not route.weather or not alts_known:
         return ""
     alt = better_route(route)
+    if alt is None and not route.alternatives:
+        return NO_OTHER_ROAD  # "around it" would claim a comparison that never happened (QA 2026-11-01)
     if alt is None:
         last = latest_end(route.weather)
         end = _iso(last.ends) if last.ends else None
