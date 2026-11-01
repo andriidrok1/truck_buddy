@@ -371,6 +371,7 @@ def _diesel_note(p: Place) -> str:
 
 PRICE_WORDS = re.compile(r"\b(cheap(?:est|er)?|price|prices|cost|how much)\b", re.I)
 NO_PRICE = " I don't have a diesel price for it."
+NO_PRICES_KEEP = "I don't have diesel prices for any of these, so I can't say which is cheapest. {name} stays as your stop."
 # A fuel/rest stop asked for "on my route" while a route is active is a stop on the way, never a new destination.
 ON_THE_WAY = re.compile(r"\b(?:on|along) (?:my|the|our) (?:route|way)\b|\ben route\b|\bon the way\b"
                         r"|\bbefore (?:I|we) (?:get|arrive)\b", re.I)
@@ -701,6 +702,17 @@ class LlmAgentProvider:
                     f" hands-free wake word {'on' if ui.hands_free else 'off (the driver taps the copilot to talk)'};"
                     f" {ui.options_count} other options available.")
         return context
+
+    async def _cheapest_without_prices(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
+        """No place in the list has a diesel price: keep the current stop and say so; with no current stop
+        the closest one is the honest pick, with the usual "no price" caveat."""
+        if req.active_place:
+            logger.info("agent pick %r with no diesel prices in the list -> keeping %s", text, req.active_place.name)
+            return AgentResponse(status="chat", transcript=text, source=self.source,
+                                 reply=NO_PRICES_KEEP.format(name=req.active_place.name))
+        nearest = min(sess["places"], key=lambda p: p.distance_mi or 0)
+        logger.info("agent pick %r with no diesel prices in the list -> the closest, %s", text, nearest.name)
+        return await self._route_to(req, nearest, sess["places"], text)
 
     async def _route_to(self, req: AgentRequest, place: Place, found: list[Place], text: str) -> AgentResponse:
         with stage("tools"):
@@ -1143,6 +1155,11 @@ class LlmAgentProvider:
         intent, d = reject_or_reference_guard(intent, d, text, sess["places"], req.active_place)
         if intent == "not_understood":
             return _not_understood(text, self.source)
+        # "The cheapest diesel" over a list with no prices: the model still names one, and the destination
+        # changed for no reason the driver could see (QA 2026-10-31, H8). No prices, no switch.
+        if intent == "pick" and d.get("place_index") is not None and PRICE_WORDS.search(text) and sess["places"] \
+                and all(p.category == "truck_stop" and p.diesel_price is None for p in sess["places"]):
+            return await self._cheapest_without_prices(req, sess, text)
         # Current pick: the active route, or the last place chosen in this dialog.
         last = req.active_place or (sess["places"][0] if sess["places"] else None)
         current = last.id if last else None
