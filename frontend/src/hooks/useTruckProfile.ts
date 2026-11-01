@@ -56,13 +56,14 @@ export function parseStoredProfile(raw: unknown): Partial<TruckProfile> | null {
 }
 
 let loading: Promise<void> | null = null;
+let savedSinceLoad = false; // a save while the disk read is in flight wins over what the read returns
 
 async function load() {
   if (loaded) return;
   loaded = true;
   const raw = await storage.getItem<Record<string, unknown> | string | null>(KEY, null);
   const parsed = parseStoredProfile(raw);
-  if (parsed) {
+  if (parsed && !savedSinceLoad) {
     current = { ...DEFAULT_TRUCK, ...parsed };
     listeners.forEach((l) => l(current));
   }
@@ -91,7 +92,8 @@ export const takeTruckReroute = () => {
 
 
 export async function saveTruckProfile(t: TruckProfile) {
-  loaded = true; // a save is newer than anything on disk; a late load must not overwrite it
+  loaded = true; // a save is newer than anything on disk; a late or in-flight load must not overwrite it
+  savedSinceLoad = true;
   if (!loading) loading = Promise.resolve();
   current = t;
   listeners.forEach((l) => l(t));
@@ -197,7 +199,7 @@ export function useTruckProfile() {
   const [truck, setTruck] = useState<TruckProfile>(current);
   useEffect(() => {
     listeners.add(setTruck);
-    load();
+    ensureTruckProfile(); // the same single read the requests await, whichever effect runs first
     return () => {
       listeners.delete(setTruck);
     };
