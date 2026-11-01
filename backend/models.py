@@ -1,6 +1,6 @@
 from typing import List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # Searchable categories. The first three are the core; the rest are gated by CATEGORIES_EXTRA (see agent).
 Category = Literal["truck_stop", "hotel", "rest_area", "walmart", "cat_scale", "truck_wash", "weigh_station"]
@@ -285,6 +285,22 @@ class RerouteRequest(BaseModel):
     place: Place  # the active destination (unchanged)
     handle: Optional[str] = Field(None, max_length=8192)  # RouteInfo.handle of the route being followed
     heading: Optional[int] = Field(None, ge=0, le=359)  # course over ground, so HERE doesn't send a U-turn
+
+    @field_validator("heading", mode="before")
+    @classmethod
+    def _whole_degrees(cls, v):
+        """The phone reports a course like 271.4 (and 360.0 or -1 for "unknown"); HERE wants 0..359. A
+        fractional heading made every reroute a 422 and the app fell back to planning from scratch
+        (QA 2026-10-31, H14)."""
+        if v is None or isinstance(v, bool):
+            return v
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return v
+        if f != f or f < 0 or f > 360:  # NaN, "unknown", or nonsense: a reroute never fails over a heading
+            return None
+        return int(round(f)) % 360
     section_index: int = Field(0, ge=0)  # HERE section the driver was on (0 without via stops)
     traveled_m: float = Field(0.0, ge=0)  # metres driven along that section
     truck_profile: TruckProfile = Field(default_factory=TruckProfile)
