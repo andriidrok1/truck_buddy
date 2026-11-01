@@ -1,6 +1,6 @@
 import { authHeader, requestCode, setToken } from "./auth";
 import { eldHeader } from "./eld";
-import { getTruckProfile } from "./hooks/useTruckProfile";
+import { ensureTruckProfile } from "./hooks/useTruckProfile";
 import { isNetworkError, offlineHint } from "./net/offlineHint";
 import { uploadForm } from "./utils/upload";
 import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, Nudge, NudgeRequest, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
@@ -158,10 +158,10 @@ export const api = {
   clearMemory: () => request<{ deleted: number }>(`/memory`, { method: "DELETE" }),
   places: (category: Category, at: LatLng) =>
     request<PlacesResponse>(`/places?category=${category}&lat=${at.lat}&lng=${at.lng}`),
-  route: (from: LatLng, place: Place, skipParking = false) =>
+  route: async (from: LatLng, place: Place, skipParking = false) =>
     request<RouteResult>(`/route`, {
       method: "POST",
-      body: JSON.stringify({ lat: from.lat, lng: from.lng, place, skip_parking: skipParking, truck_profile: getTruckProfile() }),
+      body: JSON.stringify({ lat: from.lat, lng: from.lng, place, skip_parking: skipParking, truck_profile: await ensureTruckProfile() }),
     }),
   /**
    * Off-route reroute: the engine resumes the server-side plan (`handle`, section, metres into it)
@@ -169,11 +169,11 @@ export const api = {
    * 503 = routing down, 422 = outside the US; the caller falls back to /route on any failure.
    * 15 s: longer than that and the driver has long passed the next turn anyway.
    */
-  reroute: (body: RerouteBody) =>
+  reroute: async (body: RerouteBody) =>
     request<RouteResult>(`/reroute`, {
       method: "POST",
       timeoutMs: 15000,
-      body: JSON.stringify({ ...body, truck_profile: getTruckProfile() }),
+      body: JSON.stringify({ ...body, truck_profile: await ensureTruckProfile() }),
     }),
   parking: (place: Place, approach?: Approach | null) =>
     request<ParkingCheck>(`/parking`, { method: "POST", body: JSON.stringify({ place, approach }), timeoutMs: 60000 }),
@@ -183,12 +183,12 @@ export const api = {
       `/parking/answer`,
       { method: "POST", body: JSON.stringify({ place, wait_s: waitS }), timeoutMs: waitS * 1000 + 30000 },
     ),
-  agent: (text: string, at: LatLng) =>
+  agent: async (text: string, at: LatLng) =>
     request<AgentResponse>(`/agent`, {
       method: "POST",
       timeoutMs: 65000,
       headers: eldHeader(), // Motive key: the copilot reads hours of service
-      body: JSON.stringify({ text, lat: at.lat, lng: at.lng, truck_profile: getTruckProfile() }),
+      body: JSON.stringify({ text, lat: at.lat, lng: at.lng, truck_profile: await ensureTruckProfile() }),
     }),
   speak: (text: string) => request<{ audio_url: string }>(`/speak`, { method: "POST", body: JSON.stringify({ text }) }),
   /** Pre-fetch nearby places (+ parking checks) so the next voice turn hits warm caches. */
@@ -218,7 +218,7 @@ export const api = {
     }
   },
   /** Voice turn step 2: text -> action + spoken reply. */
-  agentSpeak: (
+  agentSpeak: async (
     text: string,
     at: LatLng,
     active?: ActiveRoute | null,
@@ -242,7 +242,7 @@ export const api = {
         lng: at.lng,
         heading,
         active_speed_limit_mph: activeSpeedLimitMph,
-        truck_profile: getTruckProfile(),
+        truck_profile: await ensureTruckProfile(),
         session_id: sessionId,
         active_place: active?.place,
         active_distance_mi: active?.route.distance_mi,
@@ -257,13 +257,13 @@ export const api = {
    * "Anything to say?" while driving (every few minutes): break and parking nudges, spoken as
    * ambient lines. The backend keeps an offer pending for the next turn of the same session.
    */
-  nudges: (body: NudgeRequest, signal?: AbortSignal) =>
+  nudges: async (body: NudgeRequest, signal?: AbortSignal) =>
     request<{ nudges: Nudge[] }>(`/nudges`, {
       method: "POST",
       signal,
       timeoutMs: 20000,
       headers: eldHeader(), // Motive key: hours of service decide when a break is due
-      body: JSON.stringify({ ...body, truck_profile: getTruckProfile() }),
+      body: JSON.stringify({ ...body, truck_profile: await ensureTruckProfile() }),
     }),
   /** Breakdown research result (long-poll: waits until the research is done). */
   breakdownResult: (id: string, signal?: AbortSignal) =>

@@ -69,6 +69,9 @@ export type RouteInfo = {
   source: string;
   notices?: string[];
   truck_aware?: boolean;
+  /** The router found no route that meets the truck's restrictions and returned this one anyway:
+   *  "height" | "weight" | "length" | "width" | "blocked" | "other"; "legal" = over the state's legal maximum. */
+  restricted?: string | null;
   traffic?: { level: "slow" | "jam"; points: [number, number][] }[];
   maneuvers?: Maneuver[];
   approach?: Approach | null;

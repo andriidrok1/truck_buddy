@@ -11,6 +11,7 @@ import { KeyboardProvider } from "@/src/keyboard";
 import { useAuthState } from "@/src/auth";
 import { loadThemePref, useTheme } from "@/src/theme";
 import { ConsentGate } from "@/src/components/ConsentGate";
+import { ensureTruckProfile } from "@/src/hooks/useTruckProfile";
 import { DeviceGate } from "@/src/components/DeviceGate";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { useConsent } from "@/src/consent";
@@ -33,6 +34,11 @@ export default function RootLayout() {
   // The Motive key is read alongside the auth token so the first copilot request already carries it.
   useEffect(() => {
     loadEldToken();
+  }, []);
+  // The truck profile too: every request awaits it, but reading it here means it is in before the map
+  // screen even mounts, so nothing is ever planned for the 13'6" default on a taller rig.
+  useEffect(() => {
+    ensureTruckProfile();
   }, []);
   // Pre-load the icon font (prevents blank icons in Expo Go) and app fonts.
   const [loaded, error] = useFonts({
