@@ -30,7 +30,8 @@ MAX_SAMPLES = 30  # a long route is sampled more coarsely so it stays within thi
 CONCURRENCY = 4
 TIMEOUT_S = 6
 ALERT_TTL_S = 600
-FEED_TTL_S = 600  # the all-US active-alert feed (one call for every route and driver)
+FEED_TTL_S = 180  # the all-US active-alert feed (one call for every route and driver); a flash flood warning
+# issued five minutes ago must reach the next route, and the refresh runs in the background anyway
 FEED_STALE_MAX_S = 3 * FEED_TTL_S  # past this a stale feed is not served; the route falls back to point lookups
 ZONE_CONCURRENCY = 8  # zone polygons are small static files; NWS serves them fast
 ZONE_CACHE_MAX = 4000
