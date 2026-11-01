@@ -44,6 +44,29 @@ def test_violated_height_names_the_limit_and_the_truck():
     assert info.truck_aware
 
 
+def test_truck_height_is_said_from_inches_not_a_rounded_float():
+    from services.routing import _inches_text, _ft_in
+    assert _inches_text(127) == "10 ft 7 in" and _inches_text(162) == "13 ft 6 in" and _inches_text(168) == "14 ft"
+    assert _ft_in(127 * 2.54) == "10 ft 7 in"  # 322.58 cm: a float error must not lose an inch
+    assert _ft_in(422) == "13 ft 10 in"
+
+
+def test_a_notice_with_two_details_names_both():
+    both = copy.deepcopy(VIOLATED_HEIGHT)
+    both["details"].append({"type": "restriction", "cause": "weight", "maxWeight": 20000})
+    info = _here_parse(_with_notices(both), TALL)
+    assert info.restricted == "height" and len(info.notices) == 2 and "44,092 lb" in info.notices[1]
+
+
+def test_a_restricted_route_still_speaks_its_closure():
+    from models import Incident
+    info = _here_parse(_with_notices(VIOLATED_HEIGHT), TALL)
+    info.incidents = [Incident(type="roadClosure", closed=True, description="I-80 closed at Donner Summit", index=1)]
+    out = agent._route_reply(PILOT, info, 0)
+    assert "goes under a 13 ft 10 in clearance" in out and out.endswith(
+        "Heads up, there's a road closure on this route: I-80 closed at Donner Summit.")
+
+
 def test_violated_weight_and_blocked_road():
     info = _here_parse(_with_notices(VIOLATED_WEIGHT), TruckProfile(weight_lb=80000))
     assert info.restricted == "weight"

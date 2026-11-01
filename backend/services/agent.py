@@ -363,12 +363,14 @@ def _route_warning(route: RouteInfo) -> str:
     """One spoken heads-up for a new route. A route that breaks the truck's restrictions (the router found
     no compliant one) comes first and in full, with the limit and the truck's own number; then a closure;
     then a router notice; nothing when there's none of those."""
+    closed = next((i for i in route.incidents if i.closed), None)
+    closure = CLOSURE.format(description=closed.description) if closed else ""
     if route.restricted and route.notices:
         line = route.notices[0]
-        return (LEGAL_SPEECH if route.restricted == "legal" else RESTRICTED_SPEECH).format(line=line)
-    closed = next((i for i in route.incidents if i.closed), None)
-    if closed:
-        return CLOSURE.format(description=closed.description)
+        said = (LEGAL_SPEECH if route.restricted == "legal" else RESTRICTED_SPEECH).format(line=line)
+        return f"{said} {closure}" if closure else said  # a closure on top of a restriction is still said
+    if closure:
+        return closure
     return _notice(route.notices[0]) if route.notices else ""
 
 
