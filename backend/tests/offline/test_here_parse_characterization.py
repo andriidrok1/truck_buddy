@@ -69,7 +69,9 @@ def test_here_params_unchanged(monkeypatch):
     assert p["transportMode"] == "truck" and p["origin"] == "38.5,-121.4" and p["destination"] == "39.5,-119.8"
     assert p["return"] == "polyline,summary,actions,instructions" and p["spans"] == "dynamicSpeedInfo"
     assert p["units"] == "imperial" and p["lang"] == "en-US"
-    assert p["vehicle[height]"] == "411" and p["vehicle[length]"] == "2225" and p["vehicle[grossWeight]"] == "36288"
+    # Rounded up: 162 in = 411.48 cm -> 412; 73 ft = 2225.04 cm -> 2226; 80,000 lb = 36,287.4 kg -> 36288.
+    assert p["vehicle[height]"] == "412" and p["vehicle[length]"] == "2226" and p["vehicle[grossWeight]"] == "36288"
+    assert p["vehicle[type]"] == "tractor" and p["vehicle[trailerCount]"] == "1"
     assert p["vehicle[shippedHazardousGoods]"] == routing.HERE_HAZMAT
     assert p["avoid[features]"] == "tollRoad"
     assert "apiKey" not in p  # the key is appended at call time, never part of the pure params
