@@ -155,7 +155,7 @@ def test_the_end_time_is_said_once(agent_sandbox, fake_http, monkeypatch):
     assert "should clear by" not in res.reply
     # Several alerts (no single end in the warning line): the clearing time is still said once, in the detour line.
     fog = _alert("Dense Fog Advisory", 1200, ends=ends, area="Pinal, AZ")
-    monkeypatch.setattr(weather, "alerts_along", _by_geometry([flood, fog], [flood], [flood]))
+    monkeypatch.setattr(weather, "alerts_along", _by_geometry([flood, fog], [flood, fog], [flood, fog]))
     res = run(agent_sandbox.provider().handle(AgentRequest(text="take me to Reno", session_id="wt2", **SAC), None))
     assert "more weather alert" in res.reply and "should clear by" in res.reply and "in effect till" not in res.reply
 
