@@ -366,11 +366,14 @@ def _alt_reply(route: RouteInfo, current: Optional[RouteInfo] = None) -> str:
         if abs(d) >= 5:
             diff = f", about {_minutes_said(abs(d))} {'longer' if d > 0 else 'faster'}"
         # The weather is why most drivers ask: say when the other way misses it, or runs into it. Only
-        # a completed lookup counts as clear; an unknown road gets no claim either way.
+        # a completed lookup counts as clear; an unknown road gets no claim of being clear. Weather the new
+        # road is known to have is said whatever we know about the old one (QA review 2026-11-01).
+        on_current = {a.id for a in current.weather}
+        new_weather = [a for a in route.weather if a.id not in on_current]
         if current.weather and route.weather_known and not route.weather:
             diff += f", and it misses the {current.weather[0].event}"
-        elif route.weather and current.weather_known and not current.weather:
-            diff += f", but it runs into a {route.weather[0].event}"
+        elif new_weather:
+            diff += f", but it runs into a {new_weather[0].event}"
     return ALT_REPLY.format(via=via, time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi), tolls=tolls + diff)
 _turns: dict = {"n": 0}  # rotation when there's no dialog session
 
@@ -389,12 +392,14 @@ def _route_warning(route: RouteInfo) -> str:
     """One spoken heads-up for a new route. A route that breaks the truck's restrictions (the router found
     no compliant one) comes first and in full, with the limit and the truck's own number; then a closure;
     then a router notice; nothing when there's none of those."""
+    closed = next((i for i in route.incidents if i.closed), None)
+    closure = CLOSURE.format(description=closed.description) if closed else ""
     if route.restricted and route.notices:
         line = route.notices[0]
-        return (LEGAL_SPEECH if route.restricted == "legal" else RESTRICTED_SPEECH).format(line=line)
-    closed = next((i for i in route.incidents if i.closed), None)
-    if closed:
-        return CLOSURE.format(description=closed.description)
+        said = (LEGAL_SPEECH if route.restricted == "legal" else RESTRICTED_SPEECH).format(line=line)
+        return f"{said} {closure}" if closure else said  # a closure on top of a restriction is still said
+    if closure:
+        return closure
     return _notice(route.notices[0]) if route.notices else ""
 
 
@@ -885,7 +890,8 @@ class LlmAgentProvider:
         best = weather.better_route(route) if alts_known else None
         cached = (sess or {}).get("alternatives")
         if cached and cached.get("current") is not None:
-            cached["current"].weather = list(route.weather)  # the copy was taken before the lookup
+            cur = cached["current"]  # the copy was taken before the lookup
+            cur.weather, cur.weather_known, cur.weather_later = list(route.weather), route.weather_known, list(route.weather_later)
         if best is not None and cached and any(r is best for r in cached.get("routes", [])):
             cached["routes"] = [best] + [r for r in cached["routes"] if r is not best]
             logger.info("route weather: %s misses it, offered first", " and ".join(best.labels) or "alternative")

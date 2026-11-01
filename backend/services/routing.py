@@ -389,7 +389,11 @@ LEGAL_LINE = "Your truck is over the legal {what} limit in {where} ({limit}); th
 
 
 def _ft_in(cm: float) -> str:
-    inches = int(cm / 2.54)  # the limit rounded down: the conservative side for a clearance
+    inches = int(cm / 2.54 + 1e-6)  # the limit rounded down: the conservative side for a clearance
+    return _inches_text(inches)
+
+
+def _inches_text(inches: int) -> str:
     return f"{inches // 12} ft {inches % 12} in" if inches % 12 else f"{inches // 12} ft"
 
 
@@ -426,17 +430,18 @@ def _notices(raw: List[dict], t: TruckProfile) -> tuple[List[str], Optional[str]
         if code in _NOTICE_IGNORE or not code:
             continue
         if code in ("violatedvehiclerestriction", "violatedtruckroadtype", "truckroadtype"):
-            kind, limit = _restriction(details[0]) if details else ("other", "")
-            cause = str((details[0].get("cause") if details else "") or "").rstrip(".")
-            if kind == "other" and code != "violatedvehiclerestriction":
-                msg = "Part of this route uses roads not approved for trucks."
-            else:
-                truck = {"height": _ft_in(t.height_in * 2.54), "weight": f"{t.weight_lb:,} lb",
-                         "length": f"{t.total_length_ft} ft"}.get(kind, "")
-                msg = RESTRICTED_LINE[kind].format(limit=limit, truck=truck, cause=cause or "see the signs")
-            restricted = restricted if restricted and restricted != "legal" else kind
-            if msg not in physical:
-                physical.append(msg)
+            for d in details or [{}]:  # every detail: a notice can carry a height and a weight at once
+                kind, limit = _restriction(d)
+                cause = str(d.get("cause") or "").rstrip(".")
+                if kind == "other" and code != "violatedvehiclerestriction":
+                    msg = "Part of this route uses roads not approved for trucks."
+                else:
+                    truck = {"height": _inches_text(t.height_in), "weight": f"{t.weight_lb:,} lb",
+                             "length": f"{t.total_length_ft} ft"}.get(kind, "")
+                    msg = RESTRICTED_LINE[kind].format(limit=limit, truck=truck, cause=cause or "see the signs")
+                restricted = restricted if restricted and restricted != "legal" else kind
+                if msg not in physical:
+                    physical.append(msg)
         elif code == "violatedblockedroad":
             restricted = restricted if restricted and restricted != "legal" else "blocked"
             if RESTRICTED_LINE["blocked"] not in physical:

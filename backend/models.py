@@ -96,6 +96,7 @@ class WeatherAlert(BaseModel):
     index: int
     ends: Optional[str] = None  # RFC 3339
     onset: Optional[str] = None  # RFC 3339; when it starts (NWS onset, else effective)
+    index_end: Optional[int] = None  # geometry index of the last vertex inside the alert (None = unknown: treat as the route end)
 
 
 class ChainControl(BaseModel):

@@ -13,7 +13,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -70,6 +70,8 @@ _alert_cache: dict[tuple[float, float], tuple[float, list[dict]]] = {}
 _feed_cache: dict[str, object] = {}  # {"at": monotonic, "alerts": [feature dict, ...]}
 _feed_refresh: Optional[asyncio.Task] = None
 _zone_cache: dict[str, Optional[list["Ring"]]] = {}  # zone URL -> rings (None: the fetch failed, retried next time)
+_zone_fail: dict[str, int] = {}  # zone URL -> failed fetches so far
+ZONE_GIVE_UP = 3
 Ring = list[tuple[float, float]]  # [(lng, lat), ...] closed or not
 _points_cache: dict[tuple[float, float], tuple[float, dict]] = {}
 _forecast_cache: dict[str, tuple[float, list[dict]]] = {}
@@ -163,13 +165,18 @@ async def alerts_along(geometry: list[list[float]], now: Optional[float] = None)
         return []
     now = time.monotonic() if now is None else now
     try:
-        found = await _alerts_along_feed(geometry, now)
+        found, complete = await _alerts_along_feed(geometry, now)
     except Exception as e:  # noqa: BLE001
         logger.info("alert feed path failed, sampling points: %s", type(e).__name__)
-        found = None
-    if found is not None:
+        found, complete = [], False
+    if complete:
         return found
-    return await _alerts_along_points(geometry, now)
+    # Some alert could not be placed (feed down, or a zone polygon missing): the point path covers it, and
+    # what the feed did place is kept.
+    by_id = {a.id: a for a in found}
+    for a in await _alerts_along_points(geometry, now):
+        by_id.setdefault(a.id, a)
+    return sorted(by_id.values(), key=lambda a: a.index)
 
 
 # ---- the feed path: all active alerts once, zone polygons once, pure geometry per route ----------
@@ -212,15 +219,25 @@ def point_in_rings(lng: float, lat: float, rings: list[Ring]) -> bool:
     return inside
 
 
-def first_index_inside(geometry: list[list[float]], rings: list[Ring]) -> int:
-    """The first route vertex ([lat, lng]) inside the rings, −1 when none; the bbox keeps it cheap."""
+def span_inside(geometry: list[list[float]], rings: list[Ring]) -> tuple[int, int]:
+    """(first, last) route vertex ([lat, lng]) inside the rings, (−1, −1) when none; the bbox keeps it cheap.
+    The last one matters as much as the first: a storm that starts while the truck is still in the zone is
+    a storm the truck meets."""
     if not rings:
-        return -1
+        return -1, -1
     x0, y0, x1, y1 = _bbox(rings)
+    first = last = -1
     for i, (lat, lng) in enumerate(geometry):
         if x0 <= lng <= x1 and y0 <= lat <= y1 and point_in_rings(lng, lat, rings):
-            return i
-    return -1
+            if first < 0:
+                first = i
+            last = i
+    return first, last
+
+
+def first_index_inside(geometry: list[list[float]], rings: list[Ring]) -> int:
+    """The first route vertex inside the rings, −1 when none."""
+    return span_inside(geometry, rings)[0]
 
 
 async def _fetch_feed() -> list[dict]:
@@ -278,7 +295,9 @@ async def _fetch_zone(url: str) -> Optional[list[Ring]]:
 
 
 async def _zones_for(alerts: list[dict]) -> bool:
-    """Make sure every zone polygon the alerts need is cached. False when one is still missing."""
+    """Make sure every zone polygon the alerts need is cached. False when one is still missing (that alert
+    can't be placed; the caller then adds the point path for cover). A zone that keeps failing is given up
+    after ZONE_GIVE_UP tries, so one dead zone file somewhere in the US doesn't degrade every route forever."""
     needed = []
     for a in alerts:
         if a.get("geometry"):
@@ -290,11 +309,18 @@ async def _zones_for(alerts: list[dict]) -> bool:
         return True
     if len(_zone_cache) + len(needed) > ZONE_CACHE_MAX:
         _zone_cache.clear()
+        _zone_fail.clear()
     sem = asyncio.Semaphore(ZONE_CONCURRENCY)
 
     async def one(url: str):
         async with sem:
-            _zone_cache[url] = await _fetch_zone(url)
+            rings = await _fetch_zone(url)
+            if rings is None:
+                _zone_fail[url] = _zone_fail.get(url, 0) + 1
+                if _zone_fail[url] >= ZONE_GIVE_UP:
+                    logger.warning("NWS zone %s failed %d times; giving up on it", url, _zone_fail[url])
+                    rings = []
+            _zone_cache[url] = rings
 
     await asyncio.gather(*(one(u) for u in needed), return_exceptions=True)
     return all(_zone_cache.get(u) is not None for u in needed)
@@ -314,29 +340,30 @@ async def warm() -> None:
     await refresh_feed()
 
 
-async def _alerts_along_feed(geometry: list[list[float]], now: float) -> Optional[list[WeatherAlert]]:
-    """Alerts whose polygon the route enters, by the first vertex inside. None: the point path should run
-    (feed unavailable, or a needed zone polygon could not be fetched)."""
+async def _alerts_along_feed(geometry: list[list[float]], now: float) -> tuple[list[WeatherAlert], bool]:
+    """Alerts whose polygon the route enters, with the first and last vertex inside, and whether every alert
+    could be placed (False: some zone polygon is missing, so the point path must cover for it)."""
     alerts = await _feed(now)
-    if not await _zones_for(alerts):
-        return None
+    complete = await _zones_for(alerts)
     seen: dict[str, WeatherAlert] = {}
     for a in alerts:
         p = a["properties"]
-        idx = first_index_inside(geometry, _alert_rings(a))
-        if idx < 0:
+        first, last = span_inside(geometry, _alert_rings(a))
+        if first < 0:
             continue
         aid = str(p.get("id") or p.get("@id") or f"{p.get('event')}|{p.get('areaDesc')}")
         if aid not in seen:
-            seen[aid] = _to_alert(p, idx)
-    return sorted(seen.values(), key=lambda a: a.index)
+            seen[aid] = _to_alert(p, first, last)
+    return sorted(seen.values(), key=lambda a: a.index), complete
 
 
-def _to_alert(p: dict, idx: int) -> WeatherAlert:
+def _to_alert(p: dict, idx: int, idx_end: Optional[int] = None) -> WeatherAlert:
+    """`ends` is the hazard's end only (NWS `expires` is the product's expiry; the next issuance carries on,
+    so it must never make an alert "over")."""
     aid = str(p.get("id") or p.get("@id") or f"{p.get('event')}|{p.get('areaDesc')}")
     return WeatherAlert(id=aid, event=str(p["event"]), severity=str(p.get("severity") or "Unknown"),
                         headline=str(p.get("headline") or p["event"])[:160], area=_area(p), index=idx,
-                        ends=p.get("ends") or p.get("expires"), onset=p.get("onset") or p.get("effective"))
+                        index_end=idx_end, ends=p.get("ends"), onset=p.get("onset") or p.get("effective"))
 
 
 # ---- the point path: an NWS call per sample point (fallback) --------------------------------------
@@ -351,15 +378,14 @@ async def _alerts_along_points(geometry: list[list[float]], now: float) -> list[
 
     results = await asyncio.gather(*(one(*s) for s in samples), return_exceptions=True)
     seen: dict[str, WeatherAlert] = {}
-    for res in results:
-        if isinstance(res, BaseException):
-            continue
+    for res in sorted((r for r in results if not isinstance(r, BaseException)), key=lambda r: r[0]):
         idx, alerts = res
         for p in alerts:
             aid = str(p.get("id") or p.get("@id") or f"{p.get('event')}|{p.get('areaDesc')}")
             if aid in seen:
+                seen[aid].index_end = idx  # the last sample point still inside
                 continue
-            seen[aid] = _to_alert(p, idx)
+            seen[aid] = _to_alert(p, idx, idx)
     return sorted(seen.values(), key=lambda a: a.index)
 
 
@@ -369,15 +395,16 @@ def speech(alerts: list[WeatherAlert], route: Optional[RouteInfo] = None, now: O
     if not alerts:
         return ""
     first = alerts[0]
-    n, s = len(alerts) - 1, "" if len(alerts) == 2 else "s"
+    distinct = len({(a.event, a.area) for a in alerts})  # five flood warnings for one county are one thing to hear
+    n, s = distinct - 1, "" if distinct == 2 else "s"
     hit = _hit_label(first, route, now) if route is not None else ""
     if not hit:
-        if len(alerts) == 1:
-            till = _till_label(first, now) if route is not None else ""  # in it already: still say when it ends
+        if distinct == 1:
+            till = _till_label(latest_end(alerts), now) if route is not None else ""  # in it already: still say when it ends
             return WARNING_ONE.format(event=first.event, area=first.area)[:-1] + till + "."
         return WARNING_MANY.format(event=first.event, n=n, s=s)
-    if len(alerts) == 1:
-        return WARNING_ONE_TIMED.format(event=first.event, area=first.area, hit=hit, till=_till_label(first, now))
+    if distinct == 1:
+        return WARNING_ONE_TIMED.format(event=first.event, area=first.area, hit=hit, till=_till_label(latest_end(alerts), now))
     return WARNING_MANY_TIMED.format(event=first.event, area=first.area, hit=hit, n=n, s=s)
 
 
@@ -441,6 +468,15 @@ def _till_label(alert: WeatherAlert, now: Optional[datetime]) -> str:
 ONSET_SLACK = timedelta(hours=3)  # an alert starting more than this after the ETA is for someone else
 
 
+def latest_end(alerts: list[WeatherAlert]) -> WeatherAlert:
+    """The alert that ends last (an alert with no end counts as the latest): "it should clear by" must be
+    the end of the whole thing, not of the first warning on the list (QA 2026-11-01, Phoenix-Flagstaff)."""
+    def key(a: WeatherAlert):
+        end = _iso(a.ends) if a.ends else None
+        return (1, datetime.max.replace(tzinfo=timezone.utc)) if end is None or end.tzinfo is None else (0, end)
+    return max(alerts, key=key)
+
+
 def on_arrival(alerts: list[WeatherAlert], route: RouteInfo, now: Optional[datetime] = None) -> list[WeatherAlert]:
     """Alerts in effect when the truck gets to them. A warning that ends at 3 pm is nothing to a truck arriving
     at 5, and NWS lists tomorrow evening's storm as active today: one starting more than ONSET_SLACK after the
@@ -456,14 +492,22 @@ def starting_later(alerts: list[WeatherAlert], route: RouteInfo, now: Optional[d
     return [a for a in alerts if _timing(a, route, now) == "later"]
 
 
+def exit_eta(route: RouteInfo, a: WeatherAlert, now: datetime) -> datetime:
+    """When the truck leaves the alert's area: the ETA at its last vertex inside, or at the route's end when
+    that isn't known (the conservative side)."""
+    end_index = a.index_end if a.index_end is not None else len(route.geometry) - 1
+    return eta_at(route, max(end_index, a.index), now)
+
+
 def _timing(a: WeatherAlert, route: RouteInfo, now: datetime) -> str:
-    """"over" (ends before the truck arrives), "later" (starts well after), "now" (in effect on arrival)."""
-    eta = eta_at(route, a.index, now)
+    """"over" (ends before the truck even enters the area), "later" (starts more than ONSET_SLACK after the
+    truck has left it), "now" (in effect somewhere while the truck is inside)."""
+    entry, exit_ = eta_at(route, a.index, now), exit_eta(route, a, now)
     end = _iso(a.ends) if a.ends else None
-    if end is not None and end.tzinfo is not None and eta >= end:
+    if end is not None and end.tzinfo is not None and entry >= end:
         return "over"
     start = _iso(a.onset) if a.onset else None
-    if start is not None and start.tzinfo is not None and start - eta > ONSET_SLACK:
+    if start is not None and start.tzinfo is not None and start - exit_ > ONSET_SLACK:
         return "later"
     return "now"
 
@@ -476,9 +520,9 @@ def later_speech(route: RouteInfo, now: Optional[datetime] = None) -> str:
     now = _now(now)
     a = route.weather_later[0]
     start = _iso(a.onset).astimezone(_alert_tz(a, now))  # type: ignore[union-attr] - "later" implies an onset
-    eta = eta_at(route, a.index, now).astimezone(_alert_tz(a, now))
-    eta = eta.replace(minute=(eta.minute // 30) * 30, second=0, microsecond=0)
-    return LATER.format(event=a.event, area=a.area, onset=_clock(start, now), hit=_clock(eta, now))
+    out = exit_eta(route, a, now).astimezone(_alert_tz(a, now))  # "through there": when the truck has left the area
+    out = out.replace(minute=(out.minute // 30) * 30, second=0, microsecond=0)
+    return LATER.format(event=a.event, area=a.area, onset=_clock(start, now), hit=_clock(out, now))
 
 
 def score(alerts: list[WeatherAlert]) -> int:
@@ -514,8 +558,8 @@ def detour_speech(route: RouteInfo, now: Optional[datetime] = None, alts_known: 
         return ""
     alt = better_route(route)
     if alt is None:
-        first = route.weather[0]
-        end = _iso(first.ends) if first.ends else None
+        last = latest_end(route.weather)
+        end = _iso(last.ends) if last.ends else None
         if end is not None and end.tzinfo is not None:
             return NO_DETOUR_CLEARS.format(till=_clock(end, _now(now)))
         return NO_DETOUR
@@ -540,7 +584,7 @@ async def for_route(route: RouteInfo, budget_s: Optional[float] = None, alt_budg
     route.weather_later = []
     main = asyncio.ensure_future(alerts_along(route.geometry, mono))
     side = asyncio.ensure_future(asyncio.gather(*(alerts_along(a.geometry, mono) for a in alts), return_exceptions=True)) \
-        if alts else None
+        if alts and (alt_budget_s is None or alt_budget_s > 0) else None  # 0 = don't look at the alternatives
     try:
         found = await (asyncio.wait_for(main, budget_s) if budget_s else main)
         route.weather, route.weather_later = on_arrival(found, route, now), starting_later(found, route, now)

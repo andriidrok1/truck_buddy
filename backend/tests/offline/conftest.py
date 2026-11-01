@@ -125,6 +125,7 @@ def _clear_weather_caches(weather) -> None:
     weather._feed_cache.clear()
     weather._zone_cache.clear()
     weather._alert_cache.clear()
+    weather._zone_fail.clear()
     weather._feed_refresh = None
 
 
