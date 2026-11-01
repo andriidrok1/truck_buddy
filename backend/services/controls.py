@@ -165,7 +165,7 @@ def apply_actions(raw: Any, req: AgentRequest) -> Tuple[List[AppAction], str, bo
         # replies are cut to the first sentence, and the driver heard just "Done." (QA 2026-10-31, H15).
         plain = [s.rstrip(".") for s in said if not re.search(r"[.?!]\s", s) and s[-1] not in "?!"]
         if len(plain) == len(said):
-            reply = "Done, " + ", ".join(f"{p[0].lower()}{p[1:]}" for p in plain) + "."
+            reply = "Done, " + ", ".join(p if re.match(r"I(?:'|\b)", p) else f"{p[0].lower()}{p[1:]}" for p in plain) + "."
         else:
             reply = "Done. " + reply
     return out, reply, end

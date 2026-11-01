@@ -32,3 +32,9 @@ def test_a_rejected_value_and_a_change_still_make_one_sentence():
 def test_a_question_back_keeps_the_sentences_apart():
     _, say, _ = apply_actions([{"type": "set_weight_lb", "value": 80000}, {"type": "set_nudges"}], _req(active=False))
     assert say == "Done. Weight is now 80,000 pounds. Suggestions on or off?"
+
+
+def test_i_stays_capital_in_the_joined_sentence():
+    """"remember I like Pilot and I hate tolls" came back as "…favorites, i'll avoid toll roads." (H19)."""
+    _, say, _ = apply_actions([{"type": "add_favorite_chain", "value": "Pilot"}, {"type": "avoid_tolls", "value": True}], _req(active=False))
+    assert say == "Done, added Pilot to your favorites, I'll avoid toll roads."
