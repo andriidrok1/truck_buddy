@@ -601,7 +601,7 @@ export default function MapScreen() {
       }
       g.resetOffRoute();
     } catch {
-      showToast("Couldn't reroute. Follow the map for now.");
+      showToast("Couldn't reroute. Follow the map for now and watch the truck signs.");
     } finally {
       rerouting.current = false;
     }
