@@ -43,3 +43,19 @@ export function fitCamera(points: readonly LatLng[], w: number, h: number, margi
   const zoom = Math.max(minZoom, Math.min(maxZoom, zw, zh));
   return { center, zoom: Math.round(zoom * 100) / 100 };
 }
+
+/**
+ * Did the map end up on `target`? `actual` is what the native map reports after the animation
+ * (null when it could not be read: then there is nothing to correct). Android drops a camera
+ * animation now and then, mostly when the map padding changes in the same frames (the sheet
+ * growing for a new route card): the camera then stays wherever it was, which looks like the
+ * route never got fitted (QA 2026-10-31, Н7). Off by more than half a zoom level or by a tenth of
+ * the shorter side of the view counts as missed.
+ */
+export function cameraSettled(target: Camera, actual: { center: LatLng; zoom?: number | null } | null, w: number, h: number): boolean {
+  if (!actual) return true;
+  if (actual.zoom != null && Math.abs(actual.zoom - target.zoom) > 0.5) return false;
+  const a = project(target.center, target.zoom);
+  const b = project(actual.center, target.zoom);
+  return Math.hypot(a.x - b.x, a.y - b.y) <= 0.1 * Math.min(w, h);
+}

@@ -31,13 +31,18 @@ export function useRouteAdvisories(
     [route, guidance.matchedIndex, guidance.cum],
   );
 
-  // Spoken-once set and the speed watch live and die with the route.
+  // The spoken-once set lives and dies with the route (a reroute brings new advisories). The speed watch
+  // lives with the destination: a reroute while speeding re-armed it and the driver was told twice in
+  // 15 s (QA 2026-10-31, Н16).
   const spoken = useRef(new Set<string>());
   const watch = useRef(createSpeedWatch());
   useEffect(() => {
     spoken.current.clear();
-    watch.current.reset();
   }, [route]);
+  const destinationId = active?.place.id ?? null;
+  useEffect(() => {
+    watch.current.reset();
+  }, [destinationId]);
 
   const sayRef = useRef(say);
   useEffect(() => {

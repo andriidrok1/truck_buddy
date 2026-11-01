@@ -437,21 +437,26 @@ export function CopilotSheet(props: Props) {
               </View>
             )}
             {offlineMap && <OfflineMapButton state={offlineMap} onPress={onDownloadMap} />}
-            <PressableScale
-              testID="go-button"
-              accessibilityLabel="Go"
-              onPress={onGo}
-              haptic="heavy"
-              style={[styles.goBtn, { backgroundColor: colors.info }]}
-            >
-              <Icon name="navigation-variant" size={22} color={colors.onInfo} />
-              <Text style={[styles.goText, { color: colors.onInfo }]}>Go</Text>
-            </PressableScale>
           </View>
         )}
       </View>
       </Animated.ScrollView>
       </GestureDetector>
+
+      {/* Go sits under the scrolling card, never inside it: with three stops, or at a 130 % font, the card
+          outgrew the sheet and the main button was half under the bottom bar (QA 2026-10-31, Н9, Н25). */}
+      {navigating && active && !driving && (
+        <PressableScale
+          testID="go-button"
+          accessibilityLabel="Go"
+          onPress={onGo}
+          haptic="heavy"
+          style={[styles.goBtn, { backgroundColor: colors.info }]}
+        >
+          <Icon name="navigation-variant" size={22} color={colors.onInfo} />
+          <Text style={[styles.goText, { color: colors.onInfo }]}>Go</Text>
+        </PressableScale>
+      )}
 
       {typing && canType ? (
         <View style={styles.inputRow}>
