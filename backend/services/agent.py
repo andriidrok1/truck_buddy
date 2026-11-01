@@ -79,6 +79,8 @@ CORE_CATEGORIES = ("truck_stop", "hotel", "rest_area")
 EXTRA_CATEGORIES = ("walmart", "cat_scale", "truck_wash", "weigh_station")
 # Satellite parking checks only where a truck would park; a scale or a wash is not a place to spend the night.
 PARKING_CATEGORIES = {"truck_stop", "hotel", "rest_area", "walmart", "destination"}
+PARK_WORDS = re.compile(r"\b(park|parking|overnight|shut ?down|lay ?over|sleep in (?:the|my) (?:truck|cab|sleeper))\b", re.I)
+BED_WORDS = re.compile(r"\b(hotel|motel|room|bed|shower|inn|lodge)\b", re.I)
 CATEGORY_OFF = "I can't look up {what}s yet. Ask me for a truck stop, a hotel or a rest area."
 
 
@@ -1323,6 +1325,11 @@ class LlmAgentProvider:
         # Parking question about a town destination answered as chat: give the town line, never a guess.
         if intent == "chat" and req.active_place and is_town(req.active_place) and re.search(r"\bpark", text, re.I):
             intent = "parking"
+        if intent == "find" and d.get("category") == "hotel" and PARK_WORDS.search(text) and not BED_WORDS.search(text):
+            # "where can I park tonight" is a truck stop, not a hotel: the model drifts there now and then
+            # (stand QA 2026-11-01), and a hotel lot is the wrong answer for a 53-footer.
+            logger.info("agent find hotel for %r -> truck_stop", text)
+            d = {**d, "category": "truck_stop"}
         # "Any chain controls ahead?" is a data question, not small talk: the model answered "there may be"
         # on its own (QA 2026-10-31, H17). Caltrans has the answer for the route the driver is on.
         if intent in ("chat", "unclear", "weather") and CHAIN_QUESTION.search(text) and not re.search(r"\b(on board|carry|have chains|got chains)\b", text, re.I):
