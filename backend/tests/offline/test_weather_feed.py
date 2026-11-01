@@ -76,6 +76,29 @@ def test_feed_and_zones_place_the_alerts_without_point_calls(fake_http):
     assert run(weather.alerts_along(g[:200])) == [] and len(fake_http.calls_to("api.weather.gov")) == 2
 
 
+def test_a_missing_zone_keeps_what_the_feed_placed_and_adds_the_point_path(fake_http):
+    """One dead zone file somewhere must not throw away the alerts the feed could place (review 2026-11-01)."""
+    def respond(request: httpx.Request) -> httpx.Response:
+        if _is_feed(request):
+            return httpx.Response(200, json={"features": [
+                _feature("Winter Storm Warning", zones=[ZONE]),  # zone unavailable
+                _feature("High Wind Warning", geometry=_box(39.0, 39.3), areaDesc="Foothills")]}, request=request)
+        return httpx.Response(200, json={"features": []}, request=request)  # the point path finds nothing more
+
+    fake_http.add("api.weather.gov", "/alerts/active", fn=respond)
+    fake_http.raise_for("api.weather.gov", "/zones/forecast/CAZ069", httpx.ReadTimeout("slow"))
+    alerts = run(weather.alerts_along(_geometry()))
+    assert [a.event for a in alerts] == ["High Wind Warning"]  # placed by the feed, kept
+    assert any("point" in dict(c.url.params) for c in fake_http.calls_to("api.weather.gov", "/alerts/active"))
+    # After ZONE_GIVE_UP failures the zone is written off as empty and stops forcing the point path.
+    for _ in range(weather.ZONE_GIVE_UP):
+        run(weather.alerts_along(_geometry()))
+    assert weather._zone_cache[ZONE] == []
+    before = len(fake_http.calls)
+    run(weather.alerts_along(_geometry()[:100]))
+    assert len(fake_http.calls) == before  # no point lookups any more
+
+
 def test_a_missing_zone_polygon_falls_back_to_point_lookups(fake_http):
     def respond(request: httpx.Request) -> httpx.Response:
         if _is_feed(request):
@@ -89,7 +112,7 @@ def test_a_missing_zone_polygon_falls_back_to_point_lookups(fake_http):
     alerts = run(weather.alerts_along(_geometry()))
     assert [a.event for a in alerts] == ["Winter Storm Warning"] and alerts[0].index > 0
     assert any("point" in dict(c.url.params) for c in fake_http.calls_to("api.weather.gov", "/alerts/active"))
-    assert weather._zone_cache[ZONE] is None  # retried on the next lookup
+    assert weather._zone_cache[ZONE] is None and weather._zone_fail[ZONE] == 1  # retried on the next lookup
 
 
 def test_feed_down_falls_back_to_point_lookups(fake_http):

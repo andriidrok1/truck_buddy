@@ -152,8 +152,12 @@ def test_speech_lines():
     b = WeatherAlert(id="2", event="Winter Storm Warning", severity="Severe", headline="h", area="Sierra", index=9)
     assert weather.speech([]) == ""
     assert weather.speech([a]) == "Weather warning: High Wind Warning ahead near Donner Pass."
+    c = WeatherAlert(id="3", event="Dense Fog Advisory", severity="Moderate", headline="h", area="Valley", index=12)
     assert weather.speech([a, b]) == "High Wind Warning and 1 more weather alert along the route."
-    assert weather.speech([a, b, b]) == "High Wind Warning and 2 more weather alerts along the route."
+    assert weather.speech([a, b, c]) == "High Wind Warning and 2 more weather alerts along the route."
+    # Two warnings of one kind for one area (NWS issues flood warnings per wash) are one thing to hear.
+    assert weather.speech([a, b, b]) == "High Wind Warning and 1 more weather alert along the route."
+    assert weather.speech([b, b]) == "Weather warning: Winter Storm Warning ahead near Sierra."
 
 
 # ---- forecast ----
@@ -294,7 +298,7 @@ def test_route_endpoint_survives_nws_down(api_client, fake_http):
     fake_http.add("api.weather.gov", "/alerts/active", json={"features": [_alert("High Wind Warning")]})
     r = api_client.post("/api/route", json={**SAC, "place": RENO.model_dump(), "skip_parking": True})
     w = r.json()["route"]["weather"]
-    assert len(w) == 1 and set(w[0]) == {"id", "event", "severity", "headline", "area", "index", "ends", "onset"}
+    assert len(w) == 1 and set(w[0]) == {"id", "event", "severity", "headline", "area", "index", "ends", "onset", "index_end"}
 
 
 def test_slow_nws_is_cut_off(agent_sandbox, fake_http, monkeypatch):

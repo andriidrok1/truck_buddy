@@ -24,9 +24,9 @@ def teardown_function():
     weather._alert_cache.clear()  # the reroute test's alert must not reach the next module on this worker
 
 
-def _alert(event, index, severity="Severe", ends=None, onset=None, area="Sierra Nevada"):
+def _alert(event, index, severity="Severe", ends=None, onset=None, area="Sierra Nevada", index_end=None):
     return WeatherAlert(id=f"{event}@{index}", event=event, severity=severity, headline=event, area=area,
-                        index=index, ends=ends, onset=onset)
+                        index=index, ends=ends, onset=onset, index_end=index_end)
 
 
 def _route():
@@ -96,6 +96,49 @@ def test_alerts_over_before_arrival_are_dropped():
                   ends=(NOW + timedelta(hours=40)).isoformat())
     assert weather.on_arrival([later, soon], r, NOW) == [soon]
     assert weather.starting_later([gone, later, soon], r, NOW) == [later]
+
+
+def test_a_storm_that_starts_while_the_truck_is_still_inside_is_weather_now():
+    """Review 2026-11-01: timing by the entry vertex only dropped a storm starting before the truck left the
+    zone. Entered at index 300 (~45 min in), left at the last vertex (2 h 52 min): onset at +2 h is "now"."""
+    r = _route()
+    last = len(r.geometry) - 1
+    storm = _alert("Winter Storm Warning", 300, onset=(NOW + timedelta(hours=2)).isoformat(),
+                   ends=(NOW + timedelta(hours=30)).isoformat(), index_end=last)
+    assert weather.on_arrival([storm], r, NOW) == [storm] and weather.starting_later([storm], r, NOW) == []
+    # Unknown exit (point path, None): the route end is assumed, the conservative side.
+    storm.index_end = None
+    assert weather.on_arrival([storm], r, NOW) == [storm]
+    # Left the zone early (index_end 320, a few minutes in): a storm 5 h later is "later".
+    storm.index_end = 320
+    storm.onset = (NOW + timedelta(hours=5)).isoformat()
+    assert weather.starting_later([storm], r, NOW) == [storm]
+    r.weather_later = [storm]
+    assert weather.later_speech(r, NOW).endswith("you're through there by 1:30 pm.")  # the exit (index 320), not the entry
+
+
+def test_expires_is_not_the_end_of_the_hazard():
+    p = {"id": "x", "event": "Flood Warning", "severity": "Severe", "headline": "h", "areaDesc": "Maricopa, AZ",
+         "expires": (NOW + timedelta(hours=1)).isoformat(), "onset": NOW.isoformat()}
+    a = weather._to_alert(p, 100, 400)
+    assert a.ends is None and a.index_end == 400
+    r = _route()
+    assert weather.on_arrival([a], r, NOW) == [a]  # never "over" on the strength of an expiry
+
+
+def test_clears_by_is_the_end_of_the_last_alert_and_one_county_counts_once():
+    r = _route()
+    ca89, i580 = r.alternatives
+    ca89.weather_known = i580.weather_known = True
+    soon = _alert("Flood Warning", 300, ends=(NOW + timedelta(minutes=15)).isoformat(), area="Maricopa, AZ")
+    late = WeatherAlert(id="late", event="Flood Warning", severity="Severe", headline="h", area="Maricopa, AZ",
+                        index=320, ends=(NOW + timedelta(hours=14)).isoformat())
+    r.weather = [soon, late]
+    ca89.weather = i580.weather = [soon, late]
+    assert weather.detour_speech(r, NOW) == "No truck route around it; it should clear by tomorrow 3 am."
+    # Two warnings for the same county: "Weather warning: Flood Warning near Maricopa, AZ, ...", not "and 1 more".
+    assert "more weather alert" not in weather.speech(r.weather, r, NOW)
+    assert weather.speech(r.weather, r, NOW).endswith(", in effect till tomorrow 3 am.")
 
 
 def test_a_storm_after_the_truck_is_through_gets_a_heads_up():
@@ -207,6 +250,25 @@ def test_new_route_offers_the_way_around_and_the_other_way_takes_it(agent_sandbo
     # The next "another way" is the one that still has weather, and says so.
     res = run(prov.handle(AgentRequest(text="take the other way", session_id="wd", active_place=RENO, **SAC), None))
     assert res.route.labels == ["I-80", "I-580"] and res.reply.endswith(", but it runs into a Wind Advisory.")
+    # Back to the original (its weather and weather_known were carried onto the cached copy): the High Wind
+    # Warning is said again, since the I-580 road did not have it.
+    res = run(prov.handle(AgentRequest(text="take the other way", session_id="wd", active_place=RENO, **SAC), None))
+    assert res.route.labels == ["I-80"] and res.reply.endswith(", but it runs into a High Wind Warning.")
+
+
+def test_the_other_way_with_weather_is_said_even_when_the_first_road_was_clear(agent_sandbox, fake_http, monkeypatch):
+    """Review 2026-11-01: a clear main road and a stormy alternative said nothing about the storm."""
+    fake_http.add("router.hereapi.com", "/v8/routes", json=ROUTE)
+    wind = _alert("High Wind Warning", 600, area="Sierra Nevada")
+    monkeypatch.setattr(weather, "alerts_along", _by_geometry([], [wind], []))
+    agent_sandbox.llm.on(r"take me to reno", {"intent": "go", "query": "Reno, NV"})
+    agent_sandbox.llm.on(r"take the other way", {"intent": "alternative"})
+    agent_sandbox.geocode["reno"] = [RENO]
+    prov = agent_sandbox.provider()
+    res = run(prov.handle(AgentRequest(text="take me to Reno", session_id="wc", **SAC), None))
+    assert "Weather" not in res.reply
+    res = run(prov.handle(AgentRequest(text="take the other way", session_id="wc", active_place=RENO, **SAC), None))
+    assert res.route.labels == ["I-80", "CA-89"] and res.reply.endswith(", but it runs into a High Wind Warning.")
 
 
 def test_no_way_around_is_said_once_and_alternatives_keep_their_order(agent_sandbox, fake_http, monkeypatch):
