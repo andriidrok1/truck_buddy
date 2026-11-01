@@ -2,6 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import * as SystemUI from "expo-system-ui";
 import { useEffect, useState } from "react";
 import { LogBox, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -22,7 +23,12 @@ import { queryClient } from "@/src/query-client";
 LogBox.ignoreAllLogs(true);
 
 export default function RootLayout() {
-  const { scheme } = useTheme();
+  const { scheme, colors } = useTheme();
+  // The window behind the (translucent) status bar: white by default, a bright band above every dark screen
+  // in dark mode (QA 2026-10-31, Н24). Expo Go keeps its own opaque bar, so this shows in builds.
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(colors.surface).catch(() => {});
+  }, [colors.surface]);
   // The stored theme choice must be in before the first screen, or a dark user sees a white flash.
   const [themeReady, setThemeReady] = useState(false);
   useEffect(() => {
@@ -50,7 +56,9 @@ export default function RootLayout() {
   // instead of a blank app. GestureHandlerRootView must wrap the whole tree
   // or any gesture/swipe/drawer screen crashes in Expo Go.
   return (
-    <GestureHandlerRootView style={styles.root}>
+    // The root carries the theme background: with the status bar translucent, what shows behind it is this
+    // view, and it was white in dark mode, a bright band above every dark screen (QA 2026-10-31, Н24).
+    <GestureHandlerRootView style={[styles.root, { backgroundColor: colors.surface }]}>
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <KeyboardProvider>
