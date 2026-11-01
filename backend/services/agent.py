@@ -79,6 +79,8 @@ CORE_CATEGORIES = ("truck_stop", "hotel", "rest_area")
 EXTRA_CATEGORIES = ("walmart", "cat_scale", "truck_wash", "weigh_station")
 # Satellite parking checks only where a truck would park; a scale or a wash is not a place to spend the night.
 PARKING_CATEGORIES = {"truck_stop", "hotel", "rest_area", "walmart", "destination"}
+PARK_WORDS = re.compile(r"\b(park|parking|overnight|shut ?down|lay ?over|sleep in (?:the|my) (?:truck|cab|sleeper))\b", re.I)
+BED_WORDS = re.compile(r"\b(hotel|motel|room|bed|shower|inn|lodge)\b", re.I)
 CATEGORY_OFF = "I can't look up {what}s yet. Ask me for a truck stop, a hotel or a rest area."
 
 
@@ -1061,6 +1063,11 @@ class LlmAgentProvider:
         if intent == "chat" and req.active_place and is_town(req.active_place) and re.search(r"\bpark", text, re.I):
             intent = "parking"
         # "Cheapest diesel on my route" with a route set: a stop on the way; the destination stays.
+        if intent == "find" and d.get("category") == "hotel" and PARK_WORDS.search(text) and not BED_WORDS.search(text):
+            # "where can I park tonight" is a truck stop, not a hotel: the model drifts there now and then
+            # (stand QA 2026-11-01), and a hotel lot is the wrong answer for a 53-footer.
+            logger.info("agent find hotel for %r -> truck_stop", text)
+            d = {**d, "category": "truck_stop"}
         if intent == "find" and req.active_place and d.get("category") in STOP_CATEGORIES and ON_THE_WAY.search(text):
             logger.info("agent find %s %r with a route active -> add_stop", d.get("category"), text)
             intent, d = "add_stop", {**d, "intent": "add_stop"}
