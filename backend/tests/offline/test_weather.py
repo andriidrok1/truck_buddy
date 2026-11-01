@@ -62,6 +62,22 @@ def test_sample_points_capped():
 
 # ---- alerts ----
 
+def test_area_is_trimmed_for_speech():
+    for raw, said in [("Sierra Nevada of Sierra-Nevada-Placer Counties Above 5000 ft Including Donner; Mono", "Sierra Nevada"),
+                      ("Eastern San Juan Mountains Above 10000 Ft", "Eastern San Juan Mountains"),
+                      ("Greater Lake Tahoe Area; Greater Lake Tahoe Area", "Greater Lake Tahoe Area"),
+                      ("Ruby Mountains and East Humboldt Range", "Ruby Mountains and East Humboldt Range"),
+                      ("Clark, NV", "Clark, NV"), ("", "the route")]:
+        assert weather._area({"areaDesc": raw}) == said
+
+
+def test_cyclones_count_as_truck_weather():
+    feats = [_alert("Hurricane Warning"), _alert("Tropical Storm Watch"), _alert("Storm Surge Warning"),
+             _alert("Rip Current Statement")]
+    assert [p["event"] for p in parse_alerts({"features": feats})] == \
+        ["Hurricane Warning", "Tropical Storm Watch", "Storm Surge Warning"]
+
+
 def test_parse_alerts_keeps_truck_events_only():
     feats = [_alert("High Wind Warning"), _alert("Coastal Flood Advisory"), _alert("Small Craft Advisory"),
              _alert("Dense Fog Advisory", aid="fog"), _alert("Winter Storm Warning", status="Test"),
@@ -251,7 +267,10 @@ def test_new_route_speaks_the_alert_and_carries_it(agent_sandbox, fake_http):
     agent_sandbox.geocode["reno"] = [RENO]
     res = run(agent_sandbox.provider().handle(AgentRequest(text="take me to Reno", session_id="wr", **SAC), None))
     assert res.status == "route_set"
-    assert res.reply.endswith(" Weather warning: Winter Storm Warning ahead near Greater Lake Tahoe Area.")
+    # The alert covers every point, so the truck is in it now ("ahead near", no clock) and no other way misses it.
+    assert res.reply.endswith(" Weather warning: Winter Storm Warning ahead near Greater Lake Tahoe Area. "
+                              "No truck route around it.")
+    assert all(alt.weather and alt.weather[0].event == "Winter Storm Warning" for alt in res.route.alternatives)
     assert len(res.route.weather) == 1 and res.route.weather[0].event == "Winter Storm Warning"
 
 
@@ -266,7 +285,7 @@ def test_route_endpoint_survives_nws_down(api_client, fake_http):
     fake_http.add("api.weather.gov", "/alerts/active", json={"features": [_alert("High Wind Warning")]})
     r = api_client.post("/api/route", json={**SAC, "place": RENO.model_dump(), "skip_parking": True})
     w = r.json()["route"]["weather"]
-    assert len(w) == 1 and set(w[0]) == {"id", "event", "severity", "headline", "area", "index", "ends"}
+    assert len(w) == 1 and set(w[0]) == {"id", "event", "severity", "headline", "area", "index", "ends", "onset"}
 
 
 def test_slow_nws_is_cut_off(agent_sandbox, fake_http, monkeypatch):

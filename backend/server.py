@@ -147,7 +147,7 @@ async def build_route(req: RouteRequest):
     # and never the route itself.
     try:
         route.weather, route.chain_controls = await asyncio.wait_for(
-            asyncio.gather(weather.alerts_along(route.geometry), chains.for_route(route.geometry)), WEATHER_BUDGET_S)
+            asyncio.gather(weather.for_route(route), chains.for_route(route.geometry)), WEATHER_BUDGET_S)
     except Exception as e:  # noqa: BLE001
         logger.info("route weather/chains skipped: %s", e)
         route.weather, route.chain_controls = [], []
@@ -192,6 +192,13 @@ async def reroute(req: RerouteRequest):
                                                      via=req.via)
     except RoutingUnavailable:
         raise HTTPException(status_code=503, detail="Truck routing is unavailable right now")
+    # The new route needs its own alerts and chain controls, or the advisories vanish after a reroute.
+    try:
+        route.weather, route.chain_controls = await asyncio.wait_for(
+            asyncio.gather(weather.for_route(route), chains.for_route(route.geometry)), WEATHER_BUDGET_S)
+    except Exception as e:  # noqa: BLE001
+        logger.info("reroute weather/chains skipped: %s", e)
+        route.weather, route.chain_controls = [], []
     return RouteResponse(place=req.place, route=route, parking=cached_parking(req.place))
 
 

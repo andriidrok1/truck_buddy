@@ -95,6 +95,7 @@ class WeatherAlert(BaseModel):
     area: str  # first part of NWS areaDesc, e.g. "Greater Lake Tahoe Area"
     index: int
     ends: Optional[str] = None  # RFC 3339
+    onset: Optional[str] = None  # RFC 3339; when it starts (NWS onset, else effective)
 
 
 class ChainControl(BaseModel):

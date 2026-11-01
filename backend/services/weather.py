@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from models import WeatherAlert
+from models import RouteInfo, WeatherAlert
 from services.flags import on
 from services.geo import haversine_km
 from services.http import client
@@ -40,9 +40,23 @@ EVENTS = {
     "Ice Storm Warning", "Snow Squall Warning", "Freezing Rain Advisory", "Freezing Fog Advisory",
     "Dense Fog Advisory", "Dust Storm Warning", "Blowing Dust Advisory", "Dust Advisory",
     "Flash Flood Warning", "Flood Warning", "Extreme Cold Warning", "Tornado Warning", "Severe Thunderstorm Warning",
+    # Cyclones: a Gulf or East Coast run meets these every autumn; a watch is already a reason to replan.
+    "Hurricane Warning", "Hurricane Watch", "Tropical Storm Warning", "Tropical Storm Watch", "Storm Surge Warning",
+    "Hurricane Force Wind Warning", "Avalanche Warning", "Dense Smoke Advisory",
 }
+# NWS severity -> how much an alert weighs when two routes are compared.
+SEVERITY_WEIGHT = {"Extreme": 4, "Severe": 3, "Moderate": 2, "Minor": 1}
 WARNING_ONE = "Weather warning: {event} ahead near {area}."
+WARNING_ONE_TIMED = "Weather warning: {event} near {area}, you'd hit it around {hit}{till}."
 WARNING_MANY = "{event} and {n} more weather alert{s} along the route."
+WARNING_MANY_TIMED = "{event} near {area} around {hit} and {n} more weather alert{s} along the route."
+TILL = ", in effect till {till}"
+DETOUR_CLEAR = "The way via {via} misses it{diff}. Say 'take the other way' if you want it."
+DETOUR_CLEAR_NO_ROAD = "The other way misses it{diff}. Say 'take the other way' if you want it."
+DETOUR_LIGHTER = "The way via {via} only runs into a {event}{diff}. Say 'take the other way' if you want it."
+NO_DETOUR = "No truck route around it."
+NO_DETOUR_CLEARS = "No truck route around it; it should clear by {till}."
+SAME_TIME = " and takes about the same time"
 HOURLY = "{place} {when}: {temp} degrees and {forecast}{wind}."
 HOURLY_ALERT = " Heads up, there's a {event} in effect there."
 NO_FORECAST = "I couldn't get a forecast for {place} right now."
@@ -107,8 +121,18 @@ async def _alerts_at(lat: float, lng: float, now: float) -> list[dict]:
     return alerts
 
 
+_AREA_TAIL = re.compile(r"\s+(?:of\s+.+?\s+Count(?:y|ies)|above\s+\d[\d,]*\s*(?:ft|feet)|below\s+\d[\d,]*\s*(?:ft|feet)|including\s+.+)$", re.I)
+
+
 def _area(p: dict) -> str:
+    """The first NWS zone, trimmed for speech: "Sierra Nevada of Sierra-Nevada-Placer Counties Above 5000 ft"
+    is "Sierra Nevada" to a driver."""
     area = str(p.get("areaDesc") or "").split(";")[0].strip()
+    for _ in range(3):
+        short = _AREA_TAIL.sub("", area).strip()
+        if short == area or not short:
+            break
+        area = short
     return area[:60] if area else "the route"
 
 
@@ -136,17 +160,148 @@ async def alerts_along(geometry: list[list[float]], now: Optional[float] = None)
                 continue
             seen[aid] = WeatherAlert(id=aid, event=str(p["event"]), severity=str(p.get("severity") or "Unknown"),
                                      headline=str(p.get("headline") or p["event"])[:160], area=_area(p), index=idx,
-                                     ends=p.get("ends") or p.get("expires"))
+                                     ends=p.get("ends") or p.get("expires"), onset=p.get("onset") or p.get("effective"))
     return sorted(seen.values(), key=lambda a: a.index)
 
 
-def speech(alerts: list[WeatherAlert]) -> str:
+def speech(alerts: list[WeatherAlert], route: Optional[RouteInfo] = None, now: Optional[datetime] = None) -> str:
+    """"Weather warning: High Wind Warning near Laramie, you'd hit it around 4 pm, in effect till 6 pm." With no
+    route to time it against, the plain "ahead near Laramie"."""
     if not alerts:
         return ""
     first = alerts[0]
+    n, s = len(alerts) - 1, "" if len(alerts) == 2 else "s"
+    hit = _hit_label(first, route, now) if route is not None else ""
+    if not hit:
+        if len(alerts) == 1:
+            return WARNING_ONE.format(event=first.event, area=first.area)
+        return WARNING_MANY.format(event=first.event, n=n, s=s)
     if len(alerts) == 1:
-        return WARNING_ONE.format(event=first.event, area=first.area)
-    return WARNING_MANY.format(event=first.event, n=len(alerts) - 1, s="" if len(alerts) == 2 else "s")
+        return WARNING_ONE_TIMED.format(event=first.event, area=first.area, hit=hit, till=_till_label(first, now))
+    return WARNING_MANY_TIMED.format(event=first.event, area=first.area, hit=hit, n=n, s=s)
+
+
+# ---- timing against the route and the choice between routes ---------------------------------
+
+def _now(now: Optional[datetime]) -> datetime:
+    return now if now is not None else datetime.now().astimezone()
+
+
+def eta_at(route: RouteInfo, index: int, now: Optional[datetime] = None) -> datetime:
+    """When the truck reaches geometry point `index`, by the share of the route's length before it."""
+    g = route.geometry
+    if len(g) < 2 or route.distance_m <= 0:
+        return _now(now)
+    index = max(0, min(index, len(g) - 1))
+    before = sum(haversine_km(g[i - 1][0], g[i - 1][1], g[i][0], g[i][1]) for i in range(1, index + 1))
+    total = before + sum(haversine_km(g[i - 1][0], g[i - 1][1], g[i][0], g[i][1]) for i in range(index + 1, len(g)))
+    share = before / total if total > 0 else 0.0
+    return _now(now) + timedelta(seconds=route.duration_s * share)
+
+
+def _alert_tz(alert: WeatherAlert, now: datetime):
+    """The alert's own zone (from its times), so "4 pm" is the driver's clock, not the server's."""
+    for s in (alert.ends, alert.onset):
+        dt = _iso(s) if s else None
+        if dt is not None and dt.tzinfo is not None:
+            return dt.tzinfo
+    return now.tzinfo
+
+
+def _clock(at: datetime, now: datetime) -> str:
+    """"4 pm" / "4:30 pm" / "tomorrow 6 am" / "Thursday 6 am"."""
+    h = at.strftime("%-I %p").lower() if at.minute == 0 else at.strftime("%-I:%M %p").lower()
+    days = (at.date() - now.astimezone(at.tzinfo).date()).days
+    if days == 0:
+        return h
+    if days == 1:
+        return f"tomorrow {h}"
+    return f"{at.strftime('%A')} {h}"
+
+
+def _hit_label(alert: WeatherAlert, route: RouteInfo, now: Optional[datetime]) -> str:
+    """"4 pm", rounded to the half hour; "" when the truck is in it already (then "ahead near" is the line)."""
+    now = _now(now)
+    eta = eta_at(route, alert.index, now)
+    if eta - now < timedelta(minutes=15):
+        return ""
+    at = eta.astimezone(_alert_tz(alert, now))
+    at = at.replace(minute=(at.minute // 30) * 30, second=0, microsecond=0)
+    return _clock(at, now)
+
+
+def _till_label(alert: WeatherAlert, now: Optional[datetime]) -> str:
+    """", in effect till 6 pm" when the alert says when it ends; "" otherwise."""
+    end = _iso(alert.ends) if alert.ends else None
+    if end is None or end.tzinfo is None:
+        return ""
+    return TILL.format(till=_clock(end, _now(now)))
+
+
+def on_arrival(alerts: list[WeatherAlert], route: RouteInfo, now: Optional[datetime] = None) -> list[WeatherAlert]:
+    """Alerts still in effect when the truck gets to them. A warning that ends at 3 pm is nothing to a truck
+    arriving at 5."""
+    now = _now(now)
+    out = []
+    for a in alerts:
+        end = _iso(a.ends) if a.ends else None
+        if end is not None and end.tzinfo is not None and eta_at(route, a.index, now) >= end:
+            continue
+        out.append(a)
+    return out
+
+
+def score(alerts: list[WeatherAlert]) -> int:
+    return sum(SEVERITY_WEIGHT.get(a.severity, 2) for a in alerts)
+
+
+def better_route(route: RouteInfo) -> Optional[RouteInfo]:
+    """Among the alternatives (each with its own `weather`), the one that weighs least, the fastest on a tie;
+    None when nothing beats the route the driver has."""
+    if not route.weather or not route.alternatives:
+        return None
+    best = min(route.alternatives, key=lambda r: (score(r.weather), r.duration_min))
+    return best if score(best.weather) < score(route.weather) else None
+
+
+def _diff(alt: RouteInfo, route: RouteInfo) -> str:
+    d = alt.duration_min - route.duration_min
+    if abs(d) < 5:
+        return SAME_TIME
+    h, m = divmod(abs(int(d)), 60)
+    said = f"{h} h {m} min" if h and m else (f"{h} h" if h else f"{m} min")
+    return f", about {said} {'longer' if d > 0 else 'faster'}"
+
+
+def detour_speech(route: RouteInfo, now: Optional[datetime] = None) -> str:
+    """What to do about the weather on `route`: the alternative that misses it (or meets less of it), or an
+    honest "no way around", with the clearing time when the alert has one."""
+    if not route.weather:
+        return ""
+    alt = better_route(route)
+    if alt is None:
+        first = route.weather[0]
+        end = _iso(first.ends) if first.ends else None
+        if end is not None and end.tzinfo is not None:
+            return NO_DETOUR_CLEARS.format(till=_clock(end, _now(now)))
+        return NO_DETOUR
+    diff = _diff(alt, route)
+    via = " and ".join(alt.labels[:2])
+    if not alt.weather:
+        return DETOUR_CLEAR.format(via=via, diff=diff) if via else DETOUR_CLEAR_NO_ROAD.format(diff=diff)
+    return DETOUR_LIGHTER.format(via=via or "the other road", event=alt.weather[0].event, diff=diff)
+
+
+async def for_route(route: RouteInfo, now: Optional[datetime] = None, mono: Optional[float] = None) -> list[WeatherAlert]:
+    """Alerts on the route and on each of its alternatives (attached as `.weather`, only those still in effect
+    on arrival), the point cache shared across them. Returns the route's own list."""
+    mono = time.monotonic() if mono is None else mono
+    now = _now(now)
+    routes = [route] + list(route.alternatives)
+    results = await asyncio.gather(*(alerts_along(r.geometry, mono) for r in routes), return_exceptions=True)
+    for r, res in zip(routes, results):
+        r.weather = [] if isinstance(res, BaseException) else on_arrival(res, r, now)
+    return route.weather
 
 
 # ---- point forecast --------------------------------------------------------------------------

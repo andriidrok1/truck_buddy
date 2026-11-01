@@ -152,7 +152,7 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
   (never rest_area or parking for these).
 - go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV". Write numbers as digits ("2828 El Centro Rd, Sacramento"). If the driver gives only a street address and named a town earlier in the conversation, add that town to query.
 - pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something else", "another one", "something closer", "the cheapest diesel": lowest "diesel $" in the list). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. These are about PLACES even while a route is active and alternative routes exist: "not that one" / "something else" / "the second one" are never alternative and never go ("nothing else" / "that's all" / "I'm good" are bye, not pick). If no earlier place fits, use find with the same category instead.
-- alternative: a different ROAD to the SAME destination, only when the driver talks about the road, way or route itself ("another way", "different route", "is there a faster way", "can we skip the grade", "go around that"). Never a new place; a rejected place ("not that one") is pick. Only meaningful while a route is active; otherwise answer as chat.
+- alternative: a different ROAD to the SAME destination, only when the driver talks about the road, way or route itself ("another way", "take the other way", "different route", "is there a faster way", "can we skip the grade", "go around that", "go around the storm"). Never a new place; a rejected place ("not that one") is pick. Only meaningful while a route is active; otherwise answer as chat.
 - add_stop: a stop ON THE WAY to the current destination, keeping that destination ("stop at the Pilot in Fernley on the way", "swing by Love's first", "add a fuel stop", "cheapest diesel on my route", "fuel on the way", "I need a rest area before that"). query = the place or address named (digits for numbers), else category = the kind of stop (truck_stop for fuel/food/showers, rest_area, hotel); never both null. Only while a route is active; with no route it's a plain find or go.
 - clear_stops: drop the stops added on the way ("skip the stops", "forget the stop", "no stops, straight there").
 - reviews: what other drivers say about a place ("what do drivers say about it", "is it any good", "reviews for the Pilot", "how are the showers there"). place_index = the place asked about from "Places found earlier", or null for the current route / the last one mentioned.
@@ -364,6 +364,11 @@ def _alt_reply(route: RouteInfo, current: Optional[RouteInfo] = None) -> str:
         d = route.duration_min - current.duration_min
         if abs(d) >= 5:
             diff = f", about {_minutes_said(abs(d))} {'longer' if d > 0 else 'faster'}"
+        # The weather is why most drivers ask: say when the other way misses it, or runs into it.
+        if current.weather and not route.weather:
+            diff += f", and it misses the {current.weather[0].event}"
+        elif route.weather and not current.weather:
+            diff += f", but it runs into a {route.weather[0].event}"
     return ALT_REPLY.format(via=via, time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi), tolls=tolls + diff)
 _turns: dict = {"n": 0}  # rotation when there's no dialog session
 
@@ -639,7 +644,7 @@ def _parse(raw: str) -> dict:
 # (0.1x input price on the cached prefix, faster first token). Everything that varies, the truck, the
 # preferences and the conversation context, travels in the user message, in that order.
 SYSTEM_STATIC = SYSTEM.format(controls=controls.PROMPT, parking=approach.PROMPT, breakdown=breakdown.PROMPT)
-PROMPT_VERSION = 4  # bump when SYSTEM changes, so the cache key and the eval baseline move together
+PROMPT_VERSION = 5  # bump when SYSTEM changes, so the cache key and the eval baseline move together
 PROMPT_CACHE_KEY = f"agent-v{PROMPT_VERSION}"
 
 
@@ -815,7 +820,8 @@ class LlmAgentProvider:
         counter["n"] = n + 1
         self._remember_alternatives(req, place, route)
         regional, weather_line, chain_line = await asyncio.gather(
-            self._regional_note(place), self._route_weather(route), self._route_chains(route))
+            self._regional_note(place), self._route_weather(route, _SESSIONS.get(req.session_id or "")),
+            self._route_chains(route))
         reply = _route_reply(place, route, n, req.truck_profile.driver_name, regional) + price_caveat(text, place)
         sess_now = _SESSIONS.get(req.session_id or "")
         learned = sess_now.pop("say_learned", None) if sess_now else None
@@ -848,14 +854,29 @@ class LlmAgentProvider:
         return chains.speech(route.chain_controls)
 
     @staticmethod
-    async def _route_weather(route: RouteInfo) -> str:
-        """NWS alerts along a new route, attached to it and spoken once; bounded so it never delays the reply."""
+    async def _route_weather(route: RouteInfo, sess: Optional[dict] = None) -> str:
+        """NWS alerts along a new route and its alternatives, attached to each and spoken once, timed against the
+        ETA ("you'd hit it around 4 pm"); bounded so it never delays the reply. When another truck route misses
+        the weather, it is offered and moved to the front of "another way", so "take the other way" gets it."""
         try:
-            route.weather = await asyncio.wait_for(weather.alerts_along(route.geometry), WEATHER_BUDGET_S)
+            await asyncio.wait_for(weather.for_route(route), WEATHER_BUDGET_S)
         except Exception as e:  # noqa: BLE001 - incl. timeout
             logger.info("route weather skipped: %s", e)
             route.weather = []
-        return weather.speech(route.weather)
+            for alt in route.alternatives:
+                alt.weather = []
+        line = weather.speech(route.weather, route)
+        if not line:
+            return ""
+        detour = weather.detour_speech(route)
+        best = weather.better_route(route)
+        cached = (sess or {}).get("alternatives")
+        if cached and cached.get("current") is not None:
+            cached["current"].weather = list(route.weather)  # the copy was taken before the lookup
+        if best is not None and cached and any(r is best for r in cached.get("routes", [])):
+            cached["routes"] = [best] + [r for r in cached["routes"] if r is not best]
+            logger.info("route weather: %s misses it, offered first", " and ".join(best.labels) or "alternative")
+        return f"{line} {detour}" if detour else line
 
     async def _weather(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
         """"Weather in Reno at 3 pm" / "what's the weather like ahead": hourly forecast at a place and time."""
