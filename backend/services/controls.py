@@ -161,5 +161,11 @@ def apply_actions(raw: Any, req: AgentRequest) -> Tuple[List[AppAction], str, bo
         return [], "", False
     reply = " ".join(s if s[-1] in ".?!" else f"{s}." for s in said)
     if changed_data and not reply.startswith(("Got it", "Okay")):
-        reply = "Done. " + reply
+        # One sentence, not "Done. Trailer is now 40 feet. Rerouting for that.": at highway speed free-text
+        # replies are cut to the first sentence, and the driver heard just "Done." (QA 2026-10-31, H15).
+        plain = [s.rstrip(".") for s in said if not re.search(r"[.?!]\s", s) and s[-1] not in "?!"]
+        if len(plain) == len(said):
+            reply = "Done, " + ", ".join(f"{p[0].lower()}{p[1:]}" for p in plain) + "."
+        else:
+            reply = "Done. " + reply
     return out, reply, end
