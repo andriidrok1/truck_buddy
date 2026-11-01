@@ -1,5 +1,4 @@
 import { StyleSheet, Text, View } from "react-native";
-import Animated, { FadeInUp, FadeOutUp } from "react-native-reanimated";
 
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import { Icon } from "./Icon";
@@ -20,7 +19,10 @@ type Props = {
 export function RestoredBanner({ placeName, note, top, onResume, onDismiss }: Props) {
   const { colors } = useTheme();
   return (
-    <Animated.View entering={FadeInUp.duration(220)} exiting={FadeOutUp.duration(180)} style={[styles.wrap, { top }]} pointerEvents="box-none">
+    // No entering/exiting layout animation: this view mounts in the app's first frames, and Reanimated
+    // dropped the animation on 4 of 7 cold starts, leaving the banner invisible while the state said
+    // "restored" (QA 2026-10-31, Н23). A plain view is always there.
+    <View style={[styles.wrap, { top }]} pointerEvents="box-none">
       <View testID="restored-banner" style={[styles.card, shadow(colors, 2), { backgroundColor: colors.surface }]}>
         <Icon name="history" size={22} color={colors.info} />
         <View style={styles.text}>
@@ -40,7 +42,7 @@ export function RestoredBanner({ placeName, note, top, onResume, onDismiss }: Pr
           <Text style={[styles.btnText, { color: colors.onInfo }]}>Resume</Text>
         </PressableScale>
       </View>
-    </Animated.View>
+    </View>
   );
 }
 
