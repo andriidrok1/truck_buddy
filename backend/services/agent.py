@@ -18,11 +18,11 @@ from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, Place, Route
 from services import (approach, breakdown, chains, controls, fuel_index, hos, llm, memory, profile_learn, reviews,
                       timing, tpims, weather)
 from services.geo import haversine_km, km_to_mi
-from services.geocode import geocode
+from services.geocode import is_street, geocode
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
 from services.parking import cached_parking, check_parking, is_town, listed_in_data
 from services.places import get_places_provider
-from services.routing import get_routing_provider
+from services.routing import VIA_STOP_S, get_routing_provider
 from services.flags import on
 from services.speech_text import fit_reply
 from services.timing import stage
@@ -333,7 +333,8 @@ CHAINS_NO_ROUTE = "Set a route and I'll check Caltrans chain controls along it."
 CHAINS_OUTSIDE = "I only have chain controls for California, and this route doesn't go through it."
 CHAINS_NONE = "No chain controls on your route right now."
 ALT_NO_ROUTE = "Set a route first and I'll look for other ways."
-VIA_ADDED = "Added {name}{ahead}. New total {time}, {mi} miles."
+VIA_ADDED = "Added {name}{ahead}. New total {time}, {mi} miles{dwell}."
+VIA_DWELL = ", counting {minutes} minutes at {each}"  # HERE adds VIA_STOP_S per stop; the total looked wrong without it (H9)
 VIA_NO_ROUTE = "Set a route first, then I can add stops on the way."
 VIA_FULL = "I can only add three stops. Say 'clear the stops' to start over."
 VIA_DUPLICATE = "{name} is already one of your stops."
@@ -503,6 +504,20 @@ def named_place(query: str, places: list[Place]) -> Optional[Place]:
         if words <= name and words - _tokens(p.address or ""):
             return p
     return None
+
+
+NAME_LIKE = re.compile(r"^(?:the\s+)?[A-Za-z0-9&'.\- ]{2,40}$")
+
+
+def name_like(query: str) -> bool:
+    """"the 49er", "Roady's", "Pilot": a short name without a house number or a street word, the kind of query
+    that is a truck stop's name, not an address."""
+    q = (query or "").strip()
+    if not NAME_LIKE.match(q) or len(q.split()) > 3:
+        return False
+    if re.match(r"^\d+\s", q) or re.search(r"\b(?:st|street|ave|avenue|rd|road|blvd|hwy|highway|dr|drive|way|exit|mile)\b", q, re.I):
+        return False
+    return True
 
 
 GENERIC_NAME_WORDS = {"truck", "stop", "stops", "travel", "center", "centre", "plaza", "inn", "motel", "hotel",
@@ -760,6 +775,21 @@ class LlmAgentProvider:
                     f" {ui.options_count} other options available.")
         return context
 
+    async def _truck_stop_named(self, req: AgentRequest, query: str) -> Optional[Place]:
+        """The truck stop near the driver whose name the query is ("the 49er", "Roady's"), or None."""
+        if not name_like(query) or "truck_stop" not in enabled_categories():
+            return None
+        try:
+            with stage("tools"):
+                res = await get_places_provider().search("truck_stop", req.lat, req.lng)
+        except Exception as e:  # noqa: BLE001 - the geocode result stands
+            logger.info("truck stop by name skipped: %s", e)
+            return None
+        found = named_place(query, res.places)
+        if found:
+            logger.info("agent %r is a truck stop nearby -> %s", query, found.name)
+        return found
+
     async def _cheapest_without_prices(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
         """No place in the list has a diesel price: keep the current stop and say so; with no current stop
         the closest one is the honest pick, with the usual "no price" caveat."""
@@ -973,6 +1003,10 @@ class LlmAgentProvider:
         if query:
             with stage("tools"):
                 matches = await geocode(with_city(query, sess.get("city")), req.lat, req.lng)
+            if not matches or is_street(matches[0]):
+                stop = await self._truck_stop_named(req, query)
+                if stop:
+                    return stop
             if matches:
                 return matches[0]
             if not category:
@@ -1034,8 +1068,9 @@ class LlmAgentProvider:
         route = await self._route_with_stops(req, stops)
         sess["via"] = {"place": place.id, "stops": stops}
         ahead = f", about {_miles(stop.distance_mi)} miles ahead" if stop.distance_mi else ""
+        dwell = VIA_DWELL.format(minutes=VIA_STOP_S // 60, each="the stop" if len(stops) == 1 else "each stop")
         reply = VIA_ADDED.format(name=stop.name.split(",")[0], ahead=ahead, time=route.summary.split(" · ")[0],
-                                 mi=_miles(route.distance_mi)) + price_caveat(text, stop)
+                                 mi=_miles(route.distance_mi), dwell=dwell) + price_caveat(text, stop)
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
                              route=route, parking=approach.best(place), options=stops, source=self.source)
 
@@ -1092,7 +1127,8 @@ class LlmAgentProvider:
                                        "there or give me an address and I'll check it.")
         pk = approach.best(place)
         if pk and (pk.relative or not approach.has_approach(place) or not pk.entry_tip):
-            return AgentResponse(status="chat", transcript=text, reply=approach.speech(pk), source=self.source)
+            return AgentResponse(status="chat", transcript=text, reply=approach.speech(pk, approach.asked(text)),
+                                 source=self.source)
         _background(check_parking(place))
         return AgentResponse(status="chat", transcript=text, reply=approach.LOOKING, source=self.source,
                              actions=[AppAction(type="parking_followup", value=place.id)])
@@ -1333,6 +1369,12 @@ class LlmAgentProvider:
                     matches = await geocode(query, req.lat, req.lng)
                 logger.info("agent go query=%r (llm %r) city_ctx=%r -> %s", query, d.get("query"), sess.get("city"),
                             matches[0].name if matches else "no match")
+                # A short name that geocodes to a bare street (or nothing): the truck stop of that name nearby,
+                # if there is one. "The 49er" in a fresh dialog went to 49ER Trl, Placerville (QA 2026-10-31, H23).
+                if not matches or is_street(matches[0]):
+                    stop = await self._truck_stop_named(req, str(d["query"]))
+                    if stop:
+                        return await self._route_to(req, stop, sess["places"], text)
                 if not matches:
                     return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query),
                                          source=self.source)

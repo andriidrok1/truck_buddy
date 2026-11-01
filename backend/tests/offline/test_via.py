@@ -84,7 +84,7 @@ def test_add_stop_by_name_then_clear(agent_sandbox, fake_http):
 
     res = run(prov.handle(_req("stop at the Pilot in Fernley on the way"), None))
     assert res.status == "route_set" and res.place.id == RENO.id
-    assert res.reply == "Added Pilot Travel Center, about 80 miles ahead. New total 2 h 52 min, 132 miles."
+    assert res.reply == "Added Pilot Travel Center, about 80 miles ahead. New total 2 h 52 min, 132 miles, counting 30 minutes at the stop."
     assert res.route.via == [[PILOT.lat, PILOT.lng]] and res.route.alternatives == []
     assert [o.id for o in res.options] == [PILOT.id]
     call = fake_http.calls_to("router.hereapi.com")[-1]

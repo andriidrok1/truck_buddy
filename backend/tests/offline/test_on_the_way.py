@@ -31,8 +31,8 @@ def test_fuel_on_my_route_keeps_the_destination(agent_sandbox, fake_http):
     res = run(prov.handle(req, None))
     assert res.status == "route_set" and res.place.id == PARK.id  # still going to the parking
     assert res.route.via == [[ROADYS.lat, ROADYS.lng]] and [o.id for o in res.options] == [ROADYS.id]
-    assert res.reply == ("Added Roady's Truck Stop, about 6.4 miles ahead. New total 2 h 52 min, 132 miles. "
-                         "I don't have a diesel price for it.")
+    assert res.reply == ("Added Roady's Truck Stop, about 6.4 miles ahead. New total 2 h 52 min, 132 miles, counting "
+                         "30 minutes at the stop. I don't have a diesel price for it.")
     assert PARK.id not in agent._SESSIONS["otw"].get("rejected", set())  # not a "not that one"
 
 
