@@ -7,13 +7,14 @@ import type { LatLng } from "../types";
 import type { MapLayerHandle, MapLayerProps } from "./mapTypes";
 import { DestinationLabel, EntryMarker, Pin, UserArrow } from "./Pin";
 import { entrySpot } from "../utils/entry";
-import { fitCamera } from "../map/fitCamera";
+import { cameraSettled, fitCamera } from "../map/fitCamera";
 import { NIGHT_MAP_STYLE } from "../map/nightStyle";
 
 const toCoord = (p: LatLng) => ({ latitude: p.lat, longitude: p.lng });
 const FOLLOW_ZOOM = 17;
 const FOLLOW_PITCH = 45;
 const REFIT_WINDOW_MS = 1500; // a padding change this soon after a fit re-runs the fit
+const FIT_CHECK_MS = 900; // the fit animation is over by then: read the camera back and correct a dropped one
 const FIT_MARGIN = 56; // layout units kept free around the fitted points, inside the map window
 const FIT_MAX_ZOOM = 16;
 
@@ -77,12 +78,23 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
   useImperativeHandle(ref, () => ({ recenter, zoomBy }));
 
   const fitAt = useRef(0);
+  const fitCheck = useRef<ReturnType<typeof setTimeout> | null>(null);
   // One camera for the points, computed here for the map window (the screen minus the chrome the
   // insets describe). The map padding already centres the camera in that window.
+  // Android drops the animation now and then (the sheet growing for the route card changes the
+  // padding in the same frames) and the camera stays on the previous view, so once the animation
+  // should be over the camera is read back and sent again if it never got there (QA 2026-10-31, Н7).
   const fit = () => {
+    if (fitCheck.current) clearTimeout(fitCheck.current);
     if (fitPoints.length > 1) {
       const cam = fitCamera(fitPoints, winW, Math.max(120, winH - topInset - bottomInset), FIT_MARGIN, FIT_MAX_ZOOM);
-      mapRef.current?.animateCamera({ center: toCoord(cam.center), zoom: cam.zoom, pitch: 0, heading: 0 }, { duration: 450 });
+      const target = { center: toCoord(cam.center), zoom: cam.zoom, pitch: 0, heading: 0 };
+      mapRef.current?.animateCamera(target, { duration: 450 });
+      fitCheck.current = setTimeout(async () => {
+        const c = await mapRef.current?.getCamera().catch(() => null);
+        const actual = c?.center ? { center: { lat: c.center.latitude, lng: c.center.longitude }, zoom: c.zoom } : null;
+        if (!cameraSettled(cam, actual, winW, winH)) mapRef.current?.animateCamera(target, { duration: 400 });
+      }, FIT_CHECK_MS);
     } else if (fitPoints.length === 1) {
       mapRef.current?.animateToRegion({ ...toCoord(fitPoints[0]), latitudeDelta: 0.015, longitudeDelta: 0.015 }, 450);
     }
@@ -92,6 +104,9 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
     fit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitKey]);
+  useEffect(() => () => {
+    if (fitCheck.current) clearTimeout(fitCheck.current);
+  }, []);
   // The sheet grows for a new route card right after the fit, so the window the fit was computed for
   // is gone: a padding change right after a fit fits again.
   useEffect(() => {
