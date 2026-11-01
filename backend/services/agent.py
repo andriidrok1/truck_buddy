@@ -329,6 +329,7 @@ NOTICES = (
 CLOSURE = "Heads up, there's a road closure on this route: {description}."
 ALT_REPLY = "Here's another way{via}, {time}, {mi} miles{tolls}."
 NO_ALT = "That's the only truck route I've got."
+TILL_SAID = ", in effect till "  # the warning line already names the end: the detour line must not repeat it
 CHAIN_QUESTION = re.compile(r"\bchain[ -]?(?:control|law|requirement|restriction)s?\b|\bchains?\s+(?:ahead|required|needed|on the (?:pass|route|way)|up ahead)\b|\b(?:any|are there|is there|do I need)\b.*\bchains?\b", re.I)
 CHAINS_NO_ROUTE = "Set a route and I'll check Caltrans chain controls along it."
 CHAINS_OUTSIDE = "I only have chain controls for California, and this route doesn't go through it."
@@ -886,7 +887,7 @@ class LlmAgentProvider:
         line = weather.speech(route.weather, route)
         if not line:
             return weather.later_speech(route)  # nothing on the way now; a storm after the truck is through still gets a word
-        detour = weather.detour_speech(route, alts_known=alts_known)
+        detour = weather.detour_speech(route, alts_known=alts_known, said_till=TILL_SAID in line)
         best = weather.better_route(route) if alts_known else None
         cached = (sess or {}).get("alternatives")
         if cached and cached.get("current") is not None:

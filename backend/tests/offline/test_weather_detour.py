@@ -141,6 +141,25 @@ def test_clears_by_is_the_end_of_the_last_alert_and_one_county_counts_once():
     assert weather.speech(r.weather, r, NOW).endswith(", in effect till tomorrow 3 am.")
 
 
+def test_the_end_time_is_said_once(agent_sandbox, fake_http, monkeypatch):
+    """Stand 2026-11-01, Tucson-Phoenix: "in effect till 3:45 pm. No truck route around it; it should clear by
+    3:45 pm." The warning line already said when it ends; the detour line must not."""
+    fake_http.add("router.hereapi.com", "/v8/routes", json=ROUTE)
+    ends = (datetime.now(PT) + timedelta(hours=8)).isoformat()  # still on when the slowest alternative gets there
+    flood = _alert("Flash Flood Warning", 1267, ends=ends, area="Pima, AZ")
+    monkeypatch.setattr(weather, "alerts_along", _by_geometry([flood], [flood], [flood]))
+    agent_sandbox.llm.on(r"take me to reno", {"intent": "go", "query": "Reno, NV"})
+    agent_sandbox.geocode["reno"] = [RENO]
+    res = run(agent_sandbox.provider().handle(AgentRequest(text="take me to Reno", session_id="wt", **SAC), None))
+    assert ", in effect till " in res.reply and res.reply.endswith("No truck route around it.")
+    assert "should clear by" not in res.reply
+    # Several alerts (no single end in the warning line): the clearing time is still said once, in the detour line.
+    fog = _alert("Dense Fog Advisory", 1200, ends=ends, area="Pinal, AZ")
+    monkeypatch.setattr(weather, "alerts_along", _by_geometry([flood, fog], [flood, fog], [flood, fog]))
+    res = run(agent_sandbox.provider().handle(AgentRequest(text="take me to Reno", session_id="wt2", **SAC), None))
+    assert "more weather alert" in res.reply and "should clear by" in res.reply and "in effect till" not in res.reply
+
+
 def test_a_storm_after_the_truck_is_through_gets_a_heads_up():
     r = _route()
     last = len(r.geometry) - 1
@@ -221,6 +240,9 @@ def test_detour_wording():
     assert weather.detour_speech(r, NOW) == "No truck route around it; it should clear by 7 pm."
     r.weather = [_alert("High Wind Warning", 300)]
     assert weather.detour_speech(r, NOW) == "No truck route around it."
+    r.alternatives = []
+    assert weather.detour_speech(r, NOW) == "I don't have another truck route to try."  # nothing to compare: no "around it"
+    r.alternatives = [ca89, i580]
     same = ca89.model_copy(update={"duration_min": r.duration_min + 2, "weather": [], "labels": [], "weather_known": True})
     r.alternatives = [same]
     assert weather.detour_speech(r, NOW) == "The other way misses it and takes about the same time. Say 'take the other way' if you want it."
