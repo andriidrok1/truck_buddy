@@ -133,6 +133,10 @@ class RouteInfo(BaseModel):
     source: str  # here | openrouteservice | mock
     notices: List[str] = Field(default_factory=list)  # restriction warnings from the router
     truck_aware: bool = False  # True when height/length/weight/hazmat were applied
+    # The router found no route that meets the truck's restrictions and returned this one anyway (HERE
+    # violatedVehicleRestriction, critical): "height" | "weight" | "length" | "width" | "blocked" | "other";
+    # "legal" = the truck is over the state's legal maximum (a permit load). None = a compliant route.
+    restricted: Optional[str] = None
     traffic: List[TrafficSegment] = Field(default_factory=list)  # live slowdowns (HERE only)
     maneuvers: List[Maneuver] = Field(default_factory=list)  # turn-by-turn (HERE only)
     approach: Optional[Approach] = None  # arrival direction, for entrance directions

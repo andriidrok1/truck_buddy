@@ -77,12 +77,14 @@ def _span_ranges(spans: List[dict], n_points: int):
 
 
 def _info(geometry: List[List[float]], meters: float, seconds: float, source: str, notices: List[str],
-          truck_aware: bool, traffic: Optional[List[TrafficSegment]] = None) -> RouteInfo:
+          truck_aware: bool, traffic: Optional[List[TrafficSegment]] = None,
+          restricted: Optional[str] = None) -> RouteInfo:
     mi = km_to_mi(meters / 1000)
     minutes = max(1, round(seconds / 60))
     return RouteInfo(geometry=_thin(geometry), distance_m=round(meters), duration_s=round(seconds),
                      distance_mi=round(mi, 1), duration_min=minutes, summary=format_summary(minutes, mi),
-                     source=source, notices=notices, truck_aware=truck_aware, traffic=traffic or [])
+                     source=source, notices=notices, truck_aware=truck_aware, traffic=traffic or [],
+                     restricted=restricted)
 
 
 def _traffic_level(span: dict) -> Optional[str]:
@@ -150,9 +152,14 @@ def _here_params(t: TruckProfile, origin: tuple[float, float], dest: tuple[float
         ("lang", "en-US"),
         ("units", "imperial"),
         ("spans", ",".join(spans)),
-        ("vehicle[height]", str(round(t.height_in * 2.54))),  # cm
-        ("vehicle[length]", str(round(t.total_length_ft * 30.48))),  # cm
-        ("vehicle[grossWeight]", str(round(t.weight_lb * 0.4536))),  # kg
+        # Rounded up, never down: a 13 ft 6 in rig is 411.48 cm, and the router must plan for 412.
+        ("vehicle[height]", str(math.ceil(t.height_in * 2.54))),  # cm
+        ("vehicle[length]", str(math.ceil(t.total_length_ft * 30.48))),  # cm
+        ("vehicle[grossWeight]", str(math.ceil(t.weight_lb * 0.45359237))),  # kg
+        # A tractor with one trailer: HERE then applies the "no trailers" and trailer-length rules too,
+        # which a plain straight truck of the same length would sail past.
+        ("vehicle[type]", "tractor"),
+        ("vehicle[trailerCount]", "1"),
     ]
     for stop in via:
         params.append(("via", f"{stop[0]},{stop[1]}!stopDuration={VIA_STOP_S}"))
@@ -194,8 +201,9 @@ def _tolls_usd(sections: List[dict]) -> Optional[float]:
     return round(total, 2) if seen else None
 
 
-def _parse_route(route: dict) -> RouteInfo:
-    """One HERE route object -> RouteInfo (pure; no I/O). Sections are concatenated in order."""
+def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo:
+    """One HERE route object -> RouteInfo (pure; no I/O). Sections are concatenated in order; `truck` only
+    puts the driver's own numbers into a restriction line."""
     sections = route.get("sections") or []
     if not sections:
         raise RuntimeError("HERE route has no sections")
@@ -216,8 +224,9 @@ def _parse_route(route: dict) -> RouteInfo:
         traffic += _traffic(pts, spans)
         meters += s["summary"]["length"]
         seconds += s["summary"]["duration"]
-        raw += [str(n.get("code") or n.get("title") or "") for n in s.get("notices", [])]
-    info = _info(geometry, meters, seconds, "here", _friendly(raw), True, traffic)
+        raw += [n for n in (s.get("notices") or []) if isinstance(n, dict)]
+    notices, restricted = _notices(raw, truck or TruckProfile())
+    info = _info(geometry, meters, seconds, "here", notices, True, traffic, restricted)
     info.maneuvers = _maneuvers(geometry, actions)
     n = len(geometry)
     info.speed_limits = _remap_limits(limits, n)
@@ -260,7 +269,7 @@ async def _here_by_handle(handle: str, lat: float, lng: float, heading: Optional
     r = await client().get(f"{HERE_URL}/{handle}", params=params, timeout=20)
     if r.is_error:
         raise RuntimeError(f"HERE handle {r.status_code}: {r.text[:200]}")
-    return _here_parse(r.json())
+    return _here_parse(r.json(), t)
 
 
 def _speed_limits(spans: List[dict], base: int) -> list[tuple[int, int]]:
@@ -320,16 +329,16 @@ def _incident(index: int, inc: dict) -> Incident:
                     index=index, criticality=crit)
 
 
-def _here_parse(data: dict) -> RouteInfo:
+def _here_parse(data: dict, truck: Optional[TruckProfile] = None) -> RouteInfo:
     """HERE Routing v8 response body -> the primary route, with the other routes as .alternatives
     (pure; no I/O). An alternative HERE can't fully parse is dropped, never the primary."""
     routes = (data or {}).get("routes") or []
     if not routes or not routes[0].get("sections"):
         raise RuntimeError("HERE returned no truck route")
-    primary = _parse_route(routes[0])
+    primary = _parse_route(routes[0], truck)
     for alt in routes[1:]:
         try:
-            primary.alternatives.append(_parse_route(alt))
+            primary.alternatives.append(_parse_route(alt, truck))
         except Exception as e:  # noqa: BLE001
             logger.warning("HERE alternative skipped: %s", e)
     return primary
@@ -342,7 +351,7 @@ async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile, alt
     r = await client().get(HERE_URL, params=params, timeout=20)
     if r.is_error:
         raise RuntimeError(f"HERE {r.status_code}: {r.text[:200]}")
-    return _here_parse(r.json())
+    return _here_parse(r.json(), t)
 
 
 _GO_FOR = re.compile(r"\s+Go for .*$")
@@ -364,24 +373,103 @@ def _maneuvers(geometry: List[List[float]], actions: list) -> List[Maneuver]:
     return out
 
 
-def _friendly(codes: List[str]) -> List[str]:
-    """HERE notice codes -> one short, deduplicated line a driver can act on."""
-    out = []
-    for c in codes:
-        lc = c.lower()
-        if lc == "tollroad" or "toll" in lc:
-            msg = "Tolls couldn't be fully avoided on this route."
-        elif "restriction" in lc or "violated" in lc:
-            msg = "Part of the route may be restricted for your truck. Watch posted signs."
-        elif "ferry" in lc:
-            msg = "Route includes a ferry."
-        elif lc:
-            msg = "Check the route for restrictions."
-        else:
+# HERE notice codes that are about the request, not the road (a re-route may start against the course,
+# a polyline may be simplified): never a word to the driver.
+_NOTICE_IGNORE = {"violatedstartdirection", "simplepolyline", "tollsdataunavailable", "mainlanguagenotfound",
+                  "potentialtimedependentviolations", "nothroughrestrictions"}
+RESTRICTED_LINE = {
+    "height": "This route goes under a {limit} clearance; your truck is {truck}.",
+    "weight": "This route crosses a {limit} weight limit; your truck is {truck}.",
+    "length": "This route has a {limit} length limit; your truck is {truck}.",
+    "width": "This route has a {limit} width limit.",
+    "blocked": "Part of this route is on a road closed to trucks.",
+    "other": "Part of this route breaks a truck restriction: {cause}.",
+}
+LEGAL_LINE = "Your truck is over the legal {what} limit in {where} ({limit}); that takes a permit."
+
+
+def _ft_in(cm: float) -> str:
+    inches = int(cm / 2.54)  # the limit rounded down: the conservative side for a clearance
+    return f"{inches // 12} ft {inches % 12} in" if inches % 12 else f"{inches // 12} ft"
+
+
+def _lb(kg: float) -> str:
+    return f"{int(kg / 0.45359237):,} lb"
+
+
+def _restriction(detail: dict) -> tuple[str, str]:
+    """(kind, limit text) from a HERE restriction detail: maxHeight / maxWeight / maxLength / maxWidth in cm or kg."""
+    if isinstance(detail.get("maxHeight"), (int, float)):
+        return "height", _ft_in(detail["maxHeight"])
+    if isinstance(detail.get("maxWeight"), (int, float)) or isinstance(detail.get("maxGrossWeight"), (int, float)):
+        return "weight", _lb(detail.get("maxWeight") or detail.get("maxGrossWeight"))
+    if isinstance(detail.get("maxLength"), (int, float)):
+        return "length", _ft_in(detail["maxLength"])
+    if isinstance(detail.get("maxWidth"), (int, float)):
+        return "width", _ft_in(detail["maxWidth"])
+    return "other", ""
+
+
+def _notices(raw: List[dict], t: TruckProfile) -> tuple[List[str], Optional[str]]:
+    """HERE section notices -> (lines for the driver, the kind of truck restriction the route breaks or None).
+    A violated vehicle restriction (critical: HERE found no compliant route and returned this one anyway) is
+    named with its limit and comes first; the state's legal maximum (admin-wide, one line for all states and
+    limits) says a permit is needed; avoid[] preferences that could not be honoured keep their one-liners;
+    request-level codes are dropped."""
+    physical: List[str] = []
+    other: List[str] = []
+    legal: dict[str, tuple[list[str], float]] = {}  # kind -> (states, highest limit)
+    restricted: Optional[str] = None
+    for n in raw:
+        code = str(n.get("code") or "").lower()
+        details = [d for d in (n.get("details") or []) if isinstance(d, dict)]
+        if code in _NOTICE_IGNORE or not code:
             continue
-        if msg not in out:
-            out.append(msg)
-    return out
+        if code in ("violatedvehiclerestriction", "violatedtruckroadtype", "truckroadtype"):
+            kind, limit = _restriction(details[0]) if details else ("other", "")
+            cause = str((details[0].get("cause") if details else "") or "").rstrip(".")
+            if kind == "other" and code != "violatedvehiclerestriction":
+                msg = "Part of this route uses roads not approved for trucks."
+            else:
+                truck = {"height": _ft_in(t.height_in * 2.54), "weight": f"{t.weight_lb:,} lb",
+                         "length": f"{t.total_length_ft} ft"}.get(kind, "")
+                msg = RESTRICTED_LINE[kind].format(limit=limit, truck=truck, cause=cause or "see the signs")
+            restricted = restricted if restricted and restricted != "legal" else kind
+            if msg not in physical:
+                physical.append(msg)
+        elif code == "violatedblockedroad":
+            restricted = restricted if restricted and restricted != "legal" else "blocked"
+            if RESTRICTED_LINE["blocked"] not in physical:
+                physical.append(RESTRICTED_LINE["blocked"])
+        elif code == "violatedadminwidevehiclerestriction":
+            d = details[0] if details else {}
+            kind, _ = _restriction(d)
+            value = d.get("maxHeight") or d.get("maxWeight") or d.get("maxGrossWeight") or d.get("maxLength") or d.get("maxWidth") or 0
+            states, top = legal.get(kind, ([], 0.0))
+            state = str(d.get("state") or d.get("country") or "").strip()
+            if state and state not in states:
+                states.append(state)
+            legal[kind] = (states, max(top, float(value) if isinstance(value, (int, float)) else 0.0))
+            restricted = restricted or "legal"
+        elif "toll" in code:
+            msg = "Tolls couldn't be fully avoided on this route."
+            if msg not in other:
+                other.append(msg)
+        elif "ferry" in code:
+            msg = "Route includes a ferry."
+            if msg not in other:
+                other.append(msg)
+        elif code.startswith("violated") or str(n.get("severity") or "").lower() == "critical":
+            msg = "Check the route for restrictions."
+            if msg not in other:
+                other.append(msg)
+    legal_lines = []
+    for kind, (states, top) in legal.items():
+        what = kind if kind in ("height", "weight", "length", "width") else "size"
+        limit = (_lb(top) if kind == "weight" else _ft_in(top)) if top else "the posted value"
+        where = " and ".join(states) if states else "this state"
+        legal_lines.append(LEGAL_LINE.format(what=what, where=where, limit=limit))
+    return physical + legal_lines + other, restricted
 
 
 async def _ors(fl: float, fg: float, tl: float, tg: float, t: TruckProfile, via: Via = ()) -> RouteInfo:
@@ -390,10 +478,10 @@ async def _ors(fl: float, fg: float, tl: float, tg: float, t: TruckProfile, via:
         "instructions": False,
         "options": {
             "vehicle_type": "hgv",
-            "profile_params": {"restrictions": {
-                "height": round(t.height_in * 0.0254, 2),  # m
-                "length": round(t.total_length_ft * 0.3048, 2),  # m
-                "weight": round(t.weight_lb * 0.0004536, 1),  # metric tons
+            "profile_params": {"restrictions": {  # rounded up, like HERE's
+                "height": math.ceil(t.height_in * 2.54) / 100,  # m
+                "length": math.ceil(t.total_length_ft * 30.48) / 100,  # m
+                "weight": math.ceil(t.weight_lb * 0.45359237 / 100) / 10,  # metric tons
                 "hazmat": t.hazmat,
             }},
         },

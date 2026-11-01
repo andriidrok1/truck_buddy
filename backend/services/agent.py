@@ -380,8 +380,18 @@ def _notice(raw: str) -> str:
     return next((say for key, say in NOTICES if key in low), "Heads up, check this route for restrictions.")
 
 
+RESTRICTED_SPEECH = ("Heads up, I couldn't find a legal truck route to there. {line} Don't take this one blind: "
+                     "check the signs, or give me another destination.")
+LEGAL_SPEECH = "Heads up: {line}"
+
+
 def _route_warning(route: RouteInfo) -> str:
-    """One spoken heads-up for a new route: a closure beats a router notice; nothing when there's neither."""
+    """One spoken heads-up for a new route. A route that breaks the truck's restrictions (the router found
+    no compliant one) comes first and in full, with the limit and the truck's own number; then a closure;
+    then a router notice; nothing when there's none of those."""
+    if route.restricted and route.notices:
+        line = route.notices[0]
+        return (LEGAL_SPEECH if route.restricted == "legal" else RESTRICTED_SPEECH).format(line=line)
     closed = next((i for i in route.incidents if i.closed), None)
     if closed:
         return CLOSURE.format(description=closed.description)
