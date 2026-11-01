@@ -42,7 +42,7 @@ EVENTS = {
     "Flash Flood Warning", "Flood Warning", "Extreme Cold Warning", "Tornado Warning", "Severe Thunderstorm Warning",
 }
 WARNING_ONE = "Weather warning: {event} ahead near {area}."
-WARNING_MANY = "{event} and {n} more weather alerts along the route."
+WARNING_MANY = "{event} and {n} more weather alert{s} along the route."
 HOURLY = "{place} {when}: {temp} degrees and {forecast}{wind}."
 HOURLY_ALERT = " Heads up, there's a {event} in effect there."
 NO_FORECAST = "I couldn't get a forecast for {place} right now."
@@ -146,7 +146,7 @@ def speech(alerts: list[WeatherAlert]) -> str:
     first = alerts[0]
     if len(alerts) == 1:
         return WARNING_ONE.format(event=first.event, area=first.area)
-    return WARNING_MANY.format(event=first.event, n=len(alerts) - 1)
+    return WARNING_MANY.format(event=first.event, n=len(alerts) - 1, s="" if len(alerts) == 2 else "s")
 
 
 # ---- point forecast --------------------------------------------------------------------------

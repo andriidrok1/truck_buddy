@@ -344,10 +344,22 @@ YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|correct|right|that's right|that's it|
 NO = re.compile(r"^\s*(?:no|nope|nah|wrong|that's wrong|not that|negative)\b", re.I)
 
 
-def _alt_reply(route: RouteInfo) -> str:
+def _minutes_said(m: int) -> str:
+    h, mm = divmod(int(m), 60)
+    return f"{h} h {mm} min" if h and mm else (f"{h} h" if h else f"{mm} min")
+
+
+def _alt_reply(route: RouteInfo, current: Optional[RouteInfo] = None) -> str:
+    """"Here's another way via I-80 and CA-89, 4 h 33 min, 204 miles, about 1 h 42 min longer.": the difference
+    to the route the driver is on is what decides, so it is said when it is five minutes or more."""
     via = f" via {' and '.join(route.labels[:2])}" if route.labels else ""
     tolls = f", about ${route.tolls_usd:,.0f} in tolls" if route.tolls_usd else ""
-    return ALT_REPLY.format(via=via, time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi), tolls=tolls)
+    diff = ""
+    if current is not None:
+        d = route.duration_min - current.duration_min
+        if abs(d) >= 5:
+            diff = f", about {_minutes_said(abs(d))} {'longer' if d > 0 else 'faster'}"
+    return ALT_REPLY.format(via=via, time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi), tolls=tolls + diff)
 _turns: dict = {"n": 0}  # rotation when there's no dialog session
 
 
@@ -907,7 +919,8 @@ class LlmAgentProvider:
         """A new primary route: its alternatives serve "another way?" later; any stops of the old route are gone."""
         if req.session_id in _SESSIONS:
             sess = _SESSIONS[req.session_id]
-            sess["alternatives"] = {"place": place.id, "routes": list(route.alternatives), "i": 0}
+            sess["alternatives"] = {"place": place.id, "routes": list(route.alternatives), "i": 0,
+                                    "current": route.model_copy(update={"alternatives": []})}
             sess.pop("via", None)
 
     def _stops(self, req: AgentRequest, sess: dict) -> list[Place]:
@@ -1039,9 +1052,17 @@ class LlmAgentProvider:
             return AgentResponse(status="chat", transcript=text, reply=NO_ALT, source=self.source)
         route = cached["routes"][i]
         cached["i"] = i + 1
-        route.alternatives = []
-        return AgentResponse(status="route_set", transcript=text, category=place.category, reply=_alt_reply(route),
-                             place=place, route=route, parking=approach.best(place), source=self.source)
+        # The route the driver leaves goes to the end of the list: "another way" can come back to it, and
+        # the Routes sheet keeps every other way. Before, taking the alternative lost the faster route
+        # (QA 2026-10-31, H12).
+        prev = cached.get("current")
+        if prev is not None and all(r is not prev for r in cached["routes"]):
+            cached["routes"].append(prev)
+        cached["current"] = route
+        route.alternatives = [r.model_copy(update={"alternatives": []}) for r in cached["routes"][cached["i"]:]]
+        return AgentResponse(status="route_set", transcript=text, category=place.category,
+                             reply=_alt_reply(route, prev), place=place, route=route, parking=approach.best(place),
+                             source=self.source)
 
     def _parking(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
         """Cached verdict -> answer now; otherwise "Let me look" and the app fetches /parking/answer."""

@@ -127,7 +127,8 @@ def test_speech_lines():
     b = WeatherAlert(id="2", event="Winter Storm Warning", severity="Severe", headline="h", area="Sierra", index=9)
     assert weather.speech([]) == ""
     assert weather.speech([a]) == "Weather warning: High Wind Warning ahead near Donner Pass."
-    assert weather.speech([a, b]) == "High Wind Warning and 1 more weather alerts along the route."
+    assert weather.speech([a, b]) == "High Wind Warning and 1 more weather alert along the route."
+    assert weather.speech([a, b, b]) == "High Wind Warning and 2 more weather alerts along the route."
 
 
 # ---- forecast ----

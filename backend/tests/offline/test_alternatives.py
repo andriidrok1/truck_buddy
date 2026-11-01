@@ -5,6 +5,7 @@ from conftest import fixture_json, params_of, run
 
 from models import AgentRequest, Place, TruckProfile
 from services import agent, routing
+from services.agent import _minutes_said
 from services.routing import _here_parse, _labels, _tolls_usd
 
 DATA = fixture_json("here/route_sac_reno")
@@ -75,6 +76,11 @@ def test_alt_reply_wording():
     assert agent._alt_reply(info.alternatives[0]) == "Here's another way via I-80 and CA-89, 4 h 38 min, 204 miles."
     tolled = info.alternatives[1].model_copy(update={"tolls_usd": 14.25, "labels": []})
     assert agent._alt_reply(tolled) == "Here's another way, 4 h 56 min, 224 miles, about $14 in tolls."
+    assert agent._alt_reply(info.alternatives[0], info) == \
+        f"Here's another way via I-80 and CA-89, 4 h 38 min, 204 miles, about {_minutes_said(info.alternatives[0].duration_min - info.duration_min)} longer."
+    close = info.alternatives[0].model_copy(update={"duration_min": info.duration_min + 3})
+    assert agent._alt_reply(close, info).endswith("204 miles.")  # under five minutes: no difference said
+    assert _minutes_said(102) == "1 h 42 min" and _minutes_said(60) == "1 h" and _minutes_said(7) == "7 min"
 
 
 def _req(text, sid="s1", active=None):
@@ -93,11 +99,20 @@ def test_dialog_walks_through_the_alternatives(agent_sandbox, fake_http):
 
     second = run(prov.handle(_req("another way?", active=RENO), None))
     assert second.status == "route_set" and second.place.id == RENO.id
-    assert second.reply == "Here's another way via I-80 and CA-89, 4 h 38 min, 204 miles."
-    assert second.route.labels == ["I-80", "CA-89"] and second.route.alternatives == [] and second.route.maneuvers
+    longer = _minutes_said(second.route.duration_min - first.route.duration_min)
+    assert second.reply == f"Here's another way via I-80 and CA-89, 4 h 38 min, 204 miles, about {longer} longer."
+    assert second.route.labels == ["I-80", "CA-89"] and second.route.maneuvers
+    # the Routes sheet keeps the other alternative and the route just left (QA 2026-10-31, H12)
+    assert [r.labels for r in second.route.alternatives] == [["I-80", "I-580"], ["I-80"]]
+    assert all(r.alternatives == [] for r in second.route.alternatives)
 
     third = run(prov.handle(_req("is there another way?", active=RENO), None))
     assert third.status == "route_set" and third.route.labels == ["I-80", "I-580"]
+    assert [r.labels for r in third.route.alternatives] == [["I-80"]]
+
+    back = run(prov.handle(_req("another way", active=RENO), None))  # the way back to the fastest one
+    assert back.status == "route_set" and back.route.labels == ["I-80"] and back.route.alternatives == []
+    assert back.reply.endswith("faster."), back.reply
 
     fourth = run(prov.handle(_req("another way", active=RENO), None))
     assert fourth.status == "chat" and fourth.reply == "That's the only truck route I've got."
