@@ -332,6 +332,7 @@ ALT_NO_ROUTE = "Set a route first and I'll look for other ways."
 VIA_ADDED = "Added {name}{ahead}. New total {time}, {mi} miles."
 VIA_NO_ROUTE = "Set a route first, then I can add stops on the way."
 VIA_FULL = "I can only add three stops. Say 'clear the stops' to start over."
+VIA_DUPLICATE = "{name} is already one of your stops."
 VIA_CLEARED = "Stops cleared. Straight there, {time}, {mi} miles."
 VIA_NONE = "There are no stops on this route."
 WHICH_PLACE = "Which place? Find one or set a route first."
@@ -884,6 +885,9 @@ class LlmAgentProvider:
                 return Place(**d["place"])
             except Exception:  # noqa: BLE001 - a malformed offer falls through to the normal path
                 pass
+        picked = pick_place(d, sess["places"])  # "stop at the 49er on the way": a place from the list
+        if picked and (not req.active_place or picked.id != req.active_place.id):
+            return picked
         query = str(d.get("query") or "").strip()
         category = d.get("category") if d.get("category") in CATEGORIES else None
         if query:
@@ -938,6 +942,9 @@ class LlmAgentProvider:
         if not stop:
             what = str(d.get("query") or CATEGORY_WORD.get(str(d.get("category")), "a stop")).strip()
             return AgentResponse(status="chat", transcript=text, reply=heard_not_found(what), source=self.source)
+        if any(s.id == stop.id for s in stops):  # "stop at the 49er" when it already is one (QA 2026-10-31, H9)
+            return AgentResponse(status="chat", transcript=text, source=self.source,
+                                 reply=VIA_DUPLICATE.format(name=stop.name.split(",")[0]))
         stops = stops + [stop]
         route = await self._route_with_stops(req, stops)
         sess["via"] = {"place": place.id, "stops": stops}
@@ -1146,10 +1153,17 @@ class LlmAgentProvider:
         # Parking question about a town destination answered as chat: give the town line, never a guess.
         if intent == "chat" and req.active_place and is_town(req.active_place) and re.search(r"\bpark", text, re.I):
             intent = "parking"
-        # "Cheapest diesel on my route" with a route set: a stop on the way; the destination stays.
-        if intent == "find" and req.active_place and d.get("category") in STOP_CATEGORIES and ON_THE_WAY.search(text):
-            logger.info("agent find %s %r with a route active -> add_stop", d.get("category"), text)
-            intent, d = "add_stop", {**d, "intent": "add_stop"}
+        # "Cheapest diesel on my route" with a route set: a stop on the way; the destination stays. With a
+        # list on screen the model answers pick instead of find (QA 2026-10-31, H9): same rewrite. A pick on
+        # "cheapest" over a list without prices points at nothing, so the stop finder chooses along the route.
+        if intent in ("find", "pick") and req.active_place and ON_THE_WAY.search(text):
+            category = d.get("category") or (sess["places"][0].category if sess["places"] else None) or "truck_stop"
+            if category in STOP_CATEGORIES:
+                logger.info("agent %s %s %r with a route active -> add_stop", intent, category, text)
+                d = {**d, "intent": "add_stop", "category": category}
+                if intent == "pick" and PRICE_WORDS.search(text) and all(p.diesel_price is None for p in sess["places"]):
+                    d["place_index"] = None
+                intent = "add_stop"
         # The model's word is not the last word on two things the driver says a lot (QA 2026-10-30, H4):
         # a rejected place read as "another road", and a reference into the list read as an address.
         intent, d = reject_or_reference_guard(intent, d, text, sess["places"], req.active_place)

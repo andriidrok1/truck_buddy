@@ -84,3 +84,46 @@ def test_spoken_landmark_is_the_arrival_street():
     route.approach = None
     assert arrival_street(ROADYS, route) == "W Capitol Ave"
     assert arrival_street(ROADYS.model_copy(update={"address": None}), route) == ""
+
+
+def test_a_pick_on_my_route_over_an_unpriced_list_is_a_stop_on_the_way(agent_sandbox, fake_http):
+    """QA 2026-10-31, H9: with the route card and three other stops on screen the model answered pick
+    (place_index=2) to "cheapest diesel on my route". A stop on the way is what was said; with no prices
+    on the list the index means nothing, so the stop finder picks along the route."""
+    prov = _prov(agent_sandbox, fake_http)
+    agent_sandbox.llm.on(r"park", {"intent": "find", "category": "truck_stop"})
+    agent_sandbox.llm.on(r"cheapest diesel on my route", {"intent": "pick", "place_index": 2})
+    agent_sandbox.places_provider.places = [PARK, ROADYS]
+    first = run(prov.handle(AgentRequest(text="where can I park", session_id="otw-pick", **SAC), None))
+    res = run(prov.handle(AgentRequest(text="cheapest diesel on my route", session_id="otw-pick",
+                                       active_place=first.place, **SAC), None))
+    other = ROADYS if first.place.id == PARK.id else PARK
+    assert res.status == "route_set" and res.place.id == first.place.id, res.reply  # destination kept
+    assert [o.id for o in res.options] == [other.id] and res.reply.startswith(f"Added {other.name}")
+    assert res.reply.endswith("I don't have a diesel price for it.")
+    assert first.place.id not in agent._SESSIONS["otw-pick"].get("rejected", set())
+
+
+def test_a_named_pick_on_the_way_stops_at_that_place(agent_sandbox, fake_http):
+    prov = _prov(agent_sandbox, fake_http)
+    agent_sandbox.llm.on(r"park", {"intent": "find", "category": "truck_stop"})
+    agent_sandbox.llm.on(r"stop at", {"intent": "pick", "place_index": 2})
+    agent_sandbox.places_provider.places = [PARK, ROADYS]
+    first = run(prov.handle(AgentRequest(text="where can I park", session_id="otw-named", **SAC), None))
+    shown = agent._SESSIONS["otw-named"]["places"]
+    res = run(prov.handle(AgentRequest(text=f"stop at {shown[1].name} on the way", session_id="otw-named",
+                                       active_place=first.place, **SAC), None))
+    assert res.status == "route_set" and res.place.id == first.place.id
+    assert [o.id for o in res.options] == [shown[1].id], res.reply
+    assert all("geocode" not in str(c) for c in fake_http.calls)
+
+
+def test_the_same_stop_twice_is_said_not_added(agent_sandbox, fake_http):
+    prov = _prov(agent_sandbox, fake_http)
+    agent_sandbox.llm.on(r"diesel", {"intent": "add_stop", "category": "truck_stop"})
+    req = AgentRequest(text="add diesel on the way", session_id="dup", active_place=PARK, **SAC)
+    first = run(prov.handle(req, None))
+    assert [o.id for o in first.options] == [ROADYS.id]
+    again = run(prov.handle(req, None))
+    assert again.status == "chat" and again.reply == "Roady's Truck Stop is already one of your stops."
+    assert [s.id for s in agent._SESSIONS["dup"]["via"]["stops"]] == [ROADYS.id]
