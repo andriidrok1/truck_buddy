@@ -38,6 +38,55 @@ def test_first_connection_migrates_without_an_explicit_call(sqlite_store):
     con.close()
 
 
+def _versions(con) -> list[int]:
+    return [r[0] for r in con.execute("SELECT version FROM schema_version ORDER BY version")]
+
+
+def test_sqlite_migrations_run_twice_and_survive_a_lost_version_row(tmp_path):
+    """0005 is the first ALTER TABLE: a re-run, or a run that died after the columns but before the version row,
+    must not fail on "duplicate column name"."""
+    con = sqlite3.connect(str(tmp_path / "twice.sqlite"), isolation_level=None)
+    every = [v for v, _ in db.migration_files("sqlite")]
+    assert db._migrate_sqlite(con) == every and db._migrate_sqlite(con) == []
+    con.execute("DELETE FROM schema_version WHERE version = 5")  # the columns stay, the record of them is gone
+    assert db._migrate_sqlite(con) == [5] and _versions(con) == every
+    con.close()
+
+
+def test_sqlite_migration_is_atomic_with_its_version_row(tmp_path, monkeypatch):
+    """A file that fails halfway leaves neither its first statements nor its version row behind."""
+    bad = tmp_path / "0099_bad.sql"
+    bad.write_text("CREATE TABLE half_done (x INTEGER);\nTHIS IS NOT SQL;\n")
+    files = db.migration_files("sqlite")
+    monkeypatch.setattr(db, "migration_files", lambda dialect: [*files, (99, bad)])
+    con = sqlite3.connect(str(tmp_path / "atomic.sqlite"), isolation_level=None)
+    with pytest.raises(sqlite3.OperationalError):
+        db._migrate_sqlite(con)
+    tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "half_done" not in tables and 99 not in _versions(con) and 4 in _versions(con)
+    con.close()
+
+
+def test_sqlite_at_0004_with_rows_upgrades(tmp_path, monkeypatch):
+    path = tmp_path / "old.sqlite"
+    files = db.migration_files("sqlite")
+    monkeypatch.setattr(db, "migration_files", lambda dialect: [f for f in files if f[0] <= 4])
+    con = sqlite3.connect(str(path), isolation_level=None)
+    assert db._migrate_sqlite(con) == [1, 2, 3, 4]
+    con.execute("INSERT INTO orgs (id, name, solo, created_at) VALUES ('o1', 'Acme', 0, '2026-10-01T00:00:00+00:00')")
+    con.execute("INSERT INTO drivers (id, org_id, display_name, profile, created_at) "
+                "VALUES ('dr1', 'o1', 'Sam', NULL, '2026-10-01T00:00:00+00:00')")
+    con.execute("INSERT INTO trip_events (driver, trip_id, kind, at, source, data) "
+                "VALUES ('d1', 't1', 'route_started', '2026-10-01T17:00:00+00:00', 'app', '{}')")
+    monkeypatch.setattr(db, "migration_files", lambda dialect: files)
+    assert db._migrate_sqlite(con) == [v for v, _ in files if v > 4]
+    row = con.execute("SELECT driver, kind, org_id, vehicle_id, lat, lng FROM trip_events").fetchone()
+    assert row == ("d1", "route_started", None, None, None, None)
+    assert con.execute("SELECT id, display_name, motive_user_id FROM drivers").fetchone() == ("dr1", "Sam", None)
+    assert _versions(con) == [v for v, _ in files]
+    con.close()
+
+
 @pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="needs TEST_DATABASE_URL (a throwaway Postgres)")
 def test_postgres_migrates_and_round_trips(monkeypatch):
     """Run with a throwaway Postgres, e.g.
