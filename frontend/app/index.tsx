@@ -31,11 +31,12 @@ import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
-import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, setNudgesEnabled, takeTruckReroute, truckLabel, useHandsFree, useNudgesEnabled, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { getTruckProfile, isOnboarded, saveTruckProfile, truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
-import { setActiveRoute } from "@/src/state/activeRoute";
+import { providerPlace as providerPin, restoreSavedTrip, selectPlaces, startTripPersistence, useTripStore, viaOf } from "@/src/state/tripStore";
+import { setHandsFree, setNudgesEnabled, setVoiceGuidance, takeTruckReroute, useHandsFree, useNudgesEnabled, useVoiceGuidance } from "@/src/state/settingsStore";
 import { reduceAgentResponse } from "@/src/state/agentReducer";
 import { applyEffects } from "@/src/state/applyEffects";
 import { offlineTurn } from "@/src/state/offlineTurn";
@@ -117,16 +118,31 @@ export default function MapScreen() {
   // (no camera refit on a drag) but the chrome above the sheet moves down into the freed room.
   const [peekH, setPeekH] = useState<number | null>(null);
   const chromeBottom = (peekH ?? sheetH) + spacing.lg;
-  const [phase, setPhase] = useState<Phase>("ready");
-  // Mirrors of the state the async handlers read after an await (they outlive the render that
-  // made them). Written at commit, so a handler never sees a value from an uncommitted render.
-  const phaseRef = useRef<Phase>("ready");
+  // The trip (route, driving, stops, options, providers, parking, sheet) lives in src/state/tripStore.ts;
+  // async handlers read `trip()` at the moment they need a value instead of a ref mirror of a render.
+  const trip = useTripStore.getState;
+  const active = useTripStore((s) => s.active);
+  const driving = useTripStore((s) => s.driving);
+  const options = useTripStore((s) => s.options);
+  const providers = useTripStore((s) => s.providers);
+  const parking = useTripStore((s) => s.parking);
+  const sheet = useTripStore((s) => s.sheet);
+  const restoredId = useTripStore((s) => s.restoredId);
+  const places = useTripStore(selectPlaces);
+  // The dialog's own phases (listening, thinking) sit on top of the sheet.
+  const [dialogPhase, setDialogPhase] = useState<"listening" | "thinking" | null>(null);
+  const phase: Phase = dialogPhase ?? sheet;
+  const phaseRef = useRef<Phase>(phase);
   useLayoutEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
-  const drivingRef = useRef(false);
-  const [active, setActive] = useState<ActiveRoute | null>(null);
-  const [places, setPlaces] = useState<Place[]>([]);
+  const setPhase = (p: Phase) => {
+    if (p === "listening" || p === "thinking") setDialogPhase(p);
+    else {
+      setDialogPhase(null);
+      trip().setSheet(p);
+    }
+  };
   const [toast, setToast] = useState<ToastData | null>(null);
   // kind "reply" = the copilot's answer, kept until the next turn (a driver who looks later must still
   // see it); kind "line" = a spoken line (turn, nudge, parking tip), gone 8 s after it is said.
@@ -136,12 +152,7 @@ export default function MapScreen() {
   const [micCard, setMicCard] = useState<Exclude<MicPermission, "granted"> | null>(null);
   const [fit, setFit] = useState<{ key: string; points: LatLng[] }>({ key: "init", points: [] });
   const [thinkingText, setThinkingText] = useState<string | undefined>(undefined);
-  const [options, setOptions] = useState<Place[]>([]);
-  const [parking, setParking] = useState<Record<string, ParkingState>>({});
-  const [driving, setDriving] = useState(false);
-  useLayoutEffect(() => {
-    drivingRef.current = driving;
-  }, [driving]);
+  const setDriving = (v: boolean) => trip().setDriving(v);
   const [overview, setOverview] = useState(false);
   // The list of the other routes the engine offered (the "Routes (N)" chip, before "Go").
   const [routesOpen, setRoutesOpen] = useState(false);
@@ -160,34 +171,11 @@ export default function MapScreen() {
     const t = setTimeout(() => setOverview(false), 15000);
     return () => clearTimeout(t);
   }, [overview]);
-  const [voiceOn, setVoiceOnState] = useState(true);
+  const voiceOn = useVoiceGuidance();
+  const setVoiceOn = setVoiceGuidance;
   const { online } = useOnline();
-  const [providers, setProviders] = useState<ProvidersResult | null>(null);
-  const providersRef = useRef<ProvidersResult | null>(null);
-  useLayoutEffect(() => {
-    providersRef.current = providers;
-  }, [providers]);
 
-  useEffect(() => {
-    storage.getItem(VOICE_GUIDANCE_KEY, true as boolean).then((v) => setVoiceOnState(v !== false));
-  }, []);
-  const setVoiceOn = (v: boolean) => {
-    setVoiceOnState(v);
-    storage.setItem(VOICE_GUIDANCE_KEY, v);
-  };
-
-  // Generation of the last ROUTE operation (a pin tap, a re-plan, an entrance route): a result of an older
-  // one is dropped. The dialog has its own turn ids inside useCopilotTurn; this one moves to the trip store (A2).
-  const routeTurn = useRef(0);
   const searchBlurGuard = useRef(false); // while set, "Where to?" gives a focus it gets back (see onSubmitText)
-  const activeRef = useRef<ActiveRoute | null>(null);
-  useLayoutEffect(() => {
-    activeRef.current = active;
-  }, [active]);
-  const optionsRef = useRef<Place[]>([]);
-  useLayoutEffect(() => {
-    optionsRef.current = options;
-  }, [options]);
 
   const showToast = useCallback((text: string, kind: ToastData["kind"] = "error") => {
     setToast({ id: Date.now(), text, kind });
@@ -209,7 +197,7 @@ export default function MapScreen() {
     (item) => {
       if (item.key?.startsWith(NUDGE_KEY_PREFIX)) nudgeAnswer.current();
     },
-    (item, why) => tripLog.log("speech_dropped", { key: item.key ?? null, priority: item.priority, kind: item.kind, why }, activeRef.current?.trip_id),
+    (item, why) => tripLog.log("speech_dropped", { key: item.key ?? null, priority: item.priority, kind: item.kind, why }, trip().active?.trip_id),
   );
   // The trip log mirrors its backlog to storage and flushes once a minute while the screen lives; the
   // drive recorder marks every logged event on its timeline.
@@ -240,8 +228,8 @@ export default function MapScreen() {
       const { trace, speedFactor, name } = req;
       if (trace.place && trace.route) {
         clearSpeech();
-        setActive({ place: trace.place, route: trace.route, trip_id: trace.trip_id ?? undefined });
-        setPhase("navigating");
+        trip().startRoute({ place: trace.place, route: trace.route, trip_id: trace.trip_id ?? undefined });
+        setDialogPhase(null);
         setDriving(true);
       }
       playTrace(trace.fixes, speedFactor, { id: `trace-${name}`, label: `Replay: ${name} (${speedFactor}x)` });
@@ -272,13 +260,13 @@ export default function MapScreen() {
   }, []);
 
   // Break reminder while a route is active.
-  const routeStart = useRef<number | null>(null);
   useEffect(() => {
     if (!active || !truck.break_hours) return;
     const limitMs = truck.break_hours * 3600 * 1000;
     const t = setInterval(() => {
-      if (!routeStart.current || Date.now() - routeStart.current < limitMs) return;
-      routeStart.current = Date.now(); // remind again after the next interval
+      const start = trip().routeStart;
+      if (!start || Date.now() - start < limitMs) return;
+      useTripStore.setState({ routeStart: Date.now() }); // remind again after the next interval
       const who = truck.driver_name ? `Hey ${truck.driver_name}, ` : "";
       const hrs = truck.break_hours === 1 ? "an hour" : `${truck.break_hours} hours`;
       const text = `${who}you've been driving for ${hrs}. Want me to find a rest area?`;
@@ -384,13 +372,14 @@ export default function MapScreen() {
     api
       .places("truck_stop", at)
       .then((res) => {
-        if (cancelled || activeRef.current || phaseRef.current !== "ready" || optionsRef.current.length) return;
+        const t = trip();
+        if (cancelled || t.active || phaseRef.current !== "ready" || t.options.length) return;
         if (!res.places.length) {
           startPinsEmptyAt.current = at;
           return;
         }
         const nearest = res.places.slice(0, 8);
-        setPlaces(nearest);
+        t.setStartPins(nearest);
         setFit({ key: `start-pins-${at.lat.toFixed(3)},${at.lng.toFixed(3)}`, points: [at, ...nearest.slice(0, 3)] });
       })
       .catch(() => {});
@@ -400,23 +389,23 @@ export default function MapScreen() {
   }, [active, phase, options.length, providers, places.length, loc.coords, loc.isDemo, loc.resolved]);
 
   /** Satellite parking check runs after the route is set; its directions are spoken when the reply ends. */
-  const followParking = async (place: Place, replyDone: Promise<void>, isCurrent: () => boolean, approach = activeRef.current?.route.approach) => {
+  const followParking = async (place: Place, replyDone: Promise<void>, isCurrent: () => boolean, approach = trip().active?.route.approach) => {
     if (place.category === "service") return; // breakdown provider: no truck-parking check
     try {
       const pk = await api.parking(place, approach);
       // The card always takes the result if it's still the same destination.
-      setActive((a) => (a && a.place.id === place.id ? { ...a, parking: pk } : a));
+      trip().setActiveParking(place.id, pk);
       const e = entrySpot(pk);
-      if (e && activeRef.current?.place.id === place.id && !routeEndsAt(activeRef.current.route, e)) {
+      const cur = trip().active;
+      if (e && cur?.place.id === place.id && !routeEndsAt(cur.route, e)) {
         // Route to E. An off-route reroute landing meanwhile makes this plan stale and it is dropped; one
         // more try against the route that replaced it, so the truck is still guided to the entrance.
-        const myRoute = routeTurn.current;
-        reroute(myRoute, "entrance").then((applied) => {
-          const now = activeRef.current;
-          if (!applied && now?.place.id === place.id && !routeEndsAt(now.route, e)) reroute(myRoute, "entrance");
+        reroute("entrance").then((applied) => {
+          const now = trip().active;
+          if (!applied && now?.place.id === place.id && !routeEndsAt(now.route, e)) reroute("entrance");
         });
       }
-      if (!isCurrent() || activeRef.current?.place.id !== place.id) return;
+      if (!isCurrent() || trip().active?.place.id !== place.id) return;
       // Spoken right after the answer: the verdict only. The entry and parking tips stay on the card and
       // are said when the truck is within half a mile (approachTips below) or on "how do I get in".
       // The whole set after every answer ran 17 s (QA 2026-10-28, U5).
@@ -424,10 +413,10 @@ export default function MapScreen() {
       if (!text) return;
       const audio = api.speak(text); // generate while the first answer is still playing
       await replyDone;
-      if (!isCurrent() || activeRef.current?.place.id !== place.id) return;
+      if (!isCurrent() || trip().active?.place.id !== place.id) return;
       showLine(text);
       const r = await audio;
-      if (isCurrent() && activeRef.current?.place.id === place.id) {
+      if (isCurrent() && trip().active?.place.id === place.id) {
         await voice.playAndWait(absoluteUrl(r.audio_url), Math.min(15000, 1500 + text.length * 65));
       }
     } catch {
@@ -436,58 +425,44 @@ export default function MapScreen() {
   };
 
   const startRoute = (next: ActiveRoute) => {
-    if (!activeRef.current) routeStart.current = Date.now();
-    const tripped: ActiveRoute = { ...next, trip_id: next.trip_id ?? newTripId() };
+    const tripped = trip().startRoute(next);
     tripLog.log("route_started", {
       place_id: next.place.id, category: next.place.category, distance_m: next.route.distance_m, duration_s: next.route.duration_s,
       alternatives: next.route.alternatives?.length ?? 0, restricted: next.route.restricted ?? null, source: next.route.source,
     }, tripped.trip_id);
-    setActive(tripped);
-    setPhase("navigating");
+    setDialogPhase(null);
     // Not while driving: the follow camera stays on the truck (the whole-route fit flashed for a second
     // and snapped back on the next fix).
-    if (!drivingRef.current) setFit({ key: `route-${next.place.id}-${Date.now()}`, points: [loc.coords, next.place] });
+    if (!trip().driving) setFit({ key: `route-${next.place.id}-${Date.now()}`, points: [loc.coords, next.place] });
   };
 
-  const backToIdle = () =>
-    setPhase(activeRef.current ? "navigating" : providersRef.current ? "providers" : optionsRef.current.length ? "options" : "ready");
+  const backToIdle = () => setPhase(trip().idleSheet());
 
-  // Dev tools (tester replay) read the active route from here; the disk copy survives a restart.
-  // Every change of `active` (new route, alternative, stops, reroute, parking) is written; the
-  // object that was just restored is not written again, so its saved time stays the original.
-  // Every Sentry event of a drive carries its trip id, so a crash can be put next to the trip log.
+  // The disk copy of the trip survives a restart (src/state/tripStore.ts writes every change); every Sentry
+  // event of a drive carries its trip id, so a crash can be put next to the trip log.
   useEffect(() => {
     Sentry.setTag("trip_id", active?.trip_id ?? "none");
   }, [active?.trip_id]);
-  const skipSave = useRef<ActiveRoute | null>(null);
-  useEffect(() => {
-    setActiveRoute(active);
-    if (active && active !== skipSave.current) saveActiveRoute(active);
-  }, [active]);
+  useEffect(() => startTripPersistence(), []);
 
   // A route saved before the last restart (crash, dead zone, phone off) comes back silently, not
   // driving, with a banner: Resume drives it, Dismiss forgets it.
-  const [restoredId, setRestoredId] = useState<string | null>(null);
   useEffect(() => {
-    loadActiveRoute().then((saved) => {
-      if (!saved || activeRef.current) return;
-      const restored: ActiveRoute = saved.active.trip_id ? saved.active : { ...saved.active, trip_id: newTripId() };
-      skipSave.current = restored;
-      routeStart.current = Date.now();
-      tripLog.log("route_restored", { place_id: restored.place.id, saved_age_s: Math.round((Date.now() - saved.savedAt) / 1000) }, restored.trip_id);
-      setActive(restored);
-      setPhase("navigating");
-      setRestoredId(saved.active.place.id);
+    restoreSavedTrip().then((r) => {
+      if (!r) return;
+      const { restored: res, saved } = r;
+      tripLog.log("route_restored", { place_id: res.place.id, saved_age_s: Math.round((Date.now() - saved.savedAt) / 1000), was_driving: saved.driving === true }, res.trip_id);
+      setDialogPhase(null);
       // The whole saved line: the GPS fix is not in yet, and the demo point would span half the country.
-      const line = saved.active.route.geometry.filter((_, i) => i % 25 === 0).map(([lat, lng]) => ({ lat, lng }));
-      setFit({ key: `restored-${saved.active.place.id}`, points: [...line, saved.active.place] });
+      const line = res.route.geometry.filter((_, i) => i % 25 === 0).map(([lat, lng]) => ({ lat, lng }));
+      setFit({ key: `restored-${res.place.id}`, points: [...line, res.place] });
     });
   }, []);
   const restored = restoredId !== null && active?.place.id === restoredId && !driving;
   useEffect(() => {
     // Nothing pressed in 20 s: the banner goes, the route stays in preview (same as "Keep").
     if (!restored) return;
-    const t = setTimeout(() => setRestoredId(null), 20000);
+    const t = setTimeout(() => trip().dismissRestored(), 20000);
     return () => clearTimeout(t);
   }, [restored]);
 
@@ -502,7 +477,7 @@ export default function MapScreen() {
    * the card with the red banner is not on screen then, and the turn calls would otherwise just carry on.
    */
   const warnRestricted = (route: RouteInfo) => {
-    if (!route.restricted || !drivingRef.current) return;
+    if (!route.restricted || !trip().driving) return;
     const line = route.notices?.[0] ?? "";
     const text =
       route.restricted === "legal"
@@ -514,7 +489,7 @@ export default function MapScreen() {
   const rerouting = useRef(false);
   const offlineRef = useRef<OfflineGuidance | null>(null);
   const rerouteOffRoute = async (g: Guidance) => {
-    const cur = activeRef.current;
+    const cur = trip().active;
     if (!cur || rerouting.current || !driving) return;
     if (loc.sim && !loc.sim.trace) return;
     // No signal: no /reroute. Point the driver back at the loaded line instead; the reroute
@@ -531,6 +506,7 @@ export default function MapScreen() {
     const sectionStart = starts[sectionIndex] ?? 0;
     const traveledM = Math.max(0, g.alongM - (g.cum[sectionStart] ?? 0));
     say("Rerouting.", { priority: PRIORITY.MANEUVER, kind: "system", key: "reroute", ttlMs: 20000 });
+    const gen = trip().routeGen;
     const event = { cause: "off_route", dist_m: Math.round(g.distM), threshold_m: g.thresholdM, handle: !!route.handle, section_index: sectionIndex };
     let fallback = false;
     try {
@@ -553,11 +529,8 @@ export default function MapScreen() {
         res = await api.route(loc.coords, cur.place, false, route.via ?? [], cur.trip_id ?? null);
       }
       // Only onto the route the truck left: a stop added or a route picked while this ran is newer.
-      const applied = activeRef.current?.place.id === cur.place.id && activeRef.current.route === route;
-      if (applied) {
-        setActive((a) => (a ? { ...a, route: res.route } : a));
-        warnRestricted(res.route);
-      }
+      const applied = trip().applyRoute(gen, res.route);
+      if (applied) warnRestricted(res.route);
       tripLog.log("reroute", { ...event, ok: true, fallback, applied, restricted: res.route.restricted ?? null }, cur.trip_id);
       g.resetOffRoute();
     } catch {
@@ -574,7 +547,7 @@ export default function MapScreen() {
   );
   const guidance = useGuidance(active, fix, driving, voiceOn, say, rerouteOffRoute, (next, stage, toNextM) => {
     // The "now" call is the one that can come late: under 60 m at 65 mph is less than two seconds.
-    if (stage === "now") tripLog.log("maneuver_said", { action: next.action, index: next.index, to_next_m: Math.round(toNextM) }, activeRef.current?.trip_id);
+    if (stage === "now") tripLog.log("maneuver_said", { action: next.action, index: next.index, to_next_m: Math.round(toNextM) }, trip().active?.trip_id);
   });
 
   // Half a mile out, once per destination: the entry and parking tips from the card, through the speech
@@ -619,13 +592,11 @@ export default function MapScreen() {
   const handsFreeRef = useRef(handsFree);
   const voiceOnRef = useRef(voiceOn);
   const locRef = useRef(loc);
-  const placesRef = useRef(places);
   const captionRef = useRef(caption);
   useLayoutEffect(() => {
     handsFreeRef.current = handsFree;
     voiceOnRef.current = voiceOn;
     locRef.current = loc;
-    placesRef.current = places;
     captionRef.current = caption;
   });
   const { turn } = useCopilotTurn({
@@ -634,19 +605,20 @@ export default function MapScreen() {
     fillers,
     offline: () => offlineTurn({ isOnline, say, setCaption }),
     context: () => {
-      const cur = activeRef.current;
+      const t = trip();
+      const cur = t.active;
       return {
         coords: coordsRef.current, // the truck moved while the driver talked and the words were transcribed
         active: cur,
-        ui: { driving: drivingRef.current, voice_guidance: voiceOnRef.current, hands_free: handsFreeRef.current && WAKE_SUPPORTED, options_count: optionsRef.current.length },
+        ui: { driving: t.driving, voice_guidance: voiceOnRef.current, hands_free: handsFreeRef.current && WAKE_SUPPORTED, options_count: t.options.length },
         heading: locRef.current.heading ?? null,
         speed: locRef.current.speed ?? null,
         limitMph: limitRef.current,
         // Names the recogniser should expect: what is on screen and on the route, most useful first.
         hintNames: [
           cur?.place.name,
-          ...optionsRef.current.map((p) => p.name),
-          ...placesRef.current.map((p) => p.name),
+          ...t.options.map((p) => p.name),
+          ...t.places().map((p) => p.name),
           ...(cur?.stops ?? []).map((s) => s.name),
           ...(cur?.route.labels ?? []),
           streetFromInstruction(guidanceRef.current.next?.instruction),
@@ -673,10 +645,6 @@ export default function MapScreen() {
   // break coming due, parking ahead). Each line is spoken as ambient; once it has played the mic
   // opens for a few seconds (listenForAnswer) and the backend keeps the offer pending for the next
   // turn of the same session, so "yes" is enough. Not offline, not before "Go". ----
-  const drivingSince = useRef<number | null>(null);
-  useEffect(() => {
-    drivingSince.current = driving ? Date.now() : null;
-  }, [driving]);
   const hasRoute = !!active;
   const nudgesOn = useNudgesEnabled();
   useEffect(() => {
@@ -685,13 +653,13 @@ export default function MapScreen() {
     let every: ReturnType<typeof setInterval> | null = null;
     const poll = async () => {
       if (!isOnline()) return;
-      const cur = activeRef.current;
+      const cur = trip().active;
       if (!cur) return;
       const g = guidanceRef.current;
       // The offer must land in the session the answer will use: a live one, else one started here.
       const before = turn.dialogId();
       const sessionId = turn.isStale() || !before ? newSessionId() : before;
-      const since = drivingSince.current;
+      const since = trip().drivingSince;
       try {
         const { nudges } = await api.nudges(
           {
@@ -777,8 +745,7 @@ export default function MapScreen() {
     if (!ctx.isCurrent()) return { spoken: Promise.resolve() };
     if (out.status === "providers" && out.providers?.length) {
       const list = out.providers;
-      setProviders({ providers: list, call_card: out.call_card, summary: out.summary, provider_source: out.provider_source });
-      setPlaces(list.map(providerPlace));
+      trip().setProviders({ providers: list, call_card: out.call_card, summary: out.summary, provider_source: out.provider_source });
       setPhase("providers");
       setFit({ key: `providers-${ctx.turnId}`, points: [loc.coords, ...list] }); // one research per turn: unique
     } else backToIdle();
@@ -829,6 +796,7 @@ export default function MapScreen() {
   };
 
   const onOptionParking = async (p: Place) => {
+    const setParking = trip().setParking;
     setParking((s) => ({ ...s, [p.id]: { loading: true } }));
     try {
       const result = await api.parking(p);
@@ -843,22 +811,25 @@ export default function MapScreen() {
     turn.pause();
     turn.cancel(); // discard any in-flight turn
     voice.cancelRecording().catch(() => {});
+    const t = trip();
     if (phase === "providers") {
-      setProviders(null);
-      setPlaces([]);
+      t.setProviders(null);
+      t.setAgentPlaces([]);
+      t.setStartPins([]);
       setCaption(null);
-      setPhase(activeRef.current ? "navigating" : "ready");
+      setPhase(t.active ? "navigating" : "ready");
       return;
     }
     if (phase === "options") {
       // Back to the route card if one is active, otherwise clear the list.
-      if (activeRef.current) {
+      if (t.active) {
         setPhase("navigating");
         return;
       }
-      setOptions([]);
-      setParking({});
-      setPlaces([]);
+      t.setOptions([]);
+      t.setParking({});
+      t.setAgentPlaces([]);
+      t.setStartPins([]);
       setCaption(null);
       setPhase("ready");
       return;
@@ -869,7 +840,6 @@ export default function MapScreen() {
   const onEndRoute = () => {
     turn.cancel(); // a turn in flight is dropped with the route
     turn.endRoute();
-    routeTurn.current++;
     voice.cancelRecording().catch(() => {});
     voice.stopSpeaking();
     clearRoute();
@@ -878,30 +848,20 @@ export default function MapScreen() {
 
   /** Route state reset without touching audio (used by the copilot so its reply isn't cut). */
   const clearRoute = () => {
-    const ended = activeRef.current;
+    const since = trip().drivingSince;
     if (recorder.isRecording()) recorder.stop().catch(() => {});
+    const ended = trip().endRoute(); // the store clears the route, the options, the parking and the saved copy
     if (ended) {
-      const since = drivingSince.current;
       tripLog.log("route_ended", {
         place_id: ended.place.id, driving_s: since ? Math.round((Date.now() - since) / 1000) : 0,
         along_m: Math.round(guidance.alongM), remaining_m: Math.round(guidance.remainingM),
       }, ended.trip_id);
       tripLog.flush().catch(() => {});
     }
-    routeStart.current = null;
     clearSpeech(); // queued maneuver calls belong to the route that just ended
-    clearSavedRoute();
-    setRestoredId(null);
-    setDriving(false);
     setRoutesOpen(false);
-    setActive(null);
     setCaption(null);
-    setOptions([]);
-    setParking({});
-    // A route to a breakdown provider: back to the providers list.
-    const prov = providersRef.current;
-    setPlaces(prov ? prov.providers.map(providerPlace) : []);
-    setPhase(prov ? "providers" : "ready");
+    setDialogPhase(null);
     setFit({ key: `end-${Date.now()}`, points: [loc.coords] });
   };
 
@@ -910,14 +870,14 @@ export default function MapScreen() {
   // State and handlers are mirrored at commit (like phaseRef above), so the one listener registered on
   // mount always acts on the current render, never on a stale closure.
   const backRefs = useRef({
-    state: { micCard: false, routesOpen: false, phase: "ready" as Phase, hasRoute: false, driving: false },
+    state: { micCard: false, routesOpen: false, phase: "ready" as Phase },
     cancel: () => {},
     closeOptions: () => {},
     endRoute: () => {},
   });
   useLayoutEffect(() => {
     backRefs.current = {
-      state: { micCard: !!micCard, routesOpen, phase, hasRoute: !!active, driving },
+      state: { micCard: !!micCard, routesOpen, phase },
       cancel: () => {
         turn.cancel();
         voice.cancelRecording().catch(() => {});
@@ -932,7 +892,8 @@ export default function MapScreen() {
     if (Platform.OS !== "android") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       const { state, cancel, closeOptions, endRoute } = backRefs.current;
-      switch (backAction(state)) {
+      const t = trip();
+      switch (backAction({ ...state, hasRoute: !!t.active, driving: t.driving })) {
         case "closeMicCard":
           setMicCard(null);
           return true;
@@ -959,34 +920,33 @@ export default function MapScreen() {
 
   /** Re-plans the active route with the current truck profile (after a voice change) or to the entrance;
    * the stops on the way stay (they used to vanish from the line while their chips stayed on screen). */
-  const reroute = async (myTurn: number, cause: "profile" | "entrance", failMsg = "Couldn't update the route. Try again."): Promise<boolean> => {
-    const cur = activeRef.current;
+  const reroute = async (cause: "profile" | "entrance", failMsg = "Couldn't update the route. Try again."): Promise<boolean> => {
+    const cur = trip().active;
+    const gen = trip().routeGen;
     if (!cur) return false;
     try {
       // From where the truck is now, not where it was when the driver tapped the mic.
-      const res = await api.route(coordsRef.current, cur.place, false, cur.route.via ?? [], cur.trip_id ?? null);
-      // The destination and the route must still be the ones this started from: a stop added or an
+      const res = await api.route(coordsRef.current, cur.place, false, viaOf(cur.stops), cur.trip_id ?? null);
+      // The route must still be the one this started from (the store's generation): a stop added or an
       // off-route reroute that landed meanwhile is newer than this plan. The caller learns whether it landed.
-      const applied = activeRef.current?.place.id === cur.place.id && activeRef.current.route === cur.route;
-      if (applied) {
-        setActive((a) => (a ? { ...a, route: res.route } : a));
-        warnRestricted(res.route);
-      }
+      const applied = trip().applyRoute(gen, res.route);
+      if (applied) warnRestricted(res.route);
       tripLog.log("reroute", { cause, ok: true, applied, restricted: res.route.restricted ?? null }, cur.trip_id);
       return applied;
     } catch (e) {
       tripLog.log("reroute", { cause, ok: false, no_route: isNoTruckRoute(e) }, cur.trip_id);
-      if (myTurn === routeTurn.current) showToast(isNoTruckRoute(e) ? routeFailText(e) : failMsg);
+      if (trip().routeGen === gen) showToast(isNoTruckRoute(e) ? routeFailText(e) : failMsg);
       return false;
     }
   };
 
   /** "×" on a stop chip: re-plan through the remaining stops (plain /route when none are left). */
   const onRemoveStop = async (stop: Place) => {
-    const cur = activeRef.current;
+    const cur = trip().active;
+    const gen = trip().routeGen;
     if (!cur) return;
     const stops = (cur.stops ?? []).filter((s) => s.id !== stop.id);
-    const via = stops.map((s): [number, number] => [s.lat, s.lng]);
+    const via = viaOf(stops);
     try {
       const res = via.length
         ? await api.reroute({
@@ -1001,9 +961,8 @@ export default function MapScreen() {
             trip_id: cur.trip_id ?? null,
           })
         : await api.route(coordsRef.current, cur.place, false, [], cur.trip_id ?? null);
-      if (activeRef.current?.place.id === cur.place.id && activeRef.current.route === cur.route) {
+      if (trip().applyRoute(gen, res.route, stops)) {
         tripLog.log("stop_removed", { stops: stops.length, duration_s: res.route.duration_s }, cur.trip_id);
-        setActive((a) => (a ? { ...a, route: res.route, stops } : a));
       }
     } catch {
       showToast("Couldn't update the stops. Try again.");
@@ -1016,21 +975,20 @@ export default function MapScreen() {
    * (spoken set, matcher, off-route tracker all key on it); the queue is emptied of the old one's lines.
    */
   const onPickAlternative = (i: number) => {
-    const cur = activeRef.current;
+    const cur = trip().active;
     if (!cur) return;
-    const { route } = swapAlternative(cur.route, i);
-    if (route === cur.route) return;
+    const route = trip().pickAlternative(i);
+    if (!route) return;
     clearSpeech();
     tripLog.log("alternative_picked", { index: i, labels: route.labels ?? [], duration_s: route.duration_s, distance_m: route.distance_m }, cur.trip_id);
-    setActive({ ...cur, route });
     setRoutesOpen(false);
     say(switchedLine(route, i), { priority: PRIORITY.MANEUVER, kind: "system", key: "route-switch", ttlMs: 15000 });
   };
 
   // Back from the truck editor with new dimensions: same reroute as the voice change, nothing spoken.
   useEffect(() => {
-    if (focused && takeTruckReroute() && activeRef.current) {
-      reroute(routeTurn.current, "profile", "Couldn't update the route for the new truck size.");
+    if (focused && takeTruckReroute() && trip().active) {
+      reroute("profile", "Couldn't update the route for the new truck size.");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focused]);
@@ -1041,29 +999,30 @@ export default function MapScreen() {
    * `followParking` and `parkingFollowup` chain on; the dialog reopens the mic itself once it resolves.
    */
   const applyResponse = async (res: AgentResponse, ctx: AnswerContext): Promise<{ spoken: Promise<void> }> => {
+    const t = trip();
     const { patch, effects } = reduceAgentResponse(res, {
-      activePlaceId: activeRef.current?.place.id ?? null,
-      optionsCount: optionsRef.current.length,
+      activePlaceId: t.active?.place.id ?? null,
+      optionsCount: t.options.length,
       favoriteChains: getTruckProfile().favorite_chains,
     });
-    if (patch.options) setOptions(patch.options);
-    if (patch.parking) setParking(patch.parking);
-    if (patch.places) setPlaces(patch.places);
+    if (patch.options) t.setOptions(patch.options);
+    if (patch.parking) t.setParking(patch.parking);
+    if (patch.places) t.setAgentPlaces(patch.places);
     if (patch.phase) setPhase(patch.phase);
     if (patch.activeRoute) {
       // Same destination, new route: the card, parking and dialog stay; only the line changes.
       const { route, stops } = patch.activeRoute;
-      const cur = activeRef.current;
+      const cur = t.active;
       if (cur && cur.place.id === res.place?.id) {
-        const before = cur.route.via?.length ?? 0;
-        const after = route.via?.length ?? 0;
+        const before = cur.stops?.length ?? cur.route.via?.length ?? 0;
+        const after = stops.length;
         if (after !== before) tripLog.log(after > before ? "stop_added" : "stops_cleared", { stops: after, duration_s: route.duration_s }, cur.trip_id);
         else tripLog.log("route_replaced", { by: "copilot", duration_s: route.duration_s, labels: route.labels ?? [] }, cur.trip_id);
+        t.applyRoute(t.routeGen, route, stops);
       }
-      setActive((a) => (a && a.place.id === res.place?.id ? { ...a, route, stops } : a));
     }
     if (res.status === "not_understood" || res.status === "error") {
-      tripLog.log("turn_failed", { status: res.status, text: res.transcript, intent: res.intent ?? null }, activeRef.current?.trip_id);
+      tripLog.log("turn_failed", { status: res.status, text: res.transcript, intent: res.intent ?? null }, t.active?.trip_id);
     }
     return applyEffects(effects, res, {
       dial,
@@ -1080,7 +1039,7 @@ export default function MapScreen() {
       continueDialog: () => {}, // the machine reopens the mic from the answer's status once the reply has played
       followParking: (place, spoken, approach) => followParking(place, spoken, ctx.isCurrent, approach),
       parkingFollowup: (placeId, spoken) => {
-        const fPlace = [activeRef.current?.place, ...optionsRef.current, ...placesRef.current].find((p) => p?.id === placeId);
+        const fPlace = [trip().active?.place, ...trip().options, ...trip().places()].find((p) => p?.id === placeId);
         if (!fPlace) return null;
         return parkingFollowup(fPlace, spoken, {
           isCurrent: ctx.isCurrent,
@@ -1103,10 +1062,11 @@ export default function MapScreen() {
         mapRef.current?.recenter();
       },
       overview: () => {
-        if (activeRef.current) {
+        const cur = trip().active;
+        if (cur) {
           // Stay in driving mode; the camera stops following for a moment.
           setOverview(true);
-          setFit({ key: `overview-${Date.now()}`, points: [loc.coords, activeRef.current.place] });
+          setFit({ key: `overview-${Date.now()}`, points: [loc.coords, cur.place] });
         }
       },
       zoomBy: (delta) => mapRef.current?.zoomBy(delta),
@@ -1114,16 +1074,17 @@ export default function MapScreen() {
       setHandsFree,
       setNudges: setNudgesEnabled,
       saveProfile: (patch) => saveTruckProfile({ ...getTruckProfile(), ...patch }),
-      unknownAction: (action) => tripLog.log("turn_unknown_action", { action }, activeRef.current?.trip_id),
+      unknownAction: (action) => tripLog.log("turn_unknown_action", { action }, trip().active?.trip_id),
       // Save first so the new route uses the new profile.
-      reroute: (patch) => saveTruckProfile({ ...getTruckProfile(), ...patch }).then(() => reroute(routeTurn.current, "profile")),
+      reroute: (patch) => saveTruckProfile({ ...getTruckProfile(), ...patch }).then(() => reroute("profile")),
     });
   };
 
   const onPlacePress = async (p: Place) => {
     if (phase === "thinking") return;
-    const prev = activeRef.current;
-    const myTurn = ++routeTurn.current;
+    const t = trip();
+    const prev = t.active;
+    const gen = t.routeGen;
     turn.cancel(); // a copilot turn in flight gives way to the tap
     voice.stopSpeaking();
     setCaption(null);
@@ -1131,14 +1092,14 @@ export default function MapScreen() {
     setThinkingText(ROUTE_STAGE);
     try {
       // Breakdown providers: the driver needs the shop, not a satellite parking check (faster route).
-      const isProvider = p.category === "service" || !!providersRef.current?.providers.some((x) => x.id === p.id);
+      const isProvider = p.category === "service" || !!t.providers?.providers.some((x) => x.id === p.id);
       const res = await api.route(coordsRef.current, p, isProvider);
-      if (myTurn !== routeTurn.current) return;
+      if (trip().routeGen !== gen) return; // a newer route landed while this one was planned
       // Keep the previous destination among the alternatives.
-      setOptions((list) => [...(prev ? [prev.place] : []), ...list].filter((o) => o.id !== p.id));
+      trip().setOptions((list) => [...(prev ? [prev.place] : []), ...list].filter((o) => o.id !== p.id));
       startRoute(res);
     } catch (e) {
-      if (myTurn !== routeTurn.current) return;
+      if (trip().routeGen !== gen) return;
       backToIdle();
       showToast(routeFailText(e));
     }
@@ -1160,7 +1121,7 @@ export default function MapScreen() {
         // Pins stay on the map while driving; a stray touch on one must not swap the destination mid-drive.
         // (The Route buttons in the options and providers lists still work: those are deliberate taps.)
         onPlacePress={(p) => {
-          if (!drivingRef.current) onPlacePress(p);
+          if (!trip().driving) onPlacePress(p);
         }}
         follow={following}
         onUserPan={() => {
@@ -1252,7 +1213,7 @@ export default function MapScreen() {
         onLayout={setSheetH}
         onPeekHeight={setPeekH}
         wakePhrase={null}
-        panel={providers ? <ProvidersList data={providers} onRoute={(p) => onPlacePress(providerPlace(p))} /> : null}
+        panel={providers ? <ProvidersList data={providers} onRoute={(p) => onPlacePress(providerPin(p))} /> : null}
       />
 
       {routesOpen && active && !driving && !!active.route.alternatives?.length && (
@@ -1274,7 +1235,7 @@ export default function MapScreen() {
           note={offlineMap.state?.kind === "saved" ? "Map saved" : null}
           top={topH + spacing.sm}
           onResume={() => {
-            setRestoredId(null);
+            trip().dismissRestored();
             onGo();
           }}
           onDismiss={clearRoute}

@@ -15,6 +15,8 @@ import { loadThemePref, useTheme } from "@/src/theme";
 import { ConsentGate } from "@/src/components/ConsentGate";
 import { startLocation } from "@/src/geo/location";
 import { ensureTruckProfile } from "@/src/hooks/useTruckProfile";
+import { ensureSettings } from "@/src/state/settingsStore";
+import { migrateStorage } from "@/src/utils/storageMigrations";
 import { DeviceGate } from "@/src/components/DeviceGate";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { useConsent } from "@/src/consent";
@@ -63,8 +65,13 @@ function RootLayout() {
   }, []);
   // The truck profile too: every request awaits it, but reading it here means it is in before the map
   // screen even mounts, so nothing is ever planned for the 13'6" default on a taller rig.
+  // Storage first: the schema migration runs before any store reads its document, then the profile and the
+  // settings load (the stores answer with defaults until then, which is what a fresh install sees anyway).
+  const [storageReady, setStorageReady] = useState(false);
   useEffect(() => {
-    ensureTruckProfile();
+    migrateStorage()
+      .then(() => Promise.all([ensureTruckProfile(), ensureSettings()]))
+      .finally(() => setStorageReady(true));
   }, []);
   // GPS from the moment consent is in (the consent screen starts it too): the first fix is ready before the
   // map screen mounts instead of 7-9 s after it.
@@ -81,7 +88,7 @@ function RootLayout() {
     "PlusJakartaSans-ExtraBold": require("../assets/fonts/PlusJakartaSans-ExtraBold.ttf"),
   });
 
-  if ((!loaded && !error) || auth === "loading" || consent === "loading" || !themeReady) return null;
+  if ((!loaded && !error) || auth === "loading" || consent === "loading" || !themeReady || !storageReady) return null;
 
   // One app level ErrorBoundary; a render crash shows a reload screen
   // instead of a blank app. GestureHandlerRootView must wrap the whole tree

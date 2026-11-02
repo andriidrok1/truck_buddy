@@ -1,7 +1,7 @@
 import { authHeader, requestCode, setToken } from "./auth";
 import { AgentResponseSchema, checkContract, RouteResultSchema } from "./api/schemas";
 import { eldHeader } from "./eld";
-import { ensureTruckProfile } from "./hooks/useTruckProfile";
+import { ensureTruckProfile, type TruckProfile } from "./hooks/useTruckProfile";
 import { isNetworkError, offlineHint } from "./net/offlineHint";
 import { uploadForm } from "./utils/upload";
 import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, Nudge, NudgeRequest, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
@@ -216,6 +216,9 @@ export const api = {
     request<{ stored: number }>(`/trips/events`, { method: "POST", body: JSON.stringify(events), timeoutMs: 15000 }),
   /** The events of one of the driver's own trips, oldest first (tester screen). */
   tripEventsOf: (tripId: string) => request<TripEventRow[]>(`/trips/${encodeURIComponent(tripId)}/events`),
+  /** The driver's truck profile on the server (fleet-managed later); 404 until the backend has the endpoint. */
+  profile: () => request<TruckProfile>(`/me/profile`),
+  saveProfile: (profile: TruckProfile) => request<TruckProfile>(`/me/profile`, { method: "PUT", body: JSON.stringify(profile) }),
   /**
    * Off-route reroute: the engine resumes the server-side plan (`handle`, section, metres into it)
    * instead of planning from scratch. Same shape back as /route, with a new `handle`.

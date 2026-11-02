@@ -1,0 +1,107 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { ACTIVE_ROUTE_KEY, decodeSaved } from "../state/routeStore";
+import { restoreSavedTrip, selectPlaces, startTripPersistence, useTripStore, viaOf } from "../state/tripStore";
+import type { ActiveRoute, Place, RouteInfo } from "../types";
+
+const T0 = 1_700_000_000_000;
+const route = (summary: string, extra: Partial<RouteInfo> = {}): RouteInfo => ({
+  geometry: [
+    [38.58, -121.49],
+    [38.55, -121.42],
+  ],
+  distance_m: 6759, duration_s: 492, distance_mi: 4.2, duration_min: 8, summary, source: "here", ...extra,
+});
+const place = (id: string, name = id): Place => ({ id, name, category: "truck_stop", lat: 38.55, lng: -121.42, tags: [] });
+const active: ActiveRoute = { place: place("p1", "Pilot"), route: route("I-5 N", { alternatives: [route("I-80 E", { labels: ["I-80"] })] }) };
+
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
+beforeEach(async () => {
+  useTripStore.getState().reset();
+  await AsyncStorage.clear();
+});
+
+describe("tripStore", () => {
+  test("startRoute mints a trip id, bumps the generation and shows the route card", () => {
+    const s = useTripStore.getState();
+    const t = s.startRoute(active, T0);
+    expect(t.trip_id).toMatch(/^trip-/);
+    expect(useTripStore.getState()).toMatchObject({ sheet: "navigating", routeGen: 1, routeStart: T0 });
+    expect(useTripStore.getState().active?.trip_id).toBe(t.trip_id);
+    // a second destination keeps the trip's own id but not the first route's start time
+    useTripStore.getState().startRoute({ ...active, trip_id: "trip-x" }, T0 + 1000);
+    expect(useTripStore.getState()).toMatchObject({ routeGen: 2, routeStart: T0 });
+    expect(useTripStore.getState().active?.trip_id).toBe("trip-x");
+  });
+
+  test("applyRoute lands only under the generation it started from", () => {
+    const s = useTripStore.getState();
+    s.startRoute(active);
+    const gen = useTripStore.getState().routeGen;
+    expect(s.applyRoute(gen, route("US-50"), [place("s1")])).toBe(true);
+    expect(useTripStore.getState().active?.route.summary).toBe("US-50");
+    expect(useTripStore.getState().active?.stops?.map((p) => p.id)).toEqual(["s1"]);
+    // the stale plan is dropped: the generation moved on
+    expect(s.applyRoute(gen, route("stale"))).toBe(false);
+    expect(useTripStore.getState().active?.route.summary).toBe("US-50");
+    expect(viaOf(useTripStore.getState().active?.stops)).toEqual([[38.55, -121.42]]);
+  });
+
+  test("pickAlternative swaps the primary and keeps the old one in the list", () => {
+    const s = useTripStore.getState();
+    s.startRoute(active);
+    const picked = s.pickAlternative(0);
+    expect(picked?.labels).toEqual(["I-80"]);
+    expect(useTripStore.getState().active?.route.alternatives?.map((r) => r.summary)).toEqual(["I-5 N"]);
+    expect(s.pickAlternative(5)).toBeNull();
+  });
+
+  test("endRoute clears the trip but keeps a breakdown's providers on the sheet", () => {
+    const s = useTripStore.getState();
+    s.startRoute(active);
+    s.setDriving(true, T0);
+    s.setOptions([place("o1")]);
+    s.setParking({ o1: { loading: false } });
+    expect(useTripStore.getState().drivingSince).toBe(T0);
+    const ended = s.endRoute();
+    expect(ended?.place.id).toBe("p1");
+    expect(useTripStore.getState()).toMatchObject({ active: null, driving: false, drivingSince: null, options: [], parking: {}, sheet: "ready" });
+    s.setProviders({ providers: [{ id: "v1", name: "Shop", lat: 1, lng: 2 } as never] });
+    s.startRoute(active);
+    s.endRoute();
+    expect(useTripStore.getState().sheet).toBe("providers");
+  });
+
+  test("places: providers win, then the copilot's list, then the start pins", () => {
+    const s = useTripStore.getState();
+    s.setStartPins([place("pin")]);
+    expect(selectPlaces(useTripStore.getState()).map((p) => p.id)).toEqual(["pin"]);
+    s.setAgentPlaces([place("a1"), place("a2")]);
+    expect(selectPlaces(useTripStore.getState()).map((p) => p.id)).toEqual(["a1", "a2"]);
+    s.setProviders({ providers: [{ id: "v1", name: "Shop", lat: 1, lng: 2 } as never] });
+    expect(selectPlaces(useTripStore.getState()).map((p) => p.id)).toEqual(["v1"]);
+    expect(s.idleSheet()).toBe("providers");
+  });
+
+  test("persistence: the trip and the driving flag go to disk and come back as a preview with the banner", async () => {
+    const stop = startTripPersistence();
+    const s = useTripStore.getState();
+    s.startRoute({ ...active, trip_id: "trip-saved" });
+    s.setDriving(true);
+    await flush();
+    const saved = decodeSaved(await AsyncStorage.getItem(ACTIVE_ROUTE_KEY));
+    expect(saved?.active.trip_id).toBe("trip-saved");
+    expect(saved?.driving).toBe(true);
+    // a restart: the store is empty, the saved trip comes back not driving, with the banner, remembering it was
+    useTripStore.getState().reset();
+    const r = await restoreSavedTrip();
+    expect(r?.restored.trip_id).toBe("trip-saved");
+    expect(useTripStore.getState()).toMatchObject({ driving: false, restoredId: "p1", restoredDriving: true, sheet: "navigating" });
+    // ending the route removes the disk copy
+    useTripStore.getState().endRoute();
+    await flush();
+    expect(await AsyncStorage.getItem(ACTIVE_ROUTE_KEY)).toBeNull();
+    stop();
+  });
+});
