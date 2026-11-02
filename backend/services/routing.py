@@ -282,13 +282,15 @@ def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo
         meters += s["summary"]["length"]
         seconds += s["summary"]["duration"]
         raw += [n for n in (s.get("notices") or []) if isinstance(n, dict)]
-    seconds += _stops_s(sections)
+    stops_s = _stops_s(sections)
+    seconds += stops_s
     notices, restricted = _notices(raw, truck or TruckProfile())
     n = len(geometry)
     anchors = [min(off, n - 1) for off, _ in actions] + [off for off, _ in limits] + [off for off, _ in incidents] + bases
     idx = _Index(_thin_indices(geometry, anchors))
     info = _info([geometry[i] for i in idx.kept], meters, seconds, "here", notices, True, traffic, restricted,
                  thinned=True)
+    info.stops_s = stops_s
     info.maneuvers = _maneuvers(geometry, actions, idx)
     info.speed_limits = _remap_limits(limits, idx)
     info.incidents = [_incident(idx(off), inc) for off, inc in incidents]
@@ -349,11 +351,14 @@ async def _here_by_handle(handle: str, lat: float, lng: float, heading: Optional
 
 
 def _speed_limits(spans: List[dict], base: int) -> list[tuple[int, int]]:
-    """(section-global offset, mph) for every span whose posted limit differs from the previous one."""
+    """(section-global offset, mph) for every span whose posted limit differs from the previous one; mph 0 where
+    HERE has no limit for the stretch, so the app shows nothing there instead of the freeway's 65 on the ramp."""
     out: list[tuple[int, int]] = []
     for sp in spans:
         ms = sp.get("maxSpeed")
         if not isinstance(ms, (int, float)) or ms <= 0:  # missing, or "unlimited"
+            if out and out[-1][1] != 0:
+                out.append((base + int(sp.get("offset", 0)), 0))
             continue
         mph = int(round(ms * MPH_PER_MS))
         if out and out[-1][1] == mph:
