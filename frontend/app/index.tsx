@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
+import { Alert, AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as Sentry from "@sentry/react-native";
@@ -63,6 +63,9 @@ function routeFailText(e: unknown): string {
 // Below this much visible map (layout units) the bubble would cover the route; the sheet shows the text.
 // The route card leaves about 220 at the default font, about 120 at 130 %.
 const MIN_MAP_FOR_BUBBLE = 180;
+
+// "End route" asks first while more than this is left of the drive.
+const END_CONFIRM_ABOVE_S = 10 * 60;
 
 const RESEARCH_INTERIM = "Reading reviews now, almost there.";
 const RESEARCH_INTERIM_MS = 7000;
@@ -842,6 +845,17 @@ export default function MapScreen() {
     backToIdle();
   };
 
+  /** The End route button. Mid-trip it asks first: one stray tap ended a 2.5-hour trip with no way back
+   *  (QA 2026-11-02). Near the end, or before Go, it ends at once. */
+  const onEndRoutePress = () => {
+    const name = trip().active?.place.name.split(",")[0] ?? "this route";
+    if (!trip().driving || guidance.remainingS < END_CONFIRM_ABOVE_S) return onEndRoute();
+    Alert.alert(`End the route to ${name}?`, undefined, [
+      { text: "Keep driving", style: "cancel" },
+      { text: "End route", style: "destructive", onPress: onEndRoute },
+    ]);
+  };
+
   const onEndRoute = () => {
     turn.cancel(); // a turn in flight is dropped with the route
     turn.endRoute();
@@ -1236,7 +1250,7 @@ export default function MapScreen() {
         onSubmitText={onSubmitText}
         lastReply={caption?.kind === "reply" ? caption.reply : null}
         onClose={onClose}
-        onEndRoute={onEndRoute}
+        onEndRoute={onEndRoutePress}
         onRemoveStop={onRemoveStop}
         onShowRoutes={() => setRoutesOpen(true)}
         offlineMap={offlineMap.state}
