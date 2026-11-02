@@ -1,6 +1,8 @@
 """Stops on the way (HERE via=): request shape, section starts, and the add_stop / clear_stops dialog."""
 import copy
 
+import httpx
+
 from conftest import fixture_json, params_of, run
 
 from models import AgentRequest, Place, TruckProfile
@@ -216,3 +218,33 @@ def test_a_failed_clear_keeps_the_stops(agent_sandbox, fake_http, monkeypatch):
     res = run(prov.handle(_req("clear the stops"), None))
     assert res.status == "error" and res.reply == agent.ROUTE_DOWN
     assert [s.id for s in prov._stops(_req("hi"), agent._SESSIONS["v1"])] == [PILOT.id]  # the app still shows it
+
+
+def test_a_stop_far_out_of_the_way_asks_first(agent_sandbox, fake_http):
+    prov = _sandbox(agent_sandbox, fake_http)
+    agent_sandbox.llm.on(r"^yes$|^no$", {"intent": "chat"})  # never reached: the pending answer is handled first
+    long = copy.deepcopy(DATA)
+    for s in long["routes"][0]["sections"]:
+        s["summary"]["duration"] *= 6  # the stop takes the 2 h 52 min trip to 17 h
+    fake_http.routes.clear()
+    fake_http.add("router.hereapi.com", "/v8/routes",
+                  fn=lambda request: httpx.Response(200, json=long if "via" in str(request.url) else DATA, request=request))
+    run(prov.handle(_req("take me to Reno", active=None), None))
+
+    res = run(prov.handle(_req("stop at the Pilot in Fernley on the way"), None))
+    assert res.status == "confirm" and res.route is None
+    assert res.reply == "Pilot Travel Center is about 13 h 51 min out of the way; the trip would be 17 h 13 min instead of 2 h 52 min. Add it anyway?"
+    assert prov._stops(_req("hi"), agent._SESSIONS["v1"]) == []
+
+    res = run(prov.handle(_req("no"), None))
+    assert res.status == "chat" and res.reply == agent.VIA_FAR_NO
+    assert prov._stops(_req("hi"), agent._SESSIONS["v1"]) == []
+
+    res = run(prov.handle(_req("stop at the Pilot in Fernley on the way"), None))
+    assert res.status == "confirm"
+    calls = len(fake_http.calls_to("router.hereapi.com"))
+    res = run(prov.handle(_req("yes"), None))
+    assert res.status == "route_set" and res.route.via == [[PILOT.lat, PILOT.lng]]
+    assert res.reply.startswith("Added Pilot Travel Center, about 80 miles ahead.")
+    assert len(fake_http.calls_to("router.hereapi.com")) == calls + 1  # one route call, no second geocode
+    assert [s.id for s in prov._stops(_req("hi"), agent._SESSIONS["v1"])] == [PILOT.id]
