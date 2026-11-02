@@ -424,7 +424,14 @@ export default function MapScreen() {
       // The card always takes the result if it's still the same destination.
       setActive((a) => (a && a.place.id === place.id ? { ...a, parking: pk } : a));
       const e = entrySpot(pk);
-      if (e && activeRef.current?.place.id === place.id && !routeEndsAt(activeRef.current.route, e)) reroute(myTurn); // route to E
+      if (e && activeRef.current?.place.id === place.id && !routeEndsAt(activeRef.current.route, e)) {
+        // Route to E. An off-route reroute landing meanwhile makes this plan stale and it is dropped; one
+        // more try against the route that replaced it, so the truck is still guided to the entrance.
+        reroute(myTurn).then((applied) => {
+          const now = activeRef.current;
+          if (!applied && now?.place.id === place.id && !routeEndsAt(now.route, e)) reroute(myTurn);
+        });
+      }
       if (myTurn !== turn.current || activeRef.current?.place.id !== place.id) return;
       // Spoken right after the answer: the verdict only. The entry and parking tips stay on the card and
       // are said when the truck is within half a mile (approachTips below) or on "how do I get in".
@@ -1176,20 +1183,23 @@ export default function MapScreen() {
 
   /** Re-plans the active route with the current truck profile (after a voice change) or to the entrance;
    * the stops on the way stay (they used to vanish from the line while their chips stayed on screen). */
-  const reroute = async (myTurn: number, failMsg = "Couldn't update the route. Try again.") => {
+  const reroute = async (myTurn: number, failMsg = "Couldn't update the route. Try again."): Promise<boolean> => {
     const cur = activeRef.current;
-    if (!cur) return;
+    if (!cur) return false;
     try {
       // From where the truck is now, not where it was when the driver tapped the mic.
       const res = await api.route(coordsRef.current, cur.place, false, cur.route.via ?? []);
       // The destination and the route must still be the ones this started from: a stop added or an
-      // off-route reroute that landed meanwhile is newer than this plan.
+      // off-route reroute that landed meanwhile is newer than this plan. The caller learns whether it landed.
       if (activeRef.current?.place.id === cur.place.id && activeRef.current.route === cur.route) {
         setActive((a) => (a ? { ...a, route: res.route } : a));
         warnRestricted(res.route);
+        return true;
       }
+      return false;
     } catch (e) {
       if (myTurn === turn.current) showToast(isNoTruckRoute(e) ? routeFailText(e) : failMsg);
+      return false;
     }
   };
 
@@ -1359,8 +1369,6 @@ export default function MapScreen() {
 
   const onPlacePress = async (p: Place) => {
     if (phase === "thinking") return;
-    // Pins stay on the map while driving; a stray touch on one must not swap the destination mid-drive.
-    if (drivingRef.current) return;
     const prev = activeRef.current;
     const myTurn = ++turn.current;
     voice.stopSpeaking();
@@ -1397,7 +1405,11 @@ export default function MapScreen() {
         fitKey={fit.key}
         fitPoints={fit.points}
         onCenterChange={(c) => (center.current = c)}
-        onPlacePress={onPlacePress}
+        // Pins stay on the map while driving; a stray touch on one must not swap the destination mid-drive.
+        // (The Route buttons in the options and providers lists still work: those are deliberate taps.)
+        onPlacePress={(p) => {
+          if (!drivingRef.current) onPlacePress(p);
+        }}
         follow={following}
         onUserPan={() => {
           setTracking(false);

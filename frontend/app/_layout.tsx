@@ -50,7 +50,7 @@ export default function RootLayout() {
   // GPS from the moment consent is in (the consent screen starts it too): the first fix is ready before the
   // map screen mounts instead of 7-9 s after it.
   useEffect(() => {
-    if (consent === "yes") startLocation();
+    if (consent === "yes") startLocation({ ask: false });
   }, [consent]);
   // Pre-load the icon font (prevents blank icons in Expo Go) and app fonts.
   const [loaded, error] = useFonts({

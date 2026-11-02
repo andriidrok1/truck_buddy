@@ -63,3 +63,26 @@ test("a last known position shows at once, the first fix is not awaited", async 
   expect(getLocation().coords).toEqual({ lat: 36.0, lng: -120.0 });
   expect(L.getCurrentPositionAsync).not.toHaveBeenCalled();
 });
+
+
+test("ask: false never shows the system prompt (the consent screen just did)", async () => {
+  L.getForegroundPermissionsAsync.mockResolvedValue({ status: "denied", canAskAgain: true } as never);
+  await startLocation({ ask: false });
+  expect(L.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+  expect(getLocation()).toMatchObject({ isDemo: true, resolved: true });
+  // the map screen (default ask) prompts, and a grant starts the watch
+  L.requestForegroundPermissionsAsync.mockResolvedValue({ status: "granted", canAskAgain: true } as never);
+  await startLocation();
+  expect(L.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
+  expect(L.watchPositionAsync).toHaveBeenCalledTimes(1);
+});
+
+test("the first fix timing out keeps the watch and marks the demo point resolved", async () => {
+  L.getCurrentPositionAsync.mockRejectedValue(new Error("no fix"));
+  await startLocation();
+  expect(L.watchPositionAsync).toHaveBeenCalledTimes(1);
+  expect(getLocation()).toMatchObject({ isDemo: true, resolved: true });
+  const onFix = L.watchPositionAsync.mock.calls[0][1] as (l: Location.LocationObject) => void;
+  onFix(fix(38.0, -121.0));
+  expect(getLocation()).toMatchObject({ isDemo: false, coords: { lat: 38.0, lng: -121.0 } });
+});

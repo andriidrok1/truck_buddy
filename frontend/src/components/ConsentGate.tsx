@@ -42,7 +42,7 @@ export function ConsentGate() {
     // The screen just explained what the location is for: ask for it here, once, instead of the
     // onboarding opening with a system dialog on top of its first question (U1).
     if (Platform.OS !== "web") await Location.requestForegroundPermissionsAsync().catch(() => null);
-    startLocation(); // the fix is in by the end of onboarding; not awaited, the screen moves on
+    startLocation({ ask: false }); // the fix is in by the end of onboarding; not awaited, the screen moves on
     await giveConsent();
   };
 
