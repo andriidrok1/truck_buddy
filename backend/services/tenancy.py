@@ -224,6 +224,62 @@ async def org_vehicles(org_id: str) -> list[dict]:
     return list(out.values())
 
 
+async def org_drivers(org_id: str) -> list[dict]:
+    """The org's drivers with their truck (when a device is bound to one) and whether Motive knows them."""
+    sql = ("SELECT r.id, r.display_name, r.motive_user_id, d.vehicle_id FROM drivers r LEFT JOIN devices d ON d.driver_id = r.id "
+           "WHERE r.org_id = {p} ORDER BY r.created_at, r.id")
+    k = db.store()
+    if k == "sqlite":
+        rows = await db._sq_run(lambda con: con.execute(sql.format(p="?"), (org_id,)).fetchall())
+    else:
+        pool = await db._db()
+        rows = [tuple(r) for r in await pool.fetch(sql.format(p="$1"), org_id)]
+    out: dict[str, dict] = {}
+    for did, name, motive, vid in rows:
+        d = out.setdefault(did, {"id": did, "display_name": name, "motive_linked": bool(motive), "vehicle_ids": []})
+        if vid and vid not in d["vehicle_ids"]:
+            d["vehicle_ids"].append(vid)
+    return list(out.values())
+
+
+async def set_motive_user(org_id: str, driver_id: str, user_id: Optional[str]) -> bool:
+    """Maps the org's driver to a Motive user id (None unmaps); False when the driver is not in this org."""
+    k = db.store()
+    if k == "off":
+        raise RuntimeError("store is off")
+    if k == "sqlite":
+        n = await db._sq_run(lambda con: con.execute(
+            "UPDATE drivers SET motive_user_id = ? WHERE id = ? AND org_id = ?", (user_id, driver_id, org_id)).rowcount)
+    else:
+        pool = await db._db()
+        status = await pool.execute("UPDATE drivers SET motive_user_id = $1 WHERE id = $2 AND org_id = $3", user_id, driver_id, org_id)
+        n = int(status.split()[-1])
+    _motive_users.pop(driver_id, None)
+    return n > 0
+
+
+_motive_users: dict[str, tuple[Optional[str], float]] = {}
+
+
+async def motive_user(driver_id: Optional[str]) -> Optional[str]:
+    """The driver's Motive user id (set by the fleet), cached a minute per process."""
+    import time
+    if not driver_id or db.store() == "off":
+        return None
+    hit = _motive_users.get(driver_id)
+    if hit and time.monotonic() - hit[1] < PROFILE_CACHE_S:
+        return hit[0]
+    k = db.store()
+    if k == "sqlite":
+        row = await db._sq_run(lambda con: con.execute("SELECT motive_user_id FROM drivers WHERE id = ?", (driver_id,)).fetchone())
+        uid = row[0] if row else None
+    else:
+        pool = await db._db()
+        uid = await pool.fetchval("SELECT motive_user_id FROM drivers WHERE id = $1", driver_id)
+    _motive_users[driver_id] = (uid, time.monotonic())
+    return uid
+
+
 # ---- refresh tokens ------------------------------------------------------------------------------------------
 
 async def set_refresh(sub: str, refresh_hash: Optional[str]) -> None:
@@ -389,3 +445,4 @@ def reset_caches() -> None:
     _devices.clear()
     _profiles.clear()
     _credentials.clear()
+    _motive_users.clear()

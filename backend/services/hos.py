@@ -1,9 +1,13 @@
 """Hours of service from the driver's own Motive (ex-KeepTruckin) account.
 
-The driver pastes a personal API key from the Motive dashboard into the app; it travels only as the
-X-Motive-Key header of copilot requests, is never stored or logged here, and is used for one call:
-GET /v1/available_time, which returns the remaining drive / shift / cycle time in seconds.
-HOS_MOTIVE=0 turns the intent off.
+Two ways in. A solo driver pastes a personal API key from the Motive dashboard into the app; it travels only
+as the X-Motive-Key header of copilot requests and is never stored or logged here. A fleet stores its company
+key once (org_credentials, encrypted; PUT /api/fleet/credentials/motive) and maps each driver to their Motive
+user id; the server then fetches with the fleet key for that one user. A fleet key without a mapping is not
+used: the first user in a company-wide answer is somebody else's clock.
+
+Either way it is one call, GET /v1/available_time, which returns the remaining drive / shift / cycle time in
+seconds. HOS_MOTIVE=0 turns the intent off.
 """
 import logging
 import os
@@ -49,11 +53,16 @@ def _minutes(seconds) -> int:
         return 0
 
 
-def parse(data: dict) -> Optional[Hos]:
-    """Motive available_time body -> Hos for the first user, or None when the shape is unexpected."""
+def parse(data: dict, user_id: Optional[str] = None) -> Optional[Hos]:
+    """Motive available_time body -> Hos for the first user (or the user with this id, for a fleet key), or None
+    when the shape is unexpected or the user is not in the answer."""
     users = (data or {}).get("users") if isinstance(data, dict) else None
     if not isinstance(users, list) or not users:
         return None
+    if user_id is not None:
+        users = [x for x in users if isinstance(x, dict) and str(((x.get("user") or {}).get("id"))) == str(user_id)]
+        if not users:
+            return None
     u = users[0] if isinstance(users[0], dict) else {}
     avail = u.get("available_time") or {}
     if not isinstance(avail, dict) or not any(k in avail for k in ("drive", "shift", "cycle")):
@@ -65,9 +74,11 @@ def parse(data: dict) -> Optional[Hos]:
                break_min=_minutes(avail["break"]) if avail.get("break") is not None else None, driver=name)
 
 
-async def available_time(key: str) -> Hos:
+async def available_time(key: str, user_id: Optional[str] = None) -> Hos:
+    """The clocks behind a personal key, or one user's clocks behind a fleet key (user_id)."""
+    params = {"driver_ids[]": user_id} if user_id else None
     try:
-        r = await client().get(URL, headers={"X-Api-Key": key, "Accept": "application/json"}, timeout=TIMEOUT_S)
+        r = await client().get(URL, headers={"X-Api-Key": key, "Accept": "application/json"}, params=params, timeout=TIMEOUT_S)
     except Exception as e:  # noqa: BLE001
         raise HosDown(type(e).__name__) from e
     if r.status_code in (401, 403):
@@ -75,7 +86,7 @@ async def available_time(key: str) -> Hos:
     if r.is_error:
         raise HosDown(f"HTTP {r.status_code}")
     try:
-        hos = parse(r.json())
+        hos = parse(r.json(), user_id)
     except ValueError as e:
         raise HosDown("bad json") from e
     if hos is None:

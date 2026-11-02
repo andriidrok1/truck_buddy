@@ -30,7 +30,15 @@ Read at startup or on use (see README.md "Backend environment" for meanings):
 `NWS_USER_AGENT`, `CHAIN_CONTROLS`, `CHAIN_DISTRICTS`, `HOS_MOTIVE`, `PLACE_REVIEWS`, `CATEGORIES_EXTRA`,
 `ROUTE_ALTERNATIVES`, `ROUTE_INCIDENTS`, `ROUTE_SPEED_LIMITS`, `REROUTE_ENABLED`, `RATE_LIMIT_PER_MIN`,
 `CORS_ORIGINS`, `DEV_DOCS`, `TRIP_EVENTS_DAYS`, `WORKERS` (or uvicorn's `WEB_CONCURRENCY`), `TTS_DIR`,
-`SESSION_STORE`, `TTS_STREAM`.
+`SESSION_STORE`, `TTS_STREAM`, `CREDENTIALS_KEY`, `LOG_TRANSCRIPTS`, `HEALTH_HERE`.
+
+## Logs and health
+
+Every line carries the request id (`X-Request-Id` from the client or generated, echoed in the response) after the
+level. A copilot turn is one `turn {json}` line with `req`, `driver`, `sid`, `org`, status, intent and timings;
+`scripts/turn_stats.py` reads it and the older `turn k=v` lines. Driver transcripts stay out of the log stream
+unless `LOG_TRANSCRIPTS=1` (set it on the test stand, not in production). `/api/health?deep=1` adds a database
+`SELECT 1` and one HERE geocode call (cached 30 s, `HEALTH_HERE=0` skips HERE) and answers 503 when one fails.
 
 ## More than one worker
 

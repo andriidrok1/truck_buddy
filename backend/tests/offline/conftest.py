@@ -32,6 +32,9 @@ OFFLINE_ENV = {
     "OPENAI_API_KEY": "test-openai",
     "PARKING_WARM": "0",
     "DEV_DOCS": "0",
+    # The TPIMS poller starts with every TestClient; a first poll that lands after a test installed fake_http shows
+    # up in its calls[0] (test_tpims turns it on itself).
+    "TPIMS_ENABLED": "0",
 }
 
 

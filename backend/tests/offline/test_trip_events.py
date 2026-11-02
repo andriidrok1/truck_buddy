@@ -152,7 +152,9 @@ def test_reroute_endpoint_records_a_request(api_client, fake_http, sqlite_store,
     events = api_client.get("/api/trips/trip-r/events").json()["events"]
     assert [(e["kind"], e["data"].get("ok"), e["data"].get("error")) for e in events] == [
         ("reroute_requested", True, None), ("route_failed", None, "no_truck_route"), ("reroute_requested", False, "no_truck_route")]
-    assert events[0]["data"] == {"section_index": 0, "handle": False, "via": 0, "ok": True}
+    data = events[0]["data"]
+    assert {k: data[k] for k in ("section_index", "handle", "via", "ok")} == {"section_index": 0, "handle": False, "via": 0, "ok": True}
+    assert (data["lat"], data["lng"]) == (38.9, -121.07) and len(data["req"]) == 16  # where the truck was, the request id
 
 
 def test_prune_drops_old_rows(sqlite_store):

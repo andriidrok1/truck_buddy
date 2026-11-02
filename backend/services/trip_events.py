@@ -3,11 +3,16 @@ and from the server (the far-stop question, destination checks, "didn't catch th
 
 Same store as the conversation memory (services/memory.py: Postgres when DATABASE_URL is set, SQLite otherwise,
 MEMORY_STORE=off turns both off). Rows: driver, trip_id (NULL for a server event the app didn't tag), kind, at,
-source ('app' | 'server'), data (JSON text). Kept RETENTION_DAYS, pruned at startup and lazily.
+source ('app' | 'server'), data (JSON text), and since migration 0005 org_id, vehicle_id (from the driver's
+Principal at write time) and lat, lng (the request's position for a server event, data.lat/data.lng for an app
+event). Kept RETENTION_DAYS, pruned at startup and lazily.
+
+The kinds a fleet dashboard reads (DASHBOARD_MODELS) have their data checked against a model; a wrong type is a
+422 for the batch like any other bad event. Extra fields pass, and every other kind is stored as is.
 
 The transcript of a failed turn is stored as is (decision 2026-11-01): it is what tells us what drivers say and
-what the copilot missed. It is read only by the driver's own routes and the tester route; a fleet dashboard
-reads aggregates, never this table.
+what the copilot missed. It is read only by the driver's own routes and the tester route; the fleet routes
+(services/fleet_api.py) strip it before anything leaves the server.
 """
 import asyncio
 import json
@@ -19,7 +24,9 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from services import memory
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from services import memory, reqid
 
 logger = logging.getLogger("truckbuddy.trips")
 
@@ -39,6 +46,70 @@ KNOWN_KINDS = frozenset({
     "maneuver_said", "speech_dropped", "turn_failed",
     "stop_guard", "dest_check", "stt_confirm", "not_understood", "turn_error", "route_failed", "reroute_requested",
 })
+
+
+class _Data(BaseModel):
+    """Common to every dashboard kind: where the truck was (stored as a position only when both are there)."""
+    model_config = ConfigDict(extra="allow")
+    lat: Optional[float] = Field(None, ge=-90, le=90)
+    lng: Optional[float] = Field(None, ge=-180, le=180)
+
+
+class RouteStarted(_Data):
+    place_id: Optional[str] = None
+    category: Optional[str] = None
+    distance_m: Optional[float] = None
+    duration_s: Optional[float] = None
+    alternatives: Optional[int] = None
+
+
+class Reroute(_Data):
+    cause: Optional[str] = None
+    ok: Optional[bool] = None
+    fallback: Optional[bool] = None
+    section_index: Optional[int] = None
+
+
+class RerouteRequested(_Data):
+    section_index: Optional[int] = None
+    handle: Optional[bool] = None
+    via: Optional[int] = None
+    ok: Optional[bool] = None
+    error: Optional[str] = None
+
+
+class GuardResult(_Data):
+    result: Optional[str] = None
+    intent: Optional[str] = None
+
+
+class RouteEnded(_Data):
+    place_id: Optional[str] = None
+    driving_s: Optional[float] = None
+    along_m: Optional[float] = None
+    remaining_m: Optional[float] = None
+
+
+class ManeuverSaid(_Data):
+    action: Optional[str] = None
+    index: Optional[int] = None
+    to_next_m: Optional[float] = None
+
+
+DASHBOARD_MODELS: dict[str, type[_Data]] = {
+    "route_started": RouteStarted, "reroute": Reroute, "reroute_requested": RerouteRequested,
+    "stop_guard": GuardResult, "dest_check": GuardResult, "route_ended": RouteEnded, "maneuver_said": ManeuverSaid,
+}
+
+
+def _position(data: dict) -> tuple[Optional[float], Optional[float]]:
+    """(lat, lng) from an event's data when both are numbers in range, else (None, None)."""
+    lat, lng = data.get("lat"), data.get("lng")
+    ok = all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (lat, lng))
+    if not ok or not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return None, None
+    return float(lat), float(lng)
+
 
 _tasks: set = set()
 _pending: "defaultdict[str, set]" = defaultdict(set)  # driver -> saves still in flight
@@ -75,8 +146,10 @@ def _iso(at: datetime) -> str:
 
 
 def normalize(driver: str, events: list[dict], source: str = "app") -> list[tuple]:
-    """Rows (driver, trip_id, kind, at, source, data_json) for a batch; a bad shape raises ValueError with the
-    reason, so the API can answer 422 for the whole batch."""
+    """Rows (driver, trip_id, kind, at, source, data_json, org_id, vehicle_id, lat, lng) for a batch; a bad shape
+    raises ValueError with the reason, so the API can answer 422 for the whole batch. org_id/vehicle_id come from
+    the driver when it is an auth.Principal (None for a bare id)."""
+    org_id, vehicle_id = getattr(driver, "org_id", None), getattr(driver, "vehicle_id", None)
     if len(events) > MAX_BATCH:
         raise ValueError(f"at most {MAX_BATCH} events per batch")
     now = datetime.now(timezone.utc)
@@ -100,10 +173,23 @@ def normalize(driver: str, events: list[dict], source: str = "app") -> list[tupl
         text = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
         if len(text.encode("utf-8")) > MAX_DATA_BYTES:
             raise ValueError(f"event {i}: data over {MAX_DATA_BYTES} bytes")
+        model = DASHBOARD_MODELS.get(kind)
+        if model is not None:
+            try:
+                model.model_validate(data)
+            except ValidationError as err:
+                first = err.errors()[0]
+                where = ".".join(str(x) for x in first.get("loc", ()))
+                raise ValueError(f"event {i}: {kind} data.{where}: {first.get('msg')}")
         if kind not in KNOWN_KINDS:
             logger.info("trip event of unknown kind %r from %s", kind, source)
-        rows.append((driver, trip_id, kind, parse_time(e.get("t"), now) + timedelta(microseconds=i), source, text))
+        lat, lng = _position(data)
+        rows.append((str(driver), trip_id, kind, parse_time(e.get("t"), now) + timedelta(microseconds=i), source, text,
+                     org_id, vehicle_id, lat, lng))
     return rows
+
+
+_INSERT_COLS = "driver, trip_id, kind, at, source, data, org_id, vehicle_id, lat, lng"
 
 
 async def add(driver: str, events: list[dict], source: str = "app") -> int:
@@ -115,27 +201,35 @@ async def add(driver: str, events: list[dict], source: str = "app") -> int:
     if kind == "off":
         raise RuntimeError("memory store is off")
     if kind == "sqlite":
-        sq_rows = [(d, t, k, _iso(at), s, j) for d, t, k, at, s, j in rows]
+        sq_rows = [(r[0], r[1], r[2], _iso(r[3]), *r[4:]) for r in rows]
         await memory._sq_run(lambda con: con.executemany(
-            "INSERT INTO trip_events (driver, trip_id, kind, at, source, data) VALUES (?, ?, ?, ?, ?, ?)", sq_rows))
+            f"INSERT INTO trip_events ({_INSERT_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", sq_rows))
     else:
         pool = await memory._db()
         await pool.executemany(
-            "INSERT INTO trip_events (driver, trip_id, kind, at, source, data) VALUES ($1, $2, $3, $4, $5, $6)", rows)
+            f"INSERT INTO trip_events ({_INSERT_COLS}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", rows)
     _maybe_prune()
     return len(rows)
 
 
 def add_later(driver: Optional[str], trip_id: Optional[str], kind: str, data: Optional[dict] = None,
-              source: str = "server") -> None:
+              source: str = "server", pos: Optional[tuple[float, float]] = None) -> None:
     """A server-side event as a background task: the reply never waits on the database. No-op without a driver
-    or with the store off."""
+    or with the store off. `pos` is the request's (lat, lng); the request id rides along as data.req so the
+    event joins the turn log line."""
     if not driver or memory.store() == "off":
         return
+    data = dict(data or {})
+    if pos is not None:
+        data.setdefault("lat", pos[0])
+        data.setdefault("lng", pos[1])
+    rid = reqid.current()
+    if rid:
+        data.setdefault("req", rid)
 
     async def _save():
         try:
-            await add(driver, [{"trip_id": trip_id, "kind": kind, "data": data or {}}], source)
+            await add(driver, [{"trip_id": trip_id, "kind": kind, "data": data}], source)
         except Exception as e:  # noqa: BLE001
             logger.warning("trip event save failed: %s", e)
 
@@ -229,6 +323,78 @@ async def recent(limit: int = 200) -> list[dict]:
     return [_row(dict(r), True) for r in rows]
 
 
+# ---- fleet reads (services/fleet_api.py strips transcripts from what these return) -------------------------
+
+_FLEET_COLS = "id, trip_id, at, kind, source, data, vehicle_id, lat, lng"
+
+
+def _fleet_row(r) -> dict:
+    if not isinstance(r, dict):
+        r = dict(zip(("id", "trip_id", "at", "kind", "source", "data", "vehicle_id", "lat", "lng"), r))
+    at = r["at"]
+    return {"id": r["id"], "t": _iso(at) if isinstance(at, datetime) else str(at), "trip_id": r["trip_id"],
+            "kind": r["kind"], "source": r["source"], "data": json.loads(r["data"]), "vehicle_id": r["vehicle_id"],
+            "lat": r["lat"], "lng": r["lng"]}
+
+
+async def _fleet_fetch(sql_sqlite: str, sql_pg: str, args: tuple) -> list:
+    """Rows of a fleet query (one SQL per dialect, same argument order); RuntimeError when the store is off."""
+    kind = memory.store()
+    if kind == "off":
+        raise RuntimeError("memory store is off")
+    if kind == "sqlite":
+        sq_args = tuple(_iso(a) if isinstance(a, datetime) else a for a in args)
+        return await memory._sq_run(lambda con: con.execute(sql_sqlite, sq_args).fetchall())
+    pool = await memory._db()
+    return [dict(r) for r in await pool.fetch(sql_pg, *args)]
+
+
+async def vehicle_day(org_id: str, vehicle_id: str, start: datetime, end: datetime, limit: int = 2000) -> list[dict]:
+    """One truck's events in [start, end), oldest first; the org is part of the filter, so a vehicle id from
+    another fleet finds nothing."""
+    rows = await _fleet_fetch(
+        f"SELECT {_FLEET_COLS} FROM trip_events WHERE org_id = ? AND vehicle_id = ? AND at >= ? AND at < ? "
+        "ORDER BY at, id LIMIT ?",
+        f"SELECT {_FLEET_COLS} FROM trip_events WHERE org_id = $1 AND vehicle_id = $2 AND at >= $3 AND at < $4 "
+        "ORDER BY at, id LIMIT $5",
+        (org_id, vehicle_id, start, end, limit))
+    return [_fleet_row(r) for r in rows]
+
+
+async def org_day(org_id: str, start: datetime, end: datetime, kinds: tuple[str, ...]) -> list[dict]:
+    """The org's events of these kinds in [start, end) (the summary counts them)."""
+    marks = ", ".join("?" for _ in kinds)
+    pg_marks = ", ".join(f"${i + 4}" for i in range(len(kinds)))
+    rows = await _fleet_fetch(
+        f"SELECT {_FLEET_COLS} FROM trip_events WHERE org_id = ? AND at >= ? AND at < ? AND kind IN ({marks})",
+        f"SELECT {_FLEET_COLS} FROM trip_events WHERE org_id = $1 AND at >= $2 AND at < $3 AND kind IN ({pg_marks})",
+        (org_id, start, end, *kinds))
+    return [_fleet_row(r) for r in rows]
+
+
+_ROUTE_KINDS = ("route_started", "route_ended")
+
+
+async def org_latest(org_id: str) -> dict[str, dict]:
+    """Per vehicle of the org: the last event, the last event with a position, the last route start or end.
+    {vehicle_id: {"last": row, "position": row | None, "route": row | None}}; three grouped queries, not one
+    per truck."""
+    cols = ", ".join(f"e.{c}" for c in _FLEET_COLS.split(", "))
+    sub = "SELECT vehicle_id, max(at) AS at FROM trip_events WHERE org_id = {p} AND vehicle_id IS NOT NULL {x} GROUP BY vehicle_id"
+    outer = ("SELECT {cols} FROM trip_events e JOIN ({sub}) m ON e.vehicle_id = m.vehicle_id AND e.at = m.at "
+             "WHERE e.org_id = {p} {x} ORDER BY e.id")
+    route_only = "AND kind IN (" + ", ".join(f"'{k}'" for k in _ROUTE_KINDS) + ")"
+    out: dict[str, dict] = {}
+    for key, extra in (("last", ""), ("position", "AND lat IS NOT NULL"), ("route", route_only)):
+        sq = outer.format(cols=cols, sub=sub.format(p="?", x=extra), p="?", x=extra)
+        pg = outer.format(cols=cols, sub=sub.format(p="$1", x=extra), p="$1", x=extra)
+        args = (org_id, org_id) if memory.store() == "sqlite" else (org_id,)
+        for r in await _fleet_fetch(sq, pg, args):
+            row = _fleet_row(r)  # a tie on `at` keeps the higher id (ORDER BY e.id)
+            out.setdefault(row["vehicle_id"], {"last": None, "position": None, "route": None})[key] = row
+    return out
+
+
 async def clear(driver: str) -> int:
     await _settled(driver)
     kind = memory.store()
@@ -280,19 +446,19 @@ _NOTE_KINDS = {"stop_guard": "stop_guard", "dest_check": "dest_check", "confirm"
 
 
 def from_turn(driver: Optional[str], trip_id: Optional[str], status: str, intent: Optional[str], notes: dict,
-              text: str = "") -> None:
+              text: str = "", pos: Optional[tuple[float, float]] = None) -> None:
     """The server's own events for one copilot turn, from the turn's status and timing notes (called by
     server._finish). Nothing for an ordinary successful turn."""
     if not driver:
         return
     for note, kind in _NOTE_KINDS.items():
         if note in notes:
-            add_later(driver, trip_id, kind, {"result": str(notes[note]), "intent": intent})
+            add_later(driver, trip_id, kind, {"result": str(notes[note]), "intent": intent}, pos=pos)
     if status == "not_understood":
-        add_later(driver, trip_id, "not_understood", {"intent": intent, "text": text})
+        add_later(driver, trip_id, "not_understood", {"intent": intent, "text": text}, pos=pos)
     elif status == "error":
         err = str(notes.get("error") or "unknown")
         if err == "no_truck_route":
-            add_later(driver, trip_id, "route_failed", {"where": "agent", "error": err, "intent": intent})
+            add_later(driver, trip_id, "route_failed", {"where": "agent", "error": err, "intent": intent}, pos=pos)
         else:
-            add_later(driver, trip_id, "turn_error", {"error": err, "intent": intent, "text": text})
+            add_later(driver, trip_id, "turn_error", {"error": err, "intent": intent, "text": text}, pos=pos)

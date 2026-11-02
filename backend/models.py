@@ -268,6 +268,7 @@ class NudgeRequest(BaseModel):
     truck_profile: TruckProfile = Field(default_factory=TruckProfile)
     chain_control_ahead: Optional["ChainAhead"] = None  # first active Caltrans control on the route ahead
     motive_key: Optional[str] = Field(None, max_length=200, exclude=True, repr=False)
+    motive_user: Optional[str] = Field(None, max_length=40, exclude=True, repr=False)  # with a fleet's key
 
 
 class ChainAhead(BaseModel):
@@ -360,8 +361,10 @@ class AgentRequest(BaseModel):
     active_duration_min: Optional[int] = Field(None, ge=0)
     active_speed_limit_mph: Optional[int] = Field(None, ge=0, le=100)  # posted limit where the driver is now
     ui: UiState = Field(default_factory=UiState)
-    # Set by the server from the X-Motive-Key header (never stored, never logged, never echoed back).
+    # Set by the server from the X-Motive-Key header, or the fleet's stored key plus the driver's Motive user id
+    # (never logged, never echoed back).
     motive_key: Optional[str] = Field(None, max_length=200, exclude=True, repr=False)
+    motive_user: Optional[str] = Field(None, max_length=40, exclude=True, repr=False)
     stt_ms: Optional[int] = Field(None, ge=0, le=60000)  # how long /voice/transcribe took, for the turn log
     stt_confidence: Optional[float] = Field(None, ge=0, le=1)  # from /voice/transcribe; low = ask before acting
     speed_mps: Optional[float] = Field(None, ge=0, le=60)  # GPS speed; at highway speed replies get shorter

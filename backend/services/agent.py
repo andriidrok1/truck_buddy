@@ -27,6 +27,7 @@ from services.dialog_state import DialogState
 from services.errors import NoTruckRoute
 from services.routing import VIA_STOP_S, get_routing_provider
 from services.flags import on
+from services.logs import said
 from services.speech_text import fit_reply
 from services.timing import stage
 
@@ -712,10 +713,10 @@ def reject_or_reference_guard(intent: str, d: dict, text: str, places: list[Plac
     Everything else passes through untouched."""
     current_id = active.id if active else None
     if intent == "pick" and BYE_PHRASE.match(text.strip()):
-        logger.info("agent pick %r is a goodbye -> bye", text)
+        logger.info("agent pick %s is a goodbye -> bye", said(text))
         return "bye", {**d, "intent": "bye", "place_index": None}
     if intent == "alternative" and places and REJECT_PLACE.search(text) and not ROAD_WORDS.search(text):
-        logger.info("agent alternative %r reads as a rejected place -> pick", text)
+        logger.info("agent alternative %s reads as a rejected place -> pick", said(text))
         return "pick", {**d, "intent": "pick", "place_index": None}
     if intent == "go":
         query = str(d.get("query") or "").strip()
@@ -723,7 +724,7 @@ def reject_or_reference_guard(intent: str, d: dict, text: str, places: list[Plac
         if ref is None and places and LIST_REF.match(text.strip()):
             ref = list_reference(text.strip(), places, current_id)
         if ref is not None:
-            logger.info("agent go %r is a list reference -> pick %s", query or text, ref)
+            logger.info("agent go %s is a list reference -> pick %s", said(query or text), ref)
             return "pick", {**d, "intent": "pick", "place_index": ref}
         idx = d.get("place_index")
         if places and isinstance(idx, int) and 1 <= idx <= len(places) and (not query or LIST_REF.match(query) or NOT_A_PLACE.match(query)):
@@ -985,11 +986,11 @@ class LlmAgentProvider:
         """No place in the list has a diesel price: keep the current stop and say so; with no current stop
         the closest one is the honest pick, with the usual "no price" caveat."""
         if req.active_place:
-            logger.info("agent pick %r with no diesel prices in the list -> keeping %s", text, req.active_place.name)
+            logger.info("agent pick %s with no diesel prices in the list -> keeping %s", said(text), req.active_place.name)
             return AgentResponse(status="chat", transcript=text, source=self.source,
                                  reply=NO_PRICES_KEEP.format(name=req.active_place.name))
         nearest = min(sess["places"], key=lambda p: p.distance_mi or 0)
-        logger.info("agent pick %r with no diesel prices in the list -> the closest, %s", text, nearest.name)
+        logger.info("agent pick %s with no diesel prices in the list -> the closest, %s", said(text), nearest.name)
         return await self._route_to(req, nearest, sess["places"], text)
 
     async def _route_to(self, req: AgentRequest, place: Place, found: list[Place], text: str) -> AgentResponse:
@@ -1090,12 +1091,13 @@ class LlmAgentProvider:
         return AgentResponse(status="chat", transcript=text, reply=reply, source=self.source)
 
     async def _hos(self, req: AgentRequest, text: str) -> AgentResponse:
-        """"How many hours do I have?" from the driver's Motive account (key comes per request, never stored)."""
+        """"How many hours do I have?" from the driver's Motive account (the driver's own key per request, or the
+        fleet's stored key with the driver's Motive user id; server.motive_auth)."""
         if not hos.enabled() or not req.motive_key:
             return AgentResponse(status="chat", transcript=text, reply=hos.CONNECT, source=self.source)
         with stage("tools"):
             try:
-                clocks = await asyncio.wait_for(hos.available_time(req.motive_key), 8.0)
+                clocks = await asyncio.wait_for(hos.available_time(req.motive_key, req.motive_user), 8.0)
                 reply = hos.speech(clocks)
             except hos.HosAuthError:
                 reply = hos.BAD_KEY
@@ -1625,7 +1627,7 @@ class LlmAgentProvider:
         if intent == "find" and d.get("category") == "hotel" and PARK_WORDS.search(text) and not BED_WORDS.search(text):
             # "where can I park tonight" is a truck stop, not a hotel: the model drifts there now and then
             # (stand QA 2026-11-01), and a hotel lot is the wrong answer for a 53-footer.
-            logger.info("agent find hotel for %r -> truck_stop", text)
+            logger.info("agent find hotel for %s -> truck_stop", said(text))
             d = {**d, "category": "truck_stop"}
         # "Any chain controls ahead?" is a data question, not small talk: the model answered "there may be"
         # on its own (QA 2026-10-31, H17). Caltrans has the answer for the route the driver is on.
@@ -1637,7 +1639,7 @@ class LlmAgentProvider:
         if intent in ("find", "pick") and req.active_place and ON_THE_WAY.search(text):
             category = d.get("category") or (sess["places"][0].category if sess["places"] else None) or "truck_stop"
             if category in STOP_CATEGORIES:
-                logger.info("agent %s %s %r with a route active -> add_stop", intent, category, text)
+                logger.info("agent %s %s %s with a route active -> add_stop", intent, category, said(text))
                 d = {**d, "intent": "add_stop", "category": category}
                 if intent == "pick" and PRICE_WORDS.search(text) and all(p.diesel_price is None for p in sess["places"]):
                     d["place_index"] = None
