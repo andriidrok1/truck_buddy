@@ -79,12 +79,21 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
 
   const fitAt = useRef(0);
   const fitCheck = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A camera command before the map has loaded is dropped by the native view. The first fit (the GPS fix, a
+  // restored route) can come in that window once the fix is in before this mounts, so it waits for
+  // onMapReady and runs then.
+  const ready = useRef(false);
+  const pendingFit = useRef(false);
   // One camera for the points, computed here for the map window (the screen minus the chrome the
   // insets describe). The map padding already centres the camera in that window.
   // Android drops the animation now and then (the sheet growing for the route card changes the
   // padding in the same frames) and the camera stays on the previous view, so once the animation
   // should be over the camera is read back and sent again if it never got there (QA 2026-10-31, Н7).
   const fit = () => {
+    if (!ready.current) {
+      pendingFit.current = true;
+      return;
+    }
     if (fitCheck.current) clearTimeout(fitCheck.current);
     if (fitPoints.length > 1) {
       const cam = fitCamera(fitPoints, winW, Math.max(120, winH - topInset - bottomInset), FIT_MARGIN, FIT_MAX_ZOOM);
@@ -120,6 +129,14 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
       testID="map-view"
       style={StyleSheet.absoluteFill}
       initialRegion={{ ...toCoord(driver), latitudeDelta: 0.015, longitudeDelta: 0.015 }}
+      onMapReady={() => {
+        ready.current = true;
+        if (pendingFit.current) {
+          pendingFit.current = false;
+          fitAt.current = Date.now();
+          fit();
+        }
+      }}
       customMapStyle={scheme === "dark" ? NIGHT_MAP_STYLE : undefined}
       userInterfaceStyle={scheme}
       mapPadding={padding}
