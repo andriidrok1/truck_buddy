@@ -90,6 +90,8 @@ export type RouteInfo = {
   via?: [number, number][];
   /** Geometry index where each route section (between via stops) starts. */
   section_starts?: number[];
+  /** Seconds standing at the via stops, already counted in duration_s. */
+  stops_s?: number;
 };
 
 export type SpeedLimit = { index: number; mph: number };
