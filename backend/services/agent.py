@@ -19,7 +19,7 @@ from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, Place, Route
 from services import (approach, breakdown, chains, controls, fuel_index, hos, llm, memory, profile_learn, reviews,
                       timing, tpims, weather)
 from services.geo import haversine_km, km_to_mi
-from services.geocode import is_street, geocode
+from services.geocode import _STATES, chain_query, geocode, is_street, town_query
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
 from services.parking import cached_parking, check_parking, is_town, listed_in_data
 from services.places import get_places_provider
@@ -290,6 +290,83 @@ def _street(address: Optional[str]) -> str:
     return first if first and not first[0].isdigit() else ""
 
 
+def _speak_street(s: str) -> str:
+    """'N Pima Rd' -> 'North Pima Road' (whole words, case-insensitive); a '#123' suite is dropped."""
+    s = re.sub(r"\s*#\S+", "", s)
+    return " ".join(STREET_WORDS.get(w.lower().rstrip("."), w) for w in s.split())
+
+
+def _label_parts(place: Place) -> tuple[list[str], Optional[str]]:
+    """The comma parts of the place's name and address without ZIP and country, and the two-letter state when one
+    of the parts carries it ('Payson, Phoenix, AZ 85086, United States' -> (['Payson', 'Phoenix'], 'AZ'))."""
+    parts, state = [], None
+    for raw in f"{place.name}, {place.address or ''}".split(","):
+        p = raw.strip()
+        if not p:
+            continue
+        m = re.match(r"^([A-Za-z]{2})(?:\s+\d{5}(?:-\d{4})?)?$", p)  # "AZ 85086", "Az"
+        if m and m.group(1).lower() in _STATES:
+            state = state or m.group(1).upper()
+            continue
+        if _ZIP_COUNTRY.match(p):
+            continue
+        if p not in parts:
+            parts.append(p)
+    return parts, state
+
+
+def spoken_where(place: Place) -> str:
+    """Where the place really is, for speech. A town: 'Payson, Arizona'. A street or an address: 'Payson in
+    Phoenix, Arizona', '2828 El Centro Road in Sacramento, California'. A business: 'Cave Creek Az on North Pima
+    Road in Scottsdale, Arizona'. A name with nothing after it stays as it is ('Reno')."""
+    parts, state = _label_parts(place)
+    state_name = _STATES.get((state or "").lower(), "").title() if state else ""
+    if is_town(place):
+        head = parts[0] if parts else place.name.split(",")[0]
+        return f"{head}, {state_name}" if state_name else head
+    if not parts:
+        return place.name.split(",")[0]
+    head, rest = re.sub(r"\s*#\S+", "", parts[0]).strip(), parts[1:]  # "Pilot Travel Center #123" -> no number
+    if not rest:
+        return head
+    town = rest[-1]
+    street = _speak_street(_street(rest[0]) or rest[0]) if len(rest) > 1 else ""  # no house number on the street
+    # a street-type title ("Payson", "2828 El Centro Rd") reads with its words spelled out too
+    if is_street(place) or head[:1].isdigit():
+        head = _speak_street(head)
+    where = f"{head} on {street} in {town}" if street else f"{head} in {town}"
+    return f"{where}, {state_name}" if state_name else where
+
+
+def _tokens(s: str) -> list[str]:
+    words = re.findall(r"[a-z0-9']+", s.lower())
+    return [w for w in words if w not in ("the", "a", "an")]
+
+
+def _names_match(query: str, place: Place) -> bool:
+    """The letters agree: every word of what was said (before the first comma) is in the place's name, or the
+    place's own first part is wholly in what was said. 'Payson' ~ 'Payson, AZ' yes; 'Payson, AZ' ~ 'Cave Creek, Az' no."""
+    said = _tokens(query.split(",")[0])
+    name = _tokens(place.name)
+    first = _tokens(place.name.split(",")[0])
+    if not said or not name:
+        return False
+    return all(w in name for w in said) or (bool(first) and all(w in said for w in first))
+
+
+def dest_check(query: str, place: Place) -> Optional[str]:
+    """Why this geocode should be read back before routing, or None when it is plainly what was said."""
+    far = (place.distance_mi or 0) > DEST_FAR_MI
+    same = _names_match(query, place)
+    if chain_query(query) and is_town(place):
+        return "chain_to_town"
+    if town_query(query) and not is_town(place) and (is_street(place) or far or not same):
+        return "town_to_other"
+    if far and not same:
+        return "far_other_name"
+    return None
+
+
 def arrival_street(place: Place, route: RouteInfo) -> str:
     """The street the driver turns off to get in: the last maneuver's street when the route knows it (the
     same one the entry tip on the card names), else the street of the address."""
@@ -380,6 +457,19 @@ VIA_NONE = "There are no stops on this route."
 # and the dialog added it without a word, 2026-11-01): ask before the route changes.
 VIA_FAR = "{name} is about {extra} out of the way; from here that's {new} instead of {old}. Add it anyway?"
 VIA_FAR_NO = "Okay, no stop added."
+# A geocode that may not be what the driver meant ("Payson, AZ" -> a street in Phoenix or a business in Cave Creek,
+# "Pilot" -> the hamlet of Pilot, NV; stand 2026-11-01): the reply names where the place really is, and when the
+# match is far or named differently the copilot asks before the route is built.
+DEST_FAR_MI = 50.0
+DEST_CHECK = "I found {where}, about {mi} miles away. Is that the one?"
+DEST_NO = "Okay, not that one. Say the town and state, or type the address."
+DEST_ONLY = "That's the only match I have for {said}. Try the town with its state, or type the address."
+DEST_YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|correct|right|that's (?:it|right|the one)|that one|"
+                      r"go ahead|do it|take me there|fine)\b", re.I)
+STREET_WORDS = {"st": "Street", "ave": "Avenue", "rd": "Road", "blvd": "Boulevard", "dr": "Drive", "hwy": "Highway",
+                "fwy": "Freeway", "pkwy": "Parkway", "ln": "Lane", "ct": "Court", "pl": "Place", "trl": "Trail",
+                "cir": "Circle", "n": "North", "s": "South", "e": "East", "w": "West", "ne": "Northeast",
+                "nw": "Northwest", "se": "Southeast", "sw": "Southwest"}
 VIA_FAR_YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|add it|go ahead|do it|please do|fine)\b", re.I)
 STOP_DETOUR_MIN_S = 45 * 60  # a stop costing more than this beyond its own 30 minutes...
 STOP_DETOUR_FRACTION = 0.5  # ...and more than half the trip so far is asked about first
@@ -490,7 +580,9 @@ def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[st
     kind = "fuel_stop" if is_fuel_stop(place) else place.category
     intro, body = TEMPLATES[kind][n % len(TEMPLATES[kind])]
     street = arrival_street(place, route)
-    dest = place.name.split(",")[0]
+    # a geocoded place that is not a town is named with where it is ("Payson in Phoenix, Arizona"), so a street
+    # or a business of the right name in the wrong place is heard before the truck turns
+    dest = spoken_where(place) if place.category == "destination" and not is_town(place) else place.name.split(",")[0]
     name = place.name
     if kind == "cat_scale":  # the data names them "CAT Scale at Maverik #654": the template says "CAT scale at" already
         name = re.sub(r"^CAT\s+Scales?\s+(?:at\s+)?", "", name, flags=re.I) or name
@@ -1435,6 +1527,8 @@ class LlmAgentProvider:
                 if kind:
                     timing.note(kind, "declined")
                 branch = pending.get("no")
+                if branch and branch.get("declined"):
+                    sess.setdefault("dest_declined", set()).add(branch["declined"])
                 if branch:  # a question with a real "no" path (e.g. "chains on board?")
                     if branch.get("then_pending"):
                         sess["pending"] = branch["then_pending"]
@@ -1569,7 +1663,9 @@ class LlmAgentProvider:
                 if near:
                     return await self._find_near(req, d["category"], near, text, exclude, sess)
                 return await self._find(req, d["category"], text, exclude)
-            if intent == "go" and isinstance(d.get("place"), dict):  # a place offered by a nudge, accepted
+            if intent == "go" and isinstance(d.get("place"), dict):  # a place offered by a nudge, or confirmed below
+                if "city" in d:
+                    sess["city"] = d["city"] or sess.get("city")
                 return await self._route_to(req, Place(**d["place"]), [], text)
             if intent == "go" and str(d.get("query") or "").strip():
                 named = named_place(str(d["query"]), sess["places"])
@@ -1590,8 +1686,25 @@ class LlmAgentProvider:
                 if not matches:
                     return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query),
                                          source=self.source)
-                sess["city"] = city_of(query, matches[0]) or sess.get("city")
-                return await self._route_to(req, matches[0], [], text)
+                place = matches[0]
+                if place.id in sess.get("dest_declined", set()):  # said no to this one already in this dialog
+                    return AgentResponse(status="chat", transcript=text, source=self.source,
+                                         reply=DEST_ONLY.format(said=str(d["query"]).strip()))
+                reason = dest_check(query, place)
+                if reason and not confirmed:
+                    # "yes" re-runs this turn with the place stashed (no second geocode); "no" remembers the refusal
+                    sess["pending"] = {"text": text, "kind": "dest_check",
+                                       "d": {**d, "place": place.model_dump(), "city": city_of(query, place)},
+                                       "no": {"reply": DEST_NO, "declined": place.id}, "yes": DEST_YES}
+                    timing.note("dest_check", "asked")
+                    logger.info("agent go %r -> %s (%s, %.0f mi): asking first", query, place.name, reason,
+                                place.distance_mi or 0)
+                    return AgentResponse(status="confirm", transcript=text, source=self.source,
+                                         reply=DEST_CHECK.format(where=spoken_where(place), mi=_miles(place.distance_mi or 0)))
+                if reason:  # one question per utterance: the STT "Did you say...?" was it; the reply names the place
+                    timing.note("dest_check", "spoken")
+                sess["city"] = city_of(query, place) or sess.get("city")
+                return await self._route_to(req, place, [], text)
         except RouteFailed as e:
             return _route_failed(text, e, self.source)
         except (PlacesUnavailable, httpx.HTTPError) as e:
