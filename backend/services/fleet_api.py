@@ -93,6 +93,13 @@ async def vehicle_events(vehicle_id: str = Path(max_length=64), day: Optional[st
     return {"day": label, "vehicle_id": vehicle_id, "events": [public_event(e) for e in events]}
 
 
+SUMMARY_COUNTS = ("routes", "reroutes", "guard_questions", "failed_turns", "route_failures")
+
+
+def _zero_row(vehicle_id: Optional[str], label: Optional[str]) -> dict:
+    return {"vehicle_id": vehicle_id, "label": label, **dict.fromkeys(SUMMARY_COUNTS, 0)}
+
+
 @router.get("/summary")
 async def summary(day: Optional[str] = Query(None, pattern=DAY_RE), principal: auth.Principal = Depends(reader)):
     """Per truck for the day: routes started, reroutes, far-stop questions the guard asked, failed copilot turns,
@@ -101,12 +108,9 @@ async def summary(day: Optional[str] = Query(None, pattern=DAY_RE), principal: a
     trucks = await _guarded(tenancy.org_vehicles(principal.org_id))
     events = await _guarded(trip_events.org_day(principal.org_id, start, end, SUMMARY_KINDS))
     labels = {v["id"]: v["label"] for v in trucks}
-    rows: dict[Optional[str], dict] = {
-        vid: {"vehicle_id": vid, "label": name, "routes": 0, "reroutes": 0, "guard_questions": 0, "failed_turns": 0,
-              "route_failures": 0} for vid, name in labels.items()}
+    rows: dict[Optional[str], dict] = {vid: _zero_row(vid, name) for vid, name in labels.items()}
     for e in events:
-        r = rows.setdefault(e["vehicle_id"], {"vehicle_id": e["vehicle_id"], "label": labels.get(e["vehicle_id"]), "routes": 0,
-                                              "reroutes": 0, "guard_questions": 0, "failed_turns": 0, "route_failures": 0})
+        r = rows.setdefault(e["vehicle_id"], _zero_row(e["vehicle_id"], labels.get(e["vehicle_id"])))
         k = e["kind"]
         if k == "route_started":
             r["routes"] += 1
@@ -118,8 +122,7 @@ async def summary(day: Optional[str] = Query(None, pattern=DAY_RE), principal: a
             r["failed_turns"] += 1
         elif k == "route_failed":
             r["route_failures"] += 1
-    keys = ("routes", "reroutes", "guard_questions", "failed_turns", "route_failures")
-    totals = {k: sum(r[k] for r in rows.values()) for k in keys}
+    totals = {k: sum(r[k] for r in rows.values()) for k in SUMMARY_COUNTS}
     ordered = sorted(rows.values(), key=lambda r: (r["vehicle_id"] is None, r["label"] or "", r["vehicle_id"] or ""))
     return {"day": label, "vehicles": ordered, "totals": totals}
 

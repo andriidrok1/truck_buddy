@@ -268,7 +268,6 @@ _motive_users: dict[str, tuple[Optional[str], float]] = {}
 
 async def motive_user(driver_id: Optional[str]) -> Optional[str]:
     """The driver's Motive user id (set by the fleet), cached a minute per process."""
-    import time
     if not driver_id or db.store() == "off":
         return None
     hit = _motive_users.get(driver_id)
@@ -336,7 +335,6 @@ def _profile_target(dev: Device) -> tuple[str, str]:
 
 async def profile_get(sub: str) -> Optional[TruckProfile]:
     """The stored truck profile for this device (the vehicle's when bound to one), or None."""
-    import time
     hit = _profiles.get(sub)
     if hit and time.monotonic() - hit[1] < PROFILE_CACHE_S:
         return hit[0]
@@ -362,7 +360,6 @@ async def profile_get(sub: str) -> Optional[TruckProfile]:
 
 
 async def profile_put(sub: str, profile: TruckProfile) -> None:
-    import time
     dev = await ensure_solo_org(sub)
     if dev is None:
         raise RuntimeError("store is off")
@@ -420,7 +417,6 @@ _credentials: dict[tuple[str, str], tuple[Optional[str], float]] = {}
 
 async def credential_get(org_id: Optional[str], provider: str) -> Optional[str]:
     """The decrypted secret, cached a minute per process; None without one (or without CREDENTIALS_KEY)."""
-    import time
     if not org_id or db.store() == "off":
         return None
     hit = _credentials.get((org_id, provider))

@@ -325,12 +325,13 @@ async def recent(limit: int = 200) -> list[dict]:
 
 # ---- fleet reads (services/fleet_api.py strips transcripts from what these return) -------------------------
 
-_FLEET_COLS = "id, trip_id, at, kind, source, data, vehicle_id, lat, lng"
+_FLEET_FIELDS = ("id", "trip_id", "at", "kind", "source", "data", "vehicle_id", "lat", "lng")
+_FLEET_COLS = ", ".join(_FLEET_FIELDS)
 
 
 def _fleet_row(r) -> dict:
     if not isinstance(r, dict):
-        r = dict(zip(("id", "trip_id", "at", "kind", "source", "data", "vehicle_id", "lat", "lng"), r))
+        r = dict(zip(_FLEET_FIELDS, r))
     at = r["at"]
     return {"id": r["id"], "t": _iso(at) if isinstance(at, datetime) else str(at), "trip_id": r["trip_id"],
             "kind": r["kind"], "source": r["source"], "data": json.loads(r["data"]), "vehicle_id": r["vehicle_id"],
@@ -379,7 +380,7 @@ async def org_latest(org_id: str) -> dict[str, dict]:
     """Per vehicle of the org: the last event, the last event with a position, the last route start or end.
     {vehicle_id: {"last": row, "position": row | None, "route": row | None}}; three grouped queries, not one
     per truck."""
-    cols = ", ".join(f"e.{c}" for c in _FLEET_COLS.split(", "))
+    cols = ", ".join(f"e.{c}" for c in _FLEET_FIELDS)
     sub = "SELECT vehicle_id, max(at) AS at FROM trip_events WHERE org_id = {p} AND vehicle_id IS NOT NULL {x} GROUP BY vehicle_id"
     outer = ("SELECT {cols} FROM trip_events e JOIN ({sub}) m ON e.vehicle_id = m.vehicle_id AND e.at = m.at "
              "WHERE e.org_id = {p} {x} ORDER BY e.id")
