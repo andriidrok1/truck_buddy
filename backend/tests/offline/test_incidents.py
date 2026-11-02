@@ -1,6 +1,7 @@
 """Incidents from HERE return=incidents: parsing, closure detection, the spoken heads-up, the flag."""
 import copy
 
+import flexpolyline
 import pytest
 from conftest import fixture_json, params_of, run
 
@@ -31,7 +32,8 @@ def test_fixture_incidents_parse_with_positions():
     assert a.description == "Road construction. Two lanes closed"
     assert b.description == "Major road construction" and b.criticality == "minor"
     assert 0 < a.index < len(info.geometry) and 0 < b.index < len(info.geometry)
-    assert a.index == routing._thin_index(1042, 2533)  # first span that references incident 0
+    raw = flexpolyline.decode(DATA["routes"][0]["sections"][0]["polyline"])
+    assert info.geometry[a.index] == [round(raw[1042][0], 6), round(raw[1042][1], 6)]  # first span that references incident 0
 
 
 def test_closure_detection():
