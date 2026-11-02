@@ -573,6 +573,9 @@ def _notices(raw: List[dict], t: TruckProfile) -> tuple[List[str], Optional[str]
     return physical + legal_lines + other, restricted
 
 
+NO_TURNS_NOTICE = "The truck router is down, so this is a backup route: no turn prompts, follow the line on the map."
+
+
 async def _ors(fl: float, fg: float, tl: float, tg: float, t: TruckProfile, via: Via = ()) -> RouteInfo:
     body = {
         "coordinates": [[fg, fl], *[[v[1], v[0]] for v in via], [tg, tl]],  # ORS uses [lng, lat]
@@ -650,13 +653,18 @@ class TruckRoutingProvider:
                     else await fn(from_lat, from_lng, to_lat, to_lng, t, via)
                 info.approach = from_route(info)
                 info.via = via
+                if fn is _ors and failed:  # HERE is down: a line to follow, but no turn prompts
+                    info.notices.append(NO_TURNS_NOTICE)
                 for alt in info.alternatives:
                     alt.approach = from_route(alt)
                     alt.via = via
                 return info
-            except NoTruckRoute as e:  # the router answered: another provider may still know a way
+            except NoTruckRoute as e:
+                # HERE knows the truck's restrictions; ORS asked after its "no" found a way HERE had ruled
+                # out and handed it over without turns (review 2026-11-02, bug 20). The "no" is final.
                 logger.warning("%s found no truck route: %s", fn.__name__, e)
-                no_route = no_route or e
+                no_route = e
+                break
             except Exception as e:  # noqa: BLE001 - fall through to the next provider
                 logger.warning("%s routing failed: %s", fn.__name__, e)
                 failed.append(f"{fn.__name__}: {type(e).__name__}")

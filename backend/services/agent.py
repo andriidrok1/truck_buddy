@@ -444,6 +444,7 @@ NOTICES = (
     ("toll", "Heads up, couldn't dodge all the tolls on this one."),
     ("restricted", "Heads up, part of this route might be tight for your rig, so watch the signs."),
     ("ferry", "Heads up, there's a ferry on this one."),
+    ("backup route", "Heads up, the truck router is down, so this is a backup route with no turn prompts. Follow the line on the map."),
 )
 CLOSURE = "Heads up, there's a road closure on this route: {description}."
 ALT_REPLY = "Here's another way{via}, {time}, {mi} miles{tolls}."
