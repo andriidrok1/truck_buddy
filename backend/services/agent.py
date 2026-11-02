@@ -461,8 +461,12 @@ VIA_NO_ROUTE = "Set a route first, then I can add stops on the way."
 VIA_FULL = "I can only add three stops. Say 'clear the stops' to start over."
 VIA_DUPLICATE = "{name} is already one of your stops."
 VIA_IS_DESTINATION = "That's where we're headed, {name}."
-VIA_CLEARED = "Stops cleared. Straight there, {time}, {mi} miles."
+VIA_STRAIGHT = "Straight there, {time}, {mi} miles."
+VIA_CLEARED = "Stops cleared. " + VIA_STRAIGHT
 VIA_NONE = "There are no stops on this route."
+VIA_REJECTED = "Okay, not {name}. "
+VIA_DROPPED = "Okay, no stop at {name}. I couldn't find another {what} on the way. "
+VIA_LEFT = "New total {time}, {mi} miles."
 # A stop that is nowhere near the way (the geocoder put "the Pilot in Fernley" in Wells, 300 miles past Reno,
 # and the dialog added it without a word, 2026-11-01): ask before the route changes.
 VIA_FAR = "{name} is about {extra} out of the way; from here that's {new} instead of {old}. Add it anyway?"
@@ -1182,6 +1186,7 @@ class LlmAgentProvider:
                                     "current": route.model_copy(update={"alternatives": []}),
                                     "origin": (req.lat, req.lng), "profile": _profile_key(req.truck_profile)}
             sess.pop("via", None)
+            sess.pop("last_offer", None)
 
     @staticmethod
     def _alternatives_stale(cached: Optional[dict], req: AgentRequest, place: Place) -> bool:
@@ -1282,12 +1287,53 @@ class LlmAgentProvider:
             # "cheapest diesel on my route" came back as the query: not a place name. The category search
             # is what the driver meant; a real name that doesn't geocode still ends in "can't find it".
             logger.info("add_stop query %r is not a place; searching %s instead", query, category)
-        category = category or "truck_stop"
+        return await self._stop_search(req, sess, category or "truck_stop",
+                                       {req.active_place.id} if req.active_place else set())
+
+    async def _stop_search(self, req: AgentRequest, sess: dict, category: str, exclude: set[str]) -> Optional[Place]:
+        """The best place of a category for a stop on the way, the excluded ones only if nothing else is left."""
         with stage("tools"):
             res = await get_places_provider().search(category, req.lat, req.lng)
         found = sorted(res.places, key=lambda p: p.distance_mi or 0)
-        return choose_place(found, req.truck_profile, {req.active_place.id} if req.active_place else set(),
-                            sess.get("facts"))
+        return choose_place(found, req.truck_profile, exclude, sess.get("facts"))
+
+    def _offered_stop(self, req: AgentRequest, sess: dict) -> Optional[Place]:
+        """The stop added last on the way to the active destination, while it is still one of the stops."""
+        offer = sess.get("last_offer") or {}
+        if offer.get("kind") != "stop" or not req.active_place or offer.get("place") != req.active_place.id:
+            return None
+        return next((s for s in self._stops(req, sess) if s.id == offer.get("id")), None)
+
+    async def _reject_stop(self, req: AgentRequest, sess: dict, stop: Place, text: str) -> AgentResponse:
+        """"Not that one" right after a stop was added turns the stop down, never the destination (review
+        2026-11-02, bug 15: Reno was rejected, and the same truck stop came back as the destination). Another
+        place of the kind takes the stop's place; with none, the route goes on without it."""
+        place = req.active_place
+        rejected = sess.setdefault("rejected", [])
+        if stop.id not in rejected:
+            await self._note_rejection(sess, stop)
+            rejected.append(stop.id)
+        kept = [s for s in self._stops(req, sess) if s.id != stop.id]
+        name = stop.name.split(",")[0]
+        other = await self._stop_search(req, sess, stop.category, {place.id, *rejected, *(s.id for s in kept)})
+        if other is not None and other.id not in rejected and other.id != place.id:
+            res = await self._add_stop(req, {"intent": "add_stop", "place": other.model_dump(), "_drop": stop.id},
+                                       sess, text)
+            if res.status in ("route_set", "confirm"):
+                res.reply = VIA_REJECTED.format(name=name) + res.reply
+            return res
+        route = await self._route_with_stops(req, kept)
+        self._remember_driven(req, sess, route)
+        if kept:
+            sess["via"] = {"place": place.id, "stops": kept}
+        else:
+            sess.pop("via", None)
+        sess.pop("last_offer", None)
+        time_, mi = route.summary.split(" · ")[0], _miles(route.distance_mi)
+        rest = (VIA_LEFT if kept else VIA_STRAIGHT).format(time=time_, mi=mi)
+        reply = VIA_DROPPED.format(name=name, what=CATEGORY_WORD.get(stop.category, "stop")) + rest
+        return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
+                             route=route, parking=approach.for_route(place, route), options=kept, source=self.source)
 
     async def _route_with_stops(self, req: AgentRequest, stops: list[Place]) -> RouteInfo:
         with stage("tools"):
@@ -1356,7 +1402,8 @@ class LlmAgentProvider:
             if category:
                 return await self._find(req, category, text, set())
             return AgentResponse(status="chat", transcript=text, reply=VIA_NO_ROUTE, source=self.source)
-        stops = self._stops(req, sess)
+        # a stop turned down ("not that one") is replaced, not kept beside the new one
+        stops = [s for s in self._stops(req, sess) if s.id != d.get("_drop")]
         if len(stops) >= MAX_VIA:
             return AgentResponse(status="chat", transcript=text, reply=VIA_FULL, source=self.source)
         stop = await self._resolve_stop(req, d, sess, text)
@@ -1389,6 +1436,7 @@ class LlmAgentProvider:
                                                           new=route.summary.split(" · ")[0], old=_minutes_said(round(old / 60))))
         self._remember_driven(req, sess, route)
         sess["via"] = {"place": place.id, "stops": stops}
+        sess["last_offer"] = {"kind": "stop", "id": stop.id, "place": place.id}
         ahead = f", about {_miles(stop.distance_mi)} miles ahead" if stop.distance_mi else ""
         dwell = VIA_DWELL.format(minutes=VIA_STOP_S // 60, each="the stop" if len(stops) == 1 else "each stop")
         reply = VIA_ADDED.format(name=stop.name.split(",")[0], ahead=ahead, time=route.summary.split(" · ")[0],
@@ -1438,6 +1486,7 @@ class LlmAgentProvider:
         if prev is not None and all(_route_key(r) != _route_key(prev) for r in cached["routes"]):
             cached["routes"].append(prev)
         cached["current"] = route
+        sess.pop("last_offer", None)  # the last thing offered is this road now, not a stop
         route.alternatives = [r.model_copy(update={"alternatives": []}) for r in cached["routes"] if r is not route]
         reply = _alt_reply(route, prev)
         warning = _route_warning(route)  # a closure or a restriction on the other way was never said before
@@ -1657,6 +1706,10 @@ class LlmAgentProvider:
                     and all(p.category == "truck_stop" and p.diesel_price is None for p in sess["places"]):
                 # inside the try: with no route to keep, routing to the closest one can fail (review 2026-11-02, bug 18)
                 return await self._cheapest_without_prices(req, sess, text)
+            # "Not that one" just after a stop was added is about the stop (review 2026-11-02, bug 15).
+            offered = self._offered_stop(req, sess) if intent in ("pick", "find") else None
+            if offered and (REJECT_PLACE.search(text) or (intent == "pick" and d.get("place_index") is None)):
+                return await self._reject_stop(req, sess, offered, text)
             # Current pick: the active route, or the last place chosen in this dialog.
             last = req.active_place or (sess["places"][0] if sess["places"] else None)
             current = last.id if last else None

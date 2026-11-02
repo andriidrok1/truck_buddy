@@ -4,7 +4,8 @@ and with the database-backed session store any worker can pick the next turn up.
 Keys written to the session anywhere (services/agent.py, services/nudges.py, services/breakdown.py, server.py),
 all declared below: history, places, city, pending, via, alternatives, rejected, dest_declined, rejected_chains,
 confirmed_once, facts, past, past_loaded, n, turns, driver, nudge_break_done, nudge_parking_done,
-nudge_chains_done, hos_cache, breakdown_pending, breakdown, providers, providers_at, near, say_learned.
+nudge_chains_done, hos_cache, breakdown_pending, breakdown, providers, providers_at, near, say_learned,
+last_offer.
 Rules that make it serializable: the former sets (rejected, dest_declined) are lists; the pending question's
 "yes" is a pattern NAME (YES_PATTERNS in agent.py), not a compiled regex; the memory read that used to live on
 as an asyncio.Task (past_task) is gone, past_loaded says whether it has landed; clocks are epoch seconds
@@ -58,6 +59,9 @@ class DialogState(BaseModel):
     providers_at: float = 0.0  # epoch seconds
     near: Optional[str] = None
     say_learned: Optional[str] = None
+    # {"kind": "stop", "id": stop id, "place": destination id}: what "not that one" turns down when it is not
+    # the destination (a stop just added on the way)
+    last_offer: Optional[dict] = None
 
     @field_validator("via", mode="before")
     @classmethod

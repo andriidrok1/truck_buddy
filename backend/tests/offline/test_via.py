@@ -318,3 +318,28 @@ def test_a_chain_name_is_the_truck_stop_nearby_before_any_geocode(agent_sandbox,
     run(prov.handle(_req("take me to Reno", active=None), None))
     res = run(prov.handle(_req("stop at the Pilot"), None))
     assert res.status == "route_set" and [o.id for o in res.options] == [near.id]  # not the Fernley geocode
+
+
+def test_not_that_one_after_a_stop_turns_the_stop_down(agent_sandbox, fake_http):
+    """Review 2026-11-02, bug 15: going to Reno, "add a fuel stop" added the closest truck stop and "not that
+    one" turned Reno down instead: a new search found the same stop and routed there as the destination, Reno
+    and the stops gone. The rejection is about the last thing offered, the stop; the destination stays."""
+    prov = _sandbox(agent_sandbox, fake_http)
+    agent_sandbox.llm.on(r"not that one", {"intent": "pick", "category": "truck_stop", "place_index": None})
+    agent_sandbox.places_provider.places = [LOVES, FOURTH]
+    run(prov.handle(_req("take me to Reno", sid="nt", active=None), None))
+    res = run(prov.handle(_req("add a fuel stop", sid="nt"), None))
+    assert [o.id for o in res.options] == [LOVES.id]
+
+    res = run(prov.handle(_req("not that one", sid="nt"), None))
+    assert res.status == "route_set" and res.place.id == RENO.id
+    assert res.reply.startswith("Okay, not Love's Travel Stop. Added Flying J,")
+    assert [o.id for o in res.options] == [FOURTH.id]
+    assert _vias(fake_http.calls_to("router.hereapi.com")[-1]) == [f"{FOURTH.lat},{FOURTH.lng}!stopDuration=1800"]
+    sess = agent._SESSIONS["nt"]
+    assert LOVES.id in sess["rejected"] and RENO.id not in sess["rejected"]
+
+    res = run(prov.handle(_req("not that one", sid="nt"), None))  # nothing else of the kind: the stop goes, Reno stays
+    assert res.status == "route_set" and res.place.id == RENO.id and res.options == []
+    assert res.reply.startswith("Okay, no stop at Flying J. I couldn't find another truck stop on the way. Straight there,")
+    assert _vias(fake_http.calls_to("router.hereapi.com")[-1]) == [] and "via" not in sess
