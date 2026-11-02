@@ -73,7 +73,8 @@ def test_feed_and_zones_place_the_alerts_without_point_calls(fake_http):
     assert paths == ["/alerts/active", "/zones/forecast/CAZ069"]  # one feed, one zone, no point lookups
     assert dict(fake_http.calls[0].url.params) == {"status": "actual", "message_type": "alert,update"}
     # Another route, same feed and zone: no new calls at all.
-    assert run(weather.alerts_along(g[:200])) == [] and len(fake_http.calls_to("api.weather.gov")) == 2
+    south = [p for p in g if p[0] < 38.9]  # the stretch below both polygons, however the line is thinned
+    assert run(weather.alerts_along(south)) == [] and len(fake_http.calls_to("api.weather.gov")) == 2
 
 
 def test_a_missing_zone_keeps_what_the_feed_placed_and_adds_the_point_path(fake_http):
