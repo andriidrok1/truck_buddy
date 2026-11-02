@@ -3,14 +3,16 @@
 Fixture: here/route_sac_reno.json (Sacramento -> Reno, truck, 3 routes). Only routes[0] is parsed
 here; alternatives, speed limits and incidents get their own tests when those features land.
 """
+import copy
 import math
 
+import flexpolyline
 import pytest
 from conftest import fixture_json, params_of, run
 
 from models import TruckProfile
 from services import routing
-from services.routing import MAX_POINTS, _here_parse, _thin, _thin_index
+from services.routing import MAX_POINTS, _Index, _here_parse, _simplify, _stops_s, _thin, _thin_indices
 
 DATA = fixture_json("here/route_sac_reno")
 
@@ -77,28 +79,56 @@ def test_here_params_unchanged(monkeypatch):
     assert "apiKey" not in p  # the key is appended at call time, never part of the pure params
 
 
-@pytest.mark.parametrize("n", [1, 2, 10, 1499, 1500, 1501, 2999, 3000, 3001, 100_001])
-def test_thin_index_matches_thin(n):
-    pts = [[float(i), 0.0] for i in range(n)]
-    thinned = _thin(pts)
-    assert len(thinned) <= MAX_POINTS + 1
-    last_idx = _thin_index(n - 1, n)
-    assert last_idx == len(thinned) - 1
-    assert thinned[last_idx] == pts[-1]
-    prev = -1
-    for off in range(0, n, max(1, n // 500)):
-        idx = _thin_index(off, n)
-        assert 0 <= idx < len(thinned)
-        assert idx >= prev
-        prev = idx
-        if n > MAX_POINTS:
-            step = math.ceil(n / MAX_POINTS)
-            if off % step == 0 and off != n - 1:
-                assert thinned[idx] == pts[off]
-        else:
-            assert thinned[idx] == pts[off]
-    assert _thin_index(10 ** 9, n) == last_idx  # clamped
-    assert _thin_index(-5, n) == 0
+def _line(n, wobble=0.0):
+    """n points along a parallel; `wobble` degrees of latitude on every odd point."""
+    return [[38.0 + (wobble if i % 2 else 0.0), -121.0 + i * 0.001] for i in range(n)]
+
+
+def test_straight_line_collapses_to_its_ends_and_anchors_stay():
+    pts = _line(2000)
+    kept = _thin_indices(pts)
+    assert kept == [0, 1999]
+    kept = _thin_indices(pts, keep=[5, 1200, 1999, 10 ** 6])
+    assert kept == [0, 5, 1200, 1999]
+    idx = _Index(kept)
+    assert idx(5) == 1 and idx(1200) == 2 and idx(1999) == 3 and idx(7) == 1  # between anchors: the one before
+    assert idx(-4) == 0 and idx(10 ** 9) == 3
+
+
+def test_a_bend_wider_than_the_tolerance_is_kept():
+    pts = _line(11, wobble=0.0002)  # ~22 m zigzag: every point matters
+    assert _thin_indices(pts) == list(range(11))
+    assert len(_simplify(pts, 50.0)) == 2  # at 50 m it is a straight line
+
+
+def test_the_cap_is_met_by_loosening_the_tolerance():
+    pts = _line(MAX_POINTS * 3, wobble=0.0002)
+    kept = _thin_indices(pts)
+    assert 2 <= len(kept) <= MAX_POINTS
+    assert len(_thin(pts)) == len(kept)
+
+
+def test_maneuvers_limits_and_incidents_sit_on_their_raw_points():
+    info = _here_parse(DATA)
+    raw = [[round(p[0], 6), round(p[1], 6)] for p in flexpolyline.decode(DATA["routes"][0]["sections"][0]["polyline"])]
+    actions = [a for a in DATA["routes"][0]["sections"][0]["actions"] if a["action"] != "depart"]
+    for m, a in zip(info.maneuvers, actions):
+        assert info.geometry[m.index] == raw[min(a["offset"], len(raw) - 1)]
+    for inc in info.incidents:
+        assert info.geometry[inc.index] in raw
+    assert len(info.geometry) < len(raw) // 2  # a real simplification, not a copy
+
+
+def test_via_stop_time_counts_in_the_eta():
+    two = copy.deepcopy(DATA)
+    s = two["routes"][0]["sections"][0]
+    second = copy.deepcopy(s)
+    second["departure"]["time"] = "2026-10-27T18:11:50-07:00"  # 30 min after the first section's 17:41:50 arrival
+    two["routes"][0]["sections"] = [s, second]
+    info = _here_parse(two)
+    assert info.duration_s == 2 * 10330 + 1800
+    assert _stops_s([s, s]) == 0.0  # no gap, no stop
+    assert _stops_s([s, {"departure": {}}]) == 0.0  # missing times never break the parse
 
 
 def test_route_through_transport_layer(fake_http):

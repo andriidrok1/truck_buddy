@@ -36,8 +36,7 @@ def test_section_starts_follow_the_sections():
     s = two["routes"][0]["sections"][0]
     two["routes"][0]["sections"] = [s, copy.deepcopy(s)]
     info = _here_parse(two)
-    n_raw = 2 * 2533
-    assert info.section_starts == [0, routing._thin_index(2533, n_raw)]
+    assert info.section_starts[0] == 0 and info.geometry[info.section_starts[1]] == info.geometry[0]  # the second section starts where the first did
     assert info.distance_m == 2 * 212550 and len(info.maneuvers) == 2 * 9  # 10 actions each, minus "depart"
 
 

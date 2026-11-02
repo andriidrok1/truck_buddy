@@ -8,10 +8,12 @@ line that isn't a road.
 The truck profile (height, length, weight, hazmat) is sent to the real providers so
 the route avoids low bridges and weight/length/hazmat restrictions.
 """
+import bisect
 import logging
 import math
 import os
 import re
+from datetime import datetime
 from typing import List, Optional, Sequence
 
 import flexpolyline
@@ -27,7 +29,11 @@ logger = logging.getLogger("truckbuddy.routing")
 ROAD_FACTOR = 1.3
 AVG_SPEED_MPH = 32.0
 POINTS = 32
-MAX_POINTS = 1500  # keep the payload small for long trips
+MAX_POINTS = 6000  # hard cap on the points sent to the app; the tolerance below is doubled until the line fits
+# The line the app gets stays within this of the road. A plain stride (every 10th point on a 1,000-mile trip)
+# cut corners by 200 m and pulled maneuvers 800 m off their turns: the app spoke "turn now" early and
+# called the truck off route on every bend (2026-11-01).
+THIN_TOL_M = 5.0
 HERE_URL = "https://router.hereapi.com/v8/routes"
 ORS_URL = "https://api.openrouteservice.org/v2/directions/driving-hgv/geojson"
 HERE_HAZMAT = "explosive,gas,flammable,combustible,poison,corrosive"
@@ -43,25 +49,75 @@ def format_summary(duration_min: int, distance_mi: float) -> str:
     return f"{time} · {dist}"
 
 
+def _simplify(points: Sequence[Sequence[float]], tol_m: float, keep: Sequence[int] = ()) -> List[int]:
+    """Indices of the points to keep: Douglas-Peucker within `tol_m` metres, with the first, the last and every
+    `keep` offset kept as they are (a maneuver, a limit change or an incident must stay an exact vertex)."""
+    n = len(points)
+    if n <= 2:
+        return list(range(n))
+    kept = bytearray(n)
+    kept[0] = kept[-1] = 1
+    for k in keep:
+        if 0 <= k < n:
+            kept[k] = 1
+    # One local plane for the whole line: metres east/north of the first point. The scale error over a
+    # 6-degree spread of latitude is a few percent of a 5 m tolerance.
+    ky = 111_320.0
+    kx = ky * math.cos(math.radians(sum(p[0] for p in points) / n))
+    xs = [(p[1] - points[0][1]) * kx for p in points]
+    ys = [(p[0] - points[0][0]) * ky for p in points]
+    anchors = [i for i in range(n) if kept[i]]
+    stack = list(zip(anchors, anchors[1:]))
+    while stack:
+        a, b = stack.pop()
+        if b <= a + 1:
+            continue
+        ax, ay, dx, dy = xs[a], ys[a], xs[b] - xs[a], ys[b] - ys[a]
+        l2 = dx * dx + dy * dy
+        far, at = 0.0, -1
+        for i in range(a + 1, b):
+            px, py = xs[i] - ax, ys[i] - ay
+            if l2 == 0:
+                d = math.hypot(px, py)
+            else:
+                t = min(1.0, max(0.0, (px * dx + py * dy) / l2))
+                d = math.hypot(px - t * dx, py - t * dy)
+            if d > far:
+                far, at = d, i
+        if far > tol_m:
+            kept[at] = 1
+            stack.append((a, at))
+            stack.append((at, b))
+    return [i for i in range(n) if kept[i]]
+
+
+def _thin_indices(points: Sequence[Sequence[float]], keep: Sequence[int] = ()) -> List[int]:
+    """_simplify at THIN_TOL_M, the tolerance doubled until the line fits MAX_POINTS (the anchors always stay)."""
+    tol = THIN_TOL_M
+    kept = _simplify(points, tol, keep)
+    while len(kept) > MAX_POINTS and tol < 1000:
+        tol *= 2
+        kept = _simplify(points, tol, keep)
+    return kept
+
+
 def _thin(points: List[List[float]]) -> List[List[float]]:
-    if len(points) <= MAX_POINTS:
+    """The simplified line (no anchors): ORS and mock routes, traffic segments."""
+    if len(points) <= 2:
         return points
-    step = math.ceil(len(points) / MAX_POINTS)
-    return points[::step] + [points[-1]]
+    return [points[i] for i in _thin_indices(points)]
 
 
-def _thin_index(off: int, n: int) -> int:
-    """Index into _thin(points) of the point at offset `off` in the original n points.
+class _Index:
+    """Original offset -> index into the thinned geometry: the kept vertex at or before the offset (exact for
+    every anchor offset, since those are kept)."""
 
-    Mirrors _thin exactly: with step > 1 the thinned list is points[::step] + [points[-1]], so the
-    last original point lands at a dedicated final slot; anything else maps to off // step.
-    """
-    if n <= 0:
-        return 0
-    off = max(0, min(off, n - 1))
-    step = math.ceil(n / MAX_POINTS) if n > MAX_POINTS else 1
-    last = (n - 1) // step + (1 if step > 1 else 0)
-    return last if off == n - 1 else min(off // step, last)
+    def __init__(self, kept: Sequence[int]):
+        self.kept = list(kept) or [0]
+
+    def __call__(self, off: int) -> int:
+        off = max(0, min(int(off), self.kept[-1]))
+        return max(0, bisect.bisect_right(self.kept, off) - 1)
 
 
 def _span_ranges(spans: List[dict], n_points: int):
@@ -78,10 +134,10 @@ def _span_ranges(spans: List[dict], n_points: int):
 
 def _info(geometry: List[List[float]], meters: float, seconds: float, source: str, notices: List[str],
           truck_aware: bool, traffic: Optional[List[TrafficSegment]] = None,
-          restricted: Optional[str] = None) -> RouteInfo:
+          restricted: Optional[str] = None, thinned: bool = False) -> RouteInfo:
     mi = km_to_mi(meters / 1000)
     minutes = max(1, round(seconds / 60))
-    return RouteInfo(geometry=_thin(geometry), distance_m=round(meters), duration_s=round(seconds),
+    return RouteInfo(geometry=geometry if thinned else _thin(geometry), distance_m=round(meters), duration_s=round(seconds),
                      distance_mi=round(mi, 1), duration_min=minutes, summary=format_summary(minutes, mi),
                      source=source, notices=notices, truck_aware=truck_aware, traffic=traffic or [],
                      restricted=restricted)
@@ -225,18 +281,37 @@ def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo
         meters += s["summary"]["length"]
         seconds += s["summary"]["duration"]
         raw += [n for n in (s.get("notices") or []) if isinstance(n, dict)]
+    seconds += _stops_s(sections)
     notices, restricted = _notices(raw, truck or TruckProfile())
-    info = _info(geometry, meters, seconds, "here", notices, True, traffic, restricted)
-    info.maneuvers = _maneuvers(geometry, actions)
     n = len(geometry)
-    info.speed_limits = _remap_limits(limits, n)
-    info.incidents = [_incident(_thin_index(off, n), inc) for off, inc in incidents]
+    anchors = [min(off, n - 1) for off, _ in actions] + [off for off, _ in limits] + [off for off, _ in incidents] + bases
+    idx = _Index(_thin_indices(geometry, anchors))
+    info = _info([geometry[i] for i in idx.kept], meters, seconds, "here", notices, True, traffic, restricted,
+                 thinned=True)
+    info.maneuvers = _maneuvers(geometry, actions, idx)
+    info.speed_limits = _remap_limits(limits, idx)
+    info.incidents = [_incident(idx(off), inc) for off, inc in incidents]
     info.labels = _labels(route)
     info.tolls_usd = _tolls_usd(sections)
-    info.section_starts = [_thin_index(b, n) for b in bases]
+    info.section_starts = [idx(b) for b in bases]
     handle = route.get("routeHandle")
     info.handle = handle if isinstance(handle, str) and handle else None
     return info
+
+
+def _stops_s(sections: List[dict]) -> float:
+    """Seconds the truck stands at the via stops: the gap between one section's arrival and the next one's
+    departure. HERE keeps a via's stopDuration out of every section's `duration`, so summing sections alone
+    showed an ETA 30 minutes short per stop."""
+    total = 0.0
+    for a, b in zip(sections, sections[1:]):
+        try:
+            arrive = datetime.fromisoformat(str(a["arrival"]["time"]))
+            depart = datetime.fromisoformat(str(b["departure"]["time"]))
+            total += max(0.0, (depart - arrive).total_seconds())
+        except (KeyError, TypeError, ValueError):
+            continue
+    return total
 
 
 # Keys the HERE "route by handle" endpoint rejects or that make no sense for a re-route.
@@ -286,14 +361,14 @@ def _speed_limits(spans: List[dict], base: int) -> list[tuple[int, int]]:
     return out
 
 
-def _remap_limits(limits: list[tuple[int, int]], n: int) -> List[SpeedLimit]:
+def _remap_limits(limits: list[tuple[int, int]], idx: "_Index") -> List[SpeedLimit]:
     """Offsets -> thinned indices; one entry per index (the first), consecutive equal limits merged."""
     out: List[SpeedLimit] = []
     for off, mph in limits:
-        idx = _thin_index(off, n)
-        if out and (out[-1].index == idx or out[-1].mph == mph):
+        i = idx(off)
+        if out and (out[-1].index == i or out[-1].mph == mph):
             continue
-        out.append(SpeedLimit(index=idx, mph=mph))
+        out.append(SpeedLimit(index=i, mph=mph))
     return out
 
 
@@ -357,8 +432,9 @@ async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile, alt
 _GO_FOR = re.compile(r"\s+Go for .*$")
 
 
-def _maneuvers(geometry: List[List[float]], actions: list) -> List[Maneuver]:
-    """HERE actions -> maneuvers whose index points into the thinned geometry."""
+def _maneuvers(geometry: List[List[float]], actions: list, idx: "_Index") -> List[Maneuver]:
+    """HERE actions -> maneuvers whose index points into the thinned geometry (an exact vertex: every action
+    offset is an anchor of the thinning)."""
     n = len(geometry)
     out = []
     for off, a in actions:
@@ -369,7 +445,7 @@ def _maneuvers(geometry: List[List[float]], actions: list) -> List[Maneuver]:
         if not text:
             continue
         out.append(Maneuver(action=str(a.get("action")), direction=a.get("direction"), instruction=text,
-                            lat=geometry[off][0], lng=geometry[off][1], index=_thin_index(off, n)))
+                            lat=geometry[off][0], lng=geometry[off][1], index=idx(off)))
     return out
 
 
