@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Platform, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -40,7 +40,6 @@ export default function HistoryScreen() {
   const [turns, setTurns] = useState<MemoryTurn[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
-  const listRef = useRef<FlatList<MemoryTurn>>(null);
   // The Clear button floats over the list: the list ends above it, whatever the font size (QA U13).
   const [footerH, setFooterH] = useState(100);
 
@@ -67,6 +66,8 @@ export default function HistoryScreen() {
     }, [load]),
   );
 
+  const newestFirst = useMemo(() => (turns ? [...turns].reverse() : []), [turns]);
+
   const clear = () =>
     confirm("Your copilot will forget everything you've talked about.", async () => {
       try {
@@ -90,17 +91,17 @@ export default function HistoryScreen() {
       {turns === null ? (
         <ActivityIndicator style={styles.center} color={colors.muted} />
       ) : (
+        // Inverted: the newest turn sits at the bottom from the first frame. scrollToEnd on layout ran before
+        // the rows were measured and the screen opened with the last two messages below the fold (QA 2026-11-02).
         <FlatList
-          ref={listRef}
-          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-          onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
+          inverted
           testID="history-list"
-          data={turns}
+          data={newestFirst}
           keyExtractor={(t, i) => `${t.at}-${i}`}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
-          contentContainerStyle={[styles.list, { paddingBottom: footerH + spacing.md }]}
+          contentContainerStyle={[styles.list, { paddingTop: footerH + spacing.md }]}
           ListEmptyComponent={
-            <View style={styles.empty}>
+            <View style={[styles.empty, styles.upright]}>
               <Icon name="chat-outline" size={40} color={colors.muted} />
               <Text style={[styles.emptyText, { color: colors.onSurfaceSecondary }]}>
                 {error ? "Couldn't load your conversations. Pull to retry." : "Nothing yet. Talk to your copilot and it will remember."}
@@ -109,7 +110,7 @@ export default function HistoryScreen() {
           }
           renderItem={({ item, index }) => {
             const me = item.role === "driver";
-            const prev = index > 0 ? turns[index - 1] : null;
+            const prev = newestFirst[index + 1] ?? null; // the turn above this one
             const newDay = !prev || dayKey(prev.at) !== dayKey(item.at);
             return (
               <>
@@ -158,6 +159,7 @@ const styles = StyleSheet.create({
   text: { fontFamily: fonts.regular, fontSize: 16, lineHeight: 22 },
   time: { fontFamily: fonts.regular, fontSize: 11, opacity: 0.7 },
   day: { fontFamily: fonts.semibold, fontSize: 12, textAlign: "center", marginTop: spacing.md, marginBottom: spacing.xs, textTransform: "uppercase", letterSpacing: 0.6 },
+  upright: { transform: [{ scaleY: -1 }] }, // the empty state is not a row: an inverted list draws it upside down
   empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md, paddingHorizontal: spacing.xxl, paddingTop: spacing.xxxl },
   emptyText: { fontFamily: fonts.medium, fontSize: 15, textAlign: "center" },
   footer: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
