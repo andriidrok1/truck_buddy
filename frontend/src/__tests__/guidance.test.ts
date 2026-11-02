@@ -181,6 +181,7 @@ describe("announcement", () => {
   test("lead-in by distance, instruction lower-cased", () => {
     expect(announcement(turn, "far", 1500)).toBe("In about a mile, turn right onto US-50 E.");
     expect(announcement(turn, "near", 800)).toBe("In half a mile, turn right onto US-50 E.");
+    expect(announcement(turn, "near", 550)).toBe("In a quarter mile, turn right onto US-50 E.");
     expect(announcement(turn, "near", 300)).toBe("In 500 feet, turn right onto US-50 E.");
     expect(announcement(turn, "now", 40)).toBe("Turn right onto US-50 E.");
   });

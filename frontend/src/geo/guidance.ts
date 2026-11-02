@@ -144,10 +144,11 @@ export function markSpoken(spoken: Set<string>, maneuverIndex: number, stage: St
   STAGES.slice(0, upto + 1).forEach((s) => spoken.add(spokenKey(maneuverIndex, s.key)));
 }
 
-/** Spoken lead-in before the maneuver: "In half a mile", "In 500 feet". */
+/** Spoken lead-in before the maneuver: "In half a mile", "In a quarter mile", "In 500 feet". */
 export function spokenDistance(m: number) {
   if (m > 1200) return "In about a mile";
   if (m > 600) return "In half a mile";
+  if (m > 300) return "In a quarter mile"; // the "near" call can come anywhere in 120..900 m; 600 m is not 500 ft
   return "In 500 feet";
 }
 

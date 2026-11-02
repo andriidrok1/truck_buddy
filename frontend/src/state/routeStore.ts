@@ -52,10 +52,19 @@ const notify = () => listeners.forEach((l) => l());
 
 export const getSavedAt = () => savedAt;
 
+// Disk writes run one after another: a save that was in flight when "End route" cleared the key must
+// not land after the removal and bring the ended route back on the next launch.
+let writes: Promise<unknown> = Promise.resolve();
+const queued = <T,>(op: () => Promise<T>): Promise<T> => {
+  const next = writes.then(op, op);
+  writes = next.catch(() => undefined);
+  return next;
+};
+
 export async function saveActiveRoute(active: ActiveRoute, now = Date.now()) {
   savedAt = now;
   notify();
-  await storage.setItem(ACTIVE_ROUTE_KEY, encodeSaved(active, now) as unknown as Record<string, unknown>);
+  await queued(() => storage.setItem(ACTIVE_ROUTE_KEY, encodeSaved(active, now) as unknown as Record<string, unknown>));
 }
 
 /** The saved route if it is fresh; a stale or unreadable one is cleared and null comes back. */
@@ -74,7 +83,7 @@ export async function loadActiveRoute(now = Date.now()): Promise<SavedRoute | nu
 export async function clearSavedRoute() {
   savedAt = null;
   notify();
-  await storage.removeItem(ACTIVE_ROUTE_KEY);
+  await queued(() => storage.removeItem(ACTIVE_ROUTE_KEY));
 }
 
 const subscribe = (l: () => void) => {
