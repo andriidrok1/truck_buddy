@@ -33,12 +33,25 @@ def _route():
     return _here_parse(ROUTE)
 
 
+# Vertex indices as fractions of the route, so the tests hold whatever the thinning makes of the fixture.
+_FIX = _here_parse(ROUTE)
+LAST = len(_FIX.geometry) - 1  # the arrival vertex of the main route
+LAST_I580 = len(_FIX.alternatives[1].geometry) - 1
+
+
+def _i(frac: float) -> int:
+    return round(frac * LAST)
+
+
 def _by_geometry(main, ca89, i580):
-    """A fake alerts_along keyed by which route's geometry it gets (the three differ in length)."""
-    sizes = {1268: main, 1243: ca89, 1200: i580}
+    """A fake alerts_along keyed by which route's geometry it gets (the three routes of the fixture)."""
+    lines = [(_FIX.geometry, main), (_FIX.alternatives[0].geometry, ca89), (_FIX.alternatives[1].geometry, i580)]
 
     async def fake(geometry, now=None):
-        return list(sizes[len(geometry)])
+        for line, alerts in lines:
+            if list(geometry) == list(line):
+                return list(alerts)
+        raise AssertionError("alerts_along got a geometry that is not one of the fixture's routes")
 
     return fake
 
@@ -103,7 +116,7 @@ def test_a_storm_that_starts_while_the_truck_is_still_inside_is_weather_now():
     zone. Entered at index 300 (~45 min in), left at the last vertex (2 h 52 min): onset at +2 h is "now"."""
     r = _route()
     last = len(r.geometry) - 1
-    storm = _alert("Winter Storm Warning", 300, onset=(NOW + timedelta(hours=2)).isoformat(),
+    storm = _alert("Winter Storm Warning", _i(0.237), onset=(NOW + timedelta(hours=2)).isoformat(),
                    ends=(NOW + timedelta(hours=30)).isoformat(), index_end=last)
     assert weather.on_arrival([storm], r, NOW) == [storm] and weather.starting_later([storm], r, NOW) == []
     # Unknown exit (point path, None): the route end is assumed, the conservative side.
@@ -130,9 +143,9 @@ def test_clears_by_is_the_end_of_the_last_alert_and_one_county_counts_once():
     r = _route()
     ca89, i580 = r.alternatives
     ca89.weather_known = i580.weather_known = True
-    soon = _alert("Flood Warning", 300, ends=(NOW + timedelta(minutes=15)).isoformat(), area="Maricopa, AZ")
+    soon = _alert("Flood Warning", _i(0.237), ends=(NOW + timedelta(minutes=15)).isoformat(), area="Maricopa, AZ")
     late = WeatherAlert(id="late", event="Flood Warning", severity="Severe", headline="h", area="Maricopa, AZ",
-                        index=320, ends=(NOW + timedelta(hours=14)).isoformat())
+                        index=_i(0.2526), ends=(NOW + timedelta(hours=14)).isoformat())
     r.weather = [soon, late]
     ca89.weather = i580.weather = [soon, late]
     assert weather.detour_speech(r, NOW) == "No truck route around it; it should clear by tomorrow 3 am."
@@ -146,7 +159,7 @@ def test_the_end_time_is_said_once(agent_sandbox, fake_http, monkeypatch):
     3:45 pm." The warning line already said when it ends; the detour line must not."""
     fake_http.add("router.hereapi.com", "/v8/routes", json=ROUTE)
     ends = (datetime.now(PT) + timedelta(hours=8)).isoformat()  # still on when the slowest alternative gets there
-    flood = _alert("Flash Flood Warning", 1267, ends=ends, area="Pima, AZ")
+    flood = _alert("Flash Flood Warning", LAST, ends=ends, area="Pima, AZ")
     monkeypatch.setattr(weather, "alerts_along", _by_geometry([flood], [flood], [flood]))
     agent_sandbox.llm.on(r"take me to reno", {"intent": "go", "query": "Reno, NV"})
     agent_sandbox.geocode["reno"] = [RENO]
@@ -154,7 +167,7 @@ def test_the_end_time_is_said_once(agent_sandbox, fake_http, monkeypatch):
     assert ", in effect till " in res.reply and res.reply.endswith("No truck route around it.")
     assert "should clear by" not in res.reply
     # Several alerts (no single end in the warning line): the clearing time is still said once, in the detour line.
-    fog = _alert("Dense Fog Advisory", 1200, ends=ends, area="Pinal, AZ")
+    fog = _alert("Dense Fog Advisory", _i(0.946), ends=ends, area="Pinal, AZ")
     monkeypatch.setattr(weather, "alerts_along", _by_geometry([flood, fog], [flood, fog], [flood, fog]))
     res = run(agent_sandbox.provider().handle(AgentRequest(text="take me to Reno", session_id="wt2", **SAC), None))
     assert "more weather alert" in res.reply and "should clear by" in res.reply and "in effect till" not in res.reply
@@ -174,7 +187,7 @@ def test_a_storm_after_the_truck_is_through_gets_a_heads_up():
 
 def test_the_dialog_says_the_later_storm_when_nothing_is_on_the_way_now(agent_sandbox, fake_http, monkeypatch):
     fake_http.add("router.hereapi.com", "/v8/routes", json=ROUTE)
-    later = _alert("Winter Storm Warning", 1267, onset=(datetime.now(PT) + timedelta(hours=20)).isoformat(),
+    later = _alert("Winter Storm Warning", LAST, onset=(datetime.now(PT) + timedelta(hours=20)).isoformat(),
                    ends=(datetime.now(PT) + timedelta(hours=40)).isoformat(), area="Reno Area")
     monkeypatch.setattr(weather, "alerts_along", _by_geometry([later], [], []))
     agent_sandbox.llm.on(r"take me to reno", {"intent": "go", "query": "Reno, NV"})
@@ -190,16 +203,16 @@ def test_the_dialog_says_the_later_storm_when_nothing_is_on_the_way_now(agent_sa
 def test_better_route_is_the_lightest_then_the_fastest():
     r = _route()
     ca89, i580 = r.alternatives
-    r.weather = [_alert("High Wind Warning", 300)]
+    r.weather = [_alert("High Wind Warning", _i(0.237))]
     assert weather.better_route(r) is None  # nothing looked up yet: an empty list is not "clear"
     ca89.weather_known = i580.weather_known = True
     ca89.weather, i580.weather = [], []
     assert weather.better_route(r) is ca89  # both clear, CA-89 is faster
-    ca89.weather = [_alert("Wind Advisory", 300, severity="Moderate")]
+    ca89.weather = [_alert("Wind Advisory", _i(0.237), severity="Moderate")]
     assert weather.better_route(r) is i580  # the clear one wins over the faster one
-    i580.weather = [_alert("Winter Storm Warning", 300, severity="Severe")]
+    i580.weather = [_alert("Winter Storm Warning", _i(0.237), severity="Severe")]
     assert weather.better_route(r) is ca89  # lighter weather beats the same weather
-    ca89.weather = [_alert("High Wind Warning", 300)]
+    ca89.weather = [_alert("High Wind Warning", _i(0.237))]
     assert weather.better_route(r) is None  # nothing beats what the driver has
     r.weather = []
     assert weather.better_route(r) is None
@@ -209,10 +222,10 @@ def test_a_closed_road_is_never_the_way_around():
     from models import Incident
     r = _route()
     ca89, i580 = r.alternatives
-    r.weather = [_alert("High Wind Warning", 300)]
+    r.weather = [_alert("High Wind Warning", _i(0.237))]
     ca89.weather, i580.weather = [], []
     ca89.weather_known = i580.weather_known = True
-    ca89.incidents = [Incident(type="roadClosure", description="CA-89 closed at Sierraville", closed=True, index=500)]
+    ca89.incidents = [Incident(type="roadClosure", description="CA-89 closed at Sierraville", closed=True, index=_i(0.3))]
     assert weather.better_route(r) is i580
     i580.incidents = list(ca89.incidents)
     assert weather.better_route(r) is None and weather.detour_speech(r, NOW) == "No truck route around it."
@@ -220,25 +233,25 @@ def test_a_closed_road_is_never_the_way_around():
 
 def test_unknown_alternatives_claim_nothing():
     r = _route()
-    r.weather = [_alert("High Wind Warning", 300)]
+    r.weather = [_alert("High Wind Warning", _i(0.237))]
     assert weather.detour_speech(r, NOW, alts_known=False) == ""
 
 
 def test_detour_wording():
     r = _route()
     ca89, i580 = r.alternatives
-    r.weather = [_alert("High Wind Warning", 300, ends=(NOW + timedelta(hours=6)).isoformat())]
+    r.weather = [_alert("High Wind Warning", _i(0.237), ends=(NOW + timedelta(hours=6)).isoformat())]
     ca89.weather, i580.weather = [], []
     ca89.weather_known = i580.weather_known = True
     assert weather.detour_speech(r, NOW) == \
         "The way via I-80 and CA-89 misses it, about 1 h 46 min longer. Say 'take the other way' if you want it."
-    ca89.weather = [_alert("Wind Advisory", 300, severity="Moderate")]
-    i580.weather = [_alert("Wind Advisory", 300, severity="Moderate")]
+    ca89.weather = [_alert("Wind Advisory", _i(0.237), severity="Moderate")]
+    i580.weather = [_alert("Wind Advisory", _i(0.237), severity="Moderate")]
     assert weather.detour_speech(r, NOW) == \
         "The way via I-80 and CA-89 only runs into a Wind Advisory, about 1 h 46 min longer. Say 'take the other way' if you want it."
-    ca89.weather = i580.weather = [_alert("High Wind Warning", 300)]
+    ca89.weather = i580.weather = [_alert("High Wind Warning", _i(0.237))]
     assert weather.detour_speech(r, NOW) == "No truck route around it; it should clear by 7 pm."
-    r.weather = [_alert("High Wind Warning", 300)]
+    r.weather = [_alert("High Wind Warning", _i(0.237))]
     assert weather.detour_speech(r, NOW) == "No truck route around it."
     r.alternatives = []
     assert weather.detour_speech(r, NOW) == "I don't have another truck route to try."  # nothing to compare: no "around it"
@@ -252,8 +265,8 @@ def test_detour_wording():
 
 def test_new_route_offers_the_way_around_and_the_other_way_takes_it(agent_sandbox, fake_http, monkeypatch):
     fake_http.add("router.hereapi.com", "/v8/routes", json=ROUTE)
-    hit = _alert("High Wind Warning", 1267, ends=(datetime.now(PT) + timedelta(hours=8)).isoformat(), area="Reno Area")
-    monkeypatch.setattr(weather, "alerts_along", _by_geometry([hit], [], [_alert("Wind Advisory", 1199, severity="Moderate")]))
+    hit = _alert("High Wind Warning", LAST, ends=(datetime.now(PT) + timedelta(hours=8)).isoformat(), area="Reno Area")
+    monkeypatch.setattr(weather, "alerts_along", _by_geometry([hit], [], [_alert("Wind Advisory", LAST_I580, severity="Moderate")]))
     agent_sandbox.llm.on(r"take me to reno", {"intent": "go", "query": "Reno, NV"})
     agent_sandbox.llm.on(r"take the other way", {"intent": "alternative"})
     agent_sandbox.geocode["reno"] = [RENO]
@@ -281,7 +294,7 @@ def test_new_route_offers_the_way_around_and_the_other_way_takes_it(agent_sandbo
 def test_the_other_way_with_weather_is_said_even_when_the_first_road_was_clear(agent_sandbox, fake_http, monkeypatch):
     """Review 2026-11-01: a clear main road and a stormy alternative said nothing about the storm."""
     fake_http.add("router.hereapi.com", "/v8/routes", json=ROUTE)
-    wind = _alert("High Wind Warning", 600, area="Sierra Nevada")
+    wind = _alert("High Wind Warning", _i(0.473), area="Sierra Nevada")
     monkeypatch.setattr(weather, "alerts_along", _by_geometry([], [wind], []))
     agent_sandbox.llm.on(r"take me to reno", {"intent": "go", "query": "Reno, NV"})
     agent_sandbox.llm.on(r"take the other way", {"intent": "alternative"})
@@ -295,7 +308,7 @@ def test_the_other_way_with_weather_is_said_even_when_the_first_road_was_clear(a
 
 def test_no_way_around_is_said_once_and_alternatives_keep_their_order(agent_sandbox, fake_http, monkeypatch):
     fake_http.add("router.hereapi.com", "/v8/routes", json=ROUTE)
-    storm = _alert("Winter Storm Warning", 600, area="Donner Pass")
+    storm = _alert("Winter Storm Warning", _i(0.473), area="Donner Pass")
     monkeypatch.setattr(weather, "alerts_along", _by_geometry([storm], [storm], [storm]))
     agent_sandbox.llm.on(r"take me to reno", {"intent": "go", "query": "Reno, NV"})
     agent_sandbox.llm.on(r"another way", {"intent": "alternative"})
@@ -311,10 +324,10 @@ def test_slow_alternatives_keep_the_warning_and_drop_the_detour_line(agent_sandb
     """A long route with alternatives: the route's own alerts fit the budget, the alternatives don't. Before,
     one wait_for over everything lost the warning too."""
     import asyncio
-    hit = _alert("High Wind Warning", 1267, area="Reno Area")
+    hit = _alert("High Wind Warning", LAST, area="Reno Area")
 
     async def fake(geometry, now=None):
-        if len(geometry) == 1268:
+        if len(geometry) == LAST + 1:  # the main route
             return [hit]
         await asyncio.sleep(5)
         return []
