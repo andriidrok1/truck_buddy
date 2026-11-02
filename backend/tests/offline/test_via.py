@@ -297,3 +297,14 @@ def test_the_detour_is_measured_from_the_truck_not_the_origin(agent_sandbox, fak
     far_along = {"lat": 39.33, "lng": -120.18}  # Truckee: about an hour of the trip left
     res = run(prov.handle(AgentRequest(text="stop at the Pilot in Fernley on the way", session_id="v1", active_place=RENO, **far_along), None))
     assert res.status == "confirm" and "from here that's 4 h instead of" in res.reply
+
+
+def test_a_chain_name_is_the_truck_stop_nearby_before_any_geocode(agent_sandbox, fake_http):
+    prov = _sandbox(agent_sandbox, fake_http)
+    near = Place(id="g-pilot-sac", name="Pilot Travel Center", category="truck_stop", lat=38.65, lng=-121.38,
+                 address="Sacramento, CA", distance_mi=6.0)
+    agent_sandbox.places.places.append(near)
+    agent_sandbox.llm.on(r"stop at the pilot$", {"intent": "add_stop", "query": "Pilot"})
+    run(prov.handle(_req("take me to Reno", active=None), None))
+    res = run(prov.handle(_req("stop at the Pilot"), None))
+    assert res.status == "route_set" and [o.id for o in res.options] == [near.id]  # not the Fernley geocode
