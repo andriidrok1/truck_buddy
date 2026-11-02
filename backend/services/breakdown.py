@@ -160,10 +160,9 @@ def call_card(d: dict, req: AgentRequest, place_text: str) -> CallCard:
 
 # ---------------------------------------------------------------- research job
 
-def _place(p: dict) -> Place:
-    return Place(id=p["id"], name=p["name"], category="service", lat=p["lat"], lng=p["lng"],
-                 address=p.get("address"), rating=p.get("rating"), rating_count=p.get("rating_count"),
-                 distance_mi=p.get("distance_mi"))
+def _place(p: Provider) -> Place:
+    return Place(id=p.id, name=p.name, category="service", lat=p.lat, lng=p.lng, address=p.address,
+                 rating=p.rating, rating_count=p.rating_count, distance_mi=p.distance_mi)
 
 
 def _quotes(p: dict) -> list[str]:
@@ -177,6 +176,7 @@ def _quotes(p: dict) -> list[str]:
 
 
 def to_provider(p: dict) -> Provider:
+    """A researched candidate (a dict with its raw reviews) as the app and the dialog state keep it."""
     return Provider(**{k: p.get(k) for k in ("id", "name", "lat", "lng", "phone", "website", "address", "rating",
                                              "distance_mi", "open_now", "listed_24_7", "shop_only", "score",
                                              "source")},
@@ -234,11 +234,11 @@ def cheapest_fastest(providers: list[dict]) -> tuple[Optional[str], Optional[str
     return cheap, fast
 
 
-def _brief(providers: list[dict]) -> str:
+def _brief(providers: list[Provider]) -> str:
     rows = []
     for i, p in enumerate(providers, 1):
-        rows.append(json.dumps({"i": i, "name": p["name"], "known": known(p), "phone": p.get("phone"),
-                                "review_snippets": _quotes(p)}))
+        rows.append(json.dumps({"i": i, "name": p.name, "known": known(p.model_dump()), "phone": p.phone,
+                                "review_snippets": p.quotes}))
     return "\n".join(rows)
 
 
@@ -275,7 +275,8 @@ async def summarize(d: dict, mode: str, providers: list[dict]) -> tuple[str, str
     try:
         cheap, fast = cheapest_fastest(providers)
         out = await _llm(SUMMARY_SYSTEM.format(detail=d.get("detail") or d.get("kind"), mode=mode.replace("_", " "),
-                                               providers=_brief(providers), price_rule=rule,
+                                               providers=_brief([to_provider(p) for p in providers]),
+                                               price_rule=rule,
                                                cheapest=cheap or "none", fastest=fast or "none"),
                          "Write it.", timeout=8)
         spoken, summary = str(out.get("spoken") or "").strip(), str(out.get("summary") or "").strip()
@@ -350,13 +351,16 @@ async def _run(d: dict, req: AgentRequest, sess: dict, source: str) -> AgentResp
     stats = res["stats"]
     stats["stages_ms"]["summary"] = round((time.perf_counter() - t) * 1000)
     stats["llm_calls"] += 1
-    sess["providers"] = ranked
+    # The dialog keeps Provider models, the type it has after a trip through the database store; dicts here
+    # came back as models on another worker and "call the cheapest" crashed on p["facts"] (QA 2026-11-02, bug 3).
+    providers = [to_provider(p) for p in ranked]
+    sess["providers"] = providers
     sess["providers_at"] = time.time()  # epoch time: the state crosses processes
-    sess["places"] = [_place(p) for p in ranked]
+    sess["places"] = [_place(p) for p in providers]
     sess["breakdown"] = {**d, "mode": mode}
     logger.info("breakdown research kind=%s mode=%s n=%d stats=%s", d["kind"], mode, len(ranked), stats)
     return AgentResponse(status="providers", transcript="", reply=spoken, summary=summary, breakdown_mode=mode,
-                         breakdown_kind=d["kind"], providers=[to_provider(p) for p in ranked], call_card=card,
+                         breakdown_kind=d["kind"], providers=providers, call_card=card,
                          provider_source=res["source"], research_stats=stats, source=source)
 
 
@@ -445,20 +449,20 @@ DO_CALL = re.compile(r"\b(call|dial|phone|ring)\b", re.I)
 DO_ROUTE = re.compile(r"\b(route|take me|go to|drive to|navigate)\b", re.I)
 
 
-def pick_superlative(providers: list[dict], word: str) -> Optional[dict]:
+def pick_superlative(providers: list[Provider], word: str) -> Optional[Provider]:
     """cheapest = lowest posted price (one priced provider is enough), fastest = lowest ETA, closest = distance."""
     w = word.lower()
     if w == "cheapest":
-        priced = [p for p in providers if p["facts"]["prices"]]
-        return min(priced, key=lambda p: min(x["amount_usd_low"] for x in p["facts"]["prices"])) if priced else None
+        priced = [p for p in providers if p.facts.prices]
+        return min(priced, key=lambda p: min(x["amount_usd_low"] for x in p.facts.prices)) if priced else None
     if w in ("fastest", "quickest"):
-        timed = [p for p in providers if p["facts"]["wait_time"]]
-        return min(timed, key=lambda p: p["facts"]["wait_time"]["typical_min_high"]) if timed else None
-    return min(providers, key=lambda p: p.get("distance_mi") or 0)
+        timed = [p for p in providers if p.facts.wait_time]
+        return min(timed, key=lambda p: p.facts.wait_time["typical_min_high"]) if timed else None
+    return min(providers, key=lambda p: p.distance_mi or 0)
 
 
 async def followup(req: AgentRequest, sess: dict, text: str, source: str) -> Optional[AgentResponse]:
-    providers = sess["providers"]
+    providers: list[Provider] = sess["providers"]
     sup = SUPERLATIVE.search(text)
     if sup and (DO_CALL.search(text) or DO_ROUTE.search(text)):
         # "call the cheapest one" / "route me to the closest": decided in code, not by the model.
@@ -466,7 +470,7 @@ async def followup(req: AgentRequest, sess: dict, text: str, source: str) -> Opt
         if chosen is None:
             what = "prices" if sup.group(1).lower() == "cheapest" else "how fast they come out"
             return AgentResponse(status="chat", transcript=text, source=source,
-                                 reply=f"None of them mention {what}. Want me to call {providers[0]['name']}, the top pick?")
+                                 reply=f"None of them mention {what}. Want me to call {providers[0].name}, the top pick?")
         out = {"about_providers": True, "action": "call" if DO_CALL.search(text) else "route",
                "index": providers.index(chosen) + 1, "reply": ""}
     else:
@@ -481,16 +485,16 @@ async def followup(req: AgentRequest, sess: dict, text: str, source: str) -> Opt
     chosen = providers[idx - 1] if idx and 1 <= idx <= len(providers) else None
     reply = str(out.get("reply") or "").strip()
     if action == "call" and chosen:
-        return AgentResponse(status="chat", transcript=text, reply=reply or f"Calling {chosen['name']}.",
-                             dial_phone=chosen["phone"], source=source)
+        return AgentResponse(status="chat", transcript=text, reply=reply or f"Calling {chosen.name}.",
+                             dial_phone=chosen.phone, source=source)
     if action == "route" and chosen:
         place = _place(chosen)
         with stage("tools"):
             route = await get_routing_provider().route(req.lat, req.lng, place.lat, place.lng, req.truck_profile)
-        others = [_place(p) for p in providers if p["id"] != chosen["id"]]
+        others = [_place(p) for p in providers if p.id != chosen.id]
         return AgentResponse(status="route_set", transcript=text, category="service", place=place, route=route,
                              options=others, source=source,
-                             reply=f"Okay, route to {chosen['name']} is set, {route.summary.split(' · ')[0]}.")
+                             reply=f"Okay, route to {chosen.name} is set, {route.summary.split(' · ')[0]}.")
     if action == "more":
         return AgentResponse(status="chat", transcript=text, source=source,
                              reply="That's everyone I found who works on trucks around here. Want me to look for a tow instead?")
