@@ -9,7 +9,7 @@ import { storage } from "../utils/storage";
 export const SETTINGS_KEY = "settings_v2";
 
 export type Settings = {
-  /** Hands-free wake word (on by default). */
+  /** Hands-free: the wake word where the platform has a detector (WAKE_SUPPORTED); on by default. */
   handsFree: boolean;
   /** Nudges while driving: break due, chains ahead, parking offers (on by default). */
   nudges: boolean;

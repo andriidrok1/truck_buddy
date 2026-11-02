@@ -1,6 +1,6 @@
-// The loaded route on disk, so a restart (or a crash in a dead zone) does not lose it. The map
-// screen saves on every change of `active` and clears on "End route"; on mount it restores a
-// document younger than MAX_AGE_MS. The whole ActiveRoute goes in: geometry, maneuvers, speed
+// The loaded route on disk, so a restart (or a crash in a dead zone) does not lose it. The trip store
+// (src/state/tripStore.ts) writes it on every change of the route or the driving flag and clears it on
+// "End route"; the map screen restores a document younger than MAX_AGE_MS on mount. The whole ActiveRoute goes in: geometry, maneuvers, speed
 // limits, incidents, weather, chain controls, alternatives, via stops and the parking result are
 // everything the guidance and advisories read, so a restored route drives without the network.
 

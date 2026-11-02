@@ -23,7 +23,7 @@ import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
 import { isTester } from "@/src/auth";
 import { chainControlAhead, routePointsAhead } from "@/src/geo/ahead";
-import { swapAlternative, switchedLine } from "@/src/geo/routeChoice";
+import { switchedLine } from "@/src/geo/routeChoice";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
 import { useOfflineGuidance, type OfflineGuidance } from "@/src/hooks/useOfflineGuidance";
@@ -36,14 +36,12 @@ import { getTruckProfile, isOnboarded, truckLabel, useTruckProfile } from "@/src
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
-import { providerPlace as providerPin, restoreSavedTrip, selectPlaces, startTripPersistence, useTripStore, viaOf } from "@/src/state/tripStore";
+import { providerPlace, restoreSavedTrip, selectPlaces, startTripPersistence, useTripStore, viaOf } from "@/src/state/tripStore";
 import { setHandsFree, setNudgesEnabled, setVoiceGuidance, takeTruckReroute, useHandsFree, useNudgesEnabled, useVoiceGuidance } from "@/src/state/settingsStore";
 import { reduceAgentResponse } from "@/src/state/agentReducer";
 import { applyEffects } from "@/src/state/applyEffects";
 import { offlineTurn } from "@/src/state/offlineTurn";
-import { clearSavedRoute, loadActiveRoute, saveActiveRoute } from "@/src/state/routeStore";
-import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult, RouteInfo } from "@/src/types";
-import { storage } from "@/src/utils/storage";
+import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, Phase, Place, RouteInfo } from "@/src/types";
 import { backAction } from "@/src/utils/backAction";
 import { PRIORITY } from "@/src/voice/queue";
 import { streetFromInstruction } from "@/src/voice/sttHint";
@@ -51,7 +49,7 @@ import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 import { RECORD_DRIVES, recorder } from "@/src/geo/driveRecorder";
 import { subscribeReplay, takeReplayRequest } from "@/src/geo/replayRequest";
-import { newTripId, startTripLog, stopTripLog, tripLog } from "@/src/net/tripEvents";
+import { startTripLog, stopTripLog, tripLog } from "@/src/net/tripEvents";
 import { playTrace } from "@/src/sim";
 
 /** Toast for a failed /route: the router's "no truck route" is a destination problem, not a retry. */
@@ -69,13 +67,8 @@ const replyCaption = (reply: string, heard?: string): Caption => ({ reply, heard
 const lineCaption = (text: string, prev: Caption | null): Caption =>
   prev?.kind === "reply" && Date.now() - (prev.at ?? 0) < 6000 ? prev : { reply: text, kind: "line", at: Date.now() };
 
-const VOICE_GUIDANCE_KEY = "voice_guidance_v1";
 const RESEARCH_INTERIM = "Reading reviews now, almost there.";
 const RESEARCH_INTERIM_MS = 7000;
-const providerPlace = (p: Provider): Place => ({
-  id: p.id, name: p.name, category: "service", lat: p.lat, lng: p.lng, tags: [],
-  address: p.address, rating: p.rating, rating_count: p.rating_count, distance_mi: p.distance_mi,
-});
 
 const ROUTE_STAGE = "Setting route…";
 // Nudges (/api/nudges): first ask a minute into the drive, then every five minutes; a nudge that
@@ -461,8 +454,9 @@ export default function MapScreen() {
   }, []);
   const restored = restoredId !== null && active?.place.id === restoredId && !driving;
   useEffect(() => {
-    // Nothing pressed in 20 s: the banner goes, the route stays in preview (same as "Keep").
-    if (!restored) return;
+    // Nothing pressed in 20 s: the banner goes, the route stays in preview (same as "Keep"). Not when the truck
+    // was driving when the app died: then Resume is what the driver came back for, and it stays until pressed.
+    if (!restored || trip().restoredDriving) return;
     const t = setTimeout(() => trip().dismissRestored(), 20000);
     return () => clearTimeout(t);
   }, [restored]);
@@ -491,7 +485,7 @@ export default function MapScreen() {
   const offlineRef = useRef<OfflineGuidance | null>(null);
   const rerouteOffRoute = async (g: Guidance) => {
     const cur = trip().active;
-    if (!cur || rerouting.current || !driving) return;
+    if (!cur || rerouting.current || !trip().driving) return;
     if (loc.sim && !loc.sim.trace) return;
     // No signal: no /reroute. Point the driver back at the loaded line instead; the reroute
     // runs as soon as the signal is back (useOfflineGuidance calls this again).
@@ -868,8 +862,9 @@ export default function MapScreen() {
 
   // Hardware Back closes the top layer (src/utils/backAction.ts); only with nothing of ours open does
   // it leave the app. While driving it does nothing: one stray press must not drop the route.
-  // State and handlers are mirrored at commit (like phaseRef above), so the one listener registered on
-  // mount always acts on the current render, never on a stale closure.
+  // The screen's own layers and handlers are mirrored at commit (like phaseRef above), the route and the
+  // driving flag are read from the trip store, so the one listener registered on mount never acts on a
+  // stale closure.
   const backRefs = useRef({
     state: { micCard: false, routesOpen: false, phase: "ready" as Phase },
     cancel: () => {},
@@ -1085,7 +1080,7 @@ export default function MapScreen() {
     if (phase === "thinking") return;
     const t = trip();
     const prev = t.active;
-    const gen = t.routeGen;
+    const gen = t.claimRoute(); // the last tap wins over a route still in flight
     turn.cancel(); // a copilot turn in flight gives way to the tap
     voice.stopSpeaking();
     setCaption(null);
@@ -1214,7 +1209,7 @@ export default function MapScreen() {
         onLayout={setSheetH}
         onPeekHeight={setPeekH}
         wakePhrase={null}
-        panel={providers ? <ProvidersList data={providers} onRoute={(p) => onPlacePress(providerPin(p))} /> : null}
+        panel={providers ? <ProvidersList data={providers} onRoute={(p) => onPlacePress(providerPlace(p))} /> : null}
       />
 
       {routesOpen && active && !driving && !!active.route.alternatives?.length && (

@@ -104,4 +104,27 @@ describe("tripStore", () => {
     expect(await AsyncStorage.getItem(ACTIVE_ROUTE_KEY)).toBeNull();
     stop();
   });
+
+  test("a restore leaves the disk copy as it was: its time and the driving flag survive a second kill", async () => {
+    const stop = startTripPersistence();
+    useTripStore.getState().startRoute({ ...active, trip_id: "trip-old" });
+    useTripStore.getState().setDriving(true);
+    await flush();
+    const before = await AsyncStorage.getItem(ACTIVE_ROUTE_KEY);
+    stop(); // the app is killed
+    useTripStore.getState().reset();
+    const restart = startTripPersistence(); // and opened an hour later: the screen subscribes, then restores
+    await restoreSavedTrip(Date.now() + 60 * 60 * 1000);
+    await flush();
+    expect(await AsyncStorage.getItem(ACTIVE_ROUTE_KEY)).toBe(before);
+    restart();
+  });
+
+  test("selectPlaces gives the same array for the same providers (a fresh one would loop the screen)", () => {
+    useTripStore.getState().setProviders({ providers: [{ id: "a", name: "A", lat: 1, lng: 2 }] } as never);
+    const a = selectPlaces(useTripStore.getState());
+    const b = selectPlaces(useTripStore.getState());
+    expect(a).toBe(b);
+    expect(a[0]).toMatchObject({ id: "a", category: "service" });
+  });
 });

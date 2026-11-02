@@ -35,16 +35,22 @@ export function settingsFromV1(flags: { handsFree?: unknown; nudges?: unknown; s
   };
 }
 
+/** storage.setItem reports a failed write as `false` instead of throwing; a step must stop before it removes
+ *  the old key it could not copy. */
+async function write(key: string, value: Record<string, unknown> | number): Promise<void> {
+  if (!(await storage.setItem(key, value))) throw new Error(`storage write failed: ${key}`);
+}
+
 async function v1ToV2(): Promise<void> {
   // the saved route: same document plus `driving: false` (v1 never knew it), under the new key
   const rawRoute = await storage.getItem<Record<string, unknown> | string | null>(V1.route, null);
   const saved = decodeSaved(rawRoute);
-  if (saved) await storage.setItem(ACTIVE_ROUTE_KEY, { active: saved.active, savedAt: saved.savedAt, driving: false } as unknown as Record<string, unknown>);
+  if (saved) await write(ACTIVE_ROUTE_KEY, { active: saved.active, savedAt: saved.savedAt, driving: false } as unknown as Record<string, unknown>);
   await storage.removeItem(V1.route);
   // the truck profile: whatever encoding it had, a plain object from here on
   const rawProfile = await storage.getItem<Record<string, unknown> | string | null>(V1.profile, null);
   const profile = parseStoredProfile(rawProfile);
-  if (profile) await storage.setItem(V1.profile, profile as Record<string, unknown>);
+  if (profile) await write(V1.profile, profile as Record<string, unknown>);
   // the four booleans into one document
   const [handsFree, nudges, speedAlerts, voiceGuidance] = await Promise.all([
     storage.getItem<boolean | null>(V1.handsFree, null),
@@ -52,7 +58,7 @@ async function v1ToV2(): Promise<void> {
     storage.getItem<boolean | null>(V1.speedAlerts, null),
     storage.getItem<boolean | null>(V1.voiceGuidance, null),
   ]);
-  await storage.setItem(SETTINGS_KEY, settingsFromV1({ handsFree, nudges, speedAlerts, voiceGuidance }));
+  await write(SETTINGS_KEY, settingsFromV1({ handsFree, nudges, speedAlerts, voiceGuidance }));
   await Promise.all([V1.handsFree, V1.nudges, V1.speedAlerts, V1.voiceGuidance].map((k) => storage.removeItem(k)));
 }
 
@@ -67,7 +73,7 @@ export async function migrateStorage(): Promise<number> {
       const step = STEPS[version];
       if (step) await step();
       version += 1;
-      await storage.setItem(SCHEMA_KEY, version);
+      await write(SCHEMA_KEY, version);
     }
     return version;
   } catch {

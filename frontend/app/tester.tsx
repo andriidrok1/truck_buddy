@@ -137,8 +137,8 @@ export default function TesterScreen() {
   const loadTrip = async () => {
     if (!active?.trip_id) return;
     await tripLog.flush().catch(() => {});
-    setTripAsked(true);
-    tripQuery.refetch();
+    if (tripAsked) tripQuery.refetch();
+    else setTripAsked(true); // enabling the query fetches it
   };
   // Drivers can reach this route by deep link (truckbuddy://tester); the simulated locations are for testers only.
   if (!isTester()) return <Redirect href="/" />;

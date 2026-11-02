@@ -1,12 +1,11 @@
 // Server-side resources through react-query. The truck profile is the first: the server copy is the
 // truth once the backend has `/api/me/profile` (fleet-managed profiles land there); until then, and
 // whenever the network is away, the local copy in hooks/useTruckProfile.ts is what the app runs on.
-// A fleet push is a cache invalidation of ["profile"].
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 import { api, ApiError } from "../api";
-import { ensureTruckProfile, getTruckProfile, saveTruckProfile, type TruckProfile } from "../hooks/useTruckProfile";
+import { DEFAULT_TRUCK, ensureTruckProfile, getTruckProfile, saveTruckProfile, type TruckProfile } from "../hooks/useTruckProfile";
 import { queryClient } from "../query-client";
 import { storage } from "../utils/storage";
 import type { TripEventRow } from "../api";
@@ -16,83 +15,70 @@ export const tripEventsKey = (tripId: string) => ["trip-events", tripId] as cons
 
 /** The server has no profile endpoint yet (or no profile for this driver): the local copy stands. */
 export const isMissing = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 405);
+/** The server looked at the profile and said no (422 and the like): sending it again will not help. */
+const isRefused = (e: unknown) => e instanceof ApiError && e.status >= 400 && e.status < 500 && !isMissing(e);
 
-/** Set while a local change has not reached the server: the next start sends it instead of pulling over it. */
+/** The profile the server has not confirmed yet, as sent: written before the request, so a kill mid-request
+ *  leaves it behind and the next start sends the profile instead of pulling the older server copy over it. */
 export const UNSYNCED_KEY = "profile_unsynced_v1";
 
+let edits = 0; // bumped by every local save: a server read that started before an edit must not undo it
+
+const stamp = (p: TruckProfile) => JSON.stringify(p);
+
+async function push(p: TruckProfile): Promise<void> {
+  const sent = stamp(p);
+  await storage.setItem(UNSYNCED_KEY, sent);
+  try {
+    await api.saveProfile(p);
+  } catch (e) {
+    if (!isMissing(e) && !isRefused(e)) throw e; // offline or a 5xx: the flag stays for the next start
+    if (isRefused(e)) console.warn("[profile] the server refused the profile", e);
+    // no endpoint (404) or refused: nothing more to send, the flag goes below
+  }
+  // Only this save's flag: a newer save made while this request ran has its own and keeps it.
+  if ((await storage.getItem<string | null>(UNSYNCED_KEY, null)) === sent) await storage.removeItem(UNSYNCED_KEY);
+}
+
 /** The profile from the server, else the local one; the local copy is kept in step with what the server says.
- *  A change the server never got (saved offline) is pushed first, so the older server copy does not undo it. */
+ *  A change the server never got is sent first, so the older server copy does not undo it. */
 export async function fetchProfile(): Promise<TruckProfile> {
   const local = await ensureTruckProfile();
   try {
-    if (await storage.getItem<boolean>(UNSYNCED_KEY, false)) {
-      await api.saveProfile(local);
-      await storage.removeItem(UNSYNCED_KEY);
-      return local;
+    if (await storage.getItem<string | null>(UNSYNCED_KEY, null)) {
+      await push(local);
+      return getTruckProfile();
     }
+    const before = edits;
     const remote = await api.profile();
-    const merged = { ...local, ...remote };
-    if (JSON.stringify(merged) !== JSON.stringify(local)) await saveTruckProfile(merged);
+    if (edits !== before) return getTruckProfile(); // the driver saved while this was in flight: theirs is newer
+    const cur = getTruckProfile();
+    const merged = { ...cur, ...remote };
+    if (stamp(merged) !== stamp(cur)) await saveTruckProfile(merged);
     return merged;
   } catch (e) {
-    if (isMissing(e)) return local;
-    throw e;
-  }
-}
-
-/** Saves locally first (the requests must see the new truck at once), then on the server when it has the endpoint. */
-export async function pushProfile(next: TruckProfile): Promise<TruckProfile> {
-  await saveTruckProfile(next);
-  try {
-    return await api.saveProfile(next);
-  } catch (e) {
-    if (isMissing(e)) return next;
+    if (isMissing(e)) return getTruckProfile();
     throw e;
   }
 }
 
 /** Every save of the truck: locally at once (the next request sees the new truck), then the server in the
- *  background. Offline, the change waits behind UNSYNCED_KEY for the next start. */
+ *  background; offline, the change waits behind UNSYNCED_KEY for the next start. */
 export async function saveProfile(next: TruckProfile): Promise<void> {
+  edits++;
   await saveTruckProfile(next);
   queryClient.setQueryData(PROFILE_KEY, next);
-  api
-    .saveProfile(next)
-    .then(() => storage.removeItem(UNSYNCED_KEY))
-    .catch((e) => {
-      if (!isMissing(e)) storage.setItem(UNSYNCED_KEY, true);
-    });
+  push(next).catch(() => {});
 }
 
-export function useProfile() {
-  return useQuery({
-    queryKey: PROFILE_KEY,
-    queryFn: fetchProfile,
-    initialData: () => getTruckProfile(),
-    staleTime: 5 * 60 * 1000,
-    retry: (count, e) => !isMissing(e) && count < 2,
-  });
+/** "Delete my data": the default truck locally and nothing pending for the server (the server drops its copy
+ *  with the rest of the driver's data). */
+export async function resetProfile(): Promise<void> {
+  edits++;
+  await saveTruckProfile(DEFAULT_TRUCK);
+  queryClient.setQueryData(PROFILE_KEY, DEFAULT_TRUCK);
+  await storage.removeItem(UNSYNCED_KEY);
 }
-
-export function useSaveProfile() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: pushProfile,
-    onMutate: async (next) => {
-      await qc.cancelQueries({ queryKey: PROFILE_KEY });
-      const previous = qc.getQueryData<TruckProfile>(PROFILE_KEY);
-      qc.setQueryData(PROFILE_KEY, next);
-      return { previous };
-    },
-    onError: (_e, _next, ctx) => {
-      if (ctx?.previous) qc.setQueryData(PROFILE_KEY, ctx.previous);
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: PROFILE_KEY }),
-  });
-}
-
-/** A fleet push or a profile change elsewhere: the next read goes to the server. */
-export const invalidateProfile = () => queryClient.invalidateQueries({ queryKey: PROFILE_KEY });
 
 /** The trip log rows the backend holds for one drive (tester screen). */
 export function useTripEvents(tripId: string | null | undefined, enabled = true) {

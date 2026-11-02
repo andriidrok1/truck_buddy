@@ -46,11 +46,13 @@ export type TripState = {
 export type TripActions = {
   /** A new destination: mints the trip id, bumps the generation, the sheet shows the route. Returns the stored trip. */
   startRoute: (next: ActiveRoute, now?: number) => ActiveRoute;
+  /** A route request is about to start (a pin tapped): bumps the generation so whatever was in flight is
+   *  dropped when it lands, and returns the value this request owns. */
+  claimRoute: () => number;
   /** Same destination, a new line (reroute, re-plan, copilot's stop change): only when `gen` is still current. */
   applyRoute: (gen: number, route: RouteInfo, stops?: Place[]) => boolean;
   /** The sheet's alternative tapped: swaps the primary, keeps the old one in the list. */
   pickAlternative: (i: number) => RouteInfo | null;
-  setStops: (stops: Place[]) => void;
   setActiveParking: (placeId: string, parking: ParkingCheck) => void;
   setDriving: (driving: boolean, now?: number) => void;
   /** Everything about the route goes; the providers list (a breakdown) stays on the sheet. */
@@ -90,6 +92,11 @@ export const useTripStore = create<TripState & TripActions>()((set, get) => ({
     set({ active: tripped, sheet: "navigating", routeGen: cur.routeGen + 1, routeStart: cur.active ? cur.routeStart : now, restoredId: null });
     return tripped;
   },
+  claimRoute: () => {
+    const gen = get().routeGen + 1;
+    set({ routeGen: gen });
+    return gen;
+  },
   applyRoute: (gen, route, stops) => {
     const cur = get();
     if (!cur.active || cur.routeGen !== gen) return false;
@@ -103,10 +110,6 @@ export const useTripStore = create<TripState & TripActions>()((set, get) => ({
     if (route === cur.active.route) return null;
     set({ active: { ...cur.active, route }, routeGen: cur.routeGen + 1 });
     return route;
-  },
-  setStops: (stops) => {
-    const cur = get();
-    if (cur.active) set({ active: { ...cur.active, stops } });
   },
   setActiveParking: (placeId, parking) => {
     const cur = get();
@@ -137,27 +140,38 @@ export const useTripStore = create<TripState & TripActions>()((set, get) => ({
     return s.active ? "navigating" : s.providers ? "providers" : s.options.length ? "options" : "ready";
   },
   places: () => {
-    const s = get();
-    if (s.providers) return s.providers.providers.map(providerPlace);
-    if (s.agentPlaces.length) return s.agentPlaces;
-    return s.startPins;
+    return selectPlaces(get());
   },
   reset: () => set({ ...INITIAL }),
 }));
 
 /** A breakdown provider as a map pin / destination. */
 export function providerPlace(p: ProvidersResult["providers"][number]): Place {
-  return { id: p.id, name: p.name, category: "service", lat: p.lat, lng: p.lng, address: p.address ?? undefined, phone: p.phone ?? undefined, tags: [] } as Place;
+  return {
+    id: p.id, name: p.name, category: "service", lat: p.lat, lng: p.lng, tags: [],
+    address: p.address, rating: p.rating, rating_count: p.rating_count, distance_mi: p.distance_mi,
+  };
 }
 
-/** Selector: the pins on the map, recomputed when any source changes. */
-export const selectPlaces = (s: TripState): Place[] =>
-  s.providers ? s.providers.providers.map(providerPlace) : s.agentPlaces.length ? s.agentPlaces : s.startPins;
+// One pin array per providers result: a selector must return the same array for the same state, or
+// useSyncExternalStore sees a new snapshot on every read and the screen re-renders until React gives up.
+const providerPins = new WeakMap<ProvidersResult, Place[]>();
+
+/** Selector: the pins on the map; the same array as long as its source is the same. */
+export const selectPlaces = (s: TripState): Place[] => {
+  if (!s.providers) return s.agentPlaces.length ? s.agentPlaces : s.startPins;
+  let pins = providerPins.get(s.providers);
+  if (!pins) providerPins.set(s.providers, (pins = s.providers.providers.map(providerPlace)));
+  return pins;
+};
 
 // ---- persistence (routeStore.ts is the adapter) ---------------------------------------------------------
 
 let persisting = false;
 let skipSave: ActiveRoute | null = null;
+// True while restoreSavedTrip puts the saved trip into the store: `restore()` notifies the subscriber
+// synchronously, before skipSave can be assigned.
+let restoring = false;
 
 /** Writes every change of the route (and the driving flag) to disk; the object just restored is not written
  *  again, so its saved time stays the original. Idempotent. */
@@ -165,7 +179,7 @@ export function startTripPersistence(): () => void {
   if (persisting) return () => {};
   persisting = true;
   const unsub = useTripStore.subscribe((s, prev) => {
-    if (s.active === prev.active && s.driving === prev.driving) return;
+    if (restoring || (s.active === prev.active && s.driving === prev.driving)) return;
     if (!s.active) {
       if (prev.active) clearSavedRoute();
       return;
@@ -183,7 +197,13 @@ export function startTripPersistence(): () => void {
 export async function restoreSavedTrip(now = Date.now()): Promise<{ restored: ActiveRoute; saved: SavedRoute } | null> {
   const saved = await loadActiveRoute(now);
   if (!saved || useTripStore.getState().active) return null;
-  const restored = useTripStore.getState().restore(saved, now);
+  restoring = true;
+  let restored: ActiveRoute;
+  try {
+    restored = useTripStore.getState().restore(saved, now);
+  } finally {
+    restoring = false;
+  }
   skipSave = restored;
   return { restored, saved };
 }

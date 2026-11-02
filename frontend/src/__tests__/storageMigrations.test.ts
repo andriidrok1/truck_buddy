@@ -52,3 +52,12 @@ test("the single- and plain-encoded profiles migrate too, a corrupt one is left 
 test("settingsFromV1 keeps defaults for missing or odd flags", () => {
   expect(settingsFromV1({ handsFree: false, nudges: "yes", speedAlerts: undefined })).toEqual({ handsFree: false, nudges: true, speedAlerts: false, voiceGuidance: true });
 });
+
+test("a write that fails keeps the old keys and the old version, so the next start tries again", async () => {
+  await AsyncStorage.setItem("active_route_v1", JSON.stringify(saved));
+  const spy = jest.spyOn(AsyncStorage, "setItem").mockRejectedValueOnce(new Error("disk full"));
+  await migrateStorage();
+  spy.mockRestore();
+  expect(await AsyncStorage.getItem("active_route_v1")).not.toBeNull();
+  expect(await AsyncStorage.getItem(SCHEMA_KEY)).toBeNull();
+});

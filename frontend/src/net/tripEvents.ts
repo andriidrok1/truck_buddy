@@ -10,6 +10,7 @@ import { useSyncExternalStore } from "react";
 import { ApiError, api } from "../api";
 import { getLocation } from "../geo/location";
 import { isOnline } from "../hooks/useOnline";
+import { getSim } from "../sim";
 import { storage } from "../utils/storage";
 
 export type TripEvent = {
@@ -180,6 +181,8 @@ export const tripLog: TripLog = createTripLog({
   online: isOnline,
   now: Date.now,
   position: () => {
+    const sim = getSim(); // a tester's spot or replayed trace is where the truck is, as useDriverLocation has it
+    if (sim) return sim.coords;
     const l = getLocation();
     return l.isDemo ? null : l.coords;
   },
