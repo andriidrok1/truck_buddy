@@ -14,7 +14,7 @@ from services.http import client
 
 from models import Place
 from services.geo import haversine_km, km_to_mi
-from services.google_places import PlacesUnavailable
+from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
 
 logger = logging.getLogger("truckbuddy.geocode")
 
@@ -26,6 +26,34 @@ MIN_ORS_CONFIDENCE = 0.7
 FAR_KM = 500.0  # a weak match this far from the driver is almost always the wrong town
 NOMINATIM_BOX_DEG = 3.0  # viewbox around the driver (preferred, not strict)
 STOP = {"the", "of", "to", "and", "in", "at", "st", "street", "ave", "rd", "road", "near", "me", "usa", "us"}
+_STATES = {
+    "al": "alabama", "ak": "alaska", "az": "arizona", "ar": "arkansas", "ca": "california", "co": "colorado",
+    "ct": "connecticut", "de": "delaware", "fl": "florida", "ga": "georgia", "hi": "hawaii", "id": "idaho",
+    "il": "illinois", "in": "indiana", "ia": "iowa", "ks": "kansas", "ky": "kentucky", "la": "louisiana",
+    "me": "maine", "md": "maryland", "ma": "massachusetts", "mi": "michigan", "mn": "minnesota", "ms": "mississippi",
+    "mo": "missouri", "mt": "montana", "ne": "nebraska", "nv": "nevada", "nh": "new hampshire", "nj": "new jersey",
+    "nm": "new mexico", "ny": "new york", "nc": "north carolina", "nd": "north dakota", "oh": "ohio", "ok": "oklahoma",
+    "or": "oregon", "pa": "pennsylvania", "ri": "rhode island", "sc": "south carolina", "sd": "south dakota",
+    "tn": "tennessee", "tx": "texas", "ut": "utah", "vt": "vermont", "va": "virginia", "wa": "washington",
+    "wv": "west virginia", "wi": "wisconsin", "wy": "wyoming", "dc": "district of columbia",
+}
+_STATE_WORDS = set(_STATES) | set(_STATES.values())
+
+
+def town_query(q: str) -> bool:
+    """"Payson, AZ" / "Payson, Arizona": a town named with its state and nothing else. The driver means the town,
+    not a street or a business of that name nearer by (HERE ranked "Payson St, Phoenix" and a business in Cave
+    Creek over Payson, AZ when asked from Fountain Hills, 2026-11-01). "Pilot, Fernley NV" (a business and its
+    town) and chain names are not towns."""
+    parts = [p.strip() for p in q.strip().rstrip(".").split(",")]
+    if len(parts) != 2 or not parts[0] or re.search(r"\d", q):
+        return False
+    return parts[1].lower() in _STATE_WORDS and not chain_query(parts[0])
+
+
+def chain_query(q: str) -> bool:
+    """A bare truck stop chain ("Pilot", "Love's"): never a town of that name (Pilot, NV; Pilot, VA)."""
+    return bool(TRUCK_STOP_NAME.fullmatch(q.strip().rstrip(".").lower().removeprefix("the ").strip()))
 
 _UNITS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen "
                                      "fourteen fifteen sixteen seventeen eighteen nineteen".split())}
@@ -132,16 +160,42 @@ def _near_enough(p: Place, strong: bool) -> bool:
     return strong or (p.distance_km or 0) <= FAR_KM
 
 
+def _town_match(q: str, items: list) -> Optional[dict]:
+    """The locality whose name is the town the driver said (the part before the comma), scored near-perfect."""
+    want = q.split(",")[0].strip().lower()
+    for it in items:
+        name = str(it.get("title") or "").split(",")[0].strip().lower()
+        if it.get("resultType") in AREA_TYPES and name == want and ((it.get("scoring") or {}).get("queryScore", 0)) >= 0.9:
+            return it
+    return None
+
+
 async def _here_once(q: str, lat: float, lng: float) -> list[Place]:
     key = os.environ["HERE_API_KEY"]
     common = {"q": q, "at": f"{lat},{lng}", "limit": 3, "apiKey": key, "in": "countryCode:USA"}
     c = client()
-    geo, disc = await asyncio.gather(
-        c.get("https://geocode.search.hereapi.com/v1/geocode", params=common, timeout=10),
-        c.get("https://discover.search.hereapi.com/v1/discover", params=common, timeout=10),
-    )
+    town = town_query(q)
+    calls = [c.get("https://geocode.search.hereapi.com/v1/geocode", params=common, timeout=10),
+             c.get("https://discover.search.hereapi.com/v1/discover", params=common, timeout=10)]
+    if town:  # the general search ranks a same-named street or business nearer by first; ask for the city itself too
+        calls.append(c.get("https://geocode.search.hereapi.com/v1/geocode", params={**common, "types": "city"}, timeout=10))
+    geo, disc, *city = await asyncio.gather(*calls, return_exceptions=True)
+    if isinstance(geo, BaseException):
+        raise geo
     geo.raise_for_status()
     items = geo.json().get("items", [])
+    if town:
+        candidates = items + (city[0].json().get("items", []) if city and not isinstance(city[0], BaseException) and city[0].status_code == 200 else [])
+        hit = _town_match(q, candidates)
+        if hit:
+            logger.info("here geocode q=%r is a town: %r", q, hit.get("title"))
+            p = _here_item(hit, (lat, lng))
+            if p:
+                return [p]
+    if chain_query(q):  # "Pilot" is a truck stop, never the hamlet of Pilot, NV: let Discover's businesses answer
+        items = [it for it in items if it.get("resultType") not in AREA_TYPES]
+    if isinstance(disc, BaseException):
+        disc = None
     top = items[0] if items else None
     score = ((top or {}).get("scoring") or {}).get("queryScore", 0)
     rtype = (top or {}).get("resultType")
@@ -151,7 +205,7 @@ async def _here_once(q: str, lat: float, lng: float) -> list[Place]:
         p = _here_item(top, (lat, lng))
         if p and _near_enough(p, score >= 0.9):
             return [p]
-    if disc.status_code == 200:
+    if disc is not None and disc.status_code == 200:
         for it in disc.json().get("items", []):
             label = f"{it.get('title', '')} {(it.get('address') or {}).get('label', '')}"
             ov = _overlap(q, label)
