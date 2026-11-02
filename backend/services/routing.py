@@ -265,7 +265,7 @@ def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo
     if not sections:
         raise RuntimeError("HERE route has no sections")
     geometry, meters, seconds, raw, traffic, actions = [], 0.0, 0.0, [], [], []
-    limits: list[tuple[int, int]] = []  # (global offset, mph)
+    limits: list[tuple[int, Optional[int]]] = []  # (global offset, mph; None = no posted limit known)
     incidents: list[tuple[int, dict]] = []  # (global offset, incident)
     bases: list[int] = []
     for s in sections:
@@ -275,7 +275,7 @@ def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo
         spans = s.get("spans") or []
         for a in s.get("actions") or []:
             actions.append((base + int(a.get("offset", 0)), a))
-        limits += _speed_limits(spans, base)
+        limits += _speed_limits(spans, base, limits[-1][1] if limits else None)
         incidents += _incidents(s, spans, base)
         geometry += pts
         traffic += _traffic(pts, spans)
@@ -284,6 +284,8 @@ def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo
         raw += [n for n in (s.get("notices") or []) if isinstance(n, dict)]
     stops_s = _stops_s(sections)
     seconds += stops_s
+    if not geometry:
+        raise RuntimeError("HERE route has no geometry")
     notices, restricted = _notices(raw, truck or TruckProfile())
     n = len(geometry)
     anchors = [min(off, n - 1) for off, _ in actions] + [off for off, _ in limits] + [off for off, _ in incidents] + bases
@@ -350,24 +352,29 @@ async def _here_by_handle(handle: str, lat: float, lng: float, heading: Optional
     return _here_parse(r.json(), t)
 
 
-def _speed_limits(spans: List[dict], base: int) -> list[tuple[int, int]]:
-    """(section-global offset, mph) for every span whose posted limit differs from the previous one; mph 0 where
-    HERE has no limit for the stretch, so the app shows nothing there instead of the freeway's 65 on the ramp."""
-    out: list[tuple[int, int]] = []
+def _speed_limits(spans: List[dict], base: int, prev: Optional[int] = None) -> list[tuple[int, Optional[int]]]:
+    """(section-global offset, mph) for every span whose posted limit differs from the previous one; None where
+    HERE has no limit for the stretch, so the app shows nothing there instead of the freeway's 65 on the ramp.
+    `prev` is the limit in force at the end of the previous section, so a stretch without one right after a
+    via stop ends it too."""
+    out: list[tuple[int, Optional[int]]] = []
+    last: Optional[int] = prev
     for sp in spans:
         ms = sp.get("maxSpeed")
         if not isinstance(ms, (int, float)) or ms <= 0:  # missing, or "unlimited"
-            if out and out[-1][1] != 0:
-                out.append((base + int(sp.get("offset", 0)), 0))
+            if last is not None:
+                out.append((base + int(sp.get("offset", 0)), None))
+                last = None
             continue
         mph = int(round(ms * MPH_PER_MS))
-        if out and out[-1][1] == mph:
+        if mph == last:
             continue
+        last = mph
         out.append((base + int(sp.get("offset", 0)), mph))
     return out
 
 
-def _remap_limits(limits: list[tuple[int, int]], idx: "_Index") -> List[SpeedLimit]:
+def _remap_limits(limits: list[tuple[int, Optional[int]]], idx: "_Index") -> List[SpeedLimit]:
     """Offsets -> thinned indices; one entry per index (the first), consecutive equal limits merged."""
     out: List[SpeedLimit] = []
     for off, mph in limits:

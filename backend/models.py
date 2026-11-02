@@ -72,9 +72,10 @@ class Maneuver(BaseModel):
 
 
 class SpeedLimit(BaseModel):
-    """Posted limit from `index` in RouteInfo.geometry until the next entry (HERE spans=maxSpeed)."""
+    """Posted limit from `index` in RouteInfo.geometry until the next entry (HERE spans=maxSpeed); None = no
+    posted limit known from here (a ramp, a road HERE has no data for), so nothing is shown or judged."""
     index: int
-    mph: int
+    mph: Optional[int] = None
 
 
 class Incident(BaseModel):
