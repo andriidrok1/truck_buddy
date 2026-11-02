@@ -144,6 +144,7 @@ MAX_OPTIONS = 4
 ALTERNATIVES_FRESH = 2  # when "another way?" comes with no cached alternatives: ask HERE for this many
 ALT_ORIGIN_KM = 8.0  # cached alternatives were planned from here; further on, "another way" plans from the truck
 PASSED_KM = 1.6  # a stop this close to the truck is being approached, never counted as passed
+REACHED_KM = 0.15  # ...unless the truck is at it (parked in its lot): then it is made, and the next plan leaves it out
 WEATHER_BUDGET_S = 2.0  # NWS lookups on a new route may add at most this much to the reply
 DETOUR_BUDGET_S = 3.5  # the alternatives' weather, measured from the start; past it the detour line is skipped
 PRECHECK = 1  # nearest candidates satellite-checked in the background (each = one vision call)
@@ -375,8 +376,9 @@ VIA_CLEARED = "Stops cleared. Straight there, {time}, {mi} miles."
 VIA_NONE = "There are no stops on this route."
 # A stop that is nowhere near the way (the geocoder put "the Pilot in Fernley" in Wells, 300 miles past Reno,
 # and the dialog added it without a word, 2026-11-01): ask before the route changes.
-VIA_FAR = "{name} is about {extra} out of the way; the trip would be {new} instead of {old}. Add it anyway?"
+VIA_FAR = "{name} is about {extra} out of the way; from here that's {new} instead of {old}. Add it anyway?"
 VIA_FAR_NO = "Okay, no stop added."
+VIA_FAR_YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|add it|go ahead|do it|please do|fine)\b", re.I)
 STOP_DETOUR_MIN_S = 45 * 60  # a stop costing more than this beyond its own 30 minutes...
 STOP_DETOUR_FRACTION = 0.5  # ...and more than half the trip so far is asked about first
 WHICH_PLACE = "Which place? Find one or set a route first."
@@ -1081,8 +1083,14 @@ class LlmAgentProvider:
         geometry = self._current_geometry(req, sess)
         if stops and geometry:
             here = _nearest_index(geometry, req.lat, req.lng)
-            ahead = [s for s in stops if _nearest_index(geometry, s.lat, s.lng) >= here
-                     or haversine_km(s.lat, s.lng, req.lat, req.lng) < PASSED_KM]
+
+            def still_ahead(s: Place) -> bool:
+                d = haversine_km(s.lat, s.lng, req.lat, req.lng)
+                if d < REACHED_KM:  # parked at the stop: "add the TA too" must not route through this lot again
+                    return False
+                return _nearest_index(geometry, s.lat, s.lng) >= here or d < PASSED_KM
+
+            ahead = [s for s in stops if still_ahead(s)]
             if len(ahead) != len(stops):
                 logger.info("stops passed: %s", ", ".join(s.name for s in stops if s not in ahead))
                 via["stops"] = ahead
@@ -1163,15 +1171,32 @@ class LlmAgentProvider:
                                     "current": route.model_copy(update={"alternatives": []}),
                                     "origin": (req.lat, req.lng), "profile": _profile_key(req.truck_profile)}
 
+    @staticmethod
+    def _remaining_s(cur: RouteInfo, lat: float, lng: float) -> float:
+        """Seconds left on the driven route from the truck's nearest vertex, the time spread by distance (the same
+        maths the app's ETA uses)."""
+        g = cur.geometry
+        if len(g) < 2:
+            return float(cur.duration_s)
+        here = _nearest_index(g, lat, lng)
+        legs = [haversine_km(g[i - 1][0], g[i - 1][1], g[i][0], g[i][1]) for i in range(1, len(g))]
+        total = sum(legs) or 1.0
+        return float(cur.duration_s) * (sum(legs[here:]) / total)
+
     def _stop_detour(self, req: AgentRequest, sess: dict, added: int, route: RouteInfo) -> Optional[tuple[float, float]]:
-        """(extra seconds beyond the stop's own time, the trip before) when a stop takes the trip far out of the
-        way; None when it is a reasonable stop or when the trip before is unknown."""
-        cur = (sess.get("alternatives") or {}).get("current") if req.active_place else None
-        if cur is not None and (sess.get("alternatives") or {}).get("place") != req.active_place.id:
-            cur = None
-        old = float(cur.duration_s) if cur is not None else \
-            (req.active_duration_min * 60.0 if req.active_duration_min else None)
-        if not old:
+        """(extra seconds beyond the stop's own time, the rest of the trip before the stop) when a stop takes the
+        trip far out of the way; None when it is a reasonable stop or when the trip before is unknown. The new
+        route starts where the truck is, so it is compared with what was left of the old one from here, not
+        with the whole trip as planned."""
+        cached = sess.get("alternatives") or {}
+        cur = cached.get("current") if req.active_place and cached.get("place") == req.active_place.id else None
+        if cur is not None:
+            old = self._remaining_s(cur, req.lat, req.lng)
+        elif req.active_duration_min:
+            old = req.active_duration_min * 60.0  # the planned total: understates the detour, so asks less, never more
+        else:
+            return None
+        if old <= 0:
             return None
         extra = float(route.duration_s) - old - VIA_STOP_S * max(0, added)
         return (extra, old) if extra > max(STOP_DETOUR_MIN_S, STOP_DETOUR_FRACTION * old) else None
@@ -1217,7 +1242,7 @@ class LlmAgentProvider:
                 extra, old = far
                 # "yes" re-runs this turn with the resolved stop (no second geocode); "no" adds nothing.
                 sess["pending"] = {"text": text, "d": {**d, "_confirmed": True, "place": stop.model_dump()},
-                                   "no": {"reply": VIA_FAR_NO}}
+                                   "no": {"reply": VIA_FAR_NO}, "yes": VIA_FAR_YES}
                 logger.info("add_stop %s is %.0f min out of the way: asking first", stop.name, extra / 60)
                 return AgentResponse(status="confirm", transcript=text, source=self.source,
                                      reply=VIA_FAR.format(name=stop.name.split(",")[0], extra=_minutes_said(round(extra / 60)),
@@ -1389,7 +1414,7 @@ class LlmAgentProvider:
             return bd
         pending = sess.pop("pending", None)
         if pending:  # "Did you say Reno?" was asked last turn
-            if YES.match(text):
+            if YES.match(text) or (pending.get("yes") is not None and pending["yes"].match(text)):
                 d = pending["d"]
                 timing.note("intent", str(d.get("intent")))
                 return await self._dispatch(req, sess, pending["text"], d, confirmed=True)
@@ -1439,8 +1464,6 @@ class LlmAgentProvider:
         ask = None if confirmed else self._confirm_needed(req, d, sess)
         if ask:
             return ask
-        if confirmed:
-            d = {**d, "_confirmed": True}  # the handlers that ask their own question skip it this time
         reply = str(d.get("reply") or "").strip()
         # A control phrase dressed up as a destination (or echoed only as a reply): run the control.
         ctl = (control_phrase(str(d.get("query") or "")) if intent == "go" else None) or \

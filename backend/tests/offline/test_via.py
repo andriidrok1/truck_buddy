@@ -194,9 +194,16 @@ def test_a_stop_already_passed_is_dropped(agent_sandbox, fake_http):
     req = AgentRequest(text="hi", session_id="v1", active_place=RENO, **TRUCKEE)
     assert [s.id for s in prov._stops(req, agent._SESSIONS["v1"])] == [PILOT.id]
     assert "Stops on the way: Pilot Travel Center." in prov._context(req, agent._SESSIONS["v1"])
-    # ...and a re-plan from there goes through the Pilot only
+    # ...and a re-plan from there goes through the Pilot only (the fixture answers every request with the whole
+    # 2 h 52 min trip, which from Truckee would look like a detour: give the via route the hour that is left)
+    short = copy.deepcopy(DATA)
+    for s in short["routes"][0]["sections"]:
+        s["summary"]["duration"] = 3600
+    fake_http.routes.clear()
+    fake_http.add("router.hereapi.com", "/v8/routes",
+                  fn=lambda request: httpx.Response(200, json=short if "via" in str(request.url) else DATA, request=request))
     res = run(prov.handle(AgentRequest(text="the TA in Sparks too", session_id="v1", active_place=RENO, **TRUCKEE), None))
-    assert res.status == "route_set"
+    assert res.status == "route_set", res.reply
     assert _vias(fake_http.calls_to("router.hereapi.com")[-1]) == [
         f"{TA.lat},{TA.lng}!stopDuration=1800", f"{PILOT.lat},{PILOT.lng}!stopDuration=1800"]
 
@@ -239,7 +246,7 @@ def test_a_stop_far_out_of_the_way_asks_first(agent_sandbox, fake_http):
 
     res = run(prov.handle(_req("stop at the Pilot in Fernley on the way"), None))
     assert res.status == "confirm" and res.route is None
-    assert res.reply == "Pilot Travel Center is about 13 h 51 min out of the way; the trip would be 17 h 13 min instead of 2 h 52 min. Add it anyway?"
+    assert res.reply == "Pilot Travel Center is about 13 h 51 min out of the way; from here that's 17 h 13 min instead of 2 h 52 min. Add it anyway?"
     assert prov._stops(_req("hi"), agent._SESSIONS["v1"]) == []
 
     res = run(prov.handle(_req("no"), None))
@@ -249,8 +256,50 @@ def test_a_stop_far_out_of_the_way_asks_first(agent_sandbox, fake_http):
     res = run(prov.handle(_req("stop at the Pilot in Fernley on the way"), None))
     assert res.status == "confirm"
     calls = len(fake_http.calls_to("router.hereapi.com"))
-    res = run(prov.handle(_req("yes"), None))
+    res = run(prov.handle(_req("go ahead, add it"), None))
     assert res.status == "route_set" and res.route.via == [[PILOT.lat, PILOT.lng]]
     assert res.reply.startswith("Added Pilot Travel Center, about 80 miles ahead.")
     assert len(fake_http.calls_to("router.hereapi.com")) == calls + 1  # one route call, no second geocode
     assert [s.id for s in prov._stops(_req("hi"), agent._SESSIONS["v1"])] == [PILOT.id]
+def test_the_stop_the_truck_is_parked_at_is_made(agent_sandbox, fake_http):
+    prov = _sandbox(agent_sandbox, fake_http)
+    run(prov.handle(_req("take me to Reno", active=None), None))
+    run(prov.handle(_req("swing by Love's"), None))
+    at_loves = {"lat": LOVES.lat + 0.0005, "lng": LOVES.lng}  # 55 m away: in its lot
+    req = AgentRequest(text="hi", session_id="v1", active_place=RENO, **at_loves)
+    assert prov._stops(req, agent._SESSIONS["v1"]) == []
+
+
+def test_an_stt_confirmation_does_not_answer_the_detour_question(agent_sandbox, fake_http, monkeypatch):
+    """Review 2026-11-01: \"Did you say Pilot Fernley?\" -> \"yes\" used to carry the confirmed flag into _add_stop
+    and skip the far-stop question."""
+    prov = _sandbox(agent_sandbox, fake_http)
+    monkeypatch.setattr(agent, "stt_confirm_below", lambda: 0.9)
+    long = copy.deepcopy(DATA)
+    for s in long["routes"][0]["sections"]:
+        s["summary"]["duration"] *= 6
+    fake_http.routes.clear()
+    fake_http.add("router.hereapi.com", "/v8/routes",
+                  fn=lambda request: httpx.Response(200, json=long if "via" in str(request.url) else DATA, request=request))
+    run(prov.handle(_req("take me to Reno", active=None), None))
+    res = run(prov.handle(AgentRequest(text="stop at the Pilot in Fernley on the way", session_id="v1", active_place=RENO,
+                                       stt_confidence=0.2, **SAC), None))
+    assert res.status == "confirm" and res.reply.startswith("Did you say")
+    res = run(prov.handle(_req("yes"), None))
+    assert res.status == "confirm" and "out of the way" in res.reply  # the detour question still comes
+    assert prov._stops(_req("hi"), agent._SESSIONS["v1"]) == []
+
+
+def test_the_detour_is_measured_from_the_truck_not_the_origin(agent_sandbox, fake_http):
+    """Two thirds into a 2 h 52 min trip, a stop that makes the rest 4 h is a 3 h detour, not a 1 h one."""
+    prov = _sandbox(agent_sandbox, fake_http)
+    with_stop = copy.deepcopy(DATA)
+    for s in with_stop["routes"][0]["sections"]:
+        s["summary"]["duration"] = 4 * 3600
+    fake_http.routes.clear()
+    fake_http.add("router.hereapi.com", "/v8/routes",
+                  fn=lambda request: httpx.Response(200, json=with_stop if "via" in str(request.url) else DATA, request=request))
+    run(prov.handle(_req("take me to Reno", active=None), None))
+    far_along = {"lat": 39.33, "lng": -120.18}  # Truckee: about an hour of the trip left
+    res = run(prov.handle(AgentRequest(text="stop at the Pilot in Fernley on the way", session_id="v1", active_place=RENO, **far_along), None))
+    assert res.status == "confirm" and "from here that's 4 h instead of" in res.reply
