@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/react-native";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
@@ -20,11 +21,21 @@ import { useConsent } from "@/src/consent";
 import { loadEldToken } from "@/src/eld";
 import { queryClient } from "@/src/query-client";
 
-// Disable logbox errors etc so that users can see the app
-// and agent works as expected.
-LogBox.ignoreAllLogs(true);
+// Crash and error reporting. No DSN (local dev, Expo Go) = Sentry stays dormant and every call is a no-op.
+const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN?.trim();
+Sentry.init({
+  dsn: SENTRY_DSN || undefined,
+  enabled: !!SENTRY_DSN,
+  tracesSampleRate: 0.1,
+  environment: process.env.EXPO_PUBLIC_SENTRY_ENV ?? (__DEV__ ? "development" : "production"),
+  sendDefaultPii: false,
+});
 
-export default function RootLayout() {
+// Dev only: the red/yellow boxes over the map get in the way of driving the stand. Production builds
+// keep them (they do not render there anyway), and errors go to Sentry.
+if (__DEV__) LogBox.ignoreAllLogs(true);
+
+function RootLayout() {
   const { scheme, colors } = useTheme();
   // The window behind the (translucent) status bar: white by default, a bright band above every dark screen
   // in dark mode (QA 2026-10-31, Н24). Expo Go keeps its own opaque bar, so this shows in builds.
@@ -93,3 +104,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+
+// Sentry.wrap adds the navigation/touch instrumentation and reports render errors from the tree.
+export default Sentry.wrap(RootLayout);

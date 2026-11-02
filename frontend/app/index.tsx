@@ -3,6 +3,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import * as Sentry from "@sentry/react-native";
+
 import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
 import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
@@ -594,6 +596,10 @@ export default function MapScreen() {
   // Dev tools (tester replay) read the active route from here; the disk copy survives a restart.
   // Every change of `active` (new route, alternative, stops, reroute, parking) is written; the
   // object that was just restored is not written again, so its saved time stays the original.
+  // Every Sentry event of a drive carries its trip id, so a crash can be put next to the trip log.
+  useEffect(() => {
+    Sentry.setTag("trip_id", active?.trip_id ?? "none");
+  }, [active?.trip_id]);
   const skipSave = useRef<ActiveRoute | null>(null);
   useEffect(() => {
     setActiveRoute(active);
