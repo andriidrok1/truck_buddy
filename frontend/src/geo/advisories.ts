@@ -6,8 +6,8 @@ import type { RouteInfo, SpeedLimit } from "../types";
 
 /**
  * Posted limit on the matched segment: the last `speed_limits` entry at or before it, null when unknown.
- * An entry with mph 0 is the backend's "no limit known from here" (a ramp, a county road HERE has no data
- * for): nothing is shown, and the speed alert has nothing to judge against.
+ * An entry with mph null (or 0) is the backend's "no limit known from here" (a ramp, a county road HERE has
+ * no data for): nothing is shown, and the speed alert has nothing to judge against.
  */
 export function limitAt(speedLimits: readonly SpeedLimit[] | undefined, matchedIndex: number): number | null {
   if (!speedLimits?.length || matchedIndex < 0) return null;
@@ -15,7 +15,7 @@ export function limitAt(speedLimits: readonly SpeedLimit[] | undefined, matchedI
   for (const s of speedLimits) {
     if (s.index <= matchedIndex && (!best || s.index >= best.index)) best = s;
   }
-  return best && best.mph > 0 ? best.mph : null;
+  return best && best.mph != null && best.mph > 0 ? best.mph : null;
 }
 
 export const MPH_PER_MPS = 2.23694;
