@@ -8,6 +8,7 @@ import * as Sentry from "@sentry/react-native";
 import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
 import { newSessionId, useCopilotTurn, type AnswerContext } from "@/src/dialog/useCopilotTurn";
 import { useFillers } from "@/src/dialog/useFillers";
+import { lineCaption, replyCaption, replyEnded, type Caption } from "@/src/dialog/caption";
 import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
 import { Icon } from "@/src/components/Icon";
@@ -62,12 +63,6 @@ function routeFailText(e: unknown): string {
 // Below this much visible map (layout units) the bubble would cover the route; the sheet shows the text.
 // The route card leaves about 220 at the default font, about 120 at 130 %.
 const MIN_MAP_FOR_BUBBLE = 180;
-type Caption = { reply: string; heard?: string; kind?: "reply" | "line"; at?: number };
-/** The copilot's answer: kept until the next turn (a driver who looks later must still see it). */
-const replyCaption = (reply: string, heard?: string): Caption => ({ reply, heard, kind: "reply", at: Date.now() });
-/** A spoken line (turn, nudge, parking tip): gone 8 s after it is said, and never over an answer under 6 s old. */
-const lineCaption = (text: string, prev: Caption | null): Caption =>
-  prev?.kind === "reply" && Date.now() - (prev.at ?? 0) < 6000 ? prev : { reply: text, kind: "line", at: Date.now() };
 
 const RESEARCH_INTERIM = "Reading reviews now, almost there.";
 const RESEARCH_INTERIM_MS = 7000;
@@ -143,7 +138,7 @@ export default function MapScreen() {
   // kind "reply" = the copilot's answer, kept until the next turn (a driver who looks later must still
   // see it); kind "line" = a spoken line (turn, nudge, parking tip), gone 8 s after it is said.
   const [caption, setCaption] = useState<Caption | null>(null);
-  /** A spoken line's caption; it never covers an answer that is less than 6 s old. */
+  /** A spoken line's caption; it never covers an answer said less than REPLY_HOLD_MS ago. */
   const showLine = (text: string) => setCaption((prev) => lineCaption(text, prev));
   const [micCard, setMicCard] = useState<Exclude<MicPermission, "granted"> | null>(null);
   const [fit, setFit] = useState<{ key: string; points: LatLng[] }>({ key: "init", points: [] });
@@ -240,6 +235,13 @@ export default function MapScreen() {
     const t = setTimeout(() => setToast(null), 3200);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // The answer's hold over spoken lines starts when its audio ends, not when it arrived.
+  const wasSpeaking = useRef(false);
+  useEffect(() => {
+    if (wasSpeaking.current && !voice.speaking) setCaption((prev) => replyEnded(prev));
+    wasSpeaking.current = voice.speaking;
+  }, [voice.speaking]);
 
   useEffect(() => {
     if (!caption || voice.speaking || caption.kind === "reply") return; // answers stay until the next turn
