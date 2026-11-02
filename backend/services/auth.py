@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from services.settings import settings
+from typing import Optional
 
 JWT_DAYS = 365
 MAX_ATTEMPTS, WINDOW_S = 5, 600
@@ -90,8 +92,16 @@ def redeem(code: str, request: Request) -> tuple[str, str]:
     return _token(role), role
 
 
-def take_token(driver: str, now: float, per_min: int = RATE_PER_MIN) -> bool:
-    """One request from the driver's bucket; False when the budget for this minute is spent."""
+def per_worker(total: int) -> int:
+    """A per-driver budget as this worker's share (the buckets live per process; WORKERS workers share a box)."""
+    return settings().per_worker(total)
+
+
+def take_token(driver: str, now: float, per_min: Optional[int] = None) -> bool:
+    """One request from the driver's bucket; False when the budget for this minute is spent. The default is this
+    worker's share of RATE_LIMIT_PER_MIN (module RATE_PER_MIN, 0 = off)."""
+    if per_min is None:
+        per_min = per_worker(RATE_PER_MIN)
     if per_min <= 0:
         return True
     if len(_buckets) > 10_000:  # drop buckets that are full again (idle for a minute or more)
@@ -143,7 +153,8 @@ def _limit(driver: str) -> None:
     for q, window in ((short, WINDOW_S), (day, 86_400)):
         while q and now - q[0] > window:
             q.popleft()
-    if len(short) >= int(os.environ.get("RATE_PER_10MIN", "300")) or len(day) >= int(os.environ.get("RATE_PER_DAY", "3000")):
+    s = settings()
+    if len(short) >= per_worker(s.rate_per_10min) or len(day) >= per_worker(s.rate_per_day):
         raise HTTPException(status_code=429, detail="Too many requests. Try again in a few minutes.")
     short.append(now)
     day.append(now)

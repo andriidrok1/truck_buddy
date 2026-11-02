@@ -16,6 +16,7 @@ from typing import Optional
 import imageio_ffmpeg
 
 from services import llm
+from services.settings import settings
 from services.http import client
 from services.speech_text import spoken
 
@@ -283,9 +284,11 @@ async def louder(mp3: bytes) -> bytes:
 
 async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str] = None,
                      previous_text: Optional[str] = None, next_text: Optional[str] = None,
-                     eleven_voice_id: Optional[str] = None) -> Optional[str]:
+                     eleven_voice_id: Optional[str] = None, audio_id: Optional[str] = None) -> Optional[str]:
     """Returns an id for GET /api/voice/audio/{id}, or None if TTS failed.
-    ElevenLabs first (when configured and no explicit OpenAI voice/model is asked), then OpenAI."""
+    ElevenLabs first (when configured and no explicit OpenAI voice/model is asked), then OpenAI. The clip goes to
+    the in-process cache and to TTS_DIR on disk, so any worker (or this one after a restart) can serve the id.
+    `audio_id` lets a caller hand out the id before the clip exists (synthesize_later)."""
     text = spoken(text)[:4000]  # everything spoken goes through the text-for-speech layer
     previous_text = spoken(previous_text) if previous_text else None
     next_text = spoken(next_text) if next_text else None
@@ -305,10 +308,11 @@ async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str
             logger.exception("TTS failed")
             return None
         audio = await louder(audio)
-    audio_id = uuid.uuid4().hex
+    audio_id = audio_id or uuid.uuid4().hex
     _AUDIO_CACHE[audio_id] = audio
     while len(_AUDIO_CACHE) > _CACHE_MAX:
         _AUDIO_CACHE.popitem(last=False)
+    await store_clip(audio_id, audio)
     if fell_back:
         _FALLBACK_IDS[audio_id] = None
         while len(_FALLBACK_IDS) > _CACHE_MAX:
@@ -316,7 +320,76 @@ async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str
     return audio_id
 
 
-_PIN_DIR = Path(__file__).resolve().parent.parent / ".tts_cache"
+_PIN_DIR = Path(__file__).resolve().parent.parent / ".tts_cache"  # where pins lived before TTS_DIR; still read
+CLIP_TTL_S = 24 * 3600  # a spoken reply is fetched within seconds; a day on disk is plenty
+EVICT_EVERY_S = 300
+CROSS_WORKER_WAIT_S = 3.0  # a clip another worker is still making: how long the audio route waits for the file
+_last_evict = 0.0
+_ID_RE = re.compile(r"[0-9a-f]{32}")
+
+
+def _clips_dir() -> Path:
+    return settings().tts_dir
+
+
+def _pins_dir() -> Path:
+    return _clips_dir() / "pins"  # fixed lines (fillers, onboarding): never evicted
+
+
+def _clip_path(audio_id: str) -> Path:
+    return _clips_dir() / f"{audio_id}.mp3"
+
+
+def _write_clip_sync(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_bytes(data)
+    tmp.replace(path)
+
+
+def _evict_sync(now: float) -> int:
+    """Clips older than CLIP_TTL_S go (pins live in their own folder and stay)."""
+    gone = 0
+    d = _clips_dir()
+    if not d.exists():
+        return 0
+    for f in d.glob("*.mp3"):
+        try:
+            if now - f.stat().st_mtime > CLIP_TTL_S:
+                f.unlink()
+                gone += 1
+        except OSError:
+            continue
+    return gone
+
+
+async def store_clip(audio_id: str, data: bytes) -> None:
+    """The clip on disk for every worker; a failed write only costs the cross-worker path, never the reply."""
+    global _last_evict
+    try:
+        await asyncio.to_thread(_write_clip_sync, _clip_path(audio_id), data)
+    except OSError as e:
+        logger.warning("could not store audio clip %s: %s", audio_id, e)
+        return
+    now = time.monotonic()
+    if now - _last_evict > EVICT_EVERY_S:
+        _last_evict = now
+        try:
+            gone = await asyncio.to_thread(_evict_sync, time.time())
+            if gone:
+                logger.info("tts clips evicted: %d", gone)
+        except OSError:
+            pass
+
+
+def _read_clip_sync(audio_id: str) -> Optional[bytes]:
+    for f in (_clip_path(audio_id), _pins_dir() / f"{audio_id}.mp3", _PIN_DIR / f"{audio_id}.mp3"):
+        if f.exists():
+            try:
+                return f.read_bytes()
+            except OSError:
+                return None
+    return None
 
 
 def pin(audio_id: str, key: str) -> str:
@@ -326,8 +399,7 @@ def pin(audio_id: str, key: str) -> str:
         return audio_id
     stable = _stable_id(key)
     try:
-        _PIN_DIR.mkdir(exist_ok=True)
-        (_PIN_DIR / f"{stable}.mp3").write_bytes(data)
+        _write_clip_sync(_pins_dir() / f"{stable}.mp3", data)
     except OSError as e:
         logger.warning("could not pin audio: %s", e)
         return audio_id
@@ -347,11 +419,11 @@ def pinned(key: str) -> Optional[str]:
 
 
 def get_audio(audio_id: str) -> Optional[bytes]:
+    """The clip: memory, then disk (this worker's or another's, pins, the old pin folder)."""
     data = _AUDIO_CACHE.get(audio_id)
-    if data is None and re.fullmatch(r"[0-9a-f]{32}", audio_id or ""):
-        f = _PIN_DIR / f"{audio_id}.mp3"
-        if f.exists():
-            data = f.read_bytes()
+    if data is None and _ID_RE.fullmatch(audio_id or ""):
+        data = _read_clip_sync(audio_id)
+        if data is not None:
             _AUDIO_CACHE[audio_id] = data
     return data
 
@@ -364,10 +436,7 @@ def synthesize_later(text: str, previous_text: Optional[str] = None) -> str:
     audio_id = uuid.uuid4().hex
 
     async def run() -> Optional[str]:
-        tmp = await synthesize(text, previous_text=previous_text)
-        if tmp:
-            _AUDIO_CACHE[audio_id] = _AUDIO_CACHE.pop(tmp)
-        return tmp
+        return await synthesize(text, previous_text=previous_text, audio_id=audio_id)  # straight under the handed-out id
 
     task = asyncio.create_task(run())
     _PENDING[audio_id] = task
@@ -376,10 +445,22 @@ def synthesize_later(text: str, previous_text: Optional[str] = None) -> str:
 
 
 async def wait_audio(audio_id: str) -> Optional[bytes]:
+    """The clip once it exists: awaits a synthesis running in this worker; for an id another worker handed out
+    and is still making, polls the disk for CROSS_WORKER_WAIT_S."""
     task = _PENDING.get(audio_id)
     if task is not None:
         await asyncio.shield(task)
-    return get_audio(audio_id)
+        return get_audio(audio_id)
+    data = get_audio(audio_id)
+    if data is not None or not _ID_RE.fullmatch(audio_id or ""):
+        return data
+    deadline = time.monotonic() + CROSS_WORKER_WAIT_S
+    while time.monotonic() < deadline:
+        await asyncio.sleep(0.2)
+        data = get_audio(audio_id)
+        if data is not None:
+            return data
+    return None
 
 
 # ---- streaming TTS (TTS_STREAM=1): the driver hears the first chunk while the rest is still being made ----

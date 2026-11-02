@@ -17,7 +17,7 @@ from typing import Literal, Optional
 
 
 from models import Approach, ParkingCheck, Place, RouteInfo
-from services import llm
+from services import llm, parking_store
 
 logger = logging.getLogger("truckbuddy.approach")
 
@@ -45,7 +45,6 @@ class _LRU(OrderedDict):
             self.popitem(last=False)
 
 
-_last: _LRU = _LRU()  # place key -> approach of the latest route to it
 _landmarks: _LRU = _LRU()  # base entry tip -> landmark phrase ("" = none)
 _tasks: set = set()
 
@@ -123,13 +122,19 @@ def side(ap: Approach, e_lat: float, e_lng: float) -> Optional[Literal["right", 
 
 
 def remember(place: Place, ap: Optional[Approach]) -> None:
+    """The way the latest route arrives at this place; kept in the parking store so every worker routes to the
+    same entrance and a restart does not forget it."""
     if ap:
-        _last.put(_pkey(place), ap)
+        parking_store.approach_set(_pkey(place), ap)
+
+
+def _last_approach(place: Place) -> Optional[Approach]:
+    return parking_store.approach_get(_pkey(place))
 
 
 def has_approach(place: Place) -> bool:
     """A route to this place was built (its entry tip will be phrased relative to the driver)."""
-    return _pkey(place) in _last
+    return _last_approach(place) is not None
 
 
 def _entry(c: Optional[ParkingCheck]):
@@ -140,7 +145,7 @@ def best(place: Place) -> Optional[ParkingCheck]:
     """Cached check; entry tip relative to the driver when the approach and E are known (sync, cached text)."""
     from services.parking import cached_parking
     base = cached_parking(place)
-    ap = _last.get(_pkey(place))
+    ap = _last_approach(place)
     if not base or not ap or not base.entry_tip or base.entry_tip not in _landmarks:
         return base
     return _phrase(base, ap, _landmarks[base.entry_tip])
@@ -262,7 +267,7 @@ def speech(c: ParkingCheck, ask: str = "all") -> str:
 async def answer(place: Place, wait: float = WAIT_S) -> tuple[str, str, Optional[ParkingCheck]]:
     """-> (status "ready" | "pending", spoken reply, check). Starts the check if needed, waits up to `wait`."""
     from services.parking import check_parking
-    task = asyncio.ensure_future(check_parking(place, _last.get(_pkey(place))))
+    task = asyncio.ensure_future(check_parking(place, _last_approach(place)))
     try:
         c = await asyncio.wait_for(asyncio.shield(task), wait)
     except asyncio.TimeoutError:

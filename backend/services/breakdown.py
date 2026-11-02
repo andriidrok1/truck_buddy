@@ -19,7 +19,7 @@ from typing import Optional
 
 
 from models import AgentRequest, AgentResponse, CallCard, Place, Provider
-from services import llm
+from services import kv, llm, session_store
 from services import providers_search as ps
 from services.http import client
 from services.routing import get_routing_provider
@@ -360,12 +360,41 @@ async def _run(d: dict, req: AgentRequest, sess: dict, source: str) -> AgentResp
                          provider_source=res["source"], research_stats=stats, source=source)
 
 
+def _persist(rid: str, driver: Optional[str], session_id: Optional[str], sess, task: "asyncio.Task[AgentResponse]") -> None:
+    """The finished research into the jobs table (any worker can answer GET /breakdown/{rid}) and the dialog
+    state it changed (providers, places) back into the session store: the turn that started it saved before."""
+    async def _go():
+        try:
+            res = task.result()
+            state = res.model_dump(mode="json")
+        except Exception as e:  # noqa: BLE001
+            state = {"status": "error", "error": type(e).__name__}
+        try:
+            await kv.job_put(rid, driver, "breakdown", state)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("breakdown job %s not saved: %s", rid, e)
+        if session_id and hasattr(sess, "to_json"):
+            try:
+                await session_store.get_store().save(session_id, sess)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("breakdown session %s not saved: %s", session_id, e)
+
+    t = asyncio.create_task(_go())
+    _tasks.add(t)
+    t.add_done_callback(_tasks.discard)
+
+
 def start_research(d: dict, req: AgentRequest, sess: dict, text: str, source: str) -> AgentResponse:
     rid = uuid.uuid4().hex
     task = asyncio.create_task(_run(d, req, sess, source))
     _JOBS[rid] = task
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
+    driver = sess.get("driver") if hasattr(sess, "get") else None
+    opened = asyncio.create_task(kv.job_put(rid, driver, "breakdown", {"status": "researching"}))
+    _tasks.add(opened)
+    opened.add_done_callback(_tasks.discard)
+    task.add_done_callback(lambda t, rid=rid, driver=driver, sid=req.session_id, sess=sess: _persist(rid, driver, sid, sess, t))
     while len(_JOBS) > 50:
         _JOBS.pop(next(iter(_JOBS)))
     sess.pop("breakdown_pending", None)
@@ -373,16 +402,40 @@ def start_research(d: dict, req: AgentRequest, sess: dict, text: str, source: st
                          breakdown_kind=d["kind"], breakdown_mode=resolve_mode(d), source=source)
 
 
+TOO_LONG = "Sorry, the search took too long. Want me to try again?"
+RESULT_POLL_S = 0.5
+
+
 async def result(rid: str) -> Optional[AgentResponse]:
+    """The research result: awaited when it runs in this worker, otherwise read from the jobs table (another
+    worker ran it, or this one restarted) and polled while it is still researching. None = unknown id."""
     task = _JOBS.get(rid)
-    if task is None:
-        return None
-    try:
-        return await asyncio.wait_for(asyncio.shield(task), timeout=RESULT_WAIT_S)
-    except Exception:  # noqa: BLE001
-        logger.exception("breakdown research failed")
-        return AgentResponse(status="chat", transcript="", reply="Sorry, the search took too long. Want me to try again?",
-                             source=MODEL[1])
+    if task is not None:
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), timeout=RESULT_WAIT_S)
+        except Exception:  # noqa: BLE001
+            logger.exception("breakdown research failed")
+            return AgentResponse(status="chat", transcript="", reply=TOO_LONG, source=MODEL[1])
+    deadline = time.monotonic() + RESULT_WAIT_S
+    while True:
+        try:
+            row = await kv.job_get(rid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("breakdown job %s unreadable: %s", rid, e)
+            return None
+        if row is None:
+            return None
+        if row.get("status") == "error":
+            return AgentResponse(status="chat", transcript="", reply=TOO_LONG, source=MODEL[1])
+        if row.get("status") != "researching":
+            try:
+                return AgentResponse(**row)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("breakdown job %s malformed: %s", rid, e)
+                return AgentResponse(status="chat", transcript="", reply=TOO_LONG, source=MODEL[1])
+        if time.monotonic() >= deadline:
+            return AgentResponse(status="chat", transcript="", reply=TOO_LONG, source=MODEL[1])
+        await asyncio.sleep(RESULT_POLL_S)
 
 
 # ---------------------------------------------------------------- follow-ups

@@ -24,7 +24,8 @@ from services.parking import cached_parking, check_parking, fetch_satellite  # n
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import approach, approach_api, auth, chains, memory, onboarding, parking_store, parking_warm, session_store, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services import approach, approach_api, auth, chains, kv, leader, memory, onboarding, parking_store, parking_warm, session_store, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services.settings import settings  # noqa: E402
 
 WEATHER_BUDGET_S = 2.5  # NWS alerts on /route may add at most this much; never the route itself
 from pydantic import BaseModel, Field  # noqa: E402
@@ -267,7 +268,8 @@ async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
         res.reply_parts = [first, rest] if rest else [first]
         if rest:
             res.audio_url_2 = f"/api/voice/audio/{voice.synthesize_later(rest, previous_text=first)}"
-        if flags.on("TTS_STREAM", "0") and not voice.eleven_voice():
+        if flags.on("TTS_STREAM", "0") and not voice.eleven_voice() and settings().workers == 1:
+            # (a stream lives in the worker that started it: with several workers the clip is made whole)
             # Streamed: the id is ready now; the first bytes reach the app in ~300 ms instead of a whole clip.
             audio_id = voice.synthesize_stream(first)
             timing.add("tts", 0)
@@ -548,19 +550,47 @@ app.include_router(trips_api.router)
 app.include_router(parking_warm.router)
 
 
+DRAIN_S = 5.0  # background writes (memory, trip events, jobs, parking) get this long at shutdown
+
+
 @app.on_event("startup")
 async def _memory_up():
+    s = settings()
+    logger.info("workers=%d tts_dir=%s per-worker budgets: %d/min %d/10min %d/day%s", s.workers, s.tts_dir,
+                auth.per_worker(auth.RATE_PER_MIN), auth.per_worker(s.rate_per_10min), auth.per_worker(s.rate_per_day),
+                " (TTS_STREAM off: more than one worker)" if s.workers > 1 and flags.on("TTS_STREAM", "0") else "")
     _bg(memory.warm())
     _bg(trip_events.prune())  # the trip log keeps TRIP_EVENTS_DAYS; the rest goes at every start
+    _bg(kv.job_prune())  # breakdown results older than a day
+    _bg(parking_store.start())  # verdicts and approaches other workers saved, refreshed every minute
     _bg(weather.warm())  # the NWS alert feed and its zone polygons, so the first route pays nothing
     await chains.start()  # Caltrans chain-control poller (CHAIN_CONTROLS=0 to skip)
     await tpims.start()  # live truck parking counts (TPIMS_ENABLED=0 to skip)
+
+
+def _draining() -> list:
+    return [t for t in (*_BG, *memory._tasks, *trip_events._tasks, *approach._tasks, *breakdown._tasks,
+                        *parking_store.pending(), *voice._PENDING.values()) if not t.done()]
+
+
+async def drain(timeout: float = DRAIN_S) -> int:
+    """Lets the background writes finish (a deploy must not lose the memory turn or the trip events that were
+    in flight); returns how many were still running at the deadline."""
+    pending = _draining()
+    if pending:
+        await asyncio.wait(pending, timeout=timeout)
+    return len(_draining())
 
 
 @app.on_event("shutdown")
 async def _memory_down():
     await chains.stop()
     await tpims.stop()
+    await parking_store.stop()
+    left = await drain()
+    if left:
+        logger.warning("shutdown: %d background tasks still running after %.0f s", left, DRAIN_S)
+    await leader.close()
     await memory.close()
 
 

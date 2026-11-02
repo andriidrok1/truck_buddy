@@ -29,10 +29,23 @@ Read at startup or on use (see README.md "Backend environment" for meanings):
 `MEMORY_SQLITE_PATH`, `PARKING_CACHE_DIR`, `PARKING_WARM`, `TPIMS_ENABLED`, `TPIMS_FEEDS`, `WEATHER_ALERTS`,
 `NWS_USER_AGENT`, `CHAIN_CONTROLS`, `CHAIN_DISTRICTS`, `HOS_MOTIVE`, `PLACE_REVIEWS`, `CATEGORIES_EXTRA`,
 `ROUTE_ALTERNATIVES`, `ROUTE_INCIDENTS`, `ROUTE_SPEED_LIMITS`, `REROUTE_ENABLED`, `RATE_LIMIT_PER_MIN`,
-`CORS_ORIGINS`, `DEV_DOCS`, `TRIP_EVENTS_DAYS`.
+`CORS_ORIGINS`, `DEV_DOCS`, `TRIP_EVENTS_DAYS`, `WORKERS` (or uvicorn's `WEB_CONCURRENCY`), `TTS_DIR`,
+`SESSION_STORE`, `TTS_STREAM`.
 
-Data that must survive a deploy: `DATABASE_URL` (or the SQLite file), `PARKING_CACHE_DIR`, the TTS cache dir
-(`.tts_cache` next to the app unless configured). The forced command must keep them outside the unpacked tree.
+## More than one worker
+
+The process holds no state a second worker needs: the dialog lives in `dialog_sessions`, breakdown results in
+`jobs`, parking verdicts and the approach to each entrance in `parking_checks` (mirrored in memory, refreshed
+every minute), TTS clips in `TTS_DIR` (default `backend/data/tts`, keep it outside the unpacked tree and shared
+between workers on one box), and the feeds one worker polls for all (NWS alerts, Caltrans chain controls,
+TPIMS counts) in `feed_cache`; the poller is whichever worker holds the Postgres advisory lock for that feed.
+Set `WORKERS` to the number uvicorn runs: the per-driver budgets (`RATE_LIMIT_PER_MIN`, `RATE_PER_10MIN`,
+`RATE_PER_DAY`) are per process and are divided by it. `TTS_STREAM` is ignored with more than one worker (a
+stream lives in the process that started it). Shutdown waits up to 5 s for background writes (memory, trip
+events, jobs, parking) before closing the pool, so a deploy mid-dialog loses nothing.
+
+Data that must survive a deploy: `DATABASE_URL` (or the SQLite file), `TTS_DIR` (clips and the pinned fixed lines),
+`PARKING_CACHE_DIR` only when the store is off (files are the fallback). The forced command must keep them outside the unpacked tree.
 
 ## Smoke after a deploy
 

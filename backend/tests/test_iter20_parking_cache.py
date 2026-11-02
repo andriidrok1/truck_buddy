@@ -18,6 +18,7 @@ def chk(spots=()):
 
 @pytest.fixture(autouse=True)
 def tmp_store(tmp_path, monkeypatch):
+    monkeypatch.setenv("MEMORY_STORE", "off")  # the files are the fallback when there is no database
     monkeypatch.setattr(parking_store, "DIR", tmp_path)
     monkeypatch.setattr(parking_store, "_mem", {})
     parking._verdict_cache.pop(K, None)
