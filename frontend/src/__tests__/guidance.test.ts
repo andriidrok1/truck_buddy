@@ -3,6 +3,7 @@ import {
   announcement,
   createRouteMatcher,
   cumulativeMeters,
+  farFromRoute,
   FULL_SCAN_ABOVE_M,
   haversineM,
   markSpoken,
@@ -210,5 +211,21 @@ describe("remainingSeconds", () => {
   test("without stops it is the plain share of the distance", () => {
     expect(remainingSeconds({ duration_s: 600, section_starts: [0] }, 300, 1200, 3)).toBe(150);
     expect(remainingSeconds({ duration_s: 600 }, 0, 0, 0)).toBe(0);
+  });
+});
+
+describe("farFromRoute", () => {
+  // ~1.1 km east-west line through Sacramento
+  const line: [number, number][] = [[38.58, -121.5], [38.58, -121.49]];
+  test("a truck on the line or within GPS noise is not far", () => {
+    expect(farFromRoute(line, { lat: 38.58, lng: -121.495 })).toBe(false);
+    expect(farFromRoute(line, { lat: 38.5809, lng: -121.495 })).toBe(false); // ~100 m off
+  });
+  test("a truck parked a few streets away is", () => {
+    expect(farFromRoute(line, { lat: 38.582, lng: -121.495 })).toBe(true); // ~220 m off
+    expect(farFromRoute(line, { lat: 38.7, lng: -121.6 })).toBe(true);
+  });
+  test("no geometry, nothing to compare", () => {
+    expect(farFromRoute([], { lat: 38.58, lng: -121.5 })).toBe(false);
   });
 });

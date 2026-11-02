@@ -24,6 +24,7 @@ import { MESSAGES } from "@/src/constants";
 import { isTester } from "@/src/auth";
 import { chainControlAhead, routePointsAhead } from "@/src/geo/ahead";
 import { switchedLine } from "@/src/geo/routeChoice";
+import { farFromRoute } from "@/src/geo/guidance";
 import { createRerouteGate } from "@/src/geo/offroute";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
@@ -920,7 +921,7 @@ export default function MapScreen() {
 
   /** Re-plans the active route with the current truck profile (after a voice change) or to the entrance;
    * the stops on the way stay (they used to vanish from the line while their chips stayed on screen). */
-  const reroute = async (cause: "profile" | "entrance", failMsg = "Couldn't update the route. Try again."): Promise<boolean> => {
+  const reroute = async (cause: "profile" | "entrance" | "resume", failMsg = "Couldn't update the route. Try again."): Promise<boolean> => {
     const cur = trip().active;
     const gen = trip().routeGen;
     if (!cur) return false;
@@ -994,6 +995,19 @@ export default function MapScreen() {
         .catch(() => {});
     }
   };
+
+  // Resume of a restored route: the first real fix after it decides whether the truck is still near the line.
+  // A parked truck never trips the off-route tracker, so far from it the plan is redone right away.
+  const replanOnFix = useRef(false);
+  useEffect(() => {
+    if (!replanOnFix.current || loc.isDemo) return;
+    replanOnFix.current = false;
+    const cur = trip().active;
+    if (!cur || !trip().driving || !farFromRoute(cur.route.geometry, loc.coords)) return;
+    say("Rerouting.", { priority: PRIORITY.MANEUVER, kind: "system", key: "reroute", ttlMs: 20000 });
+    reroute("resume");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loc.ts, loc.isDemo]);
 
   // Back from the truck editor with new dimensions: same reroute as the voice change, nothing spoken.
   useEffect(() => {
@@ -1247,6 +1261,7 @@ export default function MapScreen() {
           onResume={() => {
             trip().dismissRestored();
             onGo();
+            replanOnFix.current = true;
           }}
           onDismiss={clearRoute}
         />

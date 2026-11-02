@@ -191,3 +191,13 @@ export function formatDistance(m: number) {
   const mi = m / 1609.34;
   return mi < 10 ? `${mi.toFixed(1)} mi` : `${Math.round(mi)} mi`;
 }
+
+/** Beyond this from the line, a resumed route is replanned at once: the off-route tracker waits for the
+ *  truck to move, and until then the banner read "50 ft, turn right onto Auburn Blvd" 15 km away
+ *  (QA 2026-11-02, bug 31). Well above the 50 m highway band, so GPS noise on the line never trips it. */
+export const RESUME_REPLAN_M = 150;
+
+export function farFromRoute(geometry: readonly (readonly [number, number])[], point: LatLng, limitM = RESUME_REPLAN_M): boolean {
+  if (geometry.length === 0) return false;
+  return projectOnRoute(geometry, cumulativeMeters(geometry), point, null).distM > limitM;
+}
