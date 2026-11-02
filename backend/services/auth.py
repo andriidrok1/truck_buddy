@@ -1,9 +1,15 @@
-"""Device tokens: a long-lived JWT per device (sub = driver id).
-Open sign-up issues one without a code (OPEN_ACCESS, on by default); the shared codes still work
-(ACCESS_CODE, and TESTER_CODE for the test-scenario screen). Each driver is rate limited."""
+"""Device tokens: a JWT per device (sub = the device's driver id) plus a refresh token kept hashed on the
+device row. Open sign-up issues one without a code (OPEN_ACCESS, on by default); the shared codes still
+work (ACCESS_CODE, and TESTER_CODE for the test-scenario screen); a fleet code binds the device to an
+organisation and a truck (services/tenancy.py). Each driver is rate limited.
+
+`require_driver` hands endpoints a `Principal`: a str (the sub, so every place that keys on the driver id
+keeps working) that also knows the driver's org, driver row, vehicle and role. Tokens from before tenancy
+carry no org claims; the org is looked up (or created as an org of one) on the way in."""
 import hashlib
 import hmac
 import os
+import secrets as _secrets
 import time
 import uuid
 from collections import defaultdict, deque
@@ -15,7 +21,31 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from services.settings import settings
 from typing import Optional
 
-JWT_DAYS = 365
+from services import tenancy
+
+JWT_DAYS = 30  # access token; the refresh token (REFRESH_DAYS) gets a new one
+REFRESH_DAYS = 365
+LEGACY_OK = True  # tokens issued before refresh tokens existed (365-day access) stay valid until they expire
+
+
+class Principal(str):
+    """The authenticated device: the sub as a str, with the tenancy around it."""
+    driver_id: Optional[str]
+    org_id: Optional[str]
+    vehicle_id: Optional[str]
+    role: str
+
+    def __new__(cls, sub: str, role: str = "driver", driver_id: Optional[str] = None, org_id: Optional[str] = None,
+                vehicle_id: Optional[str] = None):
+        p = super().__new__(cls, sub)
+        p.role, p.driver_id, p.org_id, p.vehicle_id = role, driver_id, org_id, vehicle_id
+        return p
+
+    @property
+    def sub(self) -> str:
+        return str(self)
+
+
 MAX_ATTEMPTS, WINDOW_S = 5, 600
 MAX_DEVICES_PER_IP = 20  # new device tokens per IP per WINDOW_S
 _attempts: "defaultdict[str, deque]" = defaultdict(deque)
@@ -51,10 +81,48 @@ def _window(store: "defaultdict[str, deque]", key: str, window_s: float, now: fl
     return q
 
 
-def _token(role: str) -> str:
+def _token(role: str, sub: Optional[str] = None, claims: Optional[dict] = None, days: int = JWT_DAYS) -> str:
     now_dt = datetime.now(timezone.utc)
-    payload = {"sub": f"drv_{uuid.uuid4().hex}", "role": role, "iat": now_dt, "exp": now_dt + timedelta(days=JWT_DAYS)}
+    payload = {"sub": sub or f"drv_{uuid.uuid4().hex}", "role": role, "iat": now_dt, "exp": now_dt + timedelta(days=days),
+               **(claims or {})}
     return jwt.encode(payload, _secret(), algorithm="HS256")
+
+
+def sub_of(token: str) -> str:
+    """The sub of a token this server issued (no expiry check: it was minted a moment ago)."""
+    return jwt.decode(token, _secret(), algorithms=["HS256"], options={"verify_exp": False})["sub"]
+
+
+def _hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+async def issue(sub: str, role: str) -> dict:
+    """Access token with the device's tenancy claims plus a fresh refresh token (stored hashed; the previous one
+    stops working). Without a store the access token alone comes back, as before."""
+    dev = await tenancy.ensure_solo_org(sub, role)
+    claims = {}
+    if dev is not None:
+        claims = {"org_id": dev.org_id, "driver_id": dev.driver_id}
+        if dev.vehicle_id:
+            claims["vehicle_id"] = dev.vehicle_id
+        role = dev.role or role
+    out = {"access_token": _token(role, sub, claims), "token_type": "bearer", "role": role}
+    if dev is not None:
+        refresh = _secrets.token_urlsafe(32)
+        await tenancy.set_refresh(sub, _hash(refresh))
+        out["refresh_token"] = refresh
+        out["expires_in"] = JWT_DAYS * 86400
+    return out
+
+
+async def refresh(refresh_token: str) -> dict:
+    """A new access token (and a new refresh token) for the device whose refresh token this is."""
+    sub = await tenancy.sub_by_refresh(_hash(refresh_token))
+    if not sub:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    dev = await tenancy.device_of(sub)
+    return await issue(sub, dev.role if dev else "driver")
 
 
 def open_access() -> bool:
@@ -127,20 +195,53 @@ def _claims(credentials: HTTPAuthorizationCredentials | None) -> dict:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
-def require_driver(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:
-    """Driver id from the Bearer token; 401 when missing or invalid."""
+async def _principal(claims: dict) -> Principal:
+    """The token's sub with its tenancy: from the claims when the token carries them, else from the device row
+    (created as an org of one for a token from before tenancy, or for a store that was just turned on)."""
+    sub, role = claims["sub"], str(claims.get("role") or "driver")
+    if claims.get("org_id"):
+        dev = await tenancy.device_of(sub)  # a bind since the token was issued wins over the claims
+        if dev is not None:
+            return Principal(sub, dev.role or role, dev.driver_id, dev.org_id, dev.vehicle_id)
+        return Principal(sub, role, claims.get("driver_id"), claims["org_id"], claims.get("vehicle_id"))
+    try:
+        dev = await tenancy.ensure_solo_org(sub, role)
+    except Exception as e:  # noqa: BLE001 - a store hiccup must not lock every driver out
+        import logging
+        logging.getLogger("truckbuddy.auth").warning("tenancy lookup failed for %s: %s", sub, e)
+        dev = None
+    if dev is None:
+        return Principal(sub, role)
+    return Principal(sub, dev.role or role, dev.driver_id, dev.org_id, dev.vehicle_id)
+
+
+async def require_driver(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> Principal:
+    """The device behind the Bearer token (a Principal: the driver id as a str, plus org/vehicle/role); 401 when
+    missing or invalid."""
     claims = _claims(credentials)
     if claims.get("role") != "tester":
         _limit(claims["sub"])
-    return claims["sub"]
+    return await _principal(claims)
 
 
-def require_tester(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:
-    """Driver id from a token issued for TESTER_CODE; 403 for a plain driver (the tester screen reads across drivers)."""
+async def require_tester(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> Principal:
+    """A token issued for TESTER_CODE; 403 for a plain driver (the tester screen reads across drivers)."""
     claims = _claims(credentials)
     if claims.get("role") != "tester":
         raise HTTPException(status_code=403, detail="Tester access required")
-    return claims["sub"]
+    return await _principal(claims)
+
+
+def require_org_member(*roles: str):
+    """Dependency: the principal must belong to an organisation and, when roles are given, hold one of them
+    (owner | dispatcher | driver). A plain driver token on a fleet route gets 403."""
+    async def _dep(principal: Principal = Depends(require_driver)) -> Principal:
+        if not principal.org_id:
+            raise HTTPException(status_code=403, detail="Fleet access required")
+        if roles and principal.role not in roles:
+            raise HTTPException(status_code=403, detail="Not allowed for this role")
+        return principal
+    return _dep
 
 
 def _limit(driver: str) -> None:
@@ -160,7 +261,7 @@ def _limit(driver: str) -> None:
     day.append(now)
 
 
-def rate_limited(driver: str = Depends(require_driver)) -> str:
+def rate_limited(driver: Principal = Depends(require_driver)) -> Principal:
     """require_driver (resolved once per request by FastAPI, so any check inside it runs once even when an
     endpoint also declares Depends(require_driver)) plus the per-driver budget; 429 with a line the app can speak."""
     if not take_token(driver, time.monotonic()):

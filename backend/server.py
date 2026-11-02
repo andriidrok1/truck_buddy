@@ -24,7 +24,7 @@ from services.parking import cached_parking, check_parking, fetch_satellite  # n
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import approach, approach_api, auth, chains, kv, leader, memory, onboarding, parking_store, parking_warm, session_store, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services import approach, approach_api, auth, chains, kv, leader, memory, onboarding, parking_store, parking_warm, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
 from services.settings import settings  # noqa: E402
 
 WEATHER_BUDGET_S = 2.5  # NWS alerts on /route may add at most this much; never the route itself
@@ -58,15 +58,78 @@ class AccessCodeRequest(BaseModel):
     code: str = Field(min_length=1, max_length=64)
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=16, max_length=128)
+
+
+class FleetCodeRequest(BaseModel):
+    code: str = Field(min_length=4, max_length=32)
+
+
+async def _issued(token: str, role: str) -> dict:
+    """The freshly minted device token re-issued with its tenancy claims and a refresh token (same shape plus
+    refresh_token/expires_in when a store is on)."""
+    sub = auth.sub_of(token)
+    try:
+        return await auth.issue(sub, role)
+    except Exception as e:  # noqa: BLE001 - the store is down: the plain token still works
+        logger.warning("token issue without tenancy: %s", e)
+        return {"access_token": token, "token_type": "bearer", "role": role}
+
+
 @public.post("/auth/access-code")
 async def access_code(req: AccessCodeRequest, request: Request):
     token, role = auth.redeem(req.code, request)
-    return {"access_token": token, "token_type": "bearer", "role": role}
+    return await _issued(token, role)
 
 
 @public.post("/auth/device")
 async def auth_device(request: Request):
-    return {"access_token": auth.register_device(request), "token_type": "bearer", "role": "driver"}
+    return await _issued(auth.register_device(request), "driver")
+
+
+@public.post("/auth/refresh")
+async def auth_refresh(req: RefreshRequest):
+    """A new access token for a device's refresh token (the refresh token rotates)."""
+    return await auth.refresh(req.refresh_token)
+
+
+@api.post("/auth/fleet-code")
+async def auth_fleet_code(req: FleetCodeRequest, principal: auth.Principal = Depends(auth.require_driver)):
+    """Binds this device to the fleet (and truck) the code was made for; answers with a token carrying the org."""
+    try:
+        dev = await tenancy.bind_fleet_code(principal.sub, req.code)
+    except tenancy.BadFleetCode:
+        raise HTTPException(status_code=401, detail="That fleet code isn't right or has expired")
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Fleet codes are unavailable right now")
+    out = await auth.issue(principal.sub, dev.role)
+    out.update({"org_id": dev.org_id, "vehicle_id": dev.vehicle_id})
+    return out
+
+
+@api.get("/me/profile", response_model=TruckProfile)
+async def me_profile(principal: auth.Principal = Depends(auth.require_driver)):
+    """The truck profile the server routes for when the app sends none: the vehicle's when the device is bound to
+    one, else the driver's. 404 when nothing is stored yet (the app keeps its local copy)."""
+    try:
+        profile = await tenancy.profile_get(principal.sub)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("profile read failed: %s", e)
+        raise HTTPException(status_code=503, detail="Profile is unavailable right now")
+    if profile is None:
+        raise HTTPException(status_code=404, detail="No stored profile")
+    return profile
+
+
+@api.put("/me/profile", response_model=TruckProfile)
+async def me_profile_put(profile: TruckProfile, principal: auth.Principal = Depends(auth.require_driver)):
+    try:
+        await tenancy.profile_put(principal.sub, profile)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("profile write failed: %s", e)
+        raise HTTPException(status_code=503, detail="Profile is unavailable right now")
+    return profile
 
 
 @api.get("/auth/check")
@@ -137,6 +200,7 @@ async def build_route(req: RouteRequest, driver: str = Depends(auth.require_driv
         if len(stop) != 2:
             raise HTTPException(status_code=422, detail="via stops are [lat, lng] pairs")
         _require_us(stop[0], stop[1])
+    req.truck_profile = await tenancy.effective_profile(driver, req.truck_profile)
     try:
         route = await get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile,
                                                    via=req.via)
@@ -160,6 +224,7 @@ async def nudges_endpoint(req: NudgeRequest, request: Request, driver: str = Dep
     """Anything the copilot wants to say on its own right now (break due, parking before the shift ends)."""
     _require_us(req.lat, req.lng)
     req.motive_key = _motive_key(request)
+    req.truck_profile = await tenancy.effective_profile(driver, req.truck_profile)
     if req.session_id:
         req.session_id = f"{driver}:{req.session_id}"[:64]
     else:
@@ -194,6 +259,7 @@ async def reroute(req: RerouteRequest, driver: str = Depends(auth.require_driver
         if len(stop) != 2:
             raise HTTPException(status_code=422, detail="via stops are [lat, lng] pairs")
         _require_us(stop[0], stop[1])
+    req.truck_profile = await tenancy.effective_profile(driver, req.truck_profile)
     try:
         route = await get_routing_provider().reroute(req.handle, req.lat, req.lng, req.heading,
                                                      *approach.target(req.place), req.truck_profile,
@@ -306,6 +372,7 @@ async def agent(req: AgentRequest, request: Request, speak: bool = Query(False),
                 driver: str = Depends(auth.require_driver)):
     timing.begin()
     req.motive_key = _motive_key(request)
+    req.truck_profile = await tenancy.effective_profile(driver, req.truck_profile)
     return _finish(await _run_agent(req, speak, driver), {"stt": req.stt_ms} if req.stt_ms else None, driver, req.trip_id)
 
 
@@ -396,6 +463,7 @@ async def voice_turn(
         truck = TruckProfile(**json.loads(truck_profile)) if truck_profile else TruckProfile()
     except Exception:
         raise HTTPException(status_code=422, detail="Invalid truck_profile")
+    truck = await tenancy.effective_profile(driver, truck)
     name = audio.filename or "speech.m4a"
     if "." not in name:
         name += ".webm" if "webm" in (audio.content_type or "") else ".m4a"

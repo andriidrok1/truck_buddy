@@ -12,6 +12,7 @@ python-multipart==0.0.32
 python-dotenv==1.2.4
 imageio-ffmpeg==0.6.0
 requests==2.34.2
+cryptography==50.0.2
 # tests and style
 pytest==9.1.1
 pytest-xdist==3.8.0
