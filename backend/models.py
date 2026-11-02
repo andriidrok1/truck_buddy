@@ -251,6 +251,7 @@ class RouteRequest(BaseModel):
     skip_parking: bool = False  # breakdown providers: the driver needs the shop, not a parking check
     truck_profile: TruckProfile = Field(default_factory=lambda: TruckProfile())
     via: List[List[float]] = Field(default_factory=list, max_length=MAX_VIA)  # stops on the way, [[lat, lng], ...]
+    trip_id: Optional[str] = Field(None, max_length=64)  # the app's id of the drive, so trip events line up
 
 
 class NudgeRequest(BaseModel):
@@ -315,6 +316,7 @@ class RerouteRequest(BaseModel):
     traveled_m: float = Field(0.0, ge=0)  # metres driven along that section
     truck_profile: TruckProfile = Field(default_factory=TruckProfile)
     via: List[List[float]] = Field(default_factory=list, max_length=MAX_VIA)  # kept when routing fresh
+    trip_id: Optional[str] = Field(None, max_length=64)
 
 
 class ParkingRequest(BaseModel):
@@ -363,6 +365,7 @@ class AgentRequest(BaseModel):
     stt_ms: Optional[int] = Field(None, ge=0, le=60000)  # how long /voice/transcribe took, for the turn log
     stt_confidence: Optional[float] = Field(None, ge=0, le=1)  # from /voice/transcribe; low = ask before acting
     speed_mps: Optional[float] = Field(None, ge=0, le=60)  # GPS speed; at highway speed replies get shorter
+    trip_id: Optional[str] = Field(None, max_length=64)  # the app's id of the current drive (trip events)
 
 
 AgentStatus = Literal["options", "route_set", "chat", "confirm", "no_results", "not_understood", "researching",

@@ -53,7 +53,9 @@ def _error(text: str, reply: str, source: str) -> "AgentResponse":
 def _route_failed(text: str, e: "RouteFailed", source: str) -> "AgentResponse":
     """Routing is down -> "try again in a minute"; the router found no truck route -> say so, retrying won't help."""
     logger.warning("agent routing failed: %s", e)
-    return _error(text, NO_TRUCK_ROUTE if isinstance(e.__cause__, NoTruckRoute) else ROUTE_DOWN, source)
+    no_route = isinstance(e.__cause__, NoTruckRoute)
+    timing.note("error", "no_truck_route" if no_route else "route_down")
+    return _error(text, NO_TRUCK_ROUTE if no_route else ROUTE_DOWN, source)
 
 
 def _nearest_index(geometry: list, lat: float, lng: float) -> int:
@@ -1247,8 +1249,10 @@ class LlmAgentProvider:
             if far:
                 extra, old = far
                 # "yes" re-runs this turn with the resolved stop (no second geocode); "no" adds nothing.
-                sess["pending"] = {"text": text, "d": {**d, "_confirmed": True, "place": stop.model_dump()},
+                sess["pending"] = {"text": text, "kind": "stop_guard",
+                                   "d": {**d, "_confirmed": True, "place": stop.model_dump()},
                                    "no": {"reply": VIA_FAR_NO}, "yes": VIA_FAR_YES}
+                timing.note("stop_guard", "asked")
                 logger.info("add_stop %s is %.0f min out of the way: asking first", stop.name, extra / 60)
                 return AgentResponse(status="confirm", transcript=text, source=self.source,
                                      reply=VIA_FAR.format(name=stop.name.split(",")[0], extra=_minutes_said(round(extra / 60)),
@@ -1420,11 +1424,16 @@ class LlmAgentProvider:
             return bd
         pending = sess.pop("pending", None)
         if pending:  # "Did you say Reno?" was asked last turn
+            kind = pending.get("kind")  # confirm | stop_guard | ...: the answer goes to the turn log and trip events
             if YES.match(text) or (pending.get("yes") is not None and pending["yes"].match(text)):
                 d = pending["d"]
                 timing.note("intent", str(d.get("intent")))
+                if kind:
+                    timing.note(kind, "accepted")
                 return await self._dispatch(req, sess, pending["text"], d, confirmed=True)
             if NO.match(text):
+                if kind:
+                    timing.note(kind, "declined")
                 branch = pending.get("no")
                 if branch:  # a question with a real "no" path (e.g. "chains on board?")
                     if branch.get("then_pending"):
@@ -1454,7 +1463,7 @@ class LlmAgentProvider:
         what = str(d.get("query") or d.get("near") or "").strip()
         if not what:
             return None
-        sess["pending"] = {"d": d, "text": req.text or ""}
+        sess["pending"] = {"d": d, "text": req.text or "", "kind": "confirm"}
         sess["confirmed_once"] = True
         timing.note("confirm", "asked")
         return AgentResponse(status="confirm", transcript=req.text or "", reply=CONFIRM.format(what=what),
@@ -1587,9 +1596,11 @@ class LlmAgentProvider:
             return _route_failed(text, e, self.source)
         except (PlacesUnavailable, httpx.HTTPError) as e:
             logger.warning("agent places/geocode failed: %s: %s", type(e).__name__, e)
+            timing.note("error", "places_down")
             return _error(text, PLACES_DOWN, self.source)
         except Exception as e:  # noqa: BLE001
             logger.exception("agent action failed: %s: %s", type(e).__name__, e)
+            timing.note("error", "broke")
             return _error(text, SOMETHING_BROKE, self.source)
         if intent == "parking":
             if str(d.get("near") or "").strip():  # "where can I park close to my delivery in X": a search
@@ -1599,6 +1610,7 @@ class LlmAgentProvider:
                     return _route_failed(text, e, self.source)
                 except (PlacesUnavailable, httpx.HTTPError) as e:
                     logger.warning("agent places/geocode failed: %s: %s", type(e).__name__, e)
+                    timing.note("error", "places_down")
                     return _error(text, PLACES_DOWN, self.source)
             return self._parking(req, d, sess, text)
         if intent == "control":

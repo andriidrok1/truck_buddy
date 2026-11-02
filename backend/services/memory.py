@@ -45,6 +45,18 @@ CREATE TABLE IF NOT EXISTS driver_facts (
     turns_seen INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS trip_events (
+    id BIGSERIAL PRIMARY KEY,
+    driver TEXT NOT NULL,
+    trip_id TEXT,
+    kind TEXT NOT NULL,
+    at TIMESTAMPTZ NOT NULL,
+    source TEXT NOT NULL,
+    data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS trip_events_driver_at ON trip_events (driver, at);
+CREATE INDEX IF NOT EXISTS trip_events_trip_at ON trip_events (trip_id, at);
+CREATE INDEX IF NOT EXISTS trip_events_at ON trip_events (at);
 """
 
 
@@ -63,6 +75,18 @@ CREATE TABLE IF NOT EXISTS driver_facts (
     turns_seen INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS trip_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    driver TEXT NOT NULL,
+    trip_id TEXT,
+    kind TEXT NOT NULL,
+    at TEXT NOT NULL,
+    source TEXT NOT NULL,
+    data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS trip_events_driver_at ON trip_events (driver, at);
+CREATE INDEX IF NOT EXISTS trip_events_trip_at ON trip_events (trip_id, at);
+CREATE INDEX IF NOT EXISTS trip_events_at ON trip_events (at);
 """
 _sqlite: sqlite3.Connection | None = None
 _sqlite_lock = threading.Lock()
@@ -280,7 +304,7 @@ async def clear_facts(driver: str) -> int:
 
 
 async def clear(driver: str) -> int:
-    """Everything about the driver: the turns and the learned facts."""
+    """Everything about the driver: the turns, the learned facts and the trip events (the count is turns)."""
     if _pending.get(driver):
         await asyncio.gather(*list(_pending[driver]), return_exceptions=True)
     kind = store()
@@ -290,9 +314,11 @@ async def clear(driver: str) -> int:
         def _wipe(con):
             n = con.execute("DELETE FROM conversation WHERE driver = ?", (driver,)).rowcount
             con.execute("DELETE FROM driver_facts WHERE driver = ?", (driver,))
+            con.execute("DELETE FROM trip_events WHERE driver = ?", (driver,))
             return n
         return await _sq_run(_wipe)
     pool = await _db()
     status = await pool.execute("DELETE FROM conversation WHERE driver = $1", driver)
     await pool.execute("DELETE FROM driver_facts WHERE driver = $1", driver)
+    await pool.execute("DELETE FROM trip_events WHERE driver = $1", driver)
     return int(status.split()[-1])

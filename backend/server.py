@@ -24,7 +24,7 @@ from services.parking import cached_parking, check_parking, fetch_satellite  # n
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import approach, approach_api, auth, chains, memory, onboarding, parking_store, parking_warm, timing, tpims, voice, weather  # noqa: E402,E501
+from services import approach, approach_api, auth, chains, memory, onboarding, parking_store, parking_warm, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
 from services.speech_text import SENTENCE_END  # noqa: E402
 
 WEATHER_BUDGET_S = 2.5  # NWS alerts on /route may add at most this much; never the route itself
@@ -127,7 +127,7 @@ async def search_places(
 
 
 @api.post("/route", response_model=RouteResponse)
-async def build_route(req: RouteRequest):
+async def build_route(req: RouteRequest, driver: str = Depends(auth.require_driver)):
     place = req.place
     if place is None and req.place_id:
         place = await get_places_provider().get(req.place_id, req.lat, req.lng)
@@ -143,8 +143,10 @@ async def build_route(req: RouteRequest):
         route = await get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile,
                                                    via=req.via)
     except NoTruckRoute:
+        trip_events.add_later(driver, req.trip_id, "route_failed", {"where": "route", "error": "no_truck_route", "place_id": place.id})
         raise HTTPException(status_code=422, detail="No truck route to this place from here")
     except RoutingUnavailable:
+        trip_events.add_later(driver, req.trip_id, "route_failed", {"where": "route", "error": "unavailable", "place_id": place.id})
         raise HTTPException(status_code=503, detail="Truck routing is unavailable right now")
     # NWS alerts and Caltrans chain controls along the way; slow or down sources cost at most WEATHER_BUDGET_S
     # and never the route itself.
@@ -177,7 +179,7 @@ REROUTE_ADVISORY_BUDGET_S = 1.0
 
 
 @api.post("/reroute", response_model=RouteResponse)
-async def reroute(req: RerouteRequest):
+async def reroute(req: RerouteRequest, driver: str = Depends(auth.require_driver)):
     """The app detected the driver left the route: a new route from the current position to the same place.
     No new satellite check (the destination hasn't changed); the cached parking verdict comes along."""
     _require_us(req.lat, req.lng)
@@ -192,13 +194,25 @@ async def reroute(req: RerouteRequest):
                                                      section_index=req.section_index, traveled_m=req.traveled_m,
                                                      via=req.via)
     except NoTruckRoute:
+        _reroute_event(driver, req, ok=False, error="no_truck_route")
         raise HTTPException(status_code=422, detail="No truck route to this place from here")
     except RoutingUnavailable:
+        _reroute_event(driver, req, ok=False, error="unavailable")
         raise HTTPException(status_code=503, detail="Truck routing is unavailable right now")
+    _reroute_event(driver, req, ok=True)
     # The new route needs its own alerts and chain controls, or the advisories vanish after a reroute; the
     # driver is off the route while this runs, so the budget is shorter.
     await _advisories(route, REROUTE_ADVISORY_BUDGET_S, 0)
     return RouteResponse(place=req.place, route=route, parking=cached_parking(req.place))
+
+
+def _reroute_event(driver: str, req: RerouteRequest, ok: bool, error: Optional[str] = None) -> None:
+    """One trip event per /reroute: how far along the truck was and whether the engine answered."""
+    data = {"section_index": req.section_index, "handle": bool(req.handle), "via": len(req.via), "ok": ok}
+    if error:
+        data["error"] = error
+        trip_events.add_later(driver, req.trip_id, "route_failed", {"where": "reroute", "error": error, "place_id": req.place.id})
+    trip_events.add_later(driver, req.trip_id, "reroute_requested", data)
 
 
 async def _advisories(route: RouteInfo, budget_s: float, alt_budget_s: float) -> None:
@@ -263,8 +277,10 @@ async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
 TURN_STAGES = ("upload", "stt", "llm_round_1", "tools", "tts")
 
 
-def _finish(res: AgentResponse, extra: Optional[dict] = None) -> AgentResponse:
-    """Timings onto the response and one `turn ...` log line per copilot turn (scripts/turn_stats.py reads them)."""
+def _finish(res: AgentResponse, extra: Optional[dict] = None, driver: Optional[str] = None,
+            trip_id: Optional[str] = None) -> AgentResponse:
+    """Timings onto the response, one `turn ...` log line per copilot turn (scripts/turn_stats.py reads them), and
+    the turn's trip events when the driver is known (services/trip_events.from_turn)."""
     res.timings = {**(extra or {}), **timing.current()}
     res.timings["total"] = sum(v for k, v in res.timings.items() if k != "total" and not timing.is_counter(k))
     # Server-side estimate of when the driver first hears the reply: everything before the first clip is ready.
@@ -274,6 +290,7 @@ def _finish(res: AgentResponse, extra: Optional[dict] = None) -> AgentResponse:
     fields = {"status": res.status, "intent": res.intent or "-", **{k: v for k, v in notes.items() if k != "intent"},
               **res.timings}
     logger.info("turn %s", " ".join(f"{k}={v}" for k, v in fields.items()))
+    trip_events.from_turn(driver, trip_id, res.status, res.intent, notes, res.transcript or "")
     return res
 
 
@@ -282,7 +299,7 @@ async def agent(req: AgentRequest, request: Request, speak: bool = Query(False),
                 driver: str = Depends(auth.require_driver)):
     timing.begin()
     req.motive_key = _motive_key(request)
-    return _finish(await _run_agent(req, speak, driver), {"stt": req.stt_ms} if req.stt_ms else None)
+    return _finish(await _run_agent(req, speak, driver), {"stt": req.stt_ms} if req.stt_ms else None, driver, req.trip_id)
 
 
 def _motive_key(request: Request) -> Optional[str]:
@@ -351,6 +368,7 @@ async def voice_turn(
     truck_profile: Optional[str] = Form(None),  # JSON TruckProfile from the in-app editor
     active_distance_mi: Optional[float] = Form(None, ge=0),
     active_duration_min: Optional[int] = Form(None, ge=0),
+    trip_id: Optional[str] = Form(None, max_length=64),  # the app's id of the drive (trip events)
     driver: str = Depends(auth.require_driver),
     request: Request = None,
 ):
@@ -385,9 +403,9 @@ async def voice_turn(
     logger.info("voice transcript=%r confidence=%s", text, confidence)
     req = AgentRequest(text=text, lat=lat, lng=lng, active_place=current, truck_profile=truck, session_id=session_id,
                        active_distance_mi=active_distance_mi, active_duration_min=active_duration_min,
-                       stt_confidence=confidence,
+                       stt_confidence=confidence, trip_id=trip_id,
                        motive_key=_motive_key(request) if request is not None else None)
-    return _finish(await _run_agent(req, speak=True, driver=driver))
+    return _finish(await _run_agent(req, speak=True, driver=driver), None, driver, trip_id)
 
 
 @api.post("/voice/transcribe")
@@ -521,12 +539,14 @@ async def voice_audio(audio_id: str, request: Request):
 app.include_router(public)
 app.include_router(api)
 app.include_router(approach_api.router, dependencies=[Depends(auth.rate_limited)])
+app.include_router(trips_api.router)
 app.include_router(parking_warm.router)
 
 
 @app.on_event("startup")
 async def _memory_up():
     _bg(memory.warm())
+    _bg(trip_events.prune())  # the trip log keeps TRIP_EVENTS_DAYS; the rest goes at every start
     _bg(weather.warm())  # the NWS alert feed and its zone polygons, so the first route pays nothing
     await chains.start()  # Caltrans chain-control poller (CHAIN_CONTROLS=0 to skip)
     await tpims.start()  # live truck parking counts (TPIMS_ENABLED=0 to skip)

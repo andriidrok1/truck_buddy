@@ -106,17 +106,30 @@ def take_token(driver: str, now: float, per_min: int = RATE_PER_MIN) -> bool:
     return True
 
 
-def require_driver(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:
-    """Driver id from the Bearer token; 401 when missing or invalid."""
+def _claims(credentials: HTTPAuthorizationCredentials | None) -> dict:
+    """The Bearer token's claims; 401 when missing or invalid."""
     if not credentials or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Access code required")
     try:
-        claims = jwt.decode(credentials.credentials, _secret(), algorithms=["HS256"],
-                            options={"require": ["sub", "iat", "exp"]})
+        return jwt.decode(credentials.credentials, _secret(), algorithms=["HS256"],
+                          options={"require": ["sub", "iat", "exp"]})
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+def require_driver(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:
+    """Driver id from the Bearer token; 401 when missing or invalid."""
+    claims = _claims(credentials)
     if claims.get("role") != "tester":
         _limit(claims["sub"])
+    return claims["sub"]
+
+
+def require_tester(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:
+    """Driver id from a token issued for TESTER_CODE; 403 for a plain driver (the tester screen reads across drivers)."""
+    claims = _claims(credentials)
+    if claims.get("role") != "tester":
+        raise HTTPException(status_code=403, detail="Tester access required")
     return claims["sub"]
 
 

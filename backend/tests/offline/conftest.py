@@ -269,3 +269,14 @@ def api_client():
             yield c
     finally:
         mp.undo()
+
+
+@pytest.fixture
+def sqlite_store(tmp_path, monkeypatch):
+    """The conversation memory and the trip log on a throwaway SQLite file."""
+    from services import memory
+    monkeypatch.setenv("MEMORY_STORE", "sqlite")
+    monkeypatch.setenv("MEMORY_SQLITE_PATH", str(tmp_path / "mem.sqlite"))
+    run(memory.close())
+    yield tmp_path / "mem.sqlite"
+    run(memory.close())
