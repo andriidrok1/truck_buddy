@@ -169,3 +169,12 @@ def test_route_and_reroute_endpoints_accept_via(api_client, fake_http):
     assert api_client.post("/api/route", json={**body, "via": [[1, 2], [3, 4], [5, 6], [7, 8]]}).status_code == 422
     assert api_client.post("/api/route", json={**body, "via": [[48.86, 2.35]]}).status_code == 422  # Paris
     assert api_client.post("/api/route", json={**body, "via": [[38.9]]}).status_code == 422
+
+
+def test_reroute_fallback_only_keeps_the_stops_still_ahead(fake_http):
+    fake_http.add("router.hereapi.com", "/v8/routes/h", status=400, text="gone")
+    fake_http.add("router.hereapi.com", "/v8/routes", json=DATA)
+    info = run(routing.get_routing_provider().reroute("h", 39.0, -120.5, 80, 39.53, -119.81, TruckProfile(),
+                                                      section_index=1, via=[(38.9, -121.08), (39.6, -119.25)]))
+    assert info.via == [[39.6, -119.25]]  # the first stop ended section 0; the truck is on section 1
+    assert _vias(fake_http.calls[1]) == ["39.6,-119.25!stopDuration=1800"]

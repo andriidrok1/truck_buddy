@@ -12,6 +12,7 @@ from conftest import fixture_json, params_of, run
 
 from models import TruckProfile
 from services import routing
+from services.errors import NoTruckRoute
 from services.routing import MAX_POINTS, _Index, _here_parse, _simplify, _stops_s, _thin, _thin_indices
 
 DATA = fixture_json("here/route_sac_reno")
@@ -57,7 +58,7 @@ def test_empty_or_broken_bodies_raise_not_crash():
         _here_parse({"routes": []})
     with pytest.raises(RuntimeError):
         _here_parse({"routes": [{"sections": []}]})
-    with pytest.raises(RuntimeError):
+    with pytest.raises(NoTruckRoute, match="Couldn't match origin"):  # HERE answered: no route, not an outage
         _here_parse(fixture_json("here/error_no_route")["body"])
 
 
@@ -144,3 +145,12 @@ def test_here_5xx_with_key_set_is_routing_unavailable(fake_http):
     fake_http.add("router.hereapi.com", "/v8/routes", status=503, text="down")
     with pytest.raises(routing.RoutingUnavailable):
         run(routing.get_routing_provider().route(38.58, -121.49, 39.53, -119.81, TruckProfile()))
+
+
+def test_no_route_is_not_an_outage(fake_http, api_client):
+    fake_http.add("router.hereapi.com", "/v8/routes", json=fixture_json("here/error_no_route")["body"])
+    with pytest.raises(NoTruckRoute):
+        run(routing.get_routing_provider().route(38.58, -121.49, 39.53, -119.81, TruckProfile()))
+    place = {"id": "x", "name": "Pier 7", "category": "truck_stop", "lat": 39.53, "lng": -119.81}
+    r = api_client.post("/api/route", json={"lat": 38.58, "lng": -121.49, "place": place, "skip_parking": True})
+    assert r.status_code == 422 and "No truck route" in r.json()["detail"]

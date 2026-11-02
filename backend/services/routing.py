@@ -21,6 +21,7 @@ from services.http import client
 
 from models import Incident, Maneuver, RouteInfo, SpeedLimit, TrafficSegment, TruckProfile
 from services.approach import from_route
+from services.errors import NoTruckRoute
 from services.flags import on
 from services.geo import haversine_km, km_to_mi
 
@@ -409,7 +410,10 @@ def _here_parse(data: dict, truck: Optional[TruckProfile] = None) -> RouteInfo:
     (pure; no I/O). An alternative HERE can't fully parse is dropped, never the primary."""
     routes = (data or {}).get("routes") or []
     if not routes or not routes[0].get("sections"):
-        raise RuntimeError("HERE returned no truck route")
+        # A 200 with no route is HERE's answer, not a hiccup: "couldNotMatchOrigin", "noRouteFound"...
+        why = "; ".join(str(n.get("title") or n.get("code") or "") for n in (data or {}).get("notices") or []
+                        if isinstance(n, dict)) or "no truck route"
+        raise NoTruckRoute(why)
     primary = _parse_route(routes[0], truck)
     for alt in routes[1:]:
         try:
@@ -540,6 +544,10 @@ def _notices(raw: List[dict], t: TruckProfile) -> tuple[List[str], Optional[str]
             msg = "Route includes a ferry."
             if msg not in other:
                 other.append(msg)
+        elif "tunnel" in code:  # violatedAvoidTunnel: the driver asked to avoid tunnels and there is no way around one
+            msg = "A tunnel couldn't be avoided on this route."
+            if msg not in other:
+                other.append(msg)
         elif code.startswith("violated") or str(n.get("severity") or "").lower() == "critical":
             msg = "Check the route for restrictions."
             if msg not in other:
@@ -621,6 +629,7 @@ class TruckRoutingProvider:
         n_alt = default_alternatives() if alternatives is None else max(0, alternatives)
         via = [[float(v[0]), float(v[1])] for v in via]
         failed: list[str] = []
+        no_route: Optional[NoTruckRoute] = None
         for key, fn in (("HERE_API_KEY", _here), ("ORS_API_KEY", _ors)):
             if not os.environ.get(key):
                 continue
@@ -633,9 +642,14 @@ class TruckRoutingProvider:
                     alt.approach = from_route(alt)
                     alt.via = via
                 return info
+            except NoTruckRoute as e:  # the router answered: another provider may still know a way
+                logger.warning("%s found no truck route: %s", fn.__name__, e)
+                no_route = no_route or e
             except Exception as e:  # noqa: BLE001 - fall through to the next provider
                 logger.warning("%s routing failed: %s", fn.__name__, e)
                 failed.append(f"{fn.__name__}: {type(e).__name__}")
+        if no_route is not None:  # "no route" beats "down": the driver should pick another place, not wait
+            raise no_route
         if failed:  # a real provider is configured: never hand the driver a made-up line
             raise RoutingUnavailable("; ".join(failed))
         info = _mock(from_lat, from_lng, to_lat, to_lng)
@@ -659,7 +673,10 @@ class TruckRoutingProvider:
                 return info
             except Exception as e:  # noqa: BLE001 - expired/invalid handle, HERE hiccup: fall back
                 logger.warning("re-route by handle failed, routing fresh: %s", e)
-        info = await self.route(lat, lng, to_lat, to_lng, t, alternatives=0, via=via)
+        # A via stop ends a section: on section k the first k stops are behind the truck. Routing fresh
+        # through all of them sent the driver back to a stop already made.
+        ahead = list(via)[max(0, int(section_index)):]
+        info = await self.route(lat, lng, to_lat, to_lng, t, alternatives=0, via=ahead)
         info.alternatives = []  # a re-route swaps the line under the driver; no chooser mid-drive
         return info
 

@@ -144,3 +144,8 @@ def test_ors_rounds_up_too(fake_http, monkeypatch):
     body = json.loads(fake_http.calls[0].content)
     restr = body["options"]["profile_params"]["restrictions"]
     assert restr["height"] == 4.3 and restr["weight"] == 36.3 and restr["length"] == 22.26  # m, t, m
+
+
+def test_avoid_tunnel_violation_is_named():
+    lines, restricted = _notices([{"code": "violatedAvoidTunnel", "severity": "info"}], TruckProfile())
+    assert lines == ["A tunnel couldn't be avoided on this route."] and restricted is None
