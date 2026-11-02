@@ -266,6 +266,35 @@ def _tester(c, monkeypatch) -> dict:
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
+@pytest.mark.parametrize("sent, kept", [
+    ("req-from-app.1_A", True), ("a" * 64, True), ("a" * 65, False), ("has space", False), ("x\u00e9".encode(), False),
+    ("evil\" injected=1", False), ("", False), ("../../etc", False),
+])
+def test_request_id_is_taken_only_when_well_formed(client, sent, kept):
+    r = client.get("/api/health", headers={"X-Request-Id": sent})  # bytes: a non-ASCII header as sent on the wire
+    rid = r.headers["x-request-id"]
+    assert (rid == sent) if kept else (rid != sent and len(rid) == 16)
+
+
+def test_unhandled_error_is_logged_and_answered_with_the_request_id(caplog):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from services import reqid
+
+    app = FastAPI()
+
+    @app.get("/boom")
+    async def boom():
+        raise RuntimeError("kaboom")
+    app.add_middleware(reqid.RequestIdMiddleware)
+    reqid.install_log_field()
+    with caplog.at_level(logging.ERROR), TestClient(app) as c:
+        r = c.get("/boom", headers={"X-Request-Id": "req-boom-1"})
+    assert r.status_code == 500 and r.text == "Internal Server Error" and r.headers["x-request-id"] == "req-boom-1"
+    rec = next(rec for rec in caplog.records if rec.name == "truckbuddy.http")
+    assert rec.req == "req-boom-1" and rec.exc_info and "kaboom" in caplog.text
+
+
 def test_health_deep_checks_the_db_and_here(client, fake_http, monkeypatch, caplog):
     import server
     plain = client.get("/api/health").json()
