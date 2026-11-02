@@ -17,6 +17,8 @@ const REFIT_WINDOW_MS = 1500; // a padding change this soon after a fit re-runs 
 const FIT_CHECK_MS = 900; // the fit animation is over by then: read the camera back and correct a dropped one
 const FIT_MARGIN = 56; // layout units kept free around the fitted points, inside the map window
 const FIT_MAX_ZOOM = 16;
+const SINGLE_POINT_ZOOM = 15.5; // one point: about the 0.015-degree region the recenter button shows
+const FIT_RETRIES = 2; // a dropped fit animation is sent again at most this many times
 
 /** Custom-view marker that stops tracking view changes once its icon has rendered.
  *  A new `redraw` value re-renders the icon (Android otherwise keeps the first snapshot). */
@@ -95,18 +97,26 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
       return;
     }
     if (fitCheck.current) clearTimeout(fitCheck.current);
-    if (fitPoints.length > 1) {
-      const cam = fitCamera(fitPoints, winW, Math.max(120, winH - topInset - bottomInset), FIT_MARGIN, FIT_MAX_ZOOM);
-      const target = { center: toCoord(cam.center), zoom: cam.zoom, pitch: 0, heading: 0 };
-      mapRef.current?.animateCamera(target, { duration: 450 });
-      fitCheck.current = setTimeout(async () => {
-        const c = await mapRef.current?.getCamera().catch(() => null);
-        const actual = c?.center ? { center: { lat: c.center.latitude, lng: c.center.longitude }, zoom: c.zoom } : null;
-        if (!cameraSettled(cam, actual, winW, winH)) mapRef.current?.animateCamera(target, { duration: 400 });
-      }, FIT_CHECK_MS);
-    } else if (fitPoints.length === 1) {
-      mapRef.current?.animateToRegion({ ...toCoord(fitPoints[0]), latitudeDelta: 0.015, longitudeDelta: 0.015 }, 450);
-    }
+    if (fitPoints.length === 0) return;
+    // One point (the GPS fix, a tester's spot) goes through the same camera + read-back path as a set of
+    // points: right after onMapReady Android still drops the first animation, and a plain animateToRegion
+    // had no second try, so the map stayed on the demo point (stand, 2026-11-01).
+    const cam =
+      fitPoints.length > 1
+        ? fitCamera(fitPoints, winW, Math.max(120, winH - topInset - bottomInset), FIT_MARGIN, FIT_MAX_ZOOM)
+        : { center: fitPoints[0], zoom: SINGLE_POINT_ZOOM };
+    const target = { center: toCoord(cam.center), zoom: cam.zoom, pitch: 0, heading: 0 };
+    mapRef.current?.animateCamera(target, { duration: 450 });
+    let tries = 0;
+    const check = async () => {
+      const c = await mapRef.current?.getCamera().catch(() => null);
+      const actual = c?.center ? { center: { lat: c.center.latitude, lng: c.center.longitude }, zoom: c.zoom } : null;
+      if (cameraSettled(cam, actual, winW, winH) || tries >= FIT_RETRIES) return;
+      tries += 1;
+      mapRef.current?.animateCamera(target, { duration: 400 });
+      fitCheck.current = setTimeout(check, FIT_CHECK_MS);
+    };
+    fitCheck.current = setTimeout(check, FIT_CHECK_MS);
   };
   useEffect(() => {
     fitAt.current = Date.now();
