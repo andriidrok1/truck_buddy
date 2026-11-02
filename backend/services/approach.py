@@ -151,6 +151,15 @@ def best(place: Place) -> Optional[ParkingCheck]:
     return _phrase(base, ap, _landmarks[base.entry_tip])
 
 
+def for_route(place: Place, route: RouteInfo) -> Optional[ParkingCheck]:
+    """The check phrased for the route the truck now drives. Every route built to a place (the first one, the
+    one to the entrance, an off-route reroute, a stop added) remembers its own approach, so the card and the
+    spoken "how do I get in" name the same side and street (QA 2026-11-02: card "right, off El Centro Rd",
+    voice "left, off W El Camino Ave" after the route moved to the entrance)."""
+    remember(place, route.approach)
+    return best(place)
+
+
 def target(place: Place) -> tuple[float, float]:
     """Route end: the truck entrance (E) when the satellite check found one, else the place."""
     e = _entry(best(place))

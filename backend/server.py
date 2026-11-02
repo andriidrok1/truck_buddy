@@ -20,7 +20,7 @@ from services.agent import get_agent_provider  # noqa: E402
 from services import breakdown, flags, nudges  # noqa: E402
 from services.speech_text import split_reply  # noqa: E402
 from services.google_places import PlacesUnavailable  # noqa: E402
-from services.parking import cached_parking, check_parking, fetch_satellite  # noqa: E402
+from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
@@ -298,8 +298,9 @@ async def build_route(req: RouteRequest, driver: str = Depends(auth.require_driv
     await _advisories(route, WEATHER_BUDGET_S, WEATHER_BUDGET_S)
     if req.skip_parking:  # breakdown providers: the driver needs the shop, no parking check at all
         return RouteResponse(place=place, route=route, parking=None)
+    parking = approach.for_route(place, route)
     approach.background(check_parking(place, route.approach))  # don't wait for the satellite; app re-asks /parking
-    return RouteResponse(place=place, route=route, parking=cached_parking(place))
+    return RouteResponse(place=place, route=route, parking=parking)
 
 
 @api.post("/nudges", response_model=NudgeResponse)
@@ -335,7 +336,8 @@ REROUTE_ADVISORY_BUDGET_S = 1.0
 @api.post("/reroute", response_model=RouteResponse)
 async def reroute(req: RerouteRequest, driver: str = Depends(auth.require_driver)):
     """The app detected the driver left the route: a new route from the current position to the same place.
-    No new satellite check (the destination hasn't changed); the cached parking verdict comes along."""
+    No new satellite check (the destination hasn't changed); the cached verdict comes along, its entry tip
+    phrased for the way this route arrives."""
     _require_us(req.lat, req.lng)
     _require_us(req.place.lat, req.place.lng)
     for stop in req.via:
@@ -358,7 +360,7 @@ async def reroute(req: RerouteRequest, driver: str = Depends(auth.require_driver
     # The new route needs its own alerts and chain controls, or the advisories vanish after a reroute; the
     # driver is off the route while this runs, so the budget is shorter.
     await _advisories(route, REROUTE_ADVISORY_BUDGET_S, 0)
-    return RouteResponse(place=req.place, route=route, parking=cached_parking(req.place))
+    return RouteResponse(place=req.place, route=route, parking=approach.for_route(req.place, route))
 
 
 def _reroute_event(driver: str, req: RerouteRequest, ok: bool, error: Optional[str] = None) -> None:

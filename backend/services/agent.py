@@ -1016,7 +1016,7 @@ class LlmAgentProvider:
             if line:
                 reply = f"{reply} {line}"
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply,
-                             place=place, route=route, parking=approach.best(place),
+                             place=place, route=route, parking=approach.for_route(place, route),
                              options=others, source=self.source)
 
     async def _chains_question(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
@@ -1393,7 +1393,7 @@ class LlmAgentProvider:
         reply = VIA_ADDED.format(name=stop.name.split(",")[0], ahead=ahead, time=route.summary.split(" · ")[0],
                                  mi=_miles(route.distance_mi), dwell=dwell) + price_caveat(text, stop)
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
-                             route=route, parking=approach.best(place), options=stops, source=self.source)
+                             route=route, parking=approach.for_route(place, route), options=stops, source=self.source)
 
     async def _clear_stops(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
         place = req.active_place
@@ -1404,7 +1404,7 @@ class LlmAgentProvider:
         sess.pop("via", None)  # after the route: a failed call must not forget stops the app still shows
         reply = VIA_CLEARED.format(time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi))
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
-                             route=route, parking=approach.best(place), source=self.source)
+                             route=route, parking=approach.for_route(place, route), source=self.source)
 
     async def _alternative(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
         """Next unused alternative route to the active destination; fetched fresh when the dialog has none."""
@@ -1443,7 +1443,7 @@ class LlmAgentProvider:
         if warning:
             reply = f"{reply} {warning}"
         return AgentResponse(status="route_set", transcript=text, category=place.category,
-                             reply=reply, place=place, route=route, parking=approach.best(place),
+                             reply=reply, place=place, route=route, parking=approach.for_route(place, route),
                              source=self.source)
 
     def _parking(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
