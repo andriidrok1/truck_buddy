@@ -125,3 +125,20 @@ test("wake barges in: stop speaking, no chime; pause and endRoute", () => {
   expect(r.state.dialogId).toBeNull();
   expect(r.commands).toEqual([{ type: "closeDialog" }]);
 });
+
+
+test("an empty transcript from real speech is still a turn; a nudge offer adopts or stamps the session", () => {
+  let r = run(initialTurnState, [{ type: "tap" }, { type: "sttDone", transcript: "", heard: true }]);
+  expect(r.commands.at(-1)).toEqual({ type: "callAgent", turnId: 1, text: "", dialogId: "dlg-1" });
+  expect(r.state.mode).toBe("thinking");
+  // a stale session is replaced by the offer's; a live one is only stamped
+  r = run(initialTurnState, [{ type: "adopt", dialogId: "offer-1" }]);
+  expect(r.state).toMatchObject({ dialogId: "offer-1", misses: 0, lastTurnAt: T0 });
+  expect(r.commands).toEqual([{ type: "newDialog", dialogId: "offer-1" }]);
+  const later = T0 + 60_000;
+  r = run(r.state, [[{ type: "adopt", dialogId: "offer-1" }, later]]);
+  expect(r.state.lastTurnAt).toBe(later);
+  r = run(r.state, [[{ type: "adopt", dialogId: "offer-2" }, later + 1]]);
+  expect(r.state.dialogId).toBe("offer-1"); // live session kept
+  expect(r.commands).toEqual([]);
+});

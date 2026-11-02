@@ -5,7 +5,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as Sentry from "@sentry/react-native";
 
-import { absoluteUrl, api, ApiError, isNoTruckRoute } from "@/src/api";
+import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
+import { newSessionId, useCopilotTurn, type AnswerContext } from "@/src/dialog/useCopilotTurn";
+import { useFillers } from "@/src/dialog/useFillers";
 import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
 import { Icon } from "@/src/components/Icon";
@@ -19,7 +21,6 @@ import { RestoredBanner } from "@/src/components/RestoredBanner";
 import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
-import { logAnnouncement } from "@/src/dev/announcements";
 import { isTester } from "@/src/auth";
 import { chainControlAhead, routePointsAhead } from "@/src/geo/ahead";
 import { swapAlternative, switchedLine } from "@/src/geo/routeChoice";
@@ -32,18 +33,18 @@ import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
 import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, setNudgesEnabled, takeTruckReroute, truckLabel, useHandsFree, useNudgesEnabled, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
-import { WAKE_SUPPORTED, useWakeWord } from "@/src/hooks/useWakeWord";
+import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
 import { setActiveRoute } from "@/src/state/activeRoute";
 import { reduceAgentResponse } from "@/src/state/agentReducer";
+import { applyEffects } from "@/src/state/applyEffects";
 import { offlineTurn } from "@/src/state/offlineTurn";
 import { clearSavedRoute, loadActiveRoute, saveActiveRoute } from "@/src/state/routeStore";
 import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult, RouteInfo } from "@/src/types";
 import { storage } from "@/src/utils/storage";
 import { backAction } from "@/src/utils/backAction";
-import { planFiller, type FillerPlan } from "@/src/voice/fillers";
 import { PRIORITY } from "@/src/voice/queue";
-import { buildSttHint, streetFromInstruction } from "@/src/voice/sttHint";
+import { streetFromInstruction } from "@/src/voice/sttHint";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 import { RECORD_DRIVES, recorder } from "@/src/geo/driveRecorder";
@@ -74,20 +75,11 @@ const providerPlace = (p: Provider): Place => ({
   address: p.address, rating: p.rating, rating_count: p.rating_count, distance_mi: p.distance_mi,
 });
 
-const REQUEST_TIMEOUT_MS = 60000;
-const NO_CONNECTION = "I can't reach the server right now. Check your signal and try again.";
-const STT_SLOW = "Speech recognition is slow right now. Give it a moment and try again.";
-const RATE_LIMITED = "One second, let me catch up.";
-const STAGES = ["Searching nearby…", "Setting route…"];
-const STAGE_MS = 3500;
-const WAKE_SLEEP_MS = 10 * 60 * 1000; // background without a route: turn the wake word off
-const SESSION_IDLE_MS = 10 * 60 * 1000; // no turn for this long: the next one starts a fresh session
-const newSessionId = () => `dlg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const ROUTE_STAGE = "Setting route…";
 // Nudges (/api/nudges): first ask a minute into the drive, then every five minutes; a nudge that
 // is still waiting when the next one comes is stale. After one plays the mic opens for ~7 s.
 const NUDGE_FIRST_MS = 60 * 1000;
 const NUDGE_EVERY_MS = 5 * 60 * 1000;
-const NUDGE_ANSWER_MS = 7000;
 const NUDGE_KEY_PREFIX = "nudge-";
 /** " There's a lot with trailers to the southeast, looks like a private yard." (or "") */
 const APPROACH_TIPS_M = 800; // about half a mile: the entry tip is useful here, not six miles out
@@ -107,22 +99,6 @@ const nearbyLine = (pk: ParkingCheck) => {
   const look = pk.nearby.kind === "unclear" ? "" : `, looks like a ${pk.nearby.kind}`;
   return ` There's a lot with trailers to the ${pk.nearby.direction}${look}.`;
 };
-const FILLER_DELAY_MS = 300; // after the driver stops talking; an answer faster than this needs no filler
-const FILLER_SECOND_MS = 4000; // first clip played and still no answer: "Still looking."
-const FILLER_SECOND = "Still looking.";
-const SLOW_TURN_MS = 2500; // a previous turn slower than this: the filler is skipped less often
-// Shortest first: planFiller() picks from the top more often.
-const FILLERS = [
-  "Hang on.",
-  "On it.",
-  "Checking.",
-  "Okay, one sec.",
-  "Got it, checking.",
-  "Sure, one moment.",
-  "Alright, let me look.",
-  "Let me see what's around.",
-];
-
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
@@ -200,12 +176,10 @@ export default function MapScreen() {
     storage.setItem(VOICE_GUIDANCE_KEY, v);
   };
 
-  const turn = useRef(0);
+  // Generation of the last ROUTE operation (a pin tap, a re-plan, an entrance route): a result of an older
+  // one is dropped. The dialog has its own turn ids inside useCopilotTurn; this one moves to the trip store (A2).
+  const routeTurn = useRef(0);
   const searchBlurGuard = useRef(false); // while set, "Where to?" gives a focus it gets back (see onSubmitText)
-  const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const inflight = useRef<AbortController | null>(null);
-  const filler = useRef<FillerPlan | null>(null); // the acknowledgement planned for the turn in flight
   const activeRef = useRef<ActiveRoute | null>(null);
   useLayoutEffect(() => {
     activeRef.current = active;
@@ -343,7 +317,7 @@ export default function MapScreen() {
     if (optionsFit) setFit({ key: optionsFit, points: [loc.coords, ...options] });
   }
 
-  const sayReply = (res: AgentResponse) => {
+  const sayReply = (res: AgentResponse, isCurrent: () => boolean = () => true) => {
     setCaption(replyCaption(res.reply, res.transcript || undefined));
     if (!res.audio_url) return Promise.resolve();
     // The playback timeouts are sized from the text behind each clip: the server says how it split
@@ -353,7 +327,6 @@ export default function MapScreen() {
     const rest = restParts.join(" ");
     const done = voice.playAndWait(absoluteUrl(res.audio_url), Math.min(20000, 1500 + first.length * 65));
     if (!res.audio_url_2) return done;
-    const myTurn = turn.current;
     // Buffer the second half while the first plays, so it starts right after it (<150 ms gap).
     const url2 = absoluteUrl(res.audio_url_2);
     const next = voice.preload(url2);
@@ -361,7 +334,7 @@ export default function MapScreen() {
       .then((r) => r.ok)
       .catch(() => false);
     return done.then(async () => {
-      if (myTurn !== turn.current) {
+      if (!isCurrent()) {
         next.remove();
         return;
       }
@@ -371,7 +344,7 @@ export default function MapScreen() {
         setCaption(replyCaption(res.reply, res.transcript || undefined));
         return;
       }
-      if (myTurn !== turn.current) {
+      if (!isCurrent()) {
         next.remove();
         return;
       }
@@ -379,46 +352,7 @@ export default function MapScreen() {
     });
   };
 
-  // Instant acknowledgement while the real answer is on its way (cached TTS, rotated).
-  // Keyed by text so the dev log can name the clip; the URL is what plays.
-  const fillerUrls = useRef<Map<string, string>>(new Map());
-  const lastFiller = useRef<string | null>(null);
-  const lastTurnSlow = useRef(false); // previous turn's timings.total > SLOW_TURN_MS
-  useEffect(() => {
-    const texts = [...FILLERS, FILLER_SECOND];
-    Promise.allSettled(texts.map((t) => api.speak(t).then((r) => absoluteUrl(r.audio_url)))).then((all) => {
-      const m = new Map<string, string>();
-      all.forEach((r, i) => {
-        if (r.status === "fulfilled") m.set(texts[i], r.value);
-      });
-      fillerUrls.current = m;
-    });
-  }, []);
-  /**
-   * Acknowledgement planned the moment the driver stops talking: the first clip after
-   * FILLER_DELAY_MS unless the answer is already there, "Still looking." once at FILLER_SECOND_MS
-   * if it still is not. Short fillers (listed first) are picked more often; never the same twice
-   * in a row; skipped 1 in 4 (1 in 10 after a slow turn).
-   * Returns `cancel()` (true if nothing had played) and `done` (resolves when nothing more will play).
-   */
-  const scheduleFiller = () => {
-    const urls = fillerUrls.current;
-    const clips = FILLERS.filter((t) => urls.has(t));
-    return planFiller({
-      clips,
-      secondClip: urls.has(FILLER_SECOND) ? FILLER_SECOND : null,
-      delayMs: FILLER_DELAY_MS,
-      secondMs: FILLER_SECOND_MS,
-      skipRate: lastTurnSlow.current ? 0.1 : 0.25,
-      lastClip: lastFiller.current,
-      play: (clip) => {
-        const url = urls.get(clip);
-        if (!url) return Promise.resolve();
-        if (clip !== FILLER_SECOND) lastFiller.current = clip;
-        return voice.playAndWait(url, 4000);
-      },
-    });
-  };
+  const fillers = useFillers(voice.playAndWait);
 
   // Warm Places + parking caches around the driver: app on screen, no active route,
   // real GPS fix (or demo after location resolved), then again after moving ~5 km.
@@ -466,7 +400,7 @@ export default function MapScreen() {
   }, [active, phase, options.length, providers, places.length, loc.coords, loc.isDemo, loc.resolved]);
 
   /** Satellite parking check runs after the route is set; its directions are spoken when the reply ends. */
-  const followParking = async (place: Place, replyDone: Promise<void>, myTurn: number, approach = activeRef.current?.route.approach) => {
+  const followParking = async (place: Place, replyDone: Promise<void>, isCurrent: () => boolean, approach = activeRef.current?.route.approach) => {
     if (place.category === "service") return; // breakdown provider: no truck-parking check
     try {
       const pk = await api.parking(place, approach);
@@ -476,12 +410,13 @@ export default function MapScreen() {
       if (e && activeRef.current?.place.id === place.id && !routeEndsAt(activeRef.current.route, e)) {
         // Route to E. An off-route reroute landing meanwhile makes this plan stale and it is dropped; one
         // more try against the route that replaced it, so the truck is still guided to the entrance.
-        reroute(myTurn, "entrance").then((applied) => {
+        const myRoute = routeTurn.current;
+        reroute(myRoute, "entrance").then((applied) => {
           const now = activeRef.current;
-          if (!applied && now?.place.id === place.id && !routeEndsAt(now.route, e)) reroute(myTurn, "entrance");
+          if (!applied && now?.place.id === place.id && !routeEndsAt(now.route, e)) reroute(myRoute, "entrance");
         });
       }
-      if (myTurn !== turn.current || activeRef.current?.place.id !== place.id) return;
+      if (!isCurrent() || activeRef.current?.place.id !== place.id) return;
       // Spoken right after the answer: the verdict only. The entry and parking tips stay on the card and
       // are said when the truck is within half a mile (approachTips below) or on "how do I get in".
       // The whole set after every answer ran 17 s (QA 2026-10-28, U5).
@@ -489,59 +424,15 @@ export default function MapScreen() {
       if (!text) return;
       const audio = api.speak(text); // generate while the first answer is still playing
       await replyDone;
-      if (myTurn !== turn.current || activeRef.current?.place.id !== place.id) return;
+      if (!isCurrent() || activeRef.current?.place.id !== place.id) return;
       showLine(text);
       const r = await audio;
-      if (myTurn === turn.current && activeRef.current?.place.id === place.id) {
+      if (isCurrent() && activeRef.current?.place.id === place.id) {
         await voice.playAndWait(absoluteUrl(r.audio_url), Math.min(15000, 1500 + text.length * 65));
       }
     } catch {
       // parking stays "unclear"; the route still works
     }
-  };
-
-  // ---- Live dialog: one tap starts it, the copilot keeps listening after each answer. ----
-  // dialog.current = the backend session (found places, "the second one", rejected, reply rotation).
-  // live.current = the hands-free loop (mic reopens after each answer). A route stops the loop but keeps
-  // the session; a fresh session only after end_route, bye, 2 misses or 10 min without a turn.
-  const dialog = useRef<string | null>(null);
-  const live = useRef(false);
-  const lastTurnAt = useRef(0);
-  const misses = useRef(0);
-  const endDialog = () => {
-    dialog.current = null;
-    live.current = false;
-    misses.current = 0;
-  };
-  const pauseDialog = () => {
-    live.current = false;
-  };
-  const sessionStale = () => !dialog.current || Date.now() - lastTurnAt.current > SESSION_IDLE_MS;
-  const ensureSession = () => {
-    if (sessionStale()) {
-      dialog.current = newSessionId();
-      misses.current = 0;
-    }
-    lastTurnAt.current = Date.now();
-  };
-  const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-  /**
-   * After an answer: keep talking unless the conversation is over. `force` (a confirm question,
-   * "Did you say Reno?") reopens the mic even when the loop was paused: the next "yes" / "no"
-   * resolves it. beginListening turns the loop back on from there.
-   */
-  const continueDialog = async (myTurn: number, res: AgentResponse | null, spoken: Promise<void>, force = false) => {
-    if (!dialog.current) return;
-    misses.current = res && res.status !== "not_understood" ? 0 : misses.current + 1;
-    if (res?.end_conversation || misses.current >= 2) {
-      endDialog();
-      return;
-    }
-    if (!live.current && !force) return;
-    await spoken;
-    if (myTurn !== turn.current || (!live.current && !force)) return;
-    listenNow();
   };
 
   const startRoute = (next: ActiveRoute) => {
@@ -556,38 +447,6 @@ export default function MapScreen() {
     // Not while driving: the follow camera stays on the truck (the whole-route fit flashed for a second
     // and snapped back on the next fix).
     if (!drivingRef.current) setFit({ key: `route-${next.place.id}-${Date.now()}`, points: [loc.coords, next.place] });
-  };
-
-  const clearTimers = () => {
-    if (watchdog.current) clearTimeout(watchdog.current);
-    if (stageTimer.current) clearInterval(stageTimer.current);
-    watchdog.current = null;
-    stageTimer.current = null;
-  };
-
-  /**
-   * Drops the turn in flight: the late answer is discarded (turn counter), the request is aborted,
-   * the acknowledgement clip never starts (or is cut), the thinking stages stop. The dialog session
-   * stays, so the next turn lands on the same backend conversation. The phase is the caller's to set.
-   */
-  const cancelTurn = () => {
-    clearTimers();
-    turn.current++;
-    inflight.current?.abort();
-    inflight.current = null;
-    filler.current?.cancel();
-    filler.current = null;
-    voice.stopSpeaking();
-    setThinkingText(undefined);
-  };
-
-  const startStages = () => {
-    let i = 0;
-    setThinkingText(STAGES[0]);
-    stageTimer.current = setInterval(() => {
-      i = Math.min(i + 1, STAGES.length - 1);
-      setThinkingText(STAGES[i]);
-    }, STAGE_MS);
   };
 
   const backToIdle = () =>
@@ -753,6 +612,63 @@ export default function MapScreen() {
     coordsRef.current = loc.coords;
   }, [loc.coords]);
 
+  // ---- The dialog: src/dialog/turnMachine.ts decides, useCopilotTurn runs the commands (listen, STT, the agent
+  // call, the mic reopening), this screen supplies what they need and applies each answer. Everything read
+  // after an await comes through refs or getters, never from the render that started the turn. ----
+  const handsFree = useHandsFree();
+  const handsFreeRef = useRef(handsFree);
+  const voiceOnRef = useRef(voiceOn);
+  const locRef = useRef(loc);
+  const placesRef = useRef(places);
+  const captionRef = useRef(caption);
+  useLayoutEffect(() => {
+    handsFreeRef.current = handsFree;
+    voiceOnRef.current = voiceOn;
+    locRef.current = loc;
+    placesRef.current = places;
+    captionRef.current = caption;
+  });
+  const { turn } = useCopilotTurn({
+    voice: { listen: (o) => voice.listen(o), cancelRecording: voice.cancelRecording, stopSpeaking: voice.stopSpeaking },
+    api: { transcribe: api.transcribe, agentSpeak: api.agentSpeak },
+    fillers,
+    offline: () => offlineTurn({ isOnline, say, setCaption }),
+    context: () => {
+      const cur = activeRef.current;
+      return {
+        coords: coordsRef.current, // the truck moved while the driver talked and the words were transcribed
+        active: cur,
+        ui: { driving: drivingRef.current, voice_guidance: voiceOnRef.current, hands_free: handsFreeRef.current && WAKE_SUPPORTED, options_count: optionsRef.current.length },
+        heading: locRef.current.heading ?? null,
+        speed: locRef.current.speed ?? null,
+        limitMph: limitRef.current,
+        // Names the recogniser should expect: what is on screen and on the route, most useful first.
+        hintNames: [
+          cur?.place.name,
+          ...optionsRef.current.map((p) => p.name),
+          ...placesRef.current.map((p) => p.name),
+          ...(cur?.stops ?? []).map((s) => s.name),
+          ...(cur?.route.labels ?? []),
+          streetFromInstruction(guidanceRef.current.next?.instruction),
+        ],
+      };
+    },
+    onPhase: setPhase,
+    onIdle: () => backToIdle(),
+    onThinking: setThinkingText,
+    onHeard: (transcript) => setCaption({ reply: "…", heard: transcript }),
+    onNotUnderstood: () => {
+      if (!captionRef.current) setCaption({ reply: MESSAGES.notUnderstood });
+    },
+    onError: (message) => setCaption(replyCaption(message)),
+    onListenFailed: () => showToast(MESSAGES.notUnderstood),
+    onResponse: (res, ctx) => applyResponse(res, ctx),
+  });
+  // A nudge just played: a short mic window for the "yes" (the speech queue's onDone, registered above).
+  useEffect(() => {
+    nudgeAnswer.current = turn.nudgeOffer;
+  });
+
   // ---- Nudges: while driving, every few minutes the backend may have something to offer (a
   // break coming due, parking ahead). Each line is spoken as ambient; once it has played the mic
   // opens for a few seconds (listenForAnswer) and the backend keeps the offer pending for the next
@@ -773,9 +689,8 @@ export default function MapScreen() {
       if (!cur) return;
       const g = guidanceRef.current;
       // The offer must land in the session the answer will use: a live one, else one started here.
-      const stale = sessionStale();
-      const before = dialog.current;
-      const sessionId = stale || !before ? newSessionId() : before;
+      const before = turn.dialogId();
+      const sessionId = turn.isStale() || !before ? newSessionId() : before;
       const since = drivingSince.current;
       try {
         const { nudges } = await api.nudges(
@@ -793,11 +708,7 @@ export default function MapScreen() {
           ctrl.signal,
         );
         if (ctrl.signal.aborted || !nudges.length) return;
-        if (stale && dialog.current === before) {
-          dialog.current = sessionId;
-          misses.current = 0;
-        }
-        if (dialog.current === sessionId) lastTurnAt.current = Date.now(); // the answer must not start a fresh session
+        turn.adoptSession(sessionId); // the answer must not start a fresh session
         for (const n of nudges) {
           say(n.text, { priority: PRIORITY.WEATHER, kind: "ambient", key: `${NUDGE_KEY_PREFIX}${n.kind}`, ttlMs: NUDGE_EVERY_MS });
         }
@@ -814,10 +725,10 @@ export default function MapScreen() {
       if (every) clearInterval(every);
       ctrl.abort();
     };
-  }, [driving, hasRoute, nudgesOn, say]); // refs and a stable callback; `active` itself must not restart the timer
+  }, [driving, hasRoute, nudgesOn, say, turn]); // refs and a stable callback; `active` itself must not restart the timer
 
   const onGo = () => {
-    pauseDialog();
+    turn.pause();
     voice.stopSpeaking();
     setCaption(null);
     setRoutesOpen(false);
@@ -832,289 +743,73 @@ export default function MapScreen() {
     // "Where to?" box took it after every typed request and kept the keyboard over the answer.
     searchBlurGuard.current = true;
     setTimeout(() => (searchBlurGuard.current = false), 1500);
-    if (phaseRef.current === "thinking") cancelTurn();
     voice.stopSpeaking();
-    voice.cancelRecording().catch(() => {});
-    pauseDialog();
-    ensureSession();
     setCaption(null);
-    submitTurn(undefined, text);
+    turn.text(text);
     return true;
   };
 
-  const submitTurn = async (recorded?: string, typed?: string) => {
-    clearTimers();
-    const myTurn = ++turn.current;
-    // No signal: nothing to transcribe with and nobody to ask. Said, shown, and the turn is over
-    // (no STT, no /agent). The route, the turns and the advisories keep working from what we loaded.
-    if (offlineTurn({ isOnline, say, setCaption })) {
-      voice.cancelRecording().catch(() => {});
-      pauseDialog();
-      backToIdle();
-      return;
-    }
-    setPhase("thinking");
-    startStages();
-    const ctrl = new AbortController();
-    inflight.current = ctrl;
-    const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
-    let plan: FillerPlan | null = null;
-    let sttMs: number | null = null;
-    let sttConfidence: number | null = null;
-    try {
-      let transcript = typed ?? "";
-      if (typed === undefined) {
-        const uri = recorded ?? (await voice.stopRecording());
-        if (!uri) throw new Error("no recording");
-        // Planned before STT, so the driver hears something ~300 ms after they stop talking
-        // (the transcript alone takes 1-1.5 s to come back).
-        plan = scheduleFiller();
-        filler.current = plan;
-        // Names the recogniser should expect: what is on screen and on the route, most useful first.
-        const cur = activeRef.current;
-        const hint = buildSttHint([
-          cur?.place.name,
-          ...optionsRef.current.map((p) => p.name),
-          ...places.map((p) => p.name),
-          ...(cur?.stops ?? []).map((s) => s.name),
-          ...(cur?.route.labels ?? []),
-          streetFromInstruction(guidanceRef.current.next?.instruction),
-        ]);
-        const stt = await api.transcribe(uri, ctrl.signal, hint || undefined);
-        sttMs = stt.stt_ms;
-        sttConfidence = stt.stt_confidence;
-        transcript = stt.transcript;
-        if (!transcript) plan.cancel(); // nothing heard: no "Hang on." for silence
-      }
-      if (myTurn !== turn.current) return;
-      if (transcript) setCaption({ reply: "…", heard: transcript });
-      const res = await api.agentSpeak(
-        transcript,
-        coordsRef.current, // the truck moved while the driver talked and the words were transcribed
-        activeRef.current,
-        ctrl.signal,
-        dialog.current ?? undefined,
-        {
-          driving,
-          voice_guidance: voiceOn,
-          hands_free: handsFree && WAKE_SUPPORTED,
-          options_count: optionsRef.current.length,
-        },
-        loc.heading ?? null,
-        limitRef.current,
-        sttMs,
-        sttConfidence,
-        loc.speed,
-      );
-      if (myTurn !== turn.current) return;
-      lastTurnSlow.current = (res.timings?.total ?? 0) > SLOW_TURN_MS;
-      // Fast answer: the filler never starts. Otherwise the answer waits for it to finish.
-      plan?.cancel();
-      const afterFiller = plan?.done ?? Promise.resolve();
-      if (__DEV__ && plan) {
-        // Ms after the driver stopped talking. No filler on air: the reply is the first sound, about now.
-        const at = plan.startedAt();
-        const line = `[turn] filler=${at === null ? "none" : plan.picked} at=${at ?? "-"} first_audio=${at ?? plan.elapsed()}`;
-        console.log(line);
-        logAnnouncement(line, "system");
-      }
-      const speak = () => afterFiller.then(() => (myTurn === turn.current ? sayReply(res) : undefined));
-      await applyAgentResponse(res, myTurn, ctrl.signal, afterFiller, speak);
-    } catch (e) {
-      plan?.cancel();
-      if (myTurn !== turn.current) return; // cancelled by the driver (barge-in, close): nothing to report
-      const status = e instanceof ApiError ? e.status : null;
-      const msg =
-        status === 422
-          ? "Check your truck profile and try again."
-          : status === 502
-            ? MESSAGES.placesUnavailable
-            : status === 504
-              ? STT_SLOW
-              : status === 429
-                ? RATE_LIMITED
-                : status === null && /abort|network|timed? ?out|failed to fetch/i.test(String(e))
-                  ? NO_CONNECTION
-                  : MESSAGES.notUnderstood;
-      setCaption(replyCaption(msg));
-      backToIdle();
-      continueDialog(myTurn, null, wait(1200));
-    } finally {
-      clearTimeout(timer);
-      if (myTurn !== turn.current) plan?.cancel(); // turn abandoned: never start its filler
-      if (myTurn === turn.current) clearTimers();
-      if (filler.current === plan) filler.current = null;
-    }
-  };
-
   /** Breakdown: say "give me a minute", wait for the research, an interim line at ~7 s, then the list. */
-  const runResearch = async (res: AgentResponse, myTurn: number, signal: AbortSignal) => {
-    clearTimers();
+  const runResearch = async (res: AgentResponse, ctx: AnswerContext): Promise<{ spoken: Promise<void> }> => {
     setThinkingText("Checking who's around…");
-    const intro = sayReply(res);
+    const intro = sayReply(res, ctx.isCurrent);
     let done = false;
     const interimAudio = api.speak(RESEARCH_INTERIM).catch(() => null);
     let interimPlayed: Promise<unknown> = Promise.resolve();
     const interim = setTimeout(() => {
-      if (done || myTurn !== turn.current) return;
+      if (done || !ctx.isCurrent()) return;
       setThinkingText("Reading reviews…");
       interimPlayed = intro.then(async () => {
         const a = await interimAudio;
-        if (a && !done && myTurn === turn.current) await voice.playAndWait(absoluteUrl(a.audio_url), 4000);
+        if (a && !done && ctx.isCurrent()) await voice.playAndWait(absoluteUrl(a.audio_url), 4000);
       });
     }, RESEARCH_INTERIM_MS);
     let out: AgentResponse;
     try {
-      out = await api.breakdownResult(res.research_id!, signal);
+      out = await api.breakdownResult(res.research_id!, ctx.signal);
     } finally {
       done = true; // a failed research must not play "Reading reviews" afterwards
       clearTimeout(interim);
     }
-    if (myTurn !== turn.current) return;
+    if (!ctx.isCurrent()) return { spoken: Promise.resolve() };
     await intro;
     await interimPlayed;
-    if (myTurn !== turn.current) return;
+    if (!ctx.isCurrent()) return { spoken: Promise.resolve() };
     if (out.status === "providers" && out.providers?.length) {
       const list = out.providers;
       setProviders({ providers: list, call_card: out.call_card, summary: out.summary, provider_source: out.provider_source });
       setPlaces(list.map(providerPlace));
       setPhase("providers");
-      setFit({ key: `providers-${myTurn}`, points: [loc.coords, ...list] }); // one research per turn: unique
+      setFit({ key: `providers-${ctx.turnId}`, points: [loc.coords, ...list] }); // one research per turn: unique
     } else backToIdle();
-    continueDialog(myTurn, out, sayReply(out));
+    turn.answered(out.status, !!out.end_conversation); // the loop follows the final answer, not the "give me a minute"
+    return { spoken: sayReply(out, ctx.isCurrent) };
   };
 
-  // Hands-free: listening stops by itself when the driver pauses (tap to stop early).
-  // `maxMs` caps the window (a nudge's "yes" window); the default is a full turn.
-  const beginListening = async (fromWake = false, maxMs?: number) => {
-    // Offline the mic stays shut: recording seven seconds for a transcription that cannot happen helps nobody.
-    if (offlineTurn({ isOnline, say, setCaption })) {
-      pauseDialog();
-      return;
-    }
-    ensureSession();
-    live.current = true;
-    setPhase("listening");
-    clearTimers();
-    const myTurn = ++turn.current;
-    let res: string;
-    try {
-      res = await voice.listen({ chime: !fromWake, maxMs }); // the wake word plays its own chime
-    } catch {
-      pauseDialog();
-      showToast(MESSAGES.notUnderstood);
-      backToIdle();
-      return;
-    }
-    if (res === "cancelled" || myTurn !== turn.current) return;
-    if (res === "silent") {
-      // Silence stops listening; on the very first turn tell the driver we heard nothing.
-      if (misses.current === 0 && !caption) setCaption({ reply: MESSAGES.notUnderstood });
-      pauseDialog();
-      backToIdle();
-      return;
-    }
-    submitTurn(res);
-  };
-
-  // ---- Hands-free wake word: same beginListening() as a tap, no separate dialog logic. ----
-  const handsFree = useHandsFree();
-  const [micOk, setMicOk] = useState(false);
+  // Modal screens (onboarding, truck profile): a return re-plans with a changed truck (below).
   const [focused, setFocused] = useState(true);
-  const [asleep, setAsleep] = useState(false);
-  const wake = useWakeWord(() => {
-    // Barge-in: the wake word interrupts the copilot's speech and starts listening.
-    voice.stopSpeaking();
-    if (!dialog.current) setCaption(null);
-    beginListening(true);
-  });
-  /** The recorder and the wake word can't share the mic (Android): pause it first. */
-  const listenNow = async () => {
-    await wake.stop();
-    beginListening();
-  };
-  /** A nudge just played: a short mic window for the "yes", unless a turn is already under way. */
-  const listenForAnswer = async () => {
-    if (phaseRef.current === "listening" || phaseRef.current === "thinking") return;
-    await wake.stop();
-    beginListening(false, NUDGE_ANSWER_MS);
-  };
-  useEffect(() => {
-    nudgeAnswer.current = listenForAnswer;
-  });
-
-  const { micPermission } = voice;
-  const checkMic = useCallback(() => {
-    micPermission().then((p) => setMicOk(p === "granted")).catch(() => setMicOk(false));
-  }, [micPermission]);
-
-  // Modal screens (onboarding, truck profile) pause the wake word.
   useFocusEffect(
     useCallback(() => {
       setFocused(true);
-      checkMic();
       return () => setFocused(false);
-    }, [checkMic]),
+    }, []),
   );
-
-  // Battery: in the background with no route for 10 min, turn it off; back in the app, on again.
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const sub = AppState.addEventListener("change", (s) => {
-      if (timer) clearTimeout(timer);
-      timer = null;
-      if (s === "active") {
-        setAsleep(false);
-        checkMic();
-      } else if (s === "background") {
-        timer = setTimeout(() => {
-          if (!activeRef.current) setAsleep(true);
-        }, WAKE_SLEEP_MS);
-      }
-    });
-    return () => {
-      sub.remove();
-      if (timer) clearTimeout(timer);
-    };
-  }, [checkMic]);
-
-  const idle = phase === "ready" || phase === "navigating" || phase === "options" || phase === "providers";
-  // iOS v1 has no background audio mode: the wake word listens only while the app is on screen.
-  const wakeArmed = wake.supported && handsFree && micOk && !asleep && (Platform.OS !== "ios" || appActive);
-  // Not while a reply plays: starting the wake engine switches the audio session under the player
-  // (iOS moves the voice to the earpiece mid-sentence, Porcupine can error out and stay dead).
-  useEffect(() => {
-    if (!wakeArmed) wake.shutdown();
-    else if (focused && idle && !voice.speaking) wake.start();
-    else wake.stop();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wakeArmed, focused, idle, voice.speaking]);
-  // Keep the recorder ready for an instant tap-to-talk, unless the wake word holds the mic.
-  const { setPrewarm } = voice;
-  useEffect(() => {
-    setPrewarm(micOk && focused && !wakeArmed);
-  }, [setPrewarm, micOk, focused, wakeArmed]);
-
 
   const onAvatarPress = async () => {
     if (phase === "listening") {
       voice.finishListening();
       return;
     }
-    // Barge-in: a tap while the copilot is still working drops that turn and listens again
-    // (same session, so "no, the other one" lands where it should).
-    if (phase === "thinking") {
-      cancelTurn();
-      backToIdle();
-    }
+    // Barge-in: a tap while the copilot is still working drops that turn and listens again (same session,
+    // so "no, the other one" lands where it should); useCopilotTurn does the dropping.
     voice.stopSpeaking();
     const perm = await voice.micPermission();
     if (perm !== "granted") {
       setMicCard(perm);
       return;
     }
-    if (!dialog.current) setCaption(null);
-    listenNow();
+    if (!turn.dialogId()) setCaption(null);
+    turn.tap();
   };
 
   const onAllowMic = async () => {
@@ -1126,8 +821,7 @@ export default function MapScreen() {
     ]);
     if (perm === "granted") {
       setMicCard(null);
-      setMicOk(true);
-      listenNow();
+      turn.tap();
     } else {
       // Asked once with context; after that only Settings can fix it.
       setMicCard("blocked");
@@ -1146,8 +840,8 @@ export default function MapScreen() {
   };
 
   const onClose = () => {
-    pauseDialog();
-    cancelTurn(); // discard any in-flight turn
+    turn.pause();
+    turn.cancel(); // discard any in-flight turn
     voice.cancelRecording().catch(() => {});
     if (phase === "providers") {
       setProviders(null);
@@ -1173,8 +867,9 @@ export default function MapScreen() {
   };
 
   const onEndRoute = () => {
-    endDialog();
-    turn.current++;
+    turn.cancel(); // a turn in flight is dropped with the route
+    turn.endRoute();
+    routeTurn.current++;
     voice.cancelRecording().catch(() => {});
     voice.stopSpeaking();
     clearRoute();
@@ -1224,9 +919,9 @@ export default function MapScreen() {
     backRefs.current = {
       state: { micCard: !!micCard, routesOpen, phase, hasRoute: !!active, driving },
       cancel: () => {
-        cancelTurn();
+        turn.cancel();
         voice.cancelRecording().catch(() => {});
-        pauseDialog();
+        turn.pause();
         backToIdle();
       },
       closeOptions: onClose,
@@ -1281,7 +976,7 @@ export default function MapScreen() {
       return applied;
     } catch (e) {
       tripLog.log("reroute", { cause, ok: false, no_route: isNoTruckRoute(e) }, cur.trip_id);
-      if (myTurn === turn.current) showToast(isNoTruckRoute(e) ? routeFailText(e) : failMsg);
+      if (myTurn === routeTurn.current) showToast(isNoTruckRoute(e) ? routeFailText(e) : failMsg);
       return false;
     }
   };
@@ -1335,18 +1030,17 @@ export default function MapScreen() {
   // Back from the truck editor with new dimensions: same reroute as the voice change, nothing spoken.
   useEffect(() => {
     if (focused && takeTruckReroute() && activeRef.current) {
-      reroute(turn.current, "profile", "Couldn't update the route for the new truck size.");
+      reroute(routeTurn.current, "profile", "Couldn't update the route for the new truck size.");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focused]);
 
   /**
    * One copilot reply: src/state/agentReducer.ts decides what happens (state patch + ordered effects),
-   * this applies it. Effects run in order; `speak` sets the promise that `followParking`,
-   * `parkingFollowup` and `continueDialog` chain on. Only `research` awaits (it waits for the
-   * breakdown result); everything else runs synchronously in this tick, as the inline code used to.
+   * src/state/applyEffects.ts runs the effects through the handlers below. `speak` is the promise that
+   * `followParking` and `parkingFollowup` chain on; the dialog reopens the mic itself once it resolves.
    */
-  const applyAgentResponse = async (res: AgentResponse, myTurn: number, signal: AbortSignal, afterFiller: Promise<void>, speak: () => Promise<void>) => {
+  const applyResponse = async (res: AgentResponse, ctx: AnswerContext): Promise<{ spoken: Promise<void> }> => {
     const { patch, effects } = reduceAgentResponse(res, {
       activePlaceId: activeRef.current?.place.id ?? null,
       optionsCount: optionsRef.current.length,
@@ -1371,125 +1065,84 @@ export default function MapScreen() {
     if (res.status === "not_understood" || res.status === "error") {
       tripLog.log("turn_failed", { status: res.status, text: res.transcript, intent: res.intent ?? null }, activeRef.current?.trip_id);
     }
-    let spoken: Promise<void> = Promise.resolve();
-    for (const e of effects) {
-      switch (e.type) {
-        case "dial":
-          dial(e.phone);
-          break;
-        case "research":
-          await afterFiller;
-          await runResearch(res, myTurn, signal);
-          break;
-        case "startRoute":
-          startRoute({ place: e.place, route: e.route, parking: e.parking });
-          break;
-        case "speak":
-          spoken = speak();
-          break;
-        case "toast":
-          showToast(e.text);
-          break;
-        case "backToIdle":
-          backToIdle();
-          break;
-        case "pauseDialog":
-          pauseDialog();
-          break;
-        case "endDialog":
-          endDialog();
-          break;
-        case "continueDialog":
-          continueDialog(myTurn, res, spoken, e.force);
-          break;
-        case "followParking":
-          followParking(e.place, spoken, myTurn, e.approach);
-          break;
-        case "parkingFollowup": {
-          const fPlace = [activeRef.current?.place, ...optionsRef.current, ...places].find((p) => p?.id === e.placeId);
-          if (!fPlace) break;
-          spoken = parkingFollowup(fPlace, spoken, {
-            isCurrent: () => myTurn === turn.current,
-            busy: () => phaseRef.current === "listening" || phaseRef.current === "thinking",
-            say: async (text, url) => {
-              showLine(text);
-              const a = toAudio(url);
-              if (a) await voice.playAndWait(a, 6000);
-            },
-          });
-          break;
+    return applyEffects(effects, res, {
+      dial,
+      research: (r) => runResearch(r, ctx),
+      startRoute: (place, route, parking) => {
+        startRoute({ place, route, parking });
+        turn.routeSet();
+      },
+      speak: () => ctx.afterFiller.then(() => (ctx.isCurrent() ? sayReply(res, ctx.isCurrent) : undefined)),
+      toast: showToast,
+      backToIdle,
+      pauseDialog: turn.pause,
+      endDialog: turn.endRoute,
+      continueDialog: () => {}, // the machine reopens the mic from the answer's status once the reply has played
+      followParking: (place, spoken, approach) => followParking(place, spoken, ctx.isCurrent, approach),
+      parkingFollowup: (placeId, spoken) => {
+        const fPlace = [activeRef.current?.place, ...optionsRef.current, ...placesRef.current].find((p) => p?.id === placeId);
+        if (!fPlace) return null;
+        return parkingFollowup(fPlace, spoken, {
+          isCurrent: ctx.isCurrent,
+          busy: () => phaseRef.current === "listening" || phaseRef.current === "thinking",
+          say: async (text, url) => {
+            showLine(text);
+            const a = toAudio(url);
+            if (a) await voice.playAndWait(a, 6000);
+          },
+        });
+      },
+      clearRoute,
+      startDriving: () => {
+        turn.pause();
+        setDriving(true);
+      },
+      openOptions: () => setPhase("options"),
+      recenter: () => {
+        setOverview(false);
+        mapRef.current?.recenter();
+      },
+      overview: () => {
+        if (activeRef.current) {
+          // Stay in driving mode; the camera stops following for a moment.
+          setOverview(true);
+          setFit({ key: `overview-${Date.now()}`, points: [loc.coords, activeRef.current.place] });
         }
-        case "clearRoute":
-          clearRoute();
-          break;
-        case "startDriving":
-          pauseDialog();
-          setDriving(true);
-          break;
-        case "openOptions":
-          setPhase("options");
-          break;
-        case "recenter":
-          setOverview(false);
-          mapRef.current?.recenter();
-          break;
-        case "overview":
-          if (activeRef.current) {
-            // Stay in driving mode; the camera stops following for a moment.
-            setOverview(true);
-            setFit({ key: `overview-${Date.now()}`, points: [loc.coords, activeRef.current.place] });
-          }
-          break;
-        case "zoomBy":
-          mapRef.current?.zoomBy(e.delta);
-          break;
-        case "setVoiceGuidance":
-          setVoiceOn(e.on);
-          break;
-        case "setHandsFree":
-          setHandsFree(e.on);
-          break;
-        case "setNudges":
-          setNudgesEnabled(e.on);
-          break;
-        case "saveProfile":
-          saveTruckProfile({ ...getTruckProfile(), ...e.patch });
-          break;
-        case "unknownAction":
-          tripLog.log("turn_unknown_action", { action: e.action }, activeRef.current?.trip_id);
-          break;
-        case "reroute":
-          // Save first so the new route uses the new profile.
-          saveTruckProfile({ ...getTruckProfile(), ...e.patch }).then(() => reroute(myTurn, "profile"));
-          break;
-      }
-    }
+      },
+      zoomBy: (delta) => mapRef.current?.zoomBy(delta),
+      setVoiceGuidance: setVoiceOn,
+      setHandsFree,
+      setNudges: setNudgesEnabled,
+      saveProfile: (patch) => saveTruckProfile({ ...getTruckProfile(), ...patch }),
+      unknownAction: (action) => tripLog.log("turn_unknown_action", { action }, activeRef.current?.trip_id),
+      // Save first so the new route uses the new profile.
+      reroute: (patch) => saveTruckProfile({ ...getTruckProfile(), ...patch }).then(() => reroute(routeTurn.current, "profile")),
+    });
   };
 
   const onPlacePress = async (p: Place) => {
     if (phase === "thinking") return;
     const prev = activeRef.current;
-    const myTurn = ++turn.current;
+    const myTurn = ++routeTurn.current;
+    turn.cancel(); // a copilot turn in flight gives way to the tap
     voice.stopSpeaking();
     setCaption(null);
     setPhase("thinking");
-    setThinkingText(STAGES[1]);
+    setThinkingText(ROUTE_STAGE);
     try {
       // Breakdown providers: the driver needs the shop, not a satellite parking check (faster route).
       const isProvider = p.category === "service" || !!providersRef.current?.providers.some((x) => x.id === p.id);
       const res = await api.route(coordsRef.current, p, isProvider);
-      if (myTurn !== turn.current) return;
+      if (myTurn !== routeTurn.current) return;
       // Keep the previous destination among the alternatives.
       setOptions((list) => [...(prev ? [prev.place] : []), ...list].filter((o) => o.id !== p.id));
       startRoute(res);
     } catch (e) {
-      if (myTurn !== turn.current) return;
+      if (myTurn !== routeTurn.current) return;
       backToIdle();
       showToast(routeFailText(e));
     }
   };
-
-  useEffect(() => () => clearTimers(), []);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.mapPlaceholder }]} testID="map-screen">
@@ -1598,7 +1251,7 @@ export default function MapScreen() {
         onDownloadMap={offlineMap.download}
         onLayout={setSheetH}
         onPeekHeight={setPeekH}
-        wakePhrase={wake.active ? wake.phrase : null}
+        wakePhrase={null}
         panel={providers ? <ProvidersList data={providers} onRoute={(p) => onPlacePress(providerPlace(p))} /> : null}
       />
 
