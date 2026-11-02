@@ -59,3 +59,13 @@ def test_a_price_on_the_list_lets_the_pick_through(agent_sandbox, fake_http):
     shown = agent._SESSIONS["h8c"]["places"]
     res = run(prov.handle(_req("where's the cheapest diesel", "h8c", active=first.place), None))
     assert res.status == "route_set" and res.place.id == shown[1].id, res.reply  # the model's pick, untouched
+
+
+def test_no_prices_no_route_and_the_router_down_is_said(agent_sandbox, fake_http):
+    """Review 2026-11-02, bug 18: the same pick with no active route and HERE down came out as a 500, the
+    closest-place route ran outside the turn's error handling. The driver hears "couldn't build a route"."""
+    fake_http.add("router.hereapi.com", "/v8/routes", status=500, text="boom")
+    prov = _sandbox(agent_sandbox, fake_http, [ROADYS, WESTSAC])
+    agent._SESSIONS["h8-down"] = agent.DialogState(places=[ROADYS, WESTSAC])
+    res = run(prov.handle(_req("where's the cheapest diesel", "h8-down"), None))
+    assert res.status == "error" and res.reply == agent.ROUTE_DOWN

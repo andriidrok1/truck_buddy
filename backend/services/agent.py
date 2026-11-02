@@ -1650,24 +1650,25 @@ class LlmAgentProvider:
         intent, d = reject_or_reference_guard(intent, d, text, sess["places"], req.active_place)
         if intent == "not_understood":
             return _not_understood(text, self.source)
-        # "The cheapest diesel" over a list with no prices: the model still names one, and the destination
-        # changed for no reason the driver could see (QA 2026-10-31, H8). No prices, no switch.
-        if intent == "pick" and d.get("place_index") is not None and PRICE_WORDS.search(text) and sess["places"] \
-                and all(p.category == "truck_stop" and p.diesel_price is None for p in sess["places"]):
-            return await self._cheapest_without_prices(req, sess, text)
-        # Current pick: the active route, or the last place chosen in this dialog.
-        last = req.active_place or (sess["places"][0] if sess["places"] else None)
-        current = last.id if last else None
-        exclude = {current} if current else set()
-        if current and (intent == "pick" or (intent == "find" and last and d.get("category") == last.category)):
-            # "not that one" / "something else": never offer an already rejected place again in this dialog.
-            rejected = sess.setdefault("rejected", [])
-            if current not in rejected and last is not None:
-                await self._note_rejection(sess, last)
-            if current not in rejected:
-                rejected.append(current)
-            exclude = set(rejected)
         try:
+            # "The cheapest diesel" over a list with no prices: the model still names one, and the destination
+            # changed for no reason the driver could see (QA 2026-10-31, H8). No prices, no switch.
+            if intent == "pick" and d.get("place_index") is not None and PRICE_WORDS.search(text) and sess["places"] \
+                    and all(p.category == "truck_stop" and p.diesel_price is None for p in sess["places"]):
+                # inside the try: with no route to keep, routing to the closest one can fail (review 2026-11-02, bug 18)
+                return await self._cheapest_without_prices(req, sess, text)
+            # Current pick: the active route, or the last place chosen in this dialog.
+            last = req.active_place or (sess["places"][0] if sess["places"] else None)
+            current = last.id if last else None
+            exclude = {current} if current else set()
+            if current and (intent == "pick" or (intent == "find" and last and d.get("category") == last.category)):
+                # "not that one" / "something else": never offer an already rejected place again in this dialog.
+                rejected = sess.setdefault("rejected", [])
+                if current not in rejected and last is not None:
+                    await self._note_rejection(sess, last)
+                if current not in rejected:
+                    rejected.append(current)
+                exclude = set(rejected)
             if intent == "breakdown":
                 return await breakdown.from_intent(d, req, sess, text, self.source)
             if intent == "alternative":
