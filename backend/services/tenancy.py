@@ -391,6 +391,24 @@ async def profile_put(sub: str, profile: TruckProfile) -> None:
     _profiles[sub] = (profile, time.monotonic())
 
 
+async def profile_clear(sub: str) -> bool:
+    """"Delete my data": the driver's own stored profile goes; a fleet truck's profile is the fleet's and stays.
+    True when there was one."""
+    dev = await device_of(sub)
+    _profiles.pop(sub, None)
+    if dev is None:
+        return False
+    k = db.store()
+    if k == "sqlite":
+        n = await db._sq_run(lambda con: con.execute(
+            "UPDATE drivers SET profile = NULL WHERE id = ? AND profile IS NOT NULL", (dev.driver_id,)).rowcount)
+    else:
+        pool = await db._db()
+        status = await pool.execute("UPDATE drivers SET profile = NULL WHERE id = $1 AND profile IS NOT NULL", dev.driver_id)
+        n = int(status.split()[-1])
+    return n > 0
+
+
 _DEFAULT = TruckProfile()
 
 

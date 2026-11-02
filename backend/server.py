@@ -157,9 +157,17 @@ async def memory_list(driver: str = Depends(auth.require_driver), limit: int = Q
 
 @api.delete("/memory")
 async def memory_clear(driver: str = Depends(auth.require_driver)):
+    """"Delete my data": the dialogs, the remembered turns and facts, the trip events (after the saves still in
+    flight land) and the driver's own stored truck profile (a fleet truck's profile belongs to the fleet).
+    `deleted` counts turns, as before."""
     await agent_sessions_drop(driver)
+
+    async def wipe() -> dict:
+        events = await trip_events.clear(driver)
+        turns = await memory.clear(driver)
+        return {"deleted": turns, "trip_events": events, "profile": await tenancy.profile_clear(driver)}
     try:
-        return {"deleted": await asyncio.wait_for(memory.clear(driver), MEMORY_WAIT_S)}
+        return await asyncio.wait_for(wipe(), MEMORY_WAIT_S)
     except Exception as e:  # noqa: BLE001
         logger.warning("memory clear failed: %s", e)
         raise HTTPException(status_code=503, detail="Memory is unavailable right now")

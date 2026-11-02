@@ -368,6 +368,25 @@ def test_health_deep_refreshes_once_for_concurrent_callers(monkeypatch):
     assert len(calls) == 1 and all(r["here"]["ok"] is True for r in results)
 
 
+def test_delete_my_data_takes_events_and_the_drivers_profile_not_the_trucks(client):
+    from services import memory
+    f = _two_fleets(client)
+    solo, fleet_drv = f["solo"], f["a_drv"]
+    assert client.put("/api/me/profile", json=TruckProfile(height_in=150).model_dump(), headers=solo).status_code == 200
+    run(memory.add(_sub(solo), [("driver", "hi"), ("copilot", "Hello.")]))
+    for h in (solo, fleet_drv):
+        assert client.post("/api/trips/events", json=[_ev("route_started"), _ev("route_ended")], headers=h).status_code == 200
+    r = client.delete("/api/memory", headers=solo)
+    assert r.status_code == 200 and r.json() == {"deleted": 2, "trip_events": 2, "profile": True}
+    assert client.get("/api/me/profile", headers=solo).status_code == 404 and _day(client, solo) == []
+    tenancy.reset_caches()
+    assert client.get("/api/me/profile", headers=solo).status_code == 404  # gone from the row, not just the cache
+    # a fleet driver's wipe takes their events; Unit 1's profile is the fleet's and stays
+    r = client.delete("/api/memory", headers=fleet_drv)
+    assert r.json() == {"deleted": 0, "trip_events": 2, "profile": False}
+    assert client.get("/api/me/profile", headers=fleet_drv).json()["height_in"] == 162 and _day(client, fleet_drv) == []
+
+
 def test_turn_stats_reads_old_and_new_lines():
     old = "2026-11-01 18:00:00,000 - truckbuddy - INFO - turn status=route_set intent=go stt=800 llm_round_1=1500 total=2300"
     new = [
