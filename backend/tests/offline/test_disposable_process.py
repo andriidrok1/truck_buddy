@@ -251,6 +251,59 @@ def test_chains_and_tpims_share_through_the_cache(sqlite_store):
     tpims._sites.clear()
     tpims._live.clear()
     assert run(tpims.take_shared()) is True and tpims._sites["s1"].capacity == 40 and tpims._live["s1"].available == 12
+    chains._cache.clear()  # not for the route tests that follow
+    tpims._sites.clear()
+    tpims._live.clear()
+
+
+def test_lock_calls_are_serialised_and_one_failure_hides_nothing(monkeypatch):
+    """Three feeds ask at startup at once: the calls go one at a time over the single connection, and a feed
+    whose call fails polls locally without touching the others' answers."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://x")
+    monkeypatch.setenv("MEMORY_STORE", "pg")
+    leader._held.clear()
+    busy = {"now": 0, "max": 0}
+
+    class FakeConn:
+        def is_closed(self):
+            return False
+
+        async def fetchval(self, sql, key):
+            busy["now"] += 1
+            busy["max"] = max(busy["max"], busy["now"])
+            try:
+                await asyncio.sleep(0.02)
+                if key == leader._key("caltrans_chains"):
+                    raise RuntimeError("another operation is in progress")
+                return True
+            finally:
+                busy["now"] -= 1
+
+    async def fake_connection():
+        return FakeConn()
+    monkeypatch.setattr(leader, "_connection_locked", fake_connection)
+
+    async def scenario():
+        return await asyncio.gather(leader.try_lead("nws_alerts"), leader.try_lead("caltrans_chains"), leader.try_lead("tpims"))
+    assert run(scenario()) == [True, True, True]
+    assert busy["max"] == 1  # never two operations on the connection at once
+    assert leader._held == {"nws_alerts", "tpims"}  # the failed one is not recorded as held: it polls locally
+    leader._held.clear()
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="needs TEST_DATABASE_URL (a throwaway Postgres)")
+def test_three_feeds_lock_at_once_on_postgres(monkeypatch):
+    """Startup: NWS, Caltrans and TPIMS all ask for their lock concurrently over the one connection."""
+    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    monkeypatch.setenv("MEMORY_STORE", "pg")
+
+    async def scenario():
+        got = await asyncio.gather(leader.try_lead("t_nws"), leader.try_lead("t_chains"), leader.try_lead("t_tpims"))
+        for n in ("t_nws", "t_chains", "t_tpims"):
+            await leader.release(n)
+        await leader.close()
+        return got
+    assert run(scenario()) == [True, True, True]
 
 
 @pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="needs TEST_DATABASE_URL (a throwaway Postgres)")

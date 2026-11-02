@@ -26,14 +26,22 @@ def _key(name: str) -> int:
     return h
 
 
-async def _connection() -> asyncpg.Connection:
-    global _conn, _lock
+def _guard() -> asyncio.Lock:
+    """One asyncpg connection serves every feed's lock call; asyncpg allows one operation at a time on it, so
+    the calls (connect, try, release) are serialised here (three feeds asking at startup once raised
+    InterfaceError "another operation is in progress" and fell back to polling locally)."""
+    global _lock
     if _lock is None:
         _lock = asyncio.Lock()
-    async with _lock:
-        if _conn is None or _conn.is_closed():
-            _conn = await asyncpg.connect(db._dsn(), timeout=db.CONNECT_TIMEOUT_S)
-            _held.clear()  # a new session holds no locks
+    return _lock
+
+
+async def _connection_locked() -> asyncpg.Connection:
+    """The dedicated connection; the caller holds _guard()."""
+    global _conn
+    if _conn is None or _conn.is_closed():
+        _conn = await asyncpg.connect(db._dsn(), timeout=db.CONNECT_TIMEOUT_S)
+        _held.clear()  # a new session holds no locks
     return _conn
 
 
@@ -44,13 +52,17 @@ async def try_lead(name: str) -> bool:
     if name in _held:
         return True
     try:
-        con = await _connection()
-        got = bool(await con.fetchval("SELECT pg_try_advisory_lock($1)", _key(name)))
+        async with _guard():
+            if name in _held:
+                return True
+            con = await _connection_locked()
+            got = bool(await con.fetchval("SELECT pg_try_advisory_lock($1)", _key(name)))
+            if got:
+                _held.add(name)
     except Exception as e:  # noqa: BLE001 - no database: poll locally rather than not at all
         logger.warning("leader lock %s unavailable (%s): polling locally", name, type(e).__name__)
         return True
     if got:
-        _held.add(name)
         logger.info("leader: this worker polls %s", name)
     return got
 
@@ -58,7 +70,8 @@ async def try_lead(name: str) -> bool:
 async def release(name: str) -> None:
     if name in _held and _conn is not None and not _conn.is_closed():
         try:
-            await _conn.fetchval("SELECT pg_advisory_unlock($1)", _key(name))
+            async with _guard():
+                await _conn.fetchval("SELECT pg_advisory_unlock($1)", _key(name))
         except Exception:  # noqa: BLE001
             pass
     _held.discard(name)
@@ -66,7 +79,8 @@ async def release(name: str) -> None:
 
 async def close() -> None:
     global _conn
-    if _conn is not None and not _conn.is_closed():
-        await _conn.close()
-    _conn = None
-    _held.clear()
+    async with _guard():
+        if _conn is not None and not _conn.is_closed():
+            await _conn.close()
+        _conn = None
+        _held.clear()

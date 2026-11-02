@@ -38,7 +38,9 @@ The process holds no state a second worker needs: the dialog lives in `dialog_se
 `jobs`, parking verdicts and the approach to each entrance in `parking_checks` (mirrored in memory, refreshed
 every minute), TTS clips in `TTS_DIR` (default `backend/data/tts`, keep it outside the unpacked tree and shared
 between workers on one box), and the feeds one worker polls for all (NWS alerts, Caltrans chain controls,
-TPIMS counts) in `feed_cache`; the poller is whichever worker holds the Postgres advisory lock for that feed.
+TPIMS counts) in `feed_cache`; the poller is whichever worker holds the Postgres advisory lock for that feed, so with
+the lock held only one worker fetches each feed (the others read the cached copy); without Postgres every
+worker polls. The lock calls share one connection and run one at a time.
 Set `WORKERS` to the number uvicorn runs: the per-driver budgets (`RATE_LIMIT_PER_MIN`, `RATE_PER_10MIN`,
 `RATE_PER_DAY`) are per process and are divided by it. `TTS_STREAM` is ignored with more than one worker (a
 stream lives in the process that started it). Shutdown waits up to 5 s for background writes (memory, trip
