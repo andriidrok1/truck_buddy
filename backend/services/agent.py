@@ -142,6 +142,7 @@ MAX_OPTIONS = 4
 ALTERNATIVES_FRESH = 2  # when "another way?" comes with no cached alternatives: ask HERE for this many
 ALT_ORIGIN_KM = 8.0  # cached alternatives were planned from here; further on, "another way" plans from the truck
 PASSED_KM = 1.6  # a stop this close to the truck is being approached, never counted as passed
+REACHED_KM = 0.15  # ...unless the truck is at it (parked in its lot): then it is made, and the next plan leaves it out
 WEATHER_BUDGET_S = 2.0  # NWS lookups on a new route may add at most this much to the reply
 DETOUR_BUDGET_S = 3.5  # the alternatives' weather, measured from the start; past it the detour line is skipped
 PRECHECK = 1  # nearest candidates satellite-checked in the background (each = one vision call)
@@ -1061,8 +1062,14 @@ class LlmAgentProvider:
         geometry = self._current_geometry(req, sess)
         if stops and geometry:
             here = _nearest_index(geometry, req.lat, req.lng)
-            ahead = [s for s in stops if _nearest_index(geometry, s.lat, s.lng) >= here
-                     or haversine_km(s.lat, s.lng, req.lat, req.lng) < PASSED_KM]
+
+            def still_ahead(s: Place) -> bool:
+                d = haversine_km(s.lat, s.lng, req.lat, req.lng)
+                if d < REACHED_KM:  # parked at the stop: "add the TA too" must not route through this lot again
+                    return False
+                return _nearest_index(geometry, s.lat, s.lng) >= here or d < PASSED_KM
+
+            ahead = [s for s in stops if still_ahead(s)]
             if len(ahead) != len(stops):
                 logger.info("stops passed: %s", ", ".join(s.name for s in stops if s not in ahead))
                 via["stops"] = ahead

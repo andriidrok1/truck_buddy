@@ -216,3 +216,12 @@ def test_a_failed_clear_keeps_the_stops(agent_sandbox, fake_http, monkeypatch):
     res = run(prov.handle(_req("clear the stops"), None))
     assert res.status == "error" and res.reply == agent.ROUTE_DOWN
     assert [s.id for s in prov._stops(_req("hi"), agent._SESSIONS["v1"])] == [PILOT.id]  # the app still shows it
+
+
+def test_the_stop_the_truck_is_parked_at_is_made(agent_sandbox, fake_http):
+    prov = _sandbox(agent_sandbox, fake_http)
+    run(prov.handle(_req("take me to Reno", active=None), None))
+    run(prov.handle(_req("swing by Love's"), None))
+    at_loves = {"lat": LOVES.lat + 0.0005, "lng": LOVES.lng}  # 55 m away: in its lot
+    req = AgentRequest(text="hi", session_id="v1", active_place=RENO, **at_loves)
+    assert prov._stops(req, agent._SESSIONS["v1"]) == []
