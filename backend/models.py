@@ -147,6 +147,7 @@ class RouteInfo(BaseModel):
     handle: Optional[str] = None  # HERE routeHandle: lets the app re-route back onto this route after a deviation
     via: List[List[float]] = Field(default_factory=list)  # stops on the way, [[lat, lng], ...], in order
     section_starts: List[int] = Field(default_factory=list)  # geometry index where each HERE section begins
+    stops_s: float = 0  # seconds standing at the via stops (HERE stopDuration), already counted in duration_s
     weather: List[WeatherAlert] = Field(default_factory=list)  # active NWS alerts along the route
     chain_controls: List[ChainControl] = Field(default_factory=list)  # active Caltrans chain controls on the route
 

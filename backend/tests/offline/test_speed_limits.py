@@ -97,3 +97,11 @@ def test_fixture_limits_sit_on_kept_vertices():
     assert info.speed_limits and len(info.geometry) <= MAX_POINTS
     assert all(0 <= s.index < len(info.geometry) for s in info.speed_limits)
     assert [s.index for s in info.speed_limits] == sorted(s.index for s in info.speed_limits)
+
+
+def test_a_stretch_without_a_posted_limit_ends_the_previous_one():
+    spans = [_span(0, 29.17), {"offset": 4}, {"offset": 7}, _span(9, 24.44)]
+    assert _speed_limits(spans, 0) == [(0, 65), (4, 0), (9, 55)]  # one 0 for the unknown stretch, not two
+    assert _speed_limits([{"offset": 0}, _span(3, 29.17)], 0) == [(3, 65)]  # nothing known yet: nothing to end
+    idx = _Index([0, 4, 9])
+    assert [(s.index, s.mph) for s in _remap_limits([(0, 65), (4, 0), (9, 55)], idx)] == [(0, 65), (1, 0), (2, 55)]

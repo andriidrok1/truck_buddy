@@ -127,7 +127,7 @@ def test_via_stop_time_counts_in_the_eta():
     second["departure"]["time"] = "2026-10-27T18:11:50-07:00"  # 30 min after the first section's 17:41:50 arrival
     two["routes"][0]["sections"] = [s, second]
     info = _here_parse(two)
-    assert info.duration_s == 2 * 10330 + 1800
+    assert info.duration_s == 2 * 10330 + 1800 and info.stops_s == 1800
     assert _stops_s([s, s]) == 0.0  # no gap, no stop
     assert _stops_s([s, {"departure": {}}]) == 0.0  # missing times never break the parse
 
