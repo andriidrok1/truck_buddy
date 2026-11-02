@@ -1131,6 +1131,12 @@ class LlmAgentProvider:
             logger.info("add_stop query %r names a listed place -> %s", query, named.name)
             return named
         if query:
+            if TRUCK_STOP_NAME.search(query) and not re.search(r"\d", query):
+                # "the Pilot", "Love's in Auburn": a chain name is a truck stop near the driver before it is an
+                # address (the geocoder once answered with the hamlet of Pilot, NV, 300 miles past the destination)
+                stop = await self._truck_stop_named(req, query)
+                if stop:
+                    return stop
             with stage("tools"):
                 matches = await geocode(with_city(query, sess.get("city")), req.lat, req.lng)
             if not matches or is_street(matches[0]):
