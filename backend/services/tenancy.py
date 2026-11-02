@@ -230,9 +230,12 @@ async def org_vehicles(org_id: str) -> list[dict]:
 
 
 async def org_drivers(org_id: str) -> list[dict]:
-    """The org's drivers with their truck (when a device is bound to one) and whether Motive knows them."""
-    sql = ("SELECT r.id, r.display_name, r.motive_user_id, d.vehicle_id FROM drivers r LEFT JOIN devices d ON d.driver_id = r.id "
-           "WHERE r.org_id = {p} ORDER BY r.created_at, r.id")
+    """The org's drivers with their truck (when a device is bound to one) and whether Motive knows them.
+    A row whose devices are all owner or dispatcher phones is not a driver: binding by code gives everyone a
+    drivers row (it carries their memory), and the owner and the dispatcher were listed as drivers (QA
+    2026-11-02, bug 3). A row with no device left (a former driver) stays listed."""
+    sql = ("SELECT r.id, r.display_name, r.motive_user_id, d.vehicle_id, d.role FROM drivers r "
+           "LEFT JOIN devices d ON d.driver_id = r.id WHERE r.org_id = {p} ORDER BY r.created_at, r.id")
     k = db.store()
     if k == "sqlite":
         rows = await db._sq_run(lambda con: con.execute(sql.format(p="?"), (org_id,)).fetchall())
@@ -240,11 +243,18 @@ async def org_drivers(org_id: str) -> list[dict]:
         pool = await db._db()
         rows = [tuple(r) for r in await pool.fetch(sql.format(p="$1"), org_id)]
     out: dict[str, dict] = {}
-    for did, name, motive, vid in rows:
+    staff: set[str] = set()  # rows seen only with owner/dispatcher devices so far
+    for did, name, motive, vid, role in rows:
+        new = did not in out
         d = out.setdefault(did, {"id": did, "display_name": name, "motive_linked": bool(motive), "vehicle_ids": []})
+        if role is not None and role != "driver":
+            if new:
+                staff.add(did)
+            continue
+        staff.discard(did)
         if vid and vid not in d["vehicle_ids"]:
             d["vehicle_ids"].append(vid)
-    return list(out.values())
+    return [d for did, d in out.items() if did not in staff]
 
 
 class MotiveUserTaken(Exception):

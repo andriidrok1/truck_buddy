@@ -195,6 +195,17 @@ def test_fleet_summary_counts_per_truck(client):
     assert s["totals"]["failed_turns"] == 2 and s["day"] == "2026-11-02"  # Bravo's turn is not counted
 
 
+def test_fleet_drivers_lists_only_drivers(client):
+    # QA 2026-11-02, bug 3: the owner and the dispatcher bound by code got a drivers row and showed up as drivers.
+    f = _two_fleets(client)
+    drivers = client.get("/api/fleet/drivers", headers=f["a_owner"]).json()["drivers"]
+    ids = {d["id"] for d in drivers}
+    assert run(tenancy.device_of(_sub(f["a_drv"]))).driver_id in ids
+    assert run(tenancy.device_of(_sub(f["a_owner"]))).driver_id not in ids
+    assert run(tenancy.device_of(_sub(f["a_disp"]))).driver_id not in ids
+    assert len(drivers) == 1
+
+
 def test_fleet_motive_key_is_used_only_for_a_mapped_driver(client, agent_sandbox, fake_http, monkeypatch, caplog):
     from cryptography.fernet import Fernet
     monkeypatch.setenv("CREDENTIALS_KEY", Fernet.generate_key().decode())
