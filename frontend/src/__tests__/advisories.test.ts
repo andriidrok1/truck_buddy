@@ -157,10 +157,10 @@ describe("advisoryText", () => {
 });
 
 
-test("limitAt: a 0 entry means no posted limit known from there", () => {
+test("limitAt: a null (or 0) entry means no posted limit known from there", () => {
   const limits = [
     { index: 0, mph: 65 },
-    { index: 10, mph: 0 },
+    { index: 10, mph: null },
     { index: 20, mph: 25 },
   ];
   expect(limitAt(limits, 5)).toBe(65);

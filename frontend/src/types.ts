@@ -94,7 +94,8 @@ export type RouteInfo = {
   stops_s?: number;
 };
 
-export type SpeedLimit = { index: number; mph: number };
+/** `mph` null = no posted limit known from `index` on (a ramp, a road the router has no data for). */
+export type SpeedLimit = { index: number; mph: number | null };
 
 export type Incident = { type: string; closed: boolean; description: string; index: number; criticality: string };
 
