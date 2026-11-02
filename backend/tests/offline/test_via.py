@@ -303,7 +303,7 @@ def test_a_chain_name_is_the_truck_stop_nearby_before_any_geocode(agent_sandbox,
     prov = _sandbox(agent_sandbox, fake_http)
     near = Place(id="g-pilot-sac", name="Pilot Travel Center", category="truck_stop", lat=38.65, lng=-121.38,
                  address="Sacramento, CA", distance_mi=6.0)
-    agent_sandbox.places.places.append(near)
+    agent_sandbox.places_provider.places.append(near)
     agent_sandbox.llm.on(r"stop at the pilot$", {"intent": "add_stop", "query": "Pilot"})
     run(prov.handle(_req("take me to Reno", active=None), None))
     res = run(prov.handle(_req("stop at the Pilot"), None))
