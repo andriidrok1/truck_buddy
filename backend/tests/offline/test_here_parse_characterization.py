@@ -98,7 +98,8 @@ def test_straight_line_collapses_to_its_ends_and_anchors_stay():
 
 
 def test_a_bend_wider_than_the_tolerance_is_kept():
-    pts = _line(11, wobble=0.0011)  # 11 to 122 m zigzag: every point matters at 5 m
+    # a zigzag of 11 to 122 m (growing along the line): every point matters at 5 m
+    pts = [[38.0 + (0.0001 * (1 + i) if i % 2 else 0.0), -121.0 + i * 0.001] for i in range(11)]
     assert _thin_indices(pts) == list(range(11))
     assert len(_simplify(pts, 150.0)) == 2  # at 150 m it is a straight line
 
