@@ -38,7 +38,7 @@ import { getTruckProfile, isOnboarded, truckLabel, useTruckProfile } from "@/src
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
-import { providerPlace, restoreSavedTrip, selectPlaces, startTripPersistence, useTripStore, viaOf } from "@/src/state/tripStore";
+import { providerPlace, restoreSavedTrip, selectPlaces, startTripPersistence, stopsAhead, useTripStore, viaOf } from "@/src/state/tripStore";
 import { setHandsFree, setNudgesEnabled, setVoiceGuidance, takeTruckReroute, useHandsFree, useNudgesEnabled, useVoiceGuidance } from "@/src/state/settingsStore";
 import { reduceAgentResponse } from "@/src/state/agentReducer";
 import { applyEffects } from "@/src/state/applyEffects";
@@ -507,6 +507,9 @@ export default function MapScreen() {
     say("Rerouting.", { priority: PRIORITY.MANEUVER, kind: "system", key: "reroute", ttlMs: 20000 });
     const gen = trip().routeGen;
     const event = { cause: "off_route", dist_m: Math.round(g.distM), threshold_m: g.thresholdM, handle: !!route.handle, section_index: sectionIndex };
+    // /reroute gets the whole via list and the section index and drops the stops behind on its side; the
+    // fallback /route and the stop chips only get what is still ahead.
+    const ahead = cur.stops?.length ? cur.stops.slice(Math.min(sectionIndex, cur.stops.length)) : cur.stops;
     let fallback = false;
     try {
       let res;
@@ -525,10 +528,10 @@ export default function MapScreen() {
       } catch (e) {
         console.log(`[reroute] /reroute failed (${String(e)}), planning from scratch`);
         fallback = true;
-        res = await api.route(loc.coords, cur.place, false, route.via ?? [], cur.trip_id ?? null);
+        res = await api.route(loc.coords, cur.place, false, (route.via ?? []).slice(sectionIndex), cur.trip_id ?? null);
       }
       // Only onto the route the truck left: a stop added or a route picked while this ran is newer.
-      const applied = trip().applyRoute(gen, res.route, undefined, res.parking);
+      const applied = trip().applyRoute(gen, res.route, ahead, res.parking);
       if (applied) warnRestricted(res.route);
       tripLog.log("reroute", { ...event, ok: true, fallback, applied, restricted: res.route.restricted ?? null }, cur.trip_id);
       g.resetOffRoute();
@@ -926,11 +929,13 @@ export default function MapScreen() {
     const gen = trip().routeGen;
     if (!cur) return false;
     try {
-      // From where the truck is now, not where it was when the driver tapped the mic.
-      const res = await api.route(coordsRef.current, cur.place, false, viaOf(cur.stops), cur.trip_id ?? null);
+      // From where the truck is now, not where it was when the driver tapped the mic, and only through the
+      // stops still ahead (a fresh /route knows no section index to drop the ones already made).
+      const stops = stopsAhead(cur.route, cur.stops, coordsRef.current);
+      const res = await api.route(coordsRef.current, cur.place, false, viaOf(stops), cur.trip_id ?? null);
       // The route must still be the one this started from (the store's generation): a stop added or an
       // off-route reroute that landed meanwhile is newer than this plan. The caller learns whether it landed.
-      const applied = trip().applyRoute(gen, res.route, undefined, res.parking);
+      const applied = trip().applyRoute(gen, res.route, stops, res.parking);
       if (applied) warnRestricted(res.route);
       tripLog.log("reroute", { cause, ok: true, applied, restricted: res.route.restricted ?? null }, cur.trip_id);
       return applied;
@@ -946,7 +951,7 @@ export default function MapScreen() {
     const cur = trip().active;
     const gen = trip().routeGen;
     if (!cur) return;
-    const stops = (cur.stops ?? []).filter((s) => s.id !== stop.id);
+    const stops = stopsAhead(cur.route, cur.stops, loc.coords).filter((s) => s.id !== stop.id);
     const via = viaOf(stops);
     try {
       const res = via.length
