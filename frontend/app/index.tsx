@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { absoluteUrl, api } from "@/src/api";
+import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
 import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
 import { Icon } from "@/src/components/Icon";
@@ -44,6 +44,11 @@ import { PRIORITY } from "@/src/voice/queue";
 import { buildSttHint, streetFromInstruction } from "@/src/voice/sttHint";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
+
+/** Toast for a failed /route: the router's "no truck route" is a destination problem, not a retry. */
+function routeFailText(e: unknown): string {
+  return isNoTruckRoute(e) ? "No truck route there from here. Try another destination or an address on a main road." : "Couldn't build a route. Try again.";
+}
 
 // Below this much visible map (layout units) the bubble would cover the route; the sheet shows the text.
 // The route card leaves about 220 at the default font, about 120 at 130 %.
@@ -487,7 +492,9 @@ export default function MapScreen() {
     if (!activeRef.current) routeStart.current = Date.now();
     setActive(next);
     setPhase("navigating");
-    setFit({ key: `route-${next.place.id}-${Date.now()}`, points: [loc.coords, next.place] });
+    // Not while driving: the follow camera stays on the truck (the whole-route fit flashed for a second
+    // and snapped back on the next fix).
+    if (!drivingRef.current) setFit({ key: `route-${next.place.id}-${Date.now()}`, points: [loc.coords, next.place] });
   };
 
   const clearTimers = () => {
@@ -1181,8 +1188,8 @@ export default function MapScreen() {
         setActive((a) => (a ? { ...a, route: res.route } : a));
         warnRestricted(res.route);
       }
-    } catch {
-      if (myTurn === turn.current) showToast(failMsg);
+    } catch (e) {
+      if (myTurn === turn.current) showToast(isNoTruckRoute(e) ? routeFailText(e) : failMsg);
     }
   };
 
@@ -1368,10 +1375,10 @@ export default function MapScreen() {
       // Keep the previous destination among the alternatives.
       setOptions((list) => [...(prev ? [prev.place] : []), ...list].filter((o) => o.id !== p.id));
       startRoute(res);
-    } catch {
+    } catch (e) {
       if (myTurn !== turn.current) return;
       backToIdle();
-      showToast("Couldn't build a route. Try again.");
+      showToast(routeFailText(e));
     }
   };
 

@@ -29,10 +29,24 @@ export type RerouteBody = {
   via?: [number, number][];
 };
 
+/** A non-2xx answer, with the status so a caller can tell "no truck route" (422) from an outage. */
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    path: string,
+  ) {
+    super(`${path} failed: ${status}`);
+    this.name = "ApiError";
+  }
+}
+
+/** /route or /reroute answered 422: the router found no truck route between these points (not an outage). */
+export const isNoTruckRoute = (e: unknown): boolean => e instanceof ApiError && e.status === 422;
+
 /** A rejected token (expired / code changed) sends the driver back to the access-code screen. */
 function check(res: Response, path: string) {
   if (res.status === 401) setToken(null);
-  if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
+  if (!res.ok) throw new ApiError(res.status, path);
 }
 
 /**

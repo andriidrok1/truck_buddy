@@ -8,6 +8,7 @@ import { PRIVACY_URL } from "../constants";
 import { requestCode } from "../auth";
 import { giveConsent } from "../consent";
 import { fonts, radius, spacing, useTheme } from "../theme";
+import { startLocation } from "../geo/location";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
 
@@ -41,6 +42,7 @@ export function ConsentGate() {
     // The screen just explained what the location is for: ask for it here, once, instead of the
     // onboarding opening with a system dialog on top of its first question (U1).
     if (Platform.OS !== "web") await Location.requestForegroundPermissionsAsync().catch(() => null);
+    startLocation(); // the fix is in by the end of onboarding; not awaited, the screen moves on
     await giveConsent();
   };
 
