@@ -1,0 +1,127 @@
+import { ERROR_REOPEN_MS, initialTurnState, isStale, NUDGE_ANSWER_MS, reduce, SESSION_IDLE_MS, type TurnEvent, type TurnState } from "../dialog/turnMachine";
+
+const T0 = 1_700_000_000_000;
+let n = 0;
+const newId = () => `dlg-${++n}`;
+const run = (s: TurnState, events: (TurnEvent | [TurnEvent, number])[], now = T0) => {
+  let state = s;
+  const all: ReturnType<typeof reduce>["commands"] = [];
+  for (const ev of events) {
+    const [e, at] = Array.isArray(ev) ? ev : [ev, now];
+    const r = reduce(state, e, at, newId);
+    state = r.state;
+    all.push(...r.commands);
+  }
+  return { state, commands: all };
+};
+beforeEach(() => {
+  n = 0;
+});
+
+test("a tap opens a session and listens; a transcript becomes a turn; the answer reopens the mic (hands-free)", () => {
+  let r = run(initialTurnState, [{ type: "tap" }]);
+  expect(r.commands).toEqual([{ type: "newDialog", dialogId: "dlg-1" }, { type: "startListening", turnId: 1, chime: true, maxMs: undefined }]);
+  expect(r.state).toMatchObject({ mode: "listening", dialogId: "dlg-1", live: true, misses: 0, lastTurnAt: T0 });
+  r = run(r.state, [{ type: "sttDone", transcript: "take me to Reno" }]);
+  expect(r.commands).toEqual([{ type: "callAgent", turnId: 1, text: "take me to Reno", dialogId: "dlg-1" }]);
+  expect(r.state.mode).toBe("thinking");
+  r = run(r.state, [{ type: "agentDone", status: "route_set" }, { type: "speakDone" }]);
+  expect(r.state.mode).toBe("listening");
+  expect(r.commands.at(-1)).toMatchObject({ type: "startListening", turnId: 2 });
+});
+
+test("a route stops the loop but keeps the session; the next answer does not reopen the mic", () => {
+  let r = run(initialTurnState, [{ type: "tap" }, { type: "sttDone", transcript: "x" }, { type: "routeSet" }, { type: "agentDone", status: "route_set" }, { type: "speakDone" }]);
+  expect(r.state).toMatchObject({ mode: "idle", live: false, dialogId: "dlg-1" });
+  expect(r.commands.filter((c) => c.type === "startListening")).toHaveLength(1);
+  // the same session serves a typed follow-up
+  r = run(r.state, [{ type: "text", text: "the second one" }]);
+  expect(r.commands).toEqual([{ type: "callAgent", turnId: 2, text: "the second one", dialogId: "dlg-1" }]);
+});
+
+test("a confirm question forces one more listen even when the loop is paused", () => {
+  const r = run(initialTurnState, [{ type: "text", text: "take me to Payson" }, { type: "agentDone", status: "confirm" }, { type: "speakDone" }]);
+  expect(r.state.mode).toBe("listening");
+  expect(r.state.pendingConfirm).toBe(false); // consumed by the listen
+  expect(r.commands.at(-1)).toMatchObject({ type: "startListening", chime: true });
+});
+
+test("two misses in a row end the dialog; one understood answer resets the count", () => {
+  let r = run(initialTurnState, [{ type: "tap" }, { type: "sttDone", transcript: "blorp" }, { type: "agentDone", status: "not_understood" }]);
+  expect(r.state.misses).toBe(1);
+  r = run(r.state, [{ type: "speakDone" }, { type: "sttDone", transcript: "ok" }, { type: "agentDone", status: "chat" }]);
+  expect(r.state.misses).toBe(0);
+  r = run(r.state, [{ type: "speakDone" }, { type: "sttDone", transcript: "a" }, { type: "agentDone", status: "not_understood" }, { type: "speakDone" }, { type: "sttDone", transcript: "b" }, { type: "agentDone", status: "not_understood" }]);
+  expect(r.state).toMatchObject({ dialogId: null, live: false, misses: 0 });
+  expect(r.commands.filter((c) => c.type === "closeDialog")).toHaveLength(1);
+  // with no dialog the speech end goes to idle, no mic
+  r = run(r.state, [{ type: "speakDone" }]);
+  expect(r.state.mode).toBe("idle");
+});
+
+test("bye ends the dialog after the answer is spoken", () => {
+  const r = run(initialTurnState, [{ type: "tap" }, { type: "sttDone", transcript: "thanks" }, { type: "agentDone", status: "chat", endConversation: true }, { type: "speakDone" }]);
+  expect(r.state).toMatchObject({ mode: "idle", dialogId: null, live: false });
+});
+
+test("silence pauses the loop; the first silence says so, later ones stay quiet", () => {
+  let r = run(initialTurnState, [{ type: "tap" }, { type: "sttDone", transcript: "" }]);
+  expect(r.state).toMatchObject({ mode: "idle", live: false, dialogId: "dlg-1" });
+  expect(r.commands.filter((c) => c.type === "sayNotUnderstood")).toHaveLength(1);
+  r = run(r.state, [{ type: "tap" }, { type: "sttDone", transcript: "y" }, { type: "agentDone", status: "not_understood" }, { type: "speakDone" }, { type: "sttDone", transcript: "" }]);
+  expect(r.commands.filter((c) => c.type === "sayNotUnderstood")).toHaveLength(0);
+  expect(r.state.mode).toBe("idle");
+});
+
+test("cancelled listening is a no-op; cancel drops the turn in flight but keeps the session", () => {
+  let r = run(initialTurnState, [{ type: "tap" }, { type: "sttDone", transcript: "", cancelled: true }]);
+  expect(r.state).toMatchObject({ mode: "idle", live: true, dialogId: "dlg-1" });
+  r = run(r.state, [{ type: "text", text: "find parking" }, { type: "cancel" }]);
+  expect(r.commands.slice(-2)).toEqual([{ type: "cancelTurn", turnId: 2 }, { type: "stopSpeaking" }]);
+  expect(r.state).toMatchObject({ mode: "idle", dialogId: "dlg-1", turnId: 3 });
+});
+
+test("a failed turn is a miss and reopens the mic after a pause when live; the second failure ends the dialog", () => {
+  let r = run(initialTurnState, [{ type: "tap" }, { type: "sttDone", transcript: "x" }, { type: "error" }]);
+  expect(r.state).toMatchObject({ mode: "speaking", misses: 1, live: true });
+  expect(r.commands.at(-1)).toEqual({ type: "scheduleReopen", afterMs: ERROR_REOPEN_MS });
+  r = run(r.state, [{ type: "speakDone" }, { type: "sttDone", transcript: "y" }, { type: "error" }]);
+  expect(r.state).toMatchObject({ mode: "idle", dialogId: null });
+  // paused loop: a failure does not reopen
+  r = run(initialTurnState, [{ type: "text", text: "x" }, { type: "error" }]);
+  expect(r.state).toMatchObject({ mode: "idle", misses: 1, dialogId: "dlg-2" });
+  expect(r.commands.some((c) => c.type === "scheduleReopen")).toBe(false);
+});
+
+test("a stale session gets a new id on the next turn; a tick while idle closes it", () => {
+  let r = run(initialTurnState, [{ type: "tap" }, { type: "sttDone", transcript: "x" }, { type: "agentDone", status: "chat" }, { type: "speakDone" }, { type: "sttDone", transcript: "" }]);
+  const later = T0 + SESSION_IDLE_MS + 1;
+  expect(isStale(r.state, later)).toBe(true);
+  r = run(r.state, [[{ type: "tap" }, later]]);
+  expect(r.commands[0]).toEqual({ type: "newDialog", dialogId: "dlg-2" });
+  r = run(r.state, [{ type: "sttDone", transcript: "" }]);
+  r = run(r.state, [[{ type: "tick" }, later + SESSION_IDLE_MS + 1]]);
+  expect(r.state.dialogId).toBeNull();
+  expect(r.commands).toEqual([{ type: "closeDialog" }]);
+});
+
+test("a nudge offer opens a short window in the offer's session and marks a pending answer", () => {
+  let r = run(initialTurnState, [{ type: "nudge" }]);
+  expect(r.commands).toEqual([{ type: "newDialog", dialogId: "dlg-1" }, { type: "startListening", turnId: 1, chime: true, maxMs: NUDGE_ANSWER_MS }]);
+  expect(r.state).toMatchObject({ mode: "listening", pendingConfirm: true });
+  // a nudge during a turn does nothing
+  r = run(r.state, [{ type: "sttDone", transcript: "yes" }, { type: "nudge" }]);
+  expect(r.state.mode).toBe("thinking");
+  expect(r.commands.filter((c) => c.type === "startListening")).toHaveLength(0); // the turn in flight wins
+});
+
+test("wake barges in: stop speaking, no chime; pause and endRoute", () => {
+  let r = run(initialTurnState, [{ type: "wake" }]);
+  expect(r.commands[0]).toEqual({ type: "stopSpeaking" });
+  expect(r.commands.at(-1)).toMatchObject({ type: "startListening", chime: false });
+  r = run(r.state, [{ type: "pause" }]);
+  expect(r.state.live).toBe(false);
+  r = run(r.state, [{ type: "endRoute" }]);
+  expect(r.state.dialogId).toBeNull();
+  expect(r.commands).toEqual([{ type: "closeDialog" }]);
+});

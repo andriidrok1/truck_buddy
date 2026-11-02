@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as Sentry from "@sentry/react-native";
 
-import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
+import { absoluteUrl, api, ApiError, isNoTruckRoute } from "@/src/api";
 import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
 import { Icon } from "@/src/components/Icon";
@@ -923,18 +923,19 @@ export default function MapScreen() {
     } catch (e) {
       plan?.cancel();
       if (myTurn !== turn.current) return; // cancelled by the driver (barge-in, close): nothing to report
-      const err = String(e);
-      const msg = err.includes("422")
-        ? "Check your truck profile and try again."
-        : err.includes("502")
-          ? MESSAGES.placesUnavailable
-          : err.includes("504")
-            ? STT_SLOW
-            : err.includes("429")
-              ? RATE_LIMITED
-              : /abort|network|timed? ?out|failed to fetch/i.test(err)
-                ? NO_CONNECTION
-                : MESSAGES.notUnderstood;
+      const status = e instanceof ApiError ? e.status : null;
+      const msg =
+        status === 422
+          ? "Check your truck profile and try again."
+          : status === 502
+            ? MESSAGES.placesUnavailable
+            : status === 504
+              ? STT_SLOW
+              : status === 429
+                ? RATE_LIMITED
+                : status === null && /abort|network|timed? ?out|failed to fetch/i.test(String(e))
+                  ? NO_CONNECTION
+                  : MESSAGES.notUnderstood;
       setCaption(replyCaption(msg));
       backToIdle();
       continueDialog(myTurn, null, wait(1200));
@@ -1453,6 +1454,9 @@ export default function MapScreen() {
           break;
         case "saveProfile":
           saveTruckProfile({ ...getTruckProfile(), ...e.patch });
+          break;
+        case "unknownAction":
+          tripLog.log("turn_unknown_action", { action: e.action }, activeRef.current?.trip_id);
           break;
         case "reroute":
           // Save first so the new route uses the new profile.

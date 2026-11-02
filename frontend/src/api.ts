@@ -1,4 +1,5 @@
 import { authHeader, requestCode, setToken } from "./auth";
+import { AgentResponseSchema, checkContract, RouteResultSchema } from "./api/schemas";
 import { eldHeader } from "./eld";
 import { ensureTruckProfile } from "./hooks/useTruckProfile";
 import { isNetworkError, offlineHint } from "./net/offlineHint";
@@ -209,7 +210,7 @@ export const api = {
         trip_id: tripId ?? undefined,
         truck_profile: await ensureTruckProfile(),
       }),
-    }),
+    }).then((r) => checkContract(RouteResultSchema, r, "/route")),
   /** One batch of trip events (src/net/tripEvents.ts); 15 s is plenty, nothing waits on it. */
   tripEvents: (events: { t: string; trip_id?: string; kind: string; data: Record<string, unknown> }[]) =>
     request<{ stored: number }>(`/trips/events`, { method: "POST", body: JSON.stringify(events), timeoutMs: 15000 }),
@@ -226,7 +227,7 @@ export const api = {
       method: "POST",
       timeoutMs: 15000,
       body: JSON.stringify({ ...body, truck_profile: await ensureTruckProfile() }),
-    }),
+    }).then((r) => checkContract(RouteResultSchema, r, "/reroute")),
   parking: (place: Place, approach?: Approach | null) =>
     request<ParkingCheck>(`/parking`, { method: "POST", body: JSON.stringify({ place, approach }), timeoutMs: 60000 }),
   /** Spoken parking answer; waits up to `waitS` for a satellite check in flight. */
@@ -305,7 +306,7 @@ export const api = {
         stt_confidence: sttConfidence,
         speed_mps: speedForAgent(speedMps),
       }),
-    }),
+    }).then((r) => checkContract(AgentResponseSchema, r, "/agent")),
   /**
    * "Anything to say?" while driving (every few minutes): break and parking nudges, spoken as
    * ambient lines. The backend keeps an offer pending for the next turn of the same session.

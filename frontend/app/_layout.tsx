@@ -20,6 +20,7 @@ import { ErrorBoundary } from "@/src/components/error-boundary";
 import { useConsent } from "@/src/consent";
 import { loadEldToken } from "@/src/eld";
 import { queryClient } from "@/src/query-client";
+import { setContractWarningSink } from "@/src/api/schemas";
 
 // Crash and error reporting. No DSN (local dev, Expo Go) = Sentry stays dormant and every call is a no-op.
 const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN?.trim();
@@ -29,6 +30,13 @@ Sentry.init({
   tracesSampleRate: 0.1,
   environment: process.env.EXPO_PUBLIC_SENTRY_ENV ?? (__DEV__ ? "development" : "production"),
   sendDefaultPii: false,
+});
+
+// A server answer that no longer fits the shape the app reads: the app carries on with the raw object, the
+// mismatch lands in Sentry (dev: console).
+setContractWarningSink((path, issues) => {
+  if (__DEV__) console.warn(`[contract] ${path}: ${issues.join("; ")}`);
+  else Sentry.captureMessage(`contract ${path}: ${issues.join("; ")}`, "warning");
 });
 
 // Dev only: the red/yellow boxes over the map get in the way of driving the stand. Production builds
