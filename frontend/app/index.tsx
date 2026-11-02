@@ -36,7 +36,7 @@ import { setActiveRoute } from "@/src/state/activeRoute";
 import { reduceAgentResponse } from "@/src/state/agentReducer";
 import { offlineTurn } from "@/src/state/offlineTurn";
 import { clearSavedRoute, loadActiveRoute, saveActiveRoute } from "@/src/state/routeStore";
-import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
+import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult, RouteInfo } from "@/src/types";
 import { storage } from "@/src/utils/storage";
 import { backAction } from "@/src/utils/backAction";
 import { planFiller, type FillerPlan } from "@/src/voice/fillers";
@@ -137,6 +137,7 @@ export default function MapScreen() {
   useLayoutEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+  const drivingRef = useRef(false);
   const [active, setActive] = useState<ActiveRoute | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -151,6 +152,9 @@ export default function MapScreen() {
   const [options, setOptions] = useState<Place[]>([]);
   const [parking, setParking] = useState<Record<string, ParkingState>>({});
   const [driving, setDriving] = useState(false);
+  useLayoutEffect(() => {
+    drivingRef.current = driving;
+  }, [driving]);
   const [overview, setOverview] = useState(false);
   // The list of the other routes the engine offered (the "Routes (N)" chip, before "Go").
   const [routesOpen, setRoutesOpen] = useState(false);
@@ -541,9 +545,10 @@ export default function MapScreen() {
       setActive(saved.active);
       setPhase("navigating");
       setRestoredId(saved.active.place.id);
-      setFit({ key: `restored-${saved.active.place.id}`, points: [loc.coords, saved.active.place] });
+      // The whole saved line: the GPS fix is not in yet, and the demo point would span half the country.
+      const line = saved.active.route.geometry.filter((_, i) => i % 25 === 0).map(([lat, lng]) => ({ lat, lng }));
+      setFit({ key: `restored-${saved.active.place.id}`, points: [...line, saved.active.place] });
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const restored = restoredId !== null && active?.place.id === restoredId && !driving;
   useEffect(() => {
@@ -559,6 +564,20 @@ export default function MapScreen() {
    * One at a time; the new route only lands if the destination is still the same.
    * Not for a tester parked on a fake spot (no trace = nothing moves) and not before "Go".
    */
+  /**
+   * A route that landed while driving and breaks a truck restriction (or needs a permit) is said out loud:
+   * the card with the red banner is not on screen then, and the turn calls would otherwise just carry on.
+   */
+  const warnRestricted = (route: RouteInfo) => {
+    if (!route.restricted || !drivingRef.current) return;
+    const line = route.notices?.[0] ?? "";
+    const text =
+      route.restricted === "legal"
+        ? `Heads up: ${line || "this route needs a permit for your truck."}`
+        : `Heads up, the new route isn't cleared for your truck. ${line} Watch the signs.`;
+    say(text.replace(/\s+/g, " ").trim(), { priority: PRIORITY.MANEUVER, kind: "system", key: "route-restricted", ttlMs: 30000 });
+  };
+
   const rerouting = useRef(false);
   const offlineRef = useRef<OfflineGuidance | null>(null);
   const rerouteOffRoute = async (g: Guidance) => {
@@ -594,10 +613,12 @@ export default function MapScreen() {
         });
       } catch (e) {
         console.log(`[reroute] /reroute failed (${String(e)}), planning from scratch`);
-        res = await api.route(loc.coords, cur.place);
+        res = await api.route(loc.coords, cur.place, false, route.via ?? []);
       }
-      if (activeRef.current?.place.id === cur.place.id) {
+      // Only onto the route the truck left: a stop added or a route picked while this ran is newer.
+      if (activeRef.current?.place.id === cur.place.id && activeRef.current.route === route) {
         setActive((a) => (a ? { ...a, route: res.route } : a));
+        warnRestricted(res.route);
       }
       g.resetOffRoute();
     } catch {
@@ -785,7 +806,7 @@ export default function MapScreen() {
       if (transcript) setCaption({ reply: "…", heard: transcript });
       const res = await api.agentSpeak(
         transcript,
-        loc.coords,
+        coordsRef.current, // the truck moved while the driver talked and the words were transcribed
         activeRef.current,
         ctrl.signal,
         dialog.current ?? undefined,
@@ -1146,15 +1167,19 @@ export default function MapScreen() {
     return () => sub.remove();
   }, []);
 
-  /** Re-plans the active route with the current truck profile (after a voice change). */
+  /** Re-plans the active route with the current truck profile (after a voice change) or to the entrance;
+   * the stops on the way stay (they used to vanish from the line while their chips stayed on screen). */
   const reroute = async (myTurn: number, failMsg = "Couldn't update the route. Try again.") => {
     const cur = activeRef.current;
     if (!cur) return;
     try {
-      const res = await api.route(loc.coords, cur.place);
-      // Only the destination must still match: a newer turn shouldn't keep the old route on screen.
-      if (activeRef.current?.place.id === cur.place.id) {
+      // From where the truck is now, not where it was when the driver tapped the mic.
+      const res = await api.route(coordsRef.current, cur.place, false, cur.route.via ?? []);
+      // The destination and the route must still be the ones this started from: a stop added or an
+      // off-route reroute that landed meanwhile is newer than this plan.
+      if (activeRef.current?.place.id === cur.place.id && activeRef.current.route === cur.route) {
         setActive((a) => (a ? { ...a, route: res.route } : a));
+        warnRestricted(res.route);
       }
     } catch {
       if (myTurn === turn.current) showToast(failMsg);
@@ -1179,8 +1204,8 @@ export default function MapScreen() {
             traveled_m: 0,
             via,
           })
-        : await api.route(loc.coords, cur.place);
-      if (activeRef.current?.place.id === cur.place.id) {
+        : await api.route(coordsRef.current, cur.place);
+      if (activeRef.current?.place.id === cur.place.id && activeRef.current.route === cur.route) {
         setActive((a) => (a ? { ...a, route: res.route, stops } : a));
       }
     } catch {
@@ -1327,6 +1352,8 @@ export default function MapScreen() {
 
   const onPlacePress = async (p: Place) => {
     if (phase === "thinking") return;
+    // Pins stay on the map while driving; a stray touch on one must not swap the destination mid-drive.
+    if (drivingRef.current) return;
     const prev = activeRef.current;
     const myTurn = ++turn.current;
     voice.stopSpeaking();
@@ -1336,7 +1363,7 @@ export default function MapScreen() {
     try {
       // Breakdown providers: the driver needs the shop, not a satellite parking check (faster route).
       const isProvider = p.category === "service" || !!providersRef.current?.providers.some((x) => x.id === p.id);
-      const res = await api.route(loc.coords, p, isProvider);
+      const res = await api.route(coordsRef.current, p, isProvider);
       if (myTurn !== turn.current) return;
       // Keep the previous destination among the alternatives.
       setOptions((list) => [...(prev ? [prev.place] : []), ...list].filter((o) => o.id !== p.id));

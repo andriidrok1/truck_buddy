@@ -125,3 +125,23 @@ describe("savedAgeLabel", () => {
     expect(savedAgeLabel(T0, T0 + 2 * H + 5 * 60_000)).toBe("saved 2 h 05 min ago");
   });
 });
+
+describe("writes are serialised", () => {
+  it("a save still in flight when the route is cleared does not bring it back", async () => {
+    await AsyncStorage.clear();
+    const real = AsyncStorage.setItem.bind(AsyncStorage);
+    let release: () => void = () => {};
+    const slow = new Promise<void>((r) => (release = r));
+    const spy = jest.spyOn(AsyncStorage, "setItem").mockImplementationOnce(async (k, v) => {
+      await slow; // the parking result's save hangs in the bridge
+      return real(k, v);
+    });
+    const saving = saveActiveRoute(active, T0);
+    const clearing = clearSavedRoute(); // "End route" a few ms later
+    release();
+    await Promise.all([saving, clearing]);
+    expect(await AsyncStorage.getItem(ACTIVE_ROUTE_KEY)).toBeNull();
+    expect(getSavedAt()).toBeNull();
+    spy.mockRestore();
+  });
+});

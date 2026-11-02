@@ -158,10 +158,12 @@ export const api = {
   clearMemory: () => request<{ deleted: number }>(`/memory`, { method: "DELETE" }),
   places: (category: Category, at: LatLng) =>
     request<PlacesResponse>(`/places?category=${category}&lat=${at.lat}&lng=${at.lng}`),
-  route: async (from: LatLng, place: Place, skipParking = false) =>
+  /** POST /api/route; `via` = the stops already on the way, so a re-plan (new truck size, entrance,
+   * off-route fallback) keeps them instead of silently routing straight to the destination. */
+  route: async (from: LatLng, place: Place, skipParking = false, via: [number, number][] = []) =>
     request<RouteResult>(`/route`, {
       method: "POST",
-      body: JSON.stringify({ lat: from.lat, lng: from.lng, place, skip_parking: skipParking, truck_profile: await ensureTruckProfile() }),
+      body: JSON.stringify({ lat: from.lat, lng: from.lng, place, skip_parking: skipParking, via, truck_profile: await ensureTruckProfile() }),
     }),
   /**
    * Off-route reroute: the engine resumes the server-side plan (`handle`, section, metres into it)
