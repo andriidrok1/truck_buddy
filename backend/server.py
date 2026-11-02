@@ -24,7 +24,7 @@ from services.parking import cached_parking, check_parking, fetch_satellite  # n
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import approach, approach_api, auth, chains, memory, onboarding, parking_store, parking_warm, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services import approach, approach_api, auth, chains, memory, onboarding, parking_store, parking_warm, session_store, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
 
 WEATHER_BUDGET_S = 2.5  # NWS alerts on /route may add at most this much; never the route itself
 from pydantic import BaseModel, Field  # noqa: E402
@@ -87,7 +87,7 @@ async def memory_list(driver: str = Depends(auth.require_driver), limit: int = Q
 
 @api.delete("/memory")
 async def memory_clear(driver: str = Depends(auth.require_driver)):
-    agent_sessions_drop(driver)
+    await agent_sessions_drop(driver)
     try:
         return {"deleted": await asyncio.wait_for(memory.clear(driver), MEMORY_WAIT_S)}
     except Exception as e:  # noqa: BLE001
@@ -95,11 +95,9 @@ async def memory_clear(driver: str = Depends(auth.require_driver)):
         raise HTTPException(status_code=503, detail="Memory is unavailable right now")
 
 
-def agent_sessions_drop(driver: str) -> None:
-    """Forget the in-process dialog of this driver too (its id prefixes the session ids)."""
-    from services.agent import _SESSIONS
-    for sid in [s for s in _SESSIONS if s.startswith(driver)]:
-        _SESSIONS.pop(sid, None)
+async def agent_sessions_drop(driver: str) -> None:
+    """Forget the dialogs of this driver too (its id prefixes the session ids), wherever they are stored."""
+    await session_store.drop_prefix(driver)
 
 
 @public.get("/health")
@@ -165,12 +163,20 @@ async def nudges_endpoint(req: NudgeRequest, request: Request, driver: str = Dep
         req.session_id = f"{driver}:{req.session_id}"[:64]
     else:
         req.session_id = f"{driver}:solo"[:64]
-    from services.agent import _session
+    store = session_store.get_store()
+    state = await store.load(req.session_id)
+    token = session_store.enter(req.session_id, state)
     try:
-        out = await nudges.compute(req, _session(req.session_id), req.motive_key)
+        out = await nudges.compute(req, state, req.motive_key)
     except Exception as e:  # noqa: BLE001 - never an error for a background poll
         logger.warning("nudges failed: %s: %s", type(e).__name__, e)
         out = []
+    finally:
+        session_store.leave(token)
+        try:
+            await store.save(req.session_id, state)  # a nudge offer becomes the next turn's pending answer
+        except Exception as e:  # noqa: BLE001
+            logger.warning("dialog state save failed for %s: %s", req.session_id, e)
     return NudgeResponse(nudges=out)
 
 

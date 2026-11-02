@@ -106,14 +106,14 @@ async def _hos(sess: dict, key: Optional[str]) -> Optional[hos.Hos]:
     if not key or not hos.enabled():
         return None
     cached = sess.get("hos_cache")
-    if cached and time.monotonic() - cached[0] < HOS_CACHE_S:
+    if cached and time.time() - cached[0] < HOS_CACHE_S:  # epoch time: the state crosses processes
         return cached[1]
     try:
         h = await hos.available_time(key)
     except Exception as e:  # noqa: BLE001
         logger.info("nudge hos lookup failed: %s", type(e).__name__)
         return None
-    sess["hos_cache"] = (time.monotonic(), h)
+    sess["hos_cache"] = [time.time(), h]
     return h
 
 

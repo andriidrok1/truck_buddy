@@ -55,7 +55,7 @@ def test_rejections_change_the_place_not_the_road(agent_sandbox, fake_http):
     third = run(prov.handle(_req("something else", active=second.place), None))
     assert third.status == "route_set" and third.place.id not in (first.place.id, second.place.id), third.reply
     assert not third.reply.startswith("Here's another way")
-    assert {first.place.id, second.place.id} <= agent._SESSIONS["h4"]["rejected"]
+    assert {first.place.id, second.place.id} <= set(agent._SESSIONS["h4"]["rejected"])  # a list now: it is stored as JSON
 
 
 def test_the_second_one_is_a_pick_never_a_geocode(agent_sandbox, fake_http):

@@ -351,7 +351,7 @@ async def _run(d: dict, req: AgentRequest, sess: dict, source: str) -> AgentResp
     stats["stages_ms"]["summary"] = round((time.perf_counter() - t) * 1000)
     stats["llm_calls"] += 1
     sess["providers"] = ranked
-    sess["providers_at"] = time.monotonic()
+    sess["providers_at"] = time.time()  # epoch time: the state crosses processes
     sess["places"] = [_place(p) for p in ranked]
     sess["breakdown"] = {**d, "mode": mode}
     logger.info("breakdown research kind=%s mode=%s n=%d stats=%s", d["kind"], mode, len(ranked), stats)
@@ -487,7 +487,7 @@ async def _handle(req: AgentRequest, sess: dict, text: str, source: str) -> Opti
         d["detail"] = pending.get("detail") or d.get("detail")
         return start_research(d, req, sess, text, source)
 
-    if sess.get("providers") and time.monotonic() - sess.get("providers_at", 0) < FOLLOWUP_TTL_S:
+    if sess.get("providers") and time.time() - sess.get("providers_at", 0) < FOLLOWUP_TTL_S:
         with stage("llm_round_1"):
             return await followup(req, sess, text, source)
     return None

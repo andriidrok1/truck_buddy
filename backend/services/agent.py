@@ -10,7 +10,6 @@ import logging
 import math
 import os
 import re
-from collections import OrderedDict
 from typing import Optional
 
 import httpx
@@ -23,6 +22,8 @@ from services.geocode import _STATES, chain_query, geocode, is_street, town_quer
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
 from services.parking import cached_parking, check_parking, is_town, listed_in_data
 from services.places import get_places_provider
+from services import session_store
+from services.dialog_state import DialogState
 from services.errors import NoTruckRoute
 from services.routing import VIA_STOP_S, get_routing_provider
 from services.flags import on
@@ -67,6 +68,11 @@ def _nearest_index(geometry: list, lat: float, lng: float) -> int:
         if d < best:
             best, at = d, i
     return at
+
+
+def _route_key(r: RouteInfo) -> tuple:
+    """What tells two routes apart once they have been through JSON (object identity does not survive a save)."""
+    return (r.handle or "", r.distance_m, r.duration_s, tuple(r.labels or ()))
 
 
 def _profile_key(t: TruckProfile) -> tuple:
@@ -212,7 +218,7 @@ reply is only for chat and bye: English, spoken style, no markdown, at most 2 sh
 
 MAX_HISTORY = 8
 PAST_TURNS = 80  # long-term memory fed to a new dialog (the driver's lines among the last 80 stored turns)
-_SESSIONS: "OrderedDict[str, dict]" = OrderedDict()
+_SESSIONS = session_store.memory_sessions()  # the memory store's dialogs (tests look them up here)
 GOODBYE = re.compile(r"\b(bye|goodbye|that's all|that is all|that's it|i'm good|im good|no thanks|nothing else|see you)\b", re.I)
 
 
@@ -239,16 +245,19 @@ def _fit_for_speed(req: AgentRequest, res: AgentResponse) -> None:
     res.reply = fit_reply(res.reply, FAST_SENTENCES if at_speed(req) else SLOW_SENTENCES)
 
 
-def _session(sid: Optional[str]) -> dict:
-    """Short-lived conversation memory (per dialog, in process)."""
+def _session(sid: Optional[str]) -> DialogState:
+    """The dialog's state: the one the current turn loaded (services/session_store), else the in-process one."""
+    return session_store.current_or_memory(sid)
+
+
+def _session_if(sid: Optional[str]) -> Optional[DialogState]:
+    """The dialog's state when this turn has one (or the memory store knows the id); None otherwise."""
     if not sid:
-        return {"history": [], "places": []}
-    if sid not in _SESSIONS:
-        _SESSIONS[sid] = {"history": [], "places": []}
-        while len(_SESSIONS) > 200:
-            _SESSIONS.popitem(last=False)
-    _SESSIONS.move_to_end(sid)
-    return _SESSIONS[sid]
+        return None
+    got = session_store.current(sid)
+    if got is not None:
+        return got
+    return _SESSIONS.get(sid)
 
 
 _tasks: set = set()
@@ -278,15 +287,6 @@ def _background_task(t: asyncio.Task) -> None:
 
 def _background(coro) -> None:
     _background_task(asyncio.create_task(coro))
-
-
-def _adopt_past(sess: dict) -> None:
-    """A memory read that outlived the first turn lands in the session as soon as it is done."""
-    task = sess.get("past_task")
-    if task is not None and task.done():
-        sess.pop("past_task", None)
-        if not task.cancelled() and task.exception() is None:
-            sess.update(task.result())
 
 
 def _street(address: Optional[str]) -> str:
@@ -479,6 +479,8 @@ STREET_WORDS = {"st": "Street", "ave": "Avenue", "rd": "Road", "blvd": "Boulevar
                 "cir": "Circle", "n": "North", "s": "South", "e": "East", "w": "West", "ne": "Northeast",
                 "nw": "Northwest", "se": "Southeast", "sw": "Southwest"}
 VIA_FAR_YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|add it|go ahead|do it|please do|fine)\b", re.I)
+# A pending question names its extra "yes" pattern instead of carrying the regex (the state is stored as JSON).
+YES_PATTERNS = {"via_far_yes": VIA_FAR_YES, "dest_yes": DEST_YES}
 STOP_DETOUR_MIN_S = 45 * 60  # a stop costing more than this beyond its own 30 minutes...
 STOP_DETOUR_FRACTION = 0.5  # ...and more than half the trip so far is asked about first
 WHICH_PLACE = "Which place? Find one or set a route first."
@@ -821,26 +823,34 @@ async def classify(text: str, context: str, truck: TruckProfile) -> dict:
     return _parse(res.text)
 
 
+# Memory reads that outlived the first turn of a dialog, per process (an asyncio.Task cannot live in the stored
+# DialogState). The next turn in this process adopts the result; another worker simply reads again.
+_past_tasks: dict[str, asyncio.Task] = {}
+
+
 class LlmAgentProvider:
     source = MODEL[1]
 
     async def handle(self, req: AgentRequest, driver: Optional[str] = None) -> AgentResponse:
         if driver and not req.session_id:
             req.session_id = f"{driver}:solo"[:64]  # typed turns outside a dialog still use memory
-        if driver and req.session_id and req.session_id not in _SESSIONS:
-            # A new dialog starts with what the driver told the copilot in earlier ones. The read runs as a
-            # task: a warm database answers well within MEMORY_FIRST_TURN_S, a cold or slow one no longer
-            # holds the first reply, the result is picked up by whichever turn comes next.
-            sess = _session(req.session_id)
-            task = asyncio.create_task(self._load_past(driver))
-            _background_task(task)
-            done, _ = await asyncio.wait({task}, timeout=MEMORY_FIRST_TURN_S)
-            if done:
-                sess.update(task.result())
-            else:
-                sess["past_task"] = task
-        elif req.session_id in _SESSIONS:
-            _adopt_past(_SESSIONS[req.session_id])
+        sid = req.session_id
+        store = session_store.get_store()
+        state = await store.load(sid) if sid else DialogState()
+        token = session_store.enter(sid, state)
+        try:
+            return await self._turn(req, driver, state)
+        finally:
+            session_store.leave(token)
+            if sid:
+                try:
+                    await store.save(sid, state)
+                except Exception as e:  # noqa: BLE001 - the reply stands; the next turn starts from what was saved before
+                    logger.warning("dialog state save failed for %s: %s", sid, e)
+
+    async def _turn(self, req: AgentRequest, driver: Optional[str], sess: DialogState) -> AgentResponse:
+        if driver and req.session_id and not sess.past_loaded:
+            await self._adopt_past(driver, req.session_id, sess)
         res = await self._handle(req)
         _fit_for_speed(req, res)
         if res.status == "chat" and GOODBYE.search(req.text or ""):
@@ -863,6 +873,23 @@ class LlmAgentProvider:
                 sess["places"] = ([res.place] + list(res.options))[:MAX_OPTIONS + 1]
         return res
 
+    async def _adopt_past(self, driver: str, sid: str, sess: DialogState) -> None:
+        """A new dialog starts with what the driver told the copilot in earlier ones. A warm database answers well
+        within MEMORY_FIRST_TURN_S; a cold or slow one no longer holds the first reply: the read goes on in the
+        background and lands on whichever later turn finds it done (past_loaded says it did)."""
+        task = _past_tasks.get(sid)
+        if task is None or task.cancelled():
+            task = asyncio.create_task(self._load_past(driver))
+            _background_task(task)
+            _past_tasks[sid] = task
+        done, _ = await asyncio.wait({task}, timeout=MEMORY_FIRST_TURN_S)
+        if not done:
+            return
+        _past_tasks.pop(sid, None)
+        if task.exception() is None:
+            sess.update(task.result())
+        sess.past_loaded = True
+
     @staticmethod
     async def _load_past(driver: str) -> dict:
         """{"past": the driver's own lines from earlier dialogs, "facts": learned preferences or None};
@@ -882,7 +909,6 @@ class LlmAgentProvider:
         return out
 
     def _context(self, req: AgentRequest, sess: dict) -> str:
-        _adopt_past(sess)
         context = f"Driver location: {req.lat:.5f}, {req.lng:.5f}."
         facts_line = profile_learn.facts_line(sess.get("facts"))
         if facts_line:
@@ -975,16 +1001,16 @@ class LlmAgentProvider:
         if place.category in PARKING_CATEGORIES:
             _background(check_parking(place, route.approach))  # destinations too; entry tip relative to the approach
         others = [p for p in found if p.id != place.id][:MAX_OPTIONS]
-        counter = _SESSIONS[req.session_id] if req.session_id in _SESSIONS else _turns
+        counter = _session_if(req.session_id) or _turns
         n = counter.get("n", 0)
         counter["n"] = n + 1
         self._remember_alternatives(req, place, route)
         regional, weather_line, chain_line = await asyncio.gather(
-            self._regional_note(place), self._route_weather(route, _SESSIONS.get(req.session_id or "")),
+            self._regional_note(place), self._route_weather(route, _session_if(req.session_id)),
             self._route_chains(route))
         reply = _route_reply(place, route, n, req.truck_profile.driver_name, regional) + price_caveat(text, place)
-        sess_now = _SESSIONS.get(req.session_id or "")
-        learned = sess_now.pop("say_learned", None) if sess_now else None
+        sess_now = _session_if(req.session_id)
+        learned = sess_now.pop("say_learned", None) if sess_now is not None else None
         for line in (chain_line, weather_line, learned):
             if line:
                 reply = f"{reply} {line}"
@@ -1117,7 +1143,6 @@ class LlmAgentProvider:
         else:
             # No facts yet (they need ~5 turns) but earlier lines exist: "what's my dog's name?" is answered
             # from them, as it was before facts existed (live test test_long_term_recall_across_sessions).
-            _adopt_past(sess)
             reply = await profile_learn.recall(text, sess.get("past") or []) or prefs or profile_learn.KNOW_NOTHING
         return AgentResponse(status="chat", transcript=text, reply=reply, source=self.source)
 
@@ -1148,8 +1173,8 @@ class LlmAgentProvider:
     @staticmethod
     def _remember_alternatives(req: AgentRequest, place: Place, route: RouteInfo) -> None:
         """A new primary route: its alternatives serve "another way?" later; any stops of the old route are gone."""
-        if req.session_id in _SESSIONS:
-            sess = _SESSIONS[req.session_id]
+        sess = _session_if(req.session_id)
+        if sess is not None:
             sess["alternatives"] = {"place": place.id, "routes": list(route.alternatives), "i": 0,
                                     "current": route.model_copy(update={"alternatives": []}),
                                     "origin": (req.lat, req.lng), "profile": _profile_key(req.truck_profile)}
@@ -1353,7 +1378,7 @@ class LlmAgentProvider:
                 # "yes" re-runs this turn with the resolved stop (no second geocode); "no" adds nothing.
                 sess["pending"] = {"text": text, "kind": "stop_guard",
                                    "d": {**d, "_confirmed": True, "place": stop.model_dump()},
-                                   "no": {"reply": VIA_FAR_NO}, "yes": VIA_FAR_YES}
+                                   "no": {"reply": VIA_FAR_NO}, "yes": "via_far_yes"}
                 timing.note("stop_guard", "asked")
                 logger.info("add_stop %s is %.0f min out of the way: asking first", stop.name, extra / 60)
                 return AgentResponse(status="confirm", transcript=text, source=self.source,
@@ -1407,7 +1432,7 @@ class LlmAgentProvider:
         # the Routes sheet keeps every other way. Before, taking the alternative lost the faster route
         # (QA 2026-10-31, H12).
         prev = cached.get("current")
-        if prev is not None and all(r is not prev for r in cached["routes"]):
+        if prev is not None and all(_route_key(r) != _route_key(prev) for r in cached["routes"]):
             cached["routes"].append(prev)
         cached["current"] = route
         route.alternatives = [r.model_copy(update={"alternatives": []}) for r in cached["routes"] if r is not route]
@@ -1510,7 +1535,8 @@ class LlmAgentProvider:
                 _background(check_parking(p))  # warm satellite checks; never wait for them here
         if all(p.id in exclude for p in found):
             # Everything was turned down: offer them again (the driver can now pick or search anew).
-            _SESSIONS.get(req.session_id or "", {}).pop("rejected", None)
+            if (s_ := _session_if(req.session_id)) is not None:
+                s_.pop("rejected", None)
             return AgentResponse(status="chat", transcript=text, category=category, reply=ALL_REJECTED,
                                  source=self.source)
         chosen = choose_place(found, req.truck_profile, exclude, _facts(req))
@@ -1527,7 +1553,8 @@ class LlmAgentProvider:
         pending = sess.pop("pending", None)
         if pending:  # "Did you say Reno?" was asked last turn
             kind = pending.get("kind")  # confirm | stop_guard | ...: the answer goes to the turn log and trip events
-            if YES.match(text) or (pending.get("yes") is not None and pending["yes"].match(text)):
+            extra_yes = YES_PATTERNS.get(pending.get("yes") or "")
+            if YES.match(text) or (extra_yes is not None and extra_yes.match(text)):
                 d = pending["d"]
                 timing.note("intent", str(d.get("intent")))
                 if kind:
@@ -1538,7 +1565,9 @@ class LlmAgentProvider:
                     timing.note(kind, "declined")
                 branch = pending.get("no")
                 if branch and branch.get("declined"):
-                    sess.setdefault("dest_declined", set()).add(branch["declined"])
+                    declined = sess.setdefault("dest_declined", [])
+                    if branch["declined"] not in declined:
+                        declined.append(branch["declined"])
                 if branch:  # a question with a real "no" path (e.g. "chains on board?")
                     if branch.get("then_pending"):
                         sess["pending"] = branch["then_pending"]
@@ -1629,10 +1658,11 @@ class LlmAgentProvider:
         exclude = {current} if current else set()
         if current and (intent == "pick" or (intent == "find" and last and d.get("category") == last.category)):
             # "not that one" / "something else": never offer an already rejected place again in this dialog.
-            rejected = sess.setdefault("rejected", set())
+            rejected = sess.setdefault("rejected", [])
             if current not in rejected and last is not None:
                 await self._note_rejection(sess, last)
-            rejected.add(current)
+            if current not in rejected:
+                rejected.append(current)
             exclude = set(rejected)
         try:
             if intent == "breakdown":
@@ -1659,7 +1689,8 @@ class LlmAgentProvider:
                 explicit = d.get("place_index") is not None
                 if place and place.id != current and (explicit or place.id not in exclude):
                     if explicit:
-                        sess.get("rejected", set()).discard(place.id)
+                        if place.id in sess.get("rejected", []):
+                            sess["rejected"].remove(place.id)
                     return await self._route_to(req, place, sess["places"], text)
                 category = d.get("category") or (last.category if last else None)
                 if category in CATEGORIES:
@@ -1697,7 +1728,7 @@ class LlmAgentProvider:
                     return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query),
                                          source=self.source)
                 place = matches[0]
-                if place.id in sess.get("dest_declined", set()):  # said no to this one already in this dialog
+                if place.id in sess.get("dest_declined", []):  # said no to this one already in this dialog
                     return AgentResponse(status="chat", transcript=text, source=self.source,
                                          reply=DEST_ONLY.format(said=str(d["query"]).strip()))
                 reason = dest_check(query, place)
@@ -1705,7 +1736,7 @@ class LlmAgentProvider:
                     # "yes" re-runs this turn with the place stashed (no second geocode); "no" remembers the refusal
                     sess["pending"] = {"text": text, "kind": "dest_check",
                                        "d": {**d, "place": place.model_dump(), "city": city_of(query, place)},
-                                       "no": {"reply": DEST_NO, "declined": place.id}, "yes": DEST_YES}
+                                       "no": {"reply": DEST_NO, "declined": place.id}, "yes": "dest_yes"}
                     timing.note("dest_check", "asked")
                     logger.info("agent go %r -> %s (%s, %.0f mi): asking first", query, place.name, reason,
                                 place.distance_mi or 0)
