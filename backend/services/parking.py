@@ -63,6 +63,7 @@ def _put(cache: dict, k: str, v) -> None:
         cache.pop(next(iter(cache)))  # drop oldest
     cache[k] = v
 
+
 LISTED_WORDS = ("truck parking", "53 ft parking", "hgv parking", "truck lot")
 
 

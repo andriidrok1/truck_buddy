@@ -1,8 +1,8 @@
 """Long-term conversation memory per driver, kept until the driver clears it.
 
 Two stores behind the same functions: Postgres (DATABASE_URL, e.g. Neon) for production, and a local
-SQLite file when there is no DATABASE_URL (MEMORY_SQLITE_PATH, default backend/data/memory.sqlite), so a
-dev box or a single server without Postgres still remembers. MEMORY_STORE=pg|sqlite|off forces one.
+SQLite file for tests and a keyless dev box (services/db.py owns the connections and the migrations;
+MEMORY_STORE=pg|sqlite|off forces one).
 
 The store is never on the hot path of a voice turn: writes go through add_later() (background task),
 and the agent reads recent() under its own short timeout. A slow or unreachable store only costs memory.
@@ -10,173 +10,34 @@ and the agent reads recent() under its own short timeout. A slow or unreachable 
 import asyncio
 import json
 import logging
-import os
-import sqlite3
-import threading
-from pathlib import Path
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-import asyncpg
+from services import db
+from services.db import _db, _sq_run, close, sqlite_path, store  # noqa: F401 - the store's plumbing lives in db.py
 
 logger = logging.getLogger("truckbuddy.memory")
 
-CONNECT_TIMEOUT_S = 8.0  # Neon resumes an idle compute in 1-3 s
-COMMAND_TIMEOUT_S = 10.0
-
-_pool: asyncpg.Pool | None = None
-_pool_lock: asyncio.Lock | None = None
 _tasks: set = set()
 _pending: "defaultdict[str, set]" = defaultdict(set)  # driver -> saves still in flight
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS conversation (
-    id BIGSERIAL PRIMARY KEY,
-    driver TEXT NOT NULL,
-    role TEXT NOT NULL,
-    text TEXT NOT NULL,
-    at TIMESTAMPTZ NOT NULL
-);
-CREATE INDEX IF NOT EXISTS conversation_driver_at ON conversation (driver, at);
-CREATE TABLE IF NOT EXISTS driver_facts (
-    driver TEXT PRIMARY KEY,
-    facts TEXT NOT NULL,
-    turns_seen INTEGER NOT NULL DEFAULT 0,
-    updated_at TIMESTAMPTZ NOT NULL
-);
-CREATE TABLE IF NOT EXISTS trip_events (
-    id BIGSERIAL PRIMARY KEY,
-    driver TEXT NOT NULL,
-    trip_id TEXT,
-    kind TEXT NOT NULL,
-    at TIMESTAMPTZ NOT NULL,
-    source TEXT NOT NULL,
-    data TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS trip_events_driver_at ON trip_events (driver, at);
-CREATE INDEX IF NOT EXISTS trip_events_trip_at ON trip_events (trip_id, at);
-CREATE INDEX IF NOT EXISTS trip_events_at ON trip_events (at);
-"""
-
-
-_SQLITE_SCHEMA = """
-CREATE TABLE IF NOT EXISTS conversation (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    driver TEXT NOT NULL,
-    role TEXT NOT NULL,
-    text TEXT NOT NULL,
-    at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS conversation_driver_at ON conversation (driver, at);
-CREATE TABLE IF NOT EXISTS driver_facts (
-    driver TEXT PRIMARY KEY,
-    facts TEXT NOT NULL,
-    turns_seen INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS trip_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    driver TEXT NOT NULL,
-    trip_id TEXT,
-    kind TEXT NOT NULL,
-    at TEXT NOT NULL,
-    source TEXT NOT NULL,
-    data TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS trip_events_driver_at ON trip_events (driver, at);
-CREATE INDEX IF NOT EXISTS trip_events_trip_at ON trip_events (trip_id, at);
-CREATE INDEX IF NOT EXISTS trip_events_at ON trip_events (at);
-"""
-_sqlite: sqlite3.Connection | None = None
-_sqlite_lock = threading.Lock()
-
-
-def store() -> str:
-    """"pg" | "sqlite" | "off". MEMORY_STORE wins; otherwise Postgres when DATABASE_URL is set, else SQLite."""
-    forced = os.environ.get("MEMORY_STORE", "").strip().lower()
-    if forced in ("pg", "postgres", "sqlite", "off"):
-        return "pg" if forced == "postgres" else forced
-    return "pg" if os.environ.get("DATABASE_URL") else "sqlite"
-
-
-def sqlite_path() -> Path:
-    return Path(os.environ.get("MEMORY_SQLITE_PATH") or Path(__file__).resolve().parents[1] / "data" / "memory.sqlite")
-
-
-def _sq_run(fn):
-    """Run a sqlite callback in a worker thread, serialised on one connection."""
-    def _call():
-        with _sqlite_lock:
-            return fn(_sq_conn_unlocked())
-    return asyncio.to_thread(_call)
-
-
-def _sq_conn_unlocked() -> sqlite3.Connection:
-    global _sqlite
-    if _sqlite is None:
-        path = sqlite_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        con = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
-        con.execute("PRAGMA journal_mode=WAL")
-        con.executescript(_SQLITE_SCHEMA)
-        _sqlite = con
-    return _sqlite
 
 
 def _off():
     raise RuntimeError("memory store is off")
 
 
-def _dsn() -> str:
-    # Neon connection strings carry channel_binding, which asyncpg doesn't accept; sslmode stays.
-    url = urlsplit(os.environ["DATABASE_URL"])
-    query = urlencode([(k, v) for k, v in parse_qsl(url.query) if k != "channel_binding"])
-    return urlunsplit(url._replace(query=query))
-
-
-async def _db() -> asyncpg.Pool:
-    global _pool, _pool_lock
-    if _pool is not None:
-        return _pool
-    if _pool_lock is None:  # created lazily so importing the module needs no running loop
-        _pool_lock = asyncio.Lock()
-    async with _pool_lock:  # two first requests at once must not open two pools
-        if _pool is None:
-            pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=5,
-                                             timeout=CONNECT_TIMEOUT_S, command_timeout=COMMAND_TIMEOUT_S)
-            async with pool.acquire() as con:
-                await con.execute(_SCHEMA)
-            _pool = pool
-    return _pool
-
-
 async def warm() -> None:
-    """Open the pool at startup so the first driver doesn't pay the connect + schema check."""
+    """Open the store at startup and bring its schema up to date, so the first driver doesn't pay for either."""
     kind = store()
     if kind == "off":
         logger.info("memory store off")
         return
     try:
-        if kind == "sqlite":
-            await _sq_run(lambda con: con.execute("SELECT 1").fetchone())
-            logger.info("memory store: sqlite at %s", sqlite_path())
-        else:
-            await _db()
-            logger.info("memory store: postgres")
+        applied = await db.migrate()
+        logger.info("memory store: %s%s", "postgres" if kind == "pg" else f"sqlite at {sqlite_path()}",
+                    f", migrated {applied}" if applied else "")
     except Exception as e:  # noqa: BLE001 - the server runs without memory
         logger.warning("memory store unavailable at startup: %s", e)
-
-
-async def close() -> None:
-    global _pool, _sqlite
-    if _pool is not None:
-        await _pool.close()
-        _pool = None
-    with _sqlite_lock:
-        if _sqlite is not None:
-            _sqlite.close()
-            _sqlite = None
 
 
 async def add(driver: str, turns: list[tuple[str, str]]) -> None:

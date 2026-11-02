@@ -100,6 +100,8 @@ def control_phrase(text: str) -> Optional[dict]:
         if len(words) <= 3 and not any(w[0].isupper() for w in words[1:] if w[0].isalpha()):
             return action
     return None
+
+
 NO_PLACES = "I couldn't find one nearby"
 CATEGORY_WORD = {"truck_stop": "truck stop", "hotel": "hotel", "rest_area": "rest area", "walmart": "Walmart",
                  "cat_scale": "CAT scale", "truck_wash": "truck wash", "weigh_station": "weigh station"}
@@ -117,6 +119,8 @@ def enabled_categories() -> tuple[str, ...]:
     Off by default until the app knows how to draw them."""
     extra = {c.strip() for c in os.environ.get("CATEGORIES_EXTRA", "").split(",") if c.strip()}
     return CORE_CATEGORIES + tuple(c for c in EXTRA_CATEGORIES if c in extra or "all" in extra)
+
+
 ALL_REJECTED = "That's every one I found nearby. Want me to go back to one of them?"
 _STREET_ONLY = re.compile(r"^\s*\d+[a-z]?\s+[\w .'-]+$", re.I)  # "2828 El Centro Rd" (no town after a comma)
 _ZIP_COUNTRY = re.compile(r"^\s*(?:[A-Z]{2}(?:\s+\d{5}(?:-\d{4})?)?|\d{5}|United States|USA)\s*$")
@@ -141,6 +145,8 @@ def city_of(query: str, place: Place) -> Optional[str]:
         rest = [p for p in parts[1:] if not _ZIP_COUNTRY.match(p)]
         return ", ".join(rest) or None
     return None
+
+
 MODEL = ("openai", "gpt-5.4-mini")
 MAX_OPTIONS = 4
 ALTERNATIVES_FRESH = 2  # when "another way?" comes with no cached alternatives: ask HERE for this many
@@ -157,6 +163,8 @@ TRUCK_TAGS = ("truck parking", "53 ft", "truck lot", "hgv")
 def is_fuel_stop(p: Place) -> bool:
     """A truck_stop result with no truck-stop name and a satellite "unlikely": just a gas station."""
     return p.category == "truck_stop" and not TRUCK_STOP_NAME.search(p.name) and _verdict(p) == "unlikely"
+
+
 CATEGORIES = CORE_CATEGORIES + EXTRA_CATEGORIES  # all the classifier may name; enabled_categories() gates
 
 SYSTEM = """You are TruckBuddy, a hands-free voice copilot for a long-haul truck driver who is driving.
@@ -506,6 +514,8 @@ def _alt_reply(route: RouteInfo, current: Optional[RouteInfo] = None) -> str:
         elif new_weather:
             diff += f", but it runs into a {new_weather[0].event}"
     return ALT_REPLY.format(via=via, time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi), tolls=tolls + diff)
+
+
 _turns: dict = {"n": 0}  # rotation when there's no dialog session
 
 
@@ -641,7 +651,7 @@ def list_reference(query: str, places: list[Place], current_id: Optional[str]) -
 _NAME_TOKEN = re.compile(r"[a-z0-9]+")
 
 
-def _tokens(s: str) -> set[str]:
+def _name_tokens(s: str) -> set[str]:
     """Lowercase words, apostrophes dropped, a plural "s" trimmed: the model said "Roady's Truck Stops"."""
     return {w[:-1] if len(w) > 3 and w.endswith("s") else w for w in _NAME_TOKEN.findall((s or "").lower().replace("'", ""))}
 
@@ -651,12 +661,12 @@ def named_place(query: str, places: list[Place]) -> Optional[Place]:
     be in the place name, and at least one of them must not be a word of the address (the town): "take me
     to Sacramento" never matches "Sacramento 49er Travel Plaza", "the 49er" does. Geocoding "49er" gave a
     street in Placerville (QA 2026-10-31, H9)."""
-    words = _tokens(re.sub(r"^\s*(?:the|a|an)\s+", "", query or "", flags=re.I))
+    words = _name_tokens(re.sub(r"^\s*(?:the|a|an)\s+", "", query or "", flags=re.I))
     if not words:
         return None
     for p in places:
-        name = _tokens(p.name)
-        if words <= name and words - _tokens(p.address or ""):
+        name = _name_tokens(p.name)
+        if words <= name and words - _name_tokens(p.address or ""):
             return p
     return None
 
@@ -683,9 +693,9 @@ GENERIC_NAME_WORDS = {"truck", "stop", "stops", "travel", "center", "centre", "p
 def named_in_text(text: str, places: list[Place]) -> Optional[Place]:
     """The listed place whose own word the driver said ("stop at the 49er on the way" -> the 49er), or None.
     A word counts when it is the place's, not its town's and not a generic ("truck stop", "travel plaza")."""
-    said = _tokens(text)
+    said = _name_tokens(text)
     for p in places:
-        own = {w for w in _tokens(p.name) - _tokens(p.address or "") - GENERIC_NAME_WORDS if len(w) >= 3}
+        own = {w for w in _name_tokens(p.name) - _name_tokens(p.address or "") - GENERIC_NAME_WORDS if len(w) >= 3}
         if own & said:
             return p
     return None

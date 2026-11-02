@@ -25,7 +25,6 @@ from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
 from services import approach, approach_api, auth, chains, memory, onboarding, parking_store, parking_warm, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
-from services.speech_text import SENTENCE_END  # noqa: E402
 
 WEATHER_BUDGET_S = 2.5  # NWS alerts on /route may add at most this much; never the route itself
 from pydantic import BaseModel, Field  # noqa: E402

@@ -6,7 +6,7 @@ import copy
 
 from conftest import fixture_json, params_of, run
 
-from models import Place, RouteInfo, TruckProfile
+from models import Place, TruckProfile
 from services import agent, routing
 from services.routing import _here_parse, _notices
 
@@ -20,10 +20,10 @@ VIOLATED_HEIGHT = {"title": "Violated vehicle restriction.", "code": "violatedVe
 VIOLATED_WEIGHT = {"title": "Violated vehicle restriction.", "code": "violatedVehicleRestriction", "severity": "critical",
                    "details": [{"type": "restriction", "cause": "Route violates vehicle restriction: weight limit of 20000 kg",
                                 "maxWeight": 20000}]}
-ADMIN_WIDE = {"title": "Violated admin-wide vehicle restriction.", "code": "violatedAdminWideVehicleRestriction",
-              "severity": "info", "details": [{"type": "adminWideRestriction", "country": "USA", "state": "CA",
-                                                "cause": "Route violates admin-wide vehicle restriction: height limit of 428 cm",
-                                                "maxHeight": 428}]}
+ADMIN_WIDE = {
+    "title": "Violated admin-wide vehicle restriction.", "code": "violatedAdminWideVehicleRestriction", "severity": "info",
+    "details": [{"type": "adminWideRestriction", "country": "USA", "state": "CA", "maxHeight": 428,
+                 "cause": "Route violates admin-wide vehicle restriction: height limit of 428 cm"}]}
 START_DIRECTION = {"title": "Violated start direction.", "code": "violatedStartDirection", "severity": "info"}
 TOLL = {"title": "Violated avoid toll road preference.", "code": "violatedAvoidTollRoad", "severity": "info"}
 BLOCKED = {"title": "Violated blocked road.", "code": "violatedBlockedRoad", "severity": "critical"}

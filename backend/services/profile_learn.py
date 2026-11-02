@@ -47,6 +47,8 @@ def prefs_line(truck) -> str:
     if getattr(truck, "avoid_ferries_tunnels", False):
         parts.append("you avoid ferries and tunnels")
     return PREFS.format(prefs=", ".join(parts)) if parts else ""
+
+
 KNOW_NOTHING = "I don't know anything about you yet. Tell me what you like and I'll remember."
 # Before the facts exist (fewer than 5 turns), a memory question is answered from the raw lines instead.
 RECALL_PROMPT = (

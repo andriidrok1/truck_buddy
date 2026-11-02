@@ -6,7 +6,6 @@ from conftest import run
 from services import memory
 
 
-
 def test_store_selection(monkeypatch):
     monkeypatch.delenv("MEMORY_STORE", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)

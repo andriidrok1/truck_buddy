@@ -52,7 +52,7 @@ def test_no_phone_or_closed_dropped():
 
 def test_24_7_detection():
     assert ps.is_24_7({"periods": [{"open": {"day": 0, "hour": 0, "minute": 0}}]})
-    assert ps.is_24_7({"weekdayDescriptions": [f"Day: Open 24 hours" for _ in range(7)]})
+    assert ps.is_24_7({"weekdayDescriptions": ["Day: Open 24 hours" for _ in range(7)]})
     assert not ps.is_24_7({"weekdayDescriptions": ["Monday: 8:00 AM – 5:00 PM"] * 7})
 
 

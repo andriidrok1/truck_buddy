@@ -182,6 +182,8 @@ def test_reroute_fallback_only_keeps_the_stops_still_ahead(fake_http):
                                                       section_index=1, via=[(38.9, -121.08), (39.6, -119.25)]))
     assert info.via == [[39.6, -119.25]]  # the first stop ended section 0; the truck is on section 1
     assert _vias(fake_http.calls[1]) == ["39.6,-119.25!stopDuration=1800"]
+
+
 TRUCKEE = {"lat": 39.3280, "lng": -120.1833}  # on I-80, well past Auburn
 
 
@@ -261,6 +263,8 @@ def test_a_stop_far_out_of_the_way_asks_first(agent_sandbox, fake_http):
     assert res.reply.startswith("Added Pilot Travel Center, about 80 miles ahead.")
     assert len(fake_http.calls_to("router.hereapi.com")) == calls + 1  # one route call, no second geocode
     assert [s.id for s in prov._stops(_req("hi"), agent._SESSIONS["v1"])] == [PILOT.id]
+
+
 def test_the_stop_the_truck_is_parked_at_is_made(agent_sandbox, fake_http):
     prov = _sandbox(agent_sandbox, fake_http)
     run(prov.handle(_req("take me to Reno", active=None), None))

@@ -1,7 +1,6 @@
 """From the 2026-10-28 driver QA: "cheapest diesel on my route" with a route set is a stop on the way (the
 parking stays the destination), a price question without a price says so, and the spoken landmark is the
 street the driver arrives on, the same one the entry tip on the card names."""
-import json
 
 from conftest import fixture_json, run
 

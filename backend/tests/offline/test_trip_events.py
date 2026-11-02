@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 from conftest import fixture_json, run
 
-from models import AgentRequest, Place
+from models import Place
 from services import agent, auth, memory, trip_events
 
 DATA = fixture_json("here/route_sac_reno")

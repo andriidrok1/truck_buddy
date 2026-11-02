@@ -55,6 +55,7 @@ def chain_query(q: str) -> bool:
     """A bare truck stop chain ("Pilot", "Love's"): never a town of that name (Pilot, NV; Pilot, VA)."""
     return bool(TRUCK_STOP_NAME.fullmatch(q.strip().rstrip(".").lower().removeprefix("the ").strip()))
 
+
 _UNITS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen "
                                      "fourteen fifteen sixteen seventeen eighteen nineteen".split())}
 _UNITS["oh"] = 0

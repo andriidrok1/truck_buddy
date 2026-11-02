@@ -4,7 +4,7 @@ is answered from it for the route the driver is on."""
 from conftest import fixture_json, run
 
 from models import AgentRequest, ChainControl, Place
-from services import agent, chains
+from services import chains
 from services.agent import CHAINS_NO_ROUTE, CHAINS_NONE, CHAIN_QUESTION
 
 DATA = fixture_json("here/route_sac_reno")
