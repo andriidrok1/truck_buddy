@@ -524,7 +524,7 @@ export default function MapScreen() {
         res = await api.route(loc.coords, cur.place, false, route.via ?? [], cur.trip_id ?? null);
       }
       // Only onto the route the truck left: a stop added or a route picked while this ran is newer.
-      const applied = trip().applyRoute(gen, res.route);
+      const applied = trip().applyRoute(gen, res.route, undefined, res.parking);
       if (applied) warnRestricted(res.route);
       tripLog.log("reroute", { ...event, ok: true, fallback, applied, restricted: res.route.restricted ?? null }, cur.trip_id);
       g.resetOffRoute();
@@ -925,7 +925,7 @@ export default function MapScreen() {
       const res = await api.route(coordsRef.current, cur.place, false, viaOf(cur.stops), cur.trip_id ?? null);
       // The route must still be the one this started from (the store's generation): a stop added or an
       // off-route reroute that landed meanwhile is newer than this plan. The caller learns whether it landed.
-      const applied = trip().applyRoute(gen, res.route);
+      const applied = trip().applyRoute(gen, res.route, undefined, res.parking);
       if (applied) warnRestricted(res.route);
       tripLog.log("reroute", { cause, ok: true, applied, restricted: res.route.restricted ?? null }, cur.trip_id);
       return applied;
@@ -957,7 +957,7 @@ export default function MapScreen() {
             trip_id: cur.trip_id ?? null,
           })
         : await api.route(coordsRef.current, cur.place, false, [], cur.trip_id ?? null);
-      if (trip().applyRoute(gen, res.route, stops)) {
+      if (trip().applyRoute(gen, res.route, stops, res.parking)) {
         tripLog.log("stop_removed", { stops: stops.length, duration_s: res.route.duration_s }, cur.trip_id);
       }
     } catch {
@@ -979,6 +979,16 @@ export default function MapScreen() {
     tripLog.log("alternative_picked", { index: i, labels: route.labels ?? [], duration_s: route.duration_s, distance_m: route.distance_m }, cur.trip_id);
     setRoutesOpen(false);
     say(switchedLine(route, i), { priority: PRIORITY.MANEUVER, kind: "system", key: "route-switch", ttlMs: 15000 });
+    // The other way may arrive from another street: the entry tip on the card follows it (cached verdict, no
+    // new satellite call), and only while this route is still the one on screen.
+    if (cur.place.category !== "service" && route.approach) {
+      api
+        .parking(cur.place, route.approach)
+        .then((pk) => {
+          if (trip().active?.route === route) trip().setActiveParking(cur.place.id, pk);
+        })
+        .catch(() => {});
+    }
   };
 
   // Back from the truck editor with new dimensions: same reroute as the voice change, nothing spoken.
@@ -1007,14 +1017,14 @@ export default function MapScreen() {
     if (patch.phase) setPhase(patch.phase);
     if (patch.activeRoute) {
       // Same destination, new route: the card, parking and dialog stay; only the line changes.
-      const { route, stops } = patch.activeRoute;
+      const { route, stops, parking } = patch.activeRoute;
       const cur = t.active;
       if (cur && cur.place.id === res.place?.id) {
         const before = cur.stops?.length ?? cur.route.via?.length ?? 0;
         const after = stops.length;
         if (after !== before) tripLog.log(after > before ? "stop_added" : "stops_cleared", { stops: after, duration_s: route.duration_s }, cur.trip_id);
         else tripLog.log("route_replaced", { by: "copilot", duration_s: route.duration_s, labels: route.labels ?? [] }, cur.trip_id);
-        t.applyRoute(t.routeGen, route, stops);
+        t.applyRoute(t.routeGen, route, stops, parking);
       }
     }
     if (res.status === "not_understood" || res.status === "error") {

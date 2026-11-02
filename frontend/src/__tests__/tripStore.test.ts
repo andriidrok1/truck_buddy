@@ -48,6 +48,17 @@ describe("tripStore", () => {
     expect(viaOf(useTripStore.getState().active?.stops)).toEqual([[38.55, -121.42]]);
   });
 
+  test("applyRoute takes the entry tip phrased for the new route, and keeps the old one when none came", () => {
+    const s = useTripStore.getState();
+    s.startRoute({ ...active, parking: { verdict: "likely", label: "x", reason: "x", source: "satellite", entry_tip: "On your right, off El Centro Rd", relative: true } as never });
+    let gen = useTripStore.getState().routeGen;
+    s.applyRoute(gen, route("to E"), undefined, { verdict: "likely", label: "x", reason: "x", source: "satellite", entry_tip: "On your left, off W El Camino Ave", relative: true } as never);
+    expect(useTripStore.getState().active?.parking?.entry_tip).toBe("On your left, off W El Camino Ave");
+    gen = useTripStore.getState().routeGen;
+    s.applyRoute(gen, route("reroute"), undefined, null);
+    expect(useTripStore.getState().active?.parking?.entry_tip).toBe("On your left, off W El Camino Ave");
+  });
+
   test("pickAlternative swaps the primary and keeps the old one in the list", () => {
     const s = useTripStore.getState();
     s.startRoute(active);

@@ -50,7 +50,9 @@ export type TripActions = {
    *  dropped when it lands, and returns the value this request owns. */
   claimRoute: () => number;
   /** Same destination, a new line (reroute, re-plan, copilot's stop change): only when `gen` is still current. */
-  applyRoute: (gen: number, route: RouteInfo, stops?: Place[]) => boolean;
+  /** `parking`: the entry tip phrased for this route's approach (the backend sends it with every route), so
+   *  the card names the same side and street as the voice. */
+  applyRoute: (gen: number, route: RouteInfo, stops?: Place[], parking?: ParkingCheck | null) => boolean;
   /** The sheet's alternative tapped: swaps the primary, keeps the old one in the list. */
   pickAlternative: (i: number) => RouteInfo | null;
   setActiveParking: (placeId: string, parking: ParkingCheck) => void;
@@ -97,10 +99,10 @@ export const useTripStore = create<TripState & TripActions>()((set, get) => ({
     set({ routeGen: gen });
     return gen;
   },
-  applyRoute: (gen, route, stops) => {
+  applyRoute: (gen, route, stops, parking) => {
     const cur = get();
     if (!cur.active || cur.routeGen !== gen) return false;
-    set({ active: { ...cur.active, route, ...(stops ? { stops } : {}) }, routeGen: gen + 1 });
+    set({ active: { ...cur.active, route, ...(stops ? { stops } : {}), ...(parking ? { parking } : {}) }, routeGen: gen + 1 });
     return true;
   },
   pickAlternative: (i) => {
