@@ -122,12 +122,12 @@ def test_a_storm_that_starts_while_the_truck_is_still_inside_is_weather_now():
     # Unknown exit (point path, None): the route end is assumed, the conservative side.
     storm.index_end = None
     assert weather.on_arrival([storm], r, NOW) == [storm]
-    # Left the zone early (index_end 320, a few minutes in): a storm 5 h later is "later".
-    storm.index_end = 320
+    # Left the zone early (index_end a quarter in, a few minutes): a storm 5 h later is "later".
+    storm.index_end = _i(0.2526)  # a quarter of the way in
     storm.onset = (NOW + timedelta(hours=5)).isoformat()
     assert weather.starting_later([storm], r, NOW) == [storm]
     r.weather_later = [storm]
-    assert weather.later_speech(r, NOW).endswith("you're through there by 1:30 pm.")  # the exit (index 320), not the entry
+    assert weather.later_speech(r, NOW).endswith("you're through there by 1:30 pm.")  # the exit, not the entry
 
 
 def test_expires_is_not_the_end_of_the_hazard():
