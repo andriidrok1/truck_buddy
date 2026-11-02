@@ -214,8 +214,16 @@ def test_fleet_motive_key_is_used_only_for_a_mapped_driver(client, agent_sandbox
     mine = next(d for d in drivers if f["t1"] in d["vehicle_ids"])
     assert not mine["motive_linked"] and all("sub" not in d for d in drivers)
     other_org_driver = run(tenancy.device_of(_sub(f["b_drv"]))).driver_id
-    assert client.put(f"/api/fleet/drivers/{other_org_driver}/motive", json={"user_id": "1"}, headers=f["a_disp"]).status_code == 404
-    assert client.put(f"/api/fleet/drivers/{mine['id']}/motive", json={"user_id": "1"}, headers=f["a_disp"]).status_code == 200
+    # the mapping is the owner's, like the key: a dispatcher gets 403
+    assert client.put(f"/api/fleet/drivers/{mine['id']}/motive", json={"user_id": "1"}, headers=f["a_disp"]).status_code == 403
+    assert client.put(f"/api/fleet/drivers/{other_org_driver}/motive", json={"user_id": "1"}, headers=f["a_owner"]).status_code == 404
+    assert client.put(f"/api/fleet/drivers/{mine['id']}/motive", json={"user_id": "1"}, headers=f["a_owner"]).status_code == 200
+    assert client.put(f"/api/fleet/drivers/{mine['id']}/motive", json={"user_id": "1"}, headers=f["a_owner"]).status_code == 200
+    # one Motive user is one driver of the fleet: a second driver with the same id is a 409, another fleet may
+    second = run(tenancy.device_of(_sub(_device(client, run(tenancy.create_fleet_code(f["acme"], f["t2"])))))).driver_id
+    r = client.put(f"/api/fleet/drivers/{second}/motive", json={"user_id": "1"}, headers=f["a_owner"])
+    assert r.status_code == 409, r.text
+    assert run(tenancy.set_motive_user(f["bravo"], other_org_driver, "1")) is True
     with caplog.at_level(logging.INFO):
         r = client.post("/api/agent", json=ask, headers=f["a_drv"])
     assert r.json()["reply"].startswith("You've got 4 hours 20 minutes of drive time")  # user 1, not user 7

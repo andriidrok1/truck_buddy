@@ -1,11 +1,11 @@
 """Fleet dashboard reads over HTTP (read-only, plus the two settings a fleet owns: its Motive key and which
 Motive user each driver is).
 
-Every route needs an owner or dispatcher of an organisation (auth.require_org_member); a driver's token, a
-solo driver's included, gets 403. Every query is filtered by the caller's org_id, so a truck id from another
-fleet is a 404 and another fleet's events never show up. Transcripts stay on the server: whatever a driver
-said (`text`, `transcript` in an event's data) is removed here, on the way out (decision 2026-10-30: the
-owner sees what happened, not what was said). The tester route /api/trips/recent is unchanged.
+Every route needs an owner or dispatcher of an organisation (auth.require_org_member), and the two settings
+need the owner; a driver's token, a solo driver's included, gets 403. Every query is filtered by the caller's
+org_id, so a truck id from another fleet is a 404 and another fleet's events never show up. Transcripts stay
+on the server: whatever a driver said (`text`, `transcript` in an event's data) is removed here, on the way out
+(decision 2026-10-30: the owner sees what happened, not what was said). The tester route /api/trips/recent is unchanged.
 
 Days are UTC calendar days (?day=YYYY-MM-DD, default today).
 """
@@ -52,7 +52,7 @@ def _day(day: Optional[str]) -> tuple[datetime, datetime, str]:
 async def _guarded(coro):
     try:
         return await asyncio.wait_for(coro, WAIT_S)
-    except HTTPException:
+    except (HTTPException, tenancy.MotiveUserTaken):
         raise
     except Exception as e:  # noqa: BLE001 - store off, down or slow
         logger.warning("fleet read failed: %s: %s", type(e).__name__, e)
@@ -138,9 +138,14 @@ class MotiveUserIn(BaseModel):
 
 
 @router.put("/drivers/{driver_id}/motive")
-async def driver_motive(body: MotiveUserIn, driver_id: str = Path(max_length=64), principal: auth.Principal = Depends(reader)):
-    """Which Motive user this driver is, so the fleet key fetches their clocks (null unlinks)."""
-    if not await _guarded(tenancy.set_motive_user(principal.org_id, driver_id, body.user_id)):
+async def driver_motive(body: MotiveUserIn, driver_id: str = Path(max_length=64), principal: auth.Principal = Depends(owner)):
+    """Which Motive user this driver is, so the fleet key fetches their clocks (null unlinks); owner only, like
+    the key itself. 409 when another driver of the fleet is already that Motive user."""
+    try:
+        found = await _guarded(tenancy.set_motive_user(principal.org_id, driver_id, body.user_id))
+    except tenancy.MotiveUserTaken:
+        raise HTTPException(status_code=409, detail="Another driver is already linked to that Motive user")
+    if not found:
         raise HTTPException(status_code=404, detail="No such driver")
     return {"driver_id": driver_id, "motive_linked": body.user_id is not None}
 

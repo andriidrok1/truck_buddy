@@ -247,18 +247,35 @@ async def org_drivers(org_id: str) -> list[dict]:
     return list(out.values())
 
 
+class MotiveUserTaken(Exception):
+    """Another driver of the org is already this Motive user."""
+
+
 async def set_motive_user(org_id: str, driver_id: str, user_id: Optional[str]) -> bool:
-    """Maps the org's driver to a Motive user id (None unmaps); False when the driver is not in this org."""
+    """Maps the org's driver to a Motive user id (None unmaps); False when the driver is not in this org,
+    MotiveUserTaken when another driver of the org already has that id (their hours would be read twice)."""
     k = db.store()
     if k == "off":
         raise RuntimeError("store is off")
+    taken = "SELECT 1 FROM drivers WHERE org_id = {p1} AND motive_user_id = {p2} AND id <> {p3}"
+    update = "UPDATE drivers SET motive_user_id = {p2} WHERE org_id = {p1} AND id = {p3}"
     if k == "sqlite":
-        n = await db._sq_run(lambda con: con.execute(
-            "UPDATE drivers SET motive_user_id = ? WHERE id = ? AND org_id = ?", (user_id, driver_id, org_id)).rowcount)
+        def _set(con):  # check and write under the one connection's lock
+            if user_id is not None and con.execute(taken.format(p1="?", p2="?", p3="?"), (org_id, user_id, driver_id)).fetchone():
+                return None
+            return con.execute(update.format(p1="?", p2="?", p3="?"), (user_id, org_id, driver_id)).rowcount
+        n = await db._sq_run(_set)
     else:
         pool = await db._db()
-        status = await pool.execute("UPDATE drivers SET motive_user_id = $1 WHERE id = $2 AND org_id = $3", user_id, driver_id, org_id)
-        n = int(status.split()[-1])
+        async with pool.acquire() as con, con.transaction():
+            await con.execute("SELECT pg_advisory_xact_lock(hashtext($1))", f"motive:{org_id}")
+            if user_id is not None and await con.fetchval(taken.format(p1="$1", p2="$2", p3="$3"), org_id, user_id, driver_id):
+                n = None
+            else:
+                status = await con.execute(update.format(p1="$1", p2="$2", p3="$3"), org_id, user_id, driver_id)
+                n = int(status.split()[-1])
+    if n is None:
+        raise MotiveUserTaken(user_id)
     _motive_users.pop(driver_id, None)
     return n > 0
 
