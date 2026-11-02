@@ -101,7 +101,10 @@ def test_fixture_limits_sit_on_kept_vertices():
 
 def test_a_stretch_without_a_posted_limit_ends_the_previous_one():
     spans = [_span(0, 29.17), {"offset": 4}, {"offset": 7}, _span(9, 24.44)]
-    assert _speed_limits(spans, 0) == [(0, 65), (4, 0), (9, 55)]  # one 0 for the unknown stretch, not two
+    assert _speed_limits(spans, 0) == [(0, 65), (4, None), (9, 55)]  # one None for the unknown stretch, not two
     assert _speed_limits([{"offset": 0}, _span(3, 29.17)], 0) == [(3, 65)]  # nothing known yet: nothing to end
+    # the next section opens without a limit: the previous section's 65 ends there too
+    assert _speed_limits([{"offset": 0}, _span(5, 24.44)], 100, prev=65) == [(100, None), (105, 55)]
+    assert _speed_limits([_span(0, 29.17)], 100, prev=65) == []  # same limit continues: no entry
     idx = _Index([0, 4, 9])
-    assert [(s.index, s.mph) for s in _remap_limits([(0, 65), (4, 0), (9, 55)], idx)] == [(0, 65), (1, 0), (2, 55)]
+    assert [(s.index, s.mph) for s in _remap_limits([(0, 65), (4, None), (9, 55)], idx)] == [(0, 65), (1, None), (2, 55)]

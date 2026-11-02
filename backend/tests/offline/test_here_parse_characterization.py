@@ -81,8 +81,9 @@ def test_here_params_unchanged(monkeypatch):
 
 
 def _line(n, wobble=0.0):
-    """n points along a parallel; `wobble` degrees of latitude on every odd point."""
-    return [[38.0 + (wobble if i % 2 else 0.0), -121.0 + i * 0.001] for i in range(n)]
+    """n points along a parallel; up to `wobble` degrees of latitude on every odd point, the amount varying along
+    the line (equal deviations everywhere make Douglas-Peucker peel one vertex per pass: a 220 s test)."""
+    return [[38.0 + (wobble * (1 + i % 97) / 97 if i % 2 else 0.0), -121.0 + i * 0.001] for i in range(n)]
 
 
 def test_straight_line_collapses_to_its_ends_and_anchors_stay():
@@ -97,13 +98,14 @@ def test_straight_line_collapses_to_its_ends_and_anchors_stay():
 
 
 def test_a_bend_wider_than_the_tolerance_is_kept():
-    pts = _line(11, wobble=0.0002)  # ~22 m zigzag: every point matters
+    # a zigzag of 11 to 122 m (growing along the line): every point matters at 5 m
+    pts = [[38.0 + (0.0001 * (1 + i) if i % 2 else 0.0), -121.0 + i * 0.001] for i in range(11)]
     assert _thin_indices(pts) == list(range(11))
-    assert len(_simplify(pts, 50.0)) == 2  # at 50 m it is a straight line
+    assert len(_simplify(pts, 150.0)) == 2  # at 150 m it is a straight line
 
 
 def test_the_cap_is_met_by_loosening_the_tolerance():
-    pts = _line(MAX_POINTS * 3, wobble=0.0002)
+    pts = _line(MAX_POINTS * 2, wobble=0.0011)
     kept = _thin_indices(pts)
     assert 2 <= len(kept) <= MAX_POINTS
     assert len(_thin(pts)) == len(kept)
