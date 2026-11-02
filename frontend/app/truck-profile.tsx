@@ -11,6 +11,7 @@ import { setEldToken, useEldToken } from "@/src/eld";
 import { PressableScale } from "@/src/components/PressableScale";
 import { removePack, usePacks } from "@/src/hooks/useOfflineMap";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
+import { saveProfile } from "@/src/data/profile";
 import { DEFAULT_TRUCK, saveTruckProfile, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
 import { requestTruckReroute, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts } from "@/src/state/settingsStore";
 import { Chip, PrefsForm, type Prefs } from "@/src/components/PrefsForm";
@@ -150,7 +151,7 @@ export default function TruckProfileScreen() {
 
   const onSave = async () => {
     if (!valid) return;
-    await saveTruckProfile({
+    await saveProfile({
       ...truck,
       ...prefs,
       driver_name: name.trim() || null,

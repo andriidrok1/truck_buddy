@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../api";
 import { ensureTruckProfile, getTruckProfile, saveTruckProfile, type TruckProfile } from "../hooks/useTruckProfile";
 import { queryClient } from "../query-client";
+import { storage } from "../utils/storage";
 import type { TripEventRow } from "../api";
 
 export const PROFILE_KEY = ["profile"] as const;
@@ -16,10 +17,19 @@ export const tripEventsKey = (tripId: string) => ["trip-events", tripId] as cons
 /** The server has no profile endpoint yet (or no profile for this driver): the local copy stands. */
 export const isMissing = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 405);
 
-/** The profile from the server, else the local one; the local copy is kept in step with what the server says. */
+/** Set while a local change has not reached the server: the next start sends it instead of pulling over it. */
+export const UNSYNCED_KEY = "profile_unsynced_v1";
+
+/** The profile from the server, else the local one; the local copy is kept in step with what the server says.
+ *  A change the server never got (saved offline) is pushed first, so the older server copy does not undo it. */
 export async function fetchProfile(): Promise<TruckProfile> {
   const local = await ensureTruckProfile();
   try {
+    if (await storage.getItem<boolean>(UNSYNCED_KEY, false)) {
+      await api.saveProfile(local);
+      await storage.removeItem(UNSYNCED_KEY);
+      return local;
+    }
     const remote = await api.profile();
     const merged = { ...local, ...remote };
     if (JSON.stringify(merged) !== JSON.stringify(local)) await saveTruckProfile(merged);
@@ -39,6 +49,19 @@ export async function pushProfile(next: TruckProfile): Promise<TruckProfile> {
     if (isMissing(e)) return next;
     throw e;
   }
+}
+
+/** Every save of the truck: locally at once (the next request sees the new truck), then the server in the
+ *  background. Offline, the change waits behind UNSYNCED_KEY for the next start. */
+export async function saveProfile(next: TruckProfile): Promise<void> {
+  await saveTruckProfile(next);
+  queryClient.setQueryData(PROFILE_KEY, next);
+  api
+    .saveProfile(next)
+    .then(() => storage.removeItem(UNSYNCED_KEY))
+    .catch((e) => {
+      if (!isMissing(e)) storage.setItem(UNSYNCED_KEY, true);
+    });
 }
 
 export function useProfile() {

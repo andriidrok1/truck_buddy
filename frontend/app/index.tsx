@@ -31,7 +31,8 @@ import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
-import { getTruckProfile, isOnboarded, saveTruckProfile, truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { saveProfile } from "@/src/data/profile";
+import { getTruckProfile, isOnboarded, truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
@@ -1073,10 +1074,10 @@ export default function MapScreen() {
       setVoiceGuidance: setVoiceOn,
       setHandsFree,
       setNudges: setNudgesEnabled,
-      saveProfile: (patch) => saveTruckProfile({ ...getTruckProfile(), ...patch }),
+      saveProfile: (patch) => saveProfile({ ...getTruckProfile(), ...patch }),
       unknownAction: (action) => tripLog.log("turn_unknown_action", { action }, trip().active?.trip_id),
       // Save first so the new route uses the new profile.
-      reroute: (patch) => saveTruckProfile({ ...getTruckProfile(), ...patch }).then(() => reroute("profile")),
+      reroute: (patch) => saveProfile({ ...getTruckProfile(), ...patch }).then(() => reroute("profile")),
     });
   };
 

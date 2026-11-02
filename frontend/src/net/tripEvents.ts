@@ -8,6 +8,7 @@
 import { useSyncExternalStore } from "react";
 
 import { ApiError, api } from "../api";
+import { getLocation } from "../geo/location";
 import { isOnline } from "../hooks/useOnline";
 import { storage } from "../utils/storage";
 
@@ -43,6 +44,9 @@ export type TripLogDeps = {
   now: () => number;
   load: () => Promise<TripEvent[]>;
   save: (events: TripEvent[]) => Promise<unknown>;
+  /** Where the truck is (a real GPS fix only); stamped on every event that does not carry its own, so a
+   *  fleet dashboard can show the truck's last position. */
+  position?: () => { lat: number; lng: number } | null;
   /** setTimeout/clearTimeout stand-ins, for tests. */
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (id: unknown) => void;
@@ -94,6 +98,8 @@ export function createTripLog(deps: TripLogDeps): TripLog {
 
   return {
     log(kind, data = {}, tripId) {
+      const at = data.lat === undefined ? deps.position?.() : null;
+      if (at) data = { ...data, lat: Math.round(at.lat * 1e5) / 1e5, lng: Math.round(at.lng * 1e5) / 1e5 };
       const ev: TripEvent = { t: new Date(deps.now()).toISOString(), kind, data };
       if (tripId) ev.trip_id = tripId;
       pending.push(ev);
@@ -173,6 +179,10 @@ export const tripLog: TripLog = createTripLog({
   isRefused: (e) => e instanceof ApiError && e.status >= 400 && e.status < 500,
   online: isOnline,
   now: Date.now,
+  position: () => {
+    const l = getLocation();
+    return l.isDemo ? null : l.coords;
+  },
   load: async () => {
     const raw = await storage.getItem<TripEvent[] | null>(PENDING_KEY, null);
     return isEventList(raw) ? raw : [];

@@ -12,7 +12,8 @@ import { MicPermissionCard } from "@/src/components/MicPermissionCard";
 import { PrefsForm, ToggleRow } from "@/src/components/PrefsForm";
 import { PressableScale } from "@/src/components/PressableScale";
 import { Waveform } from "@/src/components/Waveform";
-import { saveTruckProfile, setOnboarded, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
+import { saveProfile } from "@/src/data/profile";
+import { setOnboarded, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
 
@@ -143,7 +144,7 @@ export default function Onboarding() {
       run.current++;
       voice.stopSpeaking();
       voice.cancelRecording().catch(() => {});
-      await saveTruckProfile({ ...data, driver_name: data.driver_name?.trim() || null });
+      await saveProfile({ ...data, driver_name: data.driver_name?.trim() || null });
       await setOnboarded();
       if (router.canGoBack()) router.back();
       else router.replace("/");

@@ -21,6 +21,7 @@ import { DeviceGate } from "@/src/components/DeviceGate";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { useConsent } from "@/src/consent";
 import { loadEldToken } from "@/src/eld";
+import { fetchProfile, PROFILE_KEY } from "@/src/data/profile";
 import { queryClient } from "@/src/query-client";
 import { setContractWarningSink } from "@/src/api/schemas";
 
@@ -71,7 +72,11 @@ function RootLayout() {
   useEffect(() => {
     migrateStorage()
       .then(() => Promise.all([ensureTruckProfile(), ensureSettings()]))
-      .finally(() => setStorageReady(true));
+      .finally(() => {
+        setStorageReady(true);
+        // The server copy (a fleet sets the truck there) after the local one is up; offline, the local stands.
+        queryClient.prefetchQuery({ queryKey: PROFILE_KEY, queryFn: fetchProfile });
+      });
   }, []);
   // GPS from the moment consent is in (the consent screen starts it too): the first fix is ready before the
   // map screen mounts instead of 7-9 s after it.

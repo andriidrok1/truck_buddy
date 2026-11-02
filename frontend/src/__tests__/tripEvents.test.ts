@@ -2,7 +2,7 @@ import { createTripLog, MAX_BATCH, MAX_FAILURES, MAX_PENDING, newTripId, type Tr
 
 class Refused extends Error {}
 
-function harness(opts: { online?: boolean; post?: (events: TripEvent[]) => Promise<unknown> } = {}) {
+function harness(opts: { online?: boolean; post?: (events: TripEvent[]) => Promise<unknown>; position?: () => { lat: number; lng: number } | null } = {}) {
   let now = 1_700_000_000_000;
   let saved: TripEvent[] = [];
   const posts: TripEvent[][] = [];
@@ -16,6 +16,7 @@ function harness(opts: { online?: boolean; post?: (events: TripEvent[]) => Promi
     isRefused: (e) => e instanceof Refused,
     online: () => opts.online ?? true,
     now: () => now,
+    position: opts.position,
     load: async () => saved,
     save: async (events) => {
       saved = [...events];
@@ -128,4 +129,19 @@ test("a flush in flight is not doubled", async () => {
   expect(await h.log.flush()).toBe("busy");
   release();
   expect(await first).toBe("sent");
+});
+
+test("events carry the truck's GPS position unless they bring their own; no fix, no position", async () => {
+  let fix: { lat: number; lng: number } | null = { lat: 38.7512345, lng: -121.2054321 };
+  const h = harness({ position: () => fix });
+  h.log.log("route_started", { place_id: "p" }, "trip-1");
+  h.log.log("stop_added", { lat: 39.5, lng: -119.8 }, "trip-1");
+  fix = null;
+  h.log.log("route_ended", {}, "trip-1");
+  await h.log.flush();
+  expect(h.posts[0].map((e) => e.data)).toEqual([
+    { place_id: "p", lat: 38.75123, lng: -121.20543 },
+    { lat: 39.5, lng: -119.8 },
+    {},
+  ]);
 });
