@@ -24,6 +24,7 @@ import { MESSAGES } from "@/src/constants";
 import { isTester } from "@/src/auth";
 import { chainControlAhead, routePointsAhead } from "@/src/geo/ahead";
 import { switchedLine } from "@/src/geo/routeChoice";
+import { createRerouteGate } from "@/src/geo/offroute";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
 import { useOfflineGuidance, type OfflineGuidance } from "@/src/hooks/useOfflineGuidance";
@@ -482,11 +483,13 @@ export default function MapScreen() {
   };
 
   const rerouting = useRef(false);
+  const rerouteGate = useRef(createRerouteGate()).current;
   const offlineRef = useRef<OfflineGuidance | null>(null);
   const rerouteOffRoute = async (g: Guidance) => {
     const cur = trip().active;
     if (!cur || rerouting.current || !trip().driving) return;
     if (loc.sim && !loc.sim.trace) return;
+    if (!rerouteGate.allow(Date.now())) return;
     // No signal: no /reroute. Point the driver back at the loaded line instead; the reroute
     // runs as soon as the signal is back (useOfflineGuidance calls this again).
     if (!isOnline()) {
@@ -533,6 +536,7 @@ export default function MapScreen() {
       showToast("Couldn't reroute. Follow the map for now and watch the truck signs.");
     } finally {
       rerouting.current = false;
+      rerouteGate.done(Date.now());
     }
   };
   // One object per GPS fix (not per render): useGuidance pushes each fix into the off-route tracker once.

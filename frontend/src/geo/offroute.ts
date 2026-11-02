@@ -113,3 +113,18 @@ export function createOffRouteTracker(opts: OffRouteTrackerOptions = {}): OffRou
     },
   };
 }
+
+/**
+ * Off-route reroutes, at most one per `minGapMs` across routes. Each route gets a fresh tracker (and so a
+ * fresh cooldown): a truck on a parallel street went off the new line three fixes after it landed and the
+ * screen rerouted 3-4 times in 20 s (QA 2026-11-02, bug 32). The gap counts from the end of the last one.
+ */
+export function createRerouteGate(minGapMs = 30000) {
+  let lastEnd = -Infinity;
+  return {
+    allow: (now: number) => now - lastEnd >= minGapMs,
+    done: (now: number) => {
+      lastEnd = now;
+    },
+  };
+}

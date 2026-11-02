@@ -1,4 +1,4 @@
-import { createOffRouteTracker, thresholdM, type OffRouteFix, type OffRouteVerdict } from "../geo/offroute";
+import { createOffRouteTracker, createRerouteGate, thresholdM, type OffRouteFix, type OffRouteVerdict } from "../geo/offroute";
 
 const T0 = 1_700_000_000_000;
 
@@ -122,5 +122,16 @@ describe("createOffRouteTracker", () => {
   test("custom options", () => {
     const t = createOffRouteTracker({ need: 1, cooldownMs: 1500 });
     expect(run(t, [60, 60, 60, 60])).toEqual(["off", "skip", "off", "skip"]);
+  });
+});
+
+describe("createRerouteGate", () => {
+  test("one off-route reroute per 30 s, counted from when the last one ended", () => {
+    const gate = createRerouteGate(30000);
+    expect(gate.allow(0)).toBe(true);
+    gate.done(5000);
+    expect(gate.allow(11000)).toBe(false); // the new line's own tracker fired 6 s after it landed
+    expect(gate.allow(34999)).toBe(false);
+    expect(gate.allow(35000)).toBe(true);
   });
 });
