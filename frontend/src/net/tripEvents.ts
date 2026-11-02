@@ -60,6 +60,8 @@ export type TripLog = {
   /** When the last batch was accepted, epoch ms, or null. */
   lastFlushAt(): number | null;
   subscribe(listener: () => void): () => void;
+  /** Every logged event, as it is logged (the drive recorder marks them on its timeline). */
+  onEvent(listener: (event: TripEvent) => void): () => void;
 };
 
 /** `trip-<base36 time>-<4 random>`: unique enough per device, readable in a log. */
@@ -79,6 +81,7 @@ export function createTripLog(deps: TripLogDeps): TripLog {
   let lastFlush: number | null = null;
   let persistTimer: unknown = null;
   const listeners = new Set<() => void>();
+  const eventListeners = new Set<(event: TripEvent) => void>();
   const notify = () => listeners.forEach((l) => l());
 
   const persist = () => {
@@ -97,6 +100,7 @@ export function createTripLog(deps: TripLogDeps): TripLog {
       if (pending.length > MAX_PENDING) pending = pending.slice(pending.length - MAX_PENDING);
       persist();
       notify();
+      eventListeners.forEach((l) => l(ev));
     },
     async flush() {
       if (!pending.length) return "empty";
@@ -149,6 +153,12 @@ export function createTripLog(deps: TripLogDeps): TripLog {
       listeners.add(listener);
       return () => {
         listeners.delete(listener);
+      };
+    },
+    onEvent(listener) {
+      eventListeners.add(listener);
+      return () => {
+        eventListeners.delete(listener);
       };
     },
   };

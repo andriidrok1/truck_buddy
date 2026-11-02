@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,6 +10,9 @@ import { clearAnnouncements, useAnnouncements, type AnnouncementKind } from "@/s
 import { cumulativeMeters } from "@/src/geo/guidance";
 import { syntheticTrace, type TracePoint } from "@/src/geo/trace";
 import { useOnline } from "@/src/hooks/useOnline";
+import { recorder, useRecorder } from "@/src/geo/driveRecorder";
+import { requestReplay } from "@/src/geo/replayRequest";
+import { listTraces, readTrace, shareTrace } from "@/src/geo/traceFiles";
 import { tripLog, useTripLog } from "@/src/net/tripEvents";
 import { isTracePlaying, playTrace, SCENARIOS, setSim, stopTrace, useSim } from "@/src/sim";
 import { useActiveRoute } from "@/src/state/activeRoute";
@@ -94,6 +97,36 @@ export default function TesterScreen() {
   const [speedFactor, setSpeedFactor] = useState<1 | 4>(1);
   const playing = isTracePlaying();
   const trip = useTripLog();
+  const rec = useRecorder();
+  // Re-listed when a recording starts or a file lands (listTraces is a synchronous directory read).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const traces = useMemo(() => listTraces(), [rec.recording, rec.lastFile]);
+  const [traceNote, setTraceNote] = useState<string | null>(null);
+  const toggleRecording = async () => {
+    if (rec.recording) {
+      const name = await recorder.stop();
+      setTraceNote(name ? `Saved ${name}` : null);
+    } else {
+      recorder.start({ tripId: active?.trip_id ?? null, place: active?.place ?? null, route: active?.route ?? null });
+      setTraceNote(null);
+    }
+  };
+  const share = async (name: string) => {
+    setTraceNote((await shareTrace(name)) ? null : "Sharing is not available on this device; pull the file with adb.");
+  };
+  const replayRecorded = async (name: string) => {
+    const trace = await readTrace(name);
+    if (!trace) {
+      setTraceNote(`Couldn't read ${name}.`);
+      return;
+    }
+    if (!trace.fixes.length) {
+      setTraceNote(`${name} has no fixes.`);
+      return;
+    }
+    requestReplay({ trace, speedFactor, name });
+    router.back();
+  };
   const [tripRows, setTripRows] = useState<TripEventRow[] | null>(null);
   const [tripNote, setTripNote] = useState<string | null>(null);
   const loadTrip = async () => {
@@ -229,6 +262,42 @@ export default function TesterScreen() {
             <Icon name="stop-circle-outline" size={20} color={colors.onSurface} />
             <Text style={[styles.resetText, { color: colors.onSurface }]}>Stop replay (truck stays here)</Text>
           </PressableScale>
+        )}
+
+        <View style={styles.sectionHead}>
+          <Text style={[styles.section, { color: colors.onSurface }]}>Recorded drives</Text>
+        </View>
+        <Text style={[styles.cardSub, { color: colors.onSurfaceSecondary }]}>
+          Real GPS fixes with the route and what the copilot said, as a file you can share. A recording replays here on its own route.
+        </Text>
+        <PressableScale
+          testID="trace-record"
+          accessibilityLabel={rec.recording ? "Stop recording" : "Record this drive"}
+          onPress={() => toggleRecording().catch(() => {})}
+          style={[styles.reset, { borderColor: rec.recording ? colors.warning : colors.onSurface }]}
+        >
+          <Icon name={rec.recording ? "stop-circle-outline" : "record-circle-outline"} size={20} color={rec.recording ? colors.warning : colors.onSurface} />
+          <Text style={[styles.resetText, { color: rec.recording ? colors.warning : colors.onSurface }]}>
+            {rec.recording ? `Stop recording (${rec.fixes} fixes)` : "Record this drive"}
+          </Text>
+        </PressableScale>
+        {traceNote && <Text style={[styles.cardSub, { color: colors.muted }]}>{traceNote}</Text>}
+        {traces.length === 0 ? (
+          <Text style={[styles.cardSub, { color: colors.muted }]}>No recordings yet.</Text>
+        ) : (
+          traces.slice(0, 10).map((name) => (
+            <View key={name} style={[styles.status, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.cardSub, { color: colors.onSurface, flex: 1 }]} numberOfLines={2}>
+                {name}
+              </Text>
+              <PressableScale testID={`trace-share-${name}`} accessibilityLabel={`Share ${name}`} onPress={() => share(name).catch(() => {})} style={styles.clear}>
+                <Icon name="share-variant-outline" size={22} color={colors.info} />
+              </PressableScale>
+              <PressableScale testID={`trace-replay-${name}`} accessibilityLabel={`Replay ${name}`} onPress={() => replayRecorded(name).catch(() => {})} style={styles.clear}>
+                <Icon name="play-circle-outline" size={24} color={colors.info} />
+              </PressableScale>
+            </View>
+          ))
         )}
 
         <View style={styles.sectionHead}>

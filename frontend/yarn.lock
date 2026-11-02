@@ -971,6 +971,25 @@
   dependencies:
     node-forge "^1.4.0"
 
+"@expo/config-plugins@^58.0.11":
+  version "58.0.11"
+  resolved "https://registry.yarnpkg.com/@expo/config-plugins/-/config-plugins-58.0.11.tgz#f280ae7e3dbaba3fecb4ea73dcb1b8dbed9d7246"
+  integrity sha512-lenBm4ajWMPW+Hol3xiHHoSZEO/mA3T7X/NU3XNqm96XepwjXh2CMpIvROGLoh0amfVEIXIW3Qj3gnDS3cK/nw==
+  dependencies:
+    "@expo/config-types" "^58.0.3"
+    "@expo/json-file" "~11.2.1"
+    "@expo/plist" "^0.10.1"
+    "@expo/require-utils" "^58.0.5"
+    "@expo/sdk-runtime-versions" "^1.0.1"
+    chalk "^4.1.2"
+    debug "^4.3.5"
+    getenv "^2.0.0"
+    glob "^13.0.0"
+    semver "^7.7.4"
+    slugify "^1.6.6"
+    xcode "^4.0.0"
+    xml2js "0.6.0"
+
 "@expo/config-plugins@~58.0.10":
   version "58.0.10"
   resolved "https://registry.yarnpkg.com/@expo/config-plugins/-/config-plugins-58.0.10.tgz#d38031fd190227866ca72578a2ed2d1260e5c8ff"
@@ -1259,6 +1278,15 @@
   version "58.0.4"
   resolved "https://registry.yarnpkg.com/@expo/require-utils/-/require-utils-58.0.4.tgz#e9548b7004ba14d948b2d2e8bf41e93b34777233"
   integrity sha512-DvjS5NCitXYcad2Woe1EMHJKcbhTbE77HX0BgOQGL2LFHE3q2H0n8kCWDPBOCVJ63Drap3c35nwoJwF5TQL7Tw==
+  dependencies:
+    "@babel/code-frame" "^7.20.0"
+    "@babel/core" "^7.25.2"
+    "@babel/plugin-transform-modules-commonjs" "^7.24.8"
+
+"@expo/require-utils@^58.0.5":
+  version "58.0.5"
+  resolved "https://registry.yarnpkg.com/@expo/require-utils/-/require-utils-58.0.5.tgz#f41c42faaa7287210a332545d36b73bbefb0d381"
+  integrity sha512-14dGubYUBmJjK9aqVSGnwSDs9uaxfzvtqJugtMCEWyuTa/eIvToUbzUwpKCSek6S/hYSEYcgds23vDJhXSBpbQ==
   dependencies:
     "@babel/code-frame" "^7.20.0"
     "@babel/core" "^7.25.2"
@@ -4390,6 +4418,15 @@ expo-server@^58.0.6:
   version "58.0.6"
   resolved "https://registry.yarnpkg.com/expo-server/-/expo-server-58.0.6.tgz#1bc9cdaa3843b7a33608e653dc8b1b8f88feaee8"
   integrity sha512-6DBlSZwxk3J0y1j2s4XebAWNiwGaMp32NcWX7b2kJC2+EFf1g+pCcVmx8ylawt2tyLmbDHswm4MHOfrd4bqfvA==
+
+expo-sharing@~58.0.21:
+  version "58.0.21"
+  resolved "https://registry.yarnpkg.com/expo-sharing/-/expo-sharing-58.0.21.tgz#274af5218b5bcbf2953b4c0fb5f20a5c0a70e4f3"
+  integrity sha512-YLtDPH0bCU+VUt3rgWRZHTVPIv9aKBRpQjwke+Pw6rvhDwYbolg5VnGnNNI0z4ONWCeQ73HvFX1ZTY6dCfnx1A==
+  dependencies:
+    "@expo/config-plugins" "^58.0.11"
+    "@expo/config-types" "^58.0.3"
+    "@expo/plist" "^0.10.1"
 
 expo-speech@~58.0.3:
   version "58.0.3"
