@@ -1241,7 +1241,7 @@ export default function MapScreen() {
       />
 
       {routesOpen && active && !driving && !!active.route.alternatives?.length && (
-        <AlternativesSheet primary={active.route} bottom={chromeBottom} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
+        <AlternativesSheet primary={active.route} bottom={chromeBottom} top={topH + spacing.sm} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
       )}
 
       {micCard && (
