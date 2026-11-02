@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { absoluteUrl, api } from "../api";
 import { logAnnouncement, type AnnouncementKind } from "../dev/announcements";
 import { speakLocal, stopLocal } from "../voice/localTts";
-import { preempts, SpeechQueue, type QueuedSpeech, type SpeechItem } from "../voice/queue";
+import { preempts, SpeechQueue, type DropReason, type QueuedSpeech, type SpeechItem } from "../voice/queue";
 import { isOnline } from "./useOnline";
 import type { useVoice } from "./useVoice";
 
@@ -30,12 +30,19 @@ export function useSpeechQueue(
   isBusy: () => boolean,
   onPlay?: (item: QueuedSpeech) => void,
   onDone?: (item: QueuedSpeech) => void,
+  /** A line that never played (expired, cleared; not one replaced by a newer line of the same key). */
+  onDrop?: (item: QueuedSpeech, why: DropReason) => void,
 ) {
+  const onDropRef = useRef(onDrop);
   const [q] = useState(
+    // The ref is read when a line is dropped, long after this render; the rule sees a ref inside a callback.
+    // eslint-disable-next-line react-hooks/refs
     () =>
       new SpeechQueue({
         onDrop: (item, why) => {
-          if (__DEV__ && why !== "replaced") logAnnouncement(`${item.text} (${why})`, "skipped");
+          if (why === "replaced") return;
+          if (__DEV__) logAnnouncement(`${item.text} (${why})`, "skipped");
+          onDropRef.current?.(item, why);
         },
       }),
   );
@@ -51,6 +58,7 @@ export function useSpeechQueue(
     busyRef.current = isBusy;
     onPlayRef.current = onPlay;
     onDoneRef.current = onDone;
+    onDropRef.current = onDrop;
   });
   const { playAndWait, stopSpeaking, isSpeaking, isRecording, holdPlayback } = voice;
 

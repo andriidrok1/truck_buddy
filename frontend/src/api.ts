@@ -27,6 +27,18 @@ export type RerouteBody = {
   /** Metres driven into that section. */
   traveled_m: number;
   via?: [number, number][];
+  /** The drive this re-plan belongs to (trip events). */
+  trip_id?: string | null;
+};
+
+/** One event of a drive as the backend hands it back (GET /api/trips/{trip_id}/events). */
+export type TripEventRow = {
+  id: number;
+  t: string;
+  trip_id: string | null;
+  kind: string;
+  source: "app" | "server";
+  data: Record<string, unknown>;
 };
 
 /** A non-2xx answer, with the status and the backend's `detail`, so a caller can tell one 422 from another. */
@@ -185,11 +197,24 @@ export const api = {
     request<PlacesResponse>(`/places?category=${category}&lat=${at.lat}&lng=${at.lng}`),
   /** POST /api/route; `via` = the stops already on the way, so a re-plan (new truck size, entrance,
    * off-route fallback) keeps them instead of silently routing straight to the destination. */
-  route: async (from: LatLng, place: Place, skipParking = false, via: [number, number][] = []) =>
+  route: async (from: LatLng, place: Place, skipParking = false, via: [number, number][] = [], tripId: string | null = null) =>
     request<RouteResult>(`/route`, {
       method: "POST",
-      body: JSON.stringify({ lat: from.lat, lng: from.lng, place, skip_parking: skipParking, via, truck_profile: await ensureTruckProfile() }),
+      body: JSON.stringify({
+        lat: from.lat,
+        lng: from.lng,
+        place,
+        skip_parking: skipParking,
+        via,
+        trip_id: tripId ?? undefined,
+        truck_profile: await ensureTruckProfile(),
+      }),
     }),
+  /** One batch of trip events (src/net/tripEvents.ts); 15 s is plenty, nothing waits on it. */
+  tripEvents: (events: { t: string; trip_id?: string; kind: string; data: Record<string, unknown> }[]) =>
+    request<{ stored: number }>(`/trips/events`, { method: "POST", body: JSON.stringify(events), timeoutMs: 15000 }),
+  /** The events of one of the driver's own trips, oldest first (tester screen). */
+  tripEventsOf: (tripId: string) => request<TripEventRow[]>(`/trips/${encodeURIComponent(tripId)}/events`),
   /**
    * Off-route reroute: the engine resumes the server-side plan (`handle`, section, metres into it)
    * instead of planning from scratch. Same shape back as /route, with a new `handle`.
@@ -274,6 +299,7 @@ export const api = {
         active_place: active?.place,
         active_distance_mi: active?.route.distance_mi,
         active_duration_min: active?.route.duration_min,
+        trip_id: active?.trip_id,
         ui,
         stt_ms: sttMs,
         stt_confidence: sttConfidence,

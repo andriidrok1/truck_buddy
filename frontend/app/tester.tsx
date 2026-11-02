@@ -10,11 +10,13 @@ import { clearAnnouncements, useAnnouncements, type AnnouncementKind } from "@/s
 import { cumulativeMeters } from "@/src/geo/guidance";
 import { syntheticTrace, type TracePoint } from "@/src/geo/trace";
 import { useOnline } from "@/src/hooks/useOnline";
+import { tripLog, useTripLog } from "@/src/net/tripEvents";
 import { isTracePlaying, playTrace, SCENARIOS, setSim, stopTrace, useSim } from "@/src/sim";
 import { useActiveRoute } from "@/src/state/activeRoute";
 import { savedAgeLabel, useSavedRouteAt } from "@/src/state/routeStore";
 import { fonts, radius, shadow, spacing, useTheme } from "@/src/theme";
 import type { RouteInfo } from "@/src/types";
+import { api, type TripEventRow } from "@/src/api";
 
 /** Replay speed clamps: a 65 mph highway trace, or the route's own average when it is slower. */
 const MAX_MPS = 29;
@@ -91,6 +93,21 @@ export default function TesterScreen() {
   const { online } = useOnline();
   const [speedFactor, setSpeedFactor] = useState<1 | 4>(1);
   const playing = isTracePlaying();
+  const trip = useTripLog();
+  const [tripRows, setTripRows] = useState<TripEventRow[] | null>(null);
+  const [tripNote, setTripNote] = useState<string | null>(null);
+  const loadTrip = async () => {
+    const id = active?.trip_id;
+    if (!id) return;
+    setTripNote("Loading…");
+    try {
+      await tripLog.flush();
+      setTripRows(await api.tripEventsOf(id));
+      setTripNote(null);
+    } catch (e) {
+      setTripNote(`Couldn't load: ${String(e)}`);
+    }
+  };
   // Drivers can reach this route by deep link (truckbuddy://tester); the simulated locations are for testers only.
   if (!isTester()) return <Redirect href="/" />;
 
@@ -212,6 +229,41 @@ export default function TesterScreen() {
             <Icon name="stop-circle-outline" size={20} color={colors.onSurface} />
             <Text style={[styles.resetText, { color: colors.onSurface }]}>Stop replay (truck stays here)</Text>
           </PressableScale>
+        )}
+
+        <View style={styles.sectionHead}>
+          <Text style={[styles.section, { color: colors.onSurface }]}>Trip log</Text>
+          <PressableScale testID="trip-flush" accessibilityLabel="Flush trip events" onPress={() => tripLog.flush().catch(() => {})} style={styles.clear}>
+            <Text style={[styles.segText, { color: colors.info }]}>Flush now</Text>
+          </PressableScale>
+        </View>
+        <View style={[styles.status, { backgroundColor: colors.surface }]}>
+          <Icon name="chart-timeline-variant" size={22} color={colors.onSurfaceSecondary} />
+          <Text testID="trip-log-status" style={[styles.cardSub, { color: colors.onSurfaceSecondary, flex: 1 }]} numberOfLines={2}>
+            {`${trip.pending} event${trip.pending === 1 ? "" : "s"} pending · last flush ${trip.lastFlushAt ? clock(trip.lastFlushAt) : "never"}`}
+            {active?.trip_id ? ` · trip ${active.trip_id}` : " · no trip"}
+          </Text>
+        </View>
+        {active?.trip_id && (
+          <PressableScale testID="trip-load" accessibilityLabel="Load this trip's events" onPress={loadTrip} style={[styles.reset, { borderColor: colors.onSurface }]}>
+            <Icon name="cloud-download-outline" size={20} color={colors.onSurface} />
+            <Text style={[styles.resetText, { color: colors.onSurface }]}>Load this trip from the server</Text>
+          </PressableScale>
+        )}
+        {(tripNote || tripRows) && (
+          <View testID="trip-events" style={[styles.log, { backgroundColor: colors.surface }]}>
+            {tripNote && <Text style={[styles.cardSub, { color: colors.muted }]}>{tripNote}</Text>}
+            {tripRows?.length === 0 && <Text style={[styles.cardSub, { color: colors.muted }]}>Nothing stored for this trip yet.</Text>}
+            {tripRows?.map((r) => (
+              <View key={r.id} style={styles.logRow}>
+                <Icon name={r.source === "server" ? "server-network" : "cellphone"} size={16} color={colors.onSurfaceSecondary} />
+                <Text style={[styles.logTime, { color: colors.muted }]}>{clock(Date.parse(r.t))}</Text>
+                <Text style={[styles.logText, { color: colors.onSurface }]}>
+                  {r.kind} {Object.keys(r.data).length ? JSON.stringify(r.data) : ""}
+                </Text>
+              </View>
+            ))}
+          </View>
         )}
 
         <View style={styles.sectionHead}>

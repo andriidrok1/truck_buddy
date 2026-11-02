@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 
 import { limitAt } from "../geo/advisories";
-import { announcement, createRouteMatcher, markSpoken, nextManeuver, remainingSeconds, stageFor } from "../geo/guidance";
+import { announcement, createRouteMatcher, markSpoken, nextManeuver, remainingSeconds, stageFor, type StageKey } from "../geo/guidance";
 import { createOffRouteTracker, thresholdM } from "../geo/offroute";
 import type { ActiveRoute, LatLng, Maneuver } from "../types";
 import { PRIORITY } from "../voice/queue";
@@ -58,6 +58,8 @@ export function useGuidance(
   say: (text: string, opts: SayOptions) => void,
   /** Called once per off-route verdict with the guidance state of that fix (the map screen reroutes). */
   onOffRoute?: (g: Guidance) => void,
+  /** Called as each maneuver stage is handed to the speech queue (trip events: late "now" calls). */
+  onAnnounce?: (next: Maneuver, stage: StageKey, toNextM: number) => void,
 ): Guidance {
   // Cumulative distances once per route, plus the last matched segment so each fix only searches
   // around it. A new geometry object gets a fresh matcher, so the hint resets with the route.
@@ -109,6 +111,7 @@ export function useGuidance(
         ? { priority: PRIORITY.MANEUVER_NOW, ttlMs: 8000, key: `m-${next.index}-now`, kind: "maneuver" }
         : { priority: PRIORITY.MANEUVER, ttlMs: 30000, key: `m-${next.index}`, kind: "maneuver" };
     say(announcement(next, stage, toNextM), opts);
+    onAnnounce?.(next, stage, toNextM);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, driving, voiceOn]);
 

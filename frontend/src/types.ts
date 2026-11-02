@@ -246,6 +246,9 @@ export type ActiveRoute = {
   parking?: ParkingCheck | null;
   /** Via stops on the way, in order (mirrors `route.via`); empty or missing = none. */
   stops?: Place[];
+  /** The drive's id for trip events (src/net/tripEvents.ts); set when the route is started, kept across
+   * reroutes, alternatives and a restart. Missing on routes saved before it existed. */
+  trip_id?: string;
 };
 
 /** POST /api/nudges body (truck_profile is added by the client). */
