@@ -215,7 +215,8 @@ export const api = {
   tripEvents: (events: { t: string; trip_id?: string; kind: string; data: Record<string, unknown> }[]) =>
     request<{ stored: number }>(`/trips/events`, { method: "POST", body: JSON.stringify(events), timeoutMs: 15000 }),
   /** The events of one of the driver's own trips, oldest first (tester screen). */
-  tripEventsOf: (tripId: string) => request<TripEventRow[]>(`/trips/${encodeURIComponent(tripId)}/events`),
+  tripEventsOf: (tripId: string) =>
+    request<{ events: TripEventRow[] }>(`/trips/${encodeURIComponent(tripId)}/events`).then((r) => r.events),
   /** The driver's truck profile on the server (fleet-managed later); 404 until the backend has the endpoint. */
   profile: () => request<TruckProfile>(`/me/profile`),
   saveProfile: (profile: TruckProfile) => request<TruckProfile>(`/me/profile`, { method: "PUT", body: JSON.stringify(profile) }),
