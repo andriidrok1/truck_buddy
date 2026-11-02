@@ -35,6 +35,9 @@ from pydantic import BaseModel, Field  # noqa: E402
 reqid.install_log_field()  # %(req)s: the request id on every line (services/reqid.py)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(req)s - %(message)s")
 logger = logging.getLogger("truckbuddy")
+# httpx logs every request URL at INFO: HERE's apiKey, the driver's geocode text and position. Warnings only.
+for _noisy in ("httpx", "httpcore"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 app = FastAPI(
     title="TruckBuddy API",
@@ -167,10 +170,11 @@ async def agent_sessions_drop(driver: str) -> None:
     await session_store.drop_prefix(driver)
 
 
-DEEP_CACHE_S = 30.0  # /health?deep=1 is public: one HERE call per this many seconds at most, whoever asks
+DEEP_CACHE_S = 30.0  # /health?deep=1: one HERE call per this many seconds per worker at most, whoever asks
 DEEP_TIMEOUT_S = 4.0
 HERE_HEALTH_URL = "https://geocode.search.hereapi.com/v1/geocode"
 _deep: dict = {}  # {"at": monotonic, "checks": {...}}
+_deep_lock: tuple = (None, None)  # (loop, asyncio.Lock): a lock is bound to the loop it first waited on
 
 
 async def _check_db() -> dict:
@@ -207,10 +211,27 @@ async def _check_here() -> dict:
     return {"ok": True, "ms": ms}
 
 
+async def _deep_checks() -> dict:
+    """The cached db + HERE checks, refreshed at most once per DEEP_CACHE_S: concurrent callers wait for the one
+    refresh in flight instead of each calling HERE."""
+    global _deep_lock
+    loop = asyncio.get_running_loop()
+    if _deep_lock[0] is not loop:
+        _deep_lock = (loop, asyncio.Lock())
+    async with _deep_lock[1]:
+        now = loop.time()
+        if not _deep or now - _deep["at"] >= DEEP_CACHE_S:
+            db_check, here_check = await asyncio.gather(_check_db(), _check_here())
+            _deep.update(at=now, checks={"db": db_check, "here": here_check})
+        return _deep["checks"]
+
+
 @public.get("/health")
-async def health(deep: bool = Query(False)):
-    """Liveness and the providers in use; ?deep=1 also checks the database and one HERE call (cached
-    DEEP_CACHE_S) and answers 503 when either fails."""
+async def health(deep: bool = Query(False), credentials=Depends(auth._bearer)):
+    """Liveness and the providers in use (public); ?deep=1 (tester token only) also checks the database and one
+    HERE call (cached DEEP_CACHE_S) and answers 503 when either fails."""
+    if deep:
+        await auth.require_tester(credentials)
     out = {
         "ok": True,
         "providers": {
@@ -223,11 +244,7 @@ async def health(deep: bool = Query(False)):
     }
     if not deep:
         return out
-    now = asyncio.get_running_loop().time()
-    if not _deep or now - _deep["at"] >= DEEP_CACHE_S:
-        db_check, here_check = await asyncio.gather(_check_db(), _check_here())
-        _deep.update(at=now, checks={"db": db_check, "here": here_check})
-    out["checks"] = _deep["checks"]
+    out["checks"] = await _deep_checks()
     if any(c.get("ok") is False for c in out["checks"].values()):
         out["ok"] = False
         return JSONResponse(status_code=503, content=out)

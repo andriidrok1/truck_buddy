@@ -259,12 +259,29 @@ def test_turn_line_is_json_without_the_transcript(client, agent_sandbox, monkeyp
     assert "Elm St" in caplog.text and len(r.headers["x-request-id"]) == 16
 
 
-def test_health_deep_checks_the_db_and_here(client, fake_http, monkeypatch):
+def _tester(c, monkeypatch) -> dict:
+    monkeypatch.setenv("TESTER_CODE", "TEST-SCENARIOS")
+    r = c.post("/api/auth/access-code", json={"code": "TEST-SCENARIOS"})
+    assert r.status_code == 200 and r.json()["role"] == "tester", r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def test_health_deep_checks_the_db_and_here(client, fake_http, monkeypatch, caplog):
     import server
     plain = client.get("/api/health").json()
     assert plain["ok"] and "checks" not in plain and not fake_http.calls_to("api.gomotive.com")
     fake_http.add("geocode.search.hereapi.com", "/v1/geocode", json={"items": [{"title": "Sacramento, CA"}]})
-    r = client.get("/api/health?deep=1")
+    # deep=1 is for testers: no token 401, a driver 403, and HERE is not called for either
+    assert client.get("/api/health?deep=1").status_code == 401
+    assert client.get("/api/health?deep=1", headers=_device(client)).status_code == 403
+    assert not fake_http.calls_to("geocode.search.hereapi.com")
+    client.headers.update(_tester(client, monkeypatch))
+    monkeypatch.setenv("HERE_API_KEY", "here-key-SECRET42")
+    with caplog.at_level(logging.INFO):
+        r = client.get("/api/health?deep=1")
+    # the request went through the app's httpx client, and its URL (with apiKey) was not logged at INFO
+    assert fake_http.calls_to("geocode.search.hereapi.com")[0].url.params["apiKey"] == "here-key-SECRET42"
+    assert "here-key-SECRET42" not in caplog.text and not any(rec.name.startswith("httpx") for rec in caplog.records)
     assert r.status_code == 200, r.text
     checks = r.json()["checks"]
     assert checks["db"]["ok"] is True and checks["db"]["store"] == "sqlite" and checks["here"]["ok"] is True
@@ -288,6 +305,30 @@ def test_health_deep_checks_the_db_and_here(client, fake_http, monkeypatch):
     monkeypatch.setattr(db, "_sq_run", broken)
     r = client.get("/api/health?deep=1")
     assert r.status_code == 503 and r.json()["checks"]["db"]["ok"] is False and r.json()["checks"]["here"]["ok"] is False
+
+
+def test_health_deep_refreshes_once_for_concurrent_callers(monkeypatch):
+    """Ten requests at once on a cold cache make one HERE call, not ten."""
+    import asyncio
+    import server
+    server._deep.clear()
+    calls = []
+
+    async def slow_here():
+        calls.append(1)
+        await asyncio.sleep(0.05)
+        return {"ok": True, "ms": 50}
+
+    async def db_ok():
+        return {"ok": True, "store": "sqlite"}
+    monkeypatch.setattr(server, "_check_here", slow_here)
+    monkeypatch.setattr(server, "_check_db", db_ok)
+
+    async def burst():
+        return await asyncio.gather(*(server._deep_checks() for _ in range(10)))
+    results = run(burst())
+    server._deep.clear()
+    assert len(calls) == 1 and all(r["here"]["ok"] is True for r in results)
 
 
 def test_turn_stats_reads_old_and_new_lines():

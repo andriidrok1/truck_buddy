@@ -37,8 +37,10 @@ Read at startup or on use (see README.md "Backend environment" for meanings):
 Every line carries the request id (`X-Request-Id` from the client or generated, echoed in the response) after the
 level. A copilot turn is one `turn {json}` line with `req`, `driver`, `sid`, `org`, status, intent and timings;
 `scripts/turn_stats.py` reads it and the older `turn k=v` lines. Driver transcripts stay out of the log stream
-unless `LOG_TRANSCRIPTS=1` (set it on the test stand, not in production). `/api/health?deep=1` adds a database
-`SELECT 1` and one HERE geocode call (cached 30 s, `HEALTH_HERE=0` skips HERE) and answers 503 when one fails.
+unless `LOG_TRANSCRIPTS=1` (set it on the test stand, not in production). `/api/health?deep=1` (tester token only) adds a
+database `SELECT 1` and one HERE geocode call (cached 30 s per worker, one refresh at a time; `HEALTH_HERE=0` skips
+HERE) and answers 503 when one fails. httpx and httpcore log at WARNING, so request URLs (HERE's `apiKey`, a
+driver's geocode text and position) never reach the log.
 
 ## More than one worker
 

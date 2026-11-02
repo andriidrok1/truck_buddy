@@ -50,7 +50,7 @@ the Bearer token the app gets by redeeming the access code.
 | `HOS_MOTIVE` | Hours of service from the driver's own Motive key (`X-Motive-Key` header, never stored) or a fleet's key stored encrypted, used only for drivers the fleet mapped to a Motive user |
 | `CREDENTIALS_KEY` | Fernet key for the fleet credentials at rest (without it a fleet key can't be stored) |
 | `LOG_TRANSCRIPTS` | `1` puts driver transcripts in the log stream (dev, test stand); off by default |
-| `HEALTH_HERE` | `/api/health?deep=1` makes one HERE geocode call (cached 30 s); `0` skips it |
+| `HEALTH_HERE` | `/api/health?deep=1` (tester token) makes one HERE geocode call (cached 30 s); `0` skips it |
 | `OPENAI_TTS_MODEL` | `gpt-4o-mini-tts` (default) or `tts-1` |
 
 ### Tests
