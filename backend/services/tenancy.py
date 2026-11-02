@@ -10,6 +10,7 @@ Every function returns None / does nothing when the store is off (keyless dev, m
 import json
 import logging
 import secrets
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -51,13 +52,17 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:20]}"
 
 
-_devices: dict[str, Device] = {}  # sub -> device, per process (a bind invalidates it)
+# sub -> (device, read at), per process. A bind drops this worker's entry; the other workers re-read the row
+# after DEVICE_TTL_S, so a driver moved to another fleet stops writing events to the old one within a minute.
+_devices: dict[str, tuple[Device, float]] = {}
+DEVICE_TTL_S = 60.0
 
 
 async def device_of(sub: str) -> Optional[Device]:
     """The device row for a token's sub, cached; None when the store is off or the device is unknown."""
-    if sub in _devices:
-        return _devices[sub]
+    hit = _devices.get(sub)
+    if hit and time.monotonic() - hit[1] < DEVICE_TTL_S:
+        return hit[0]
     k = db.store()
     if k == "off":
         return None
@@ -71,7 +76,7 @@ async def device_of(sub: str) -> Optional[Device]:
     if not row:
         return None
     d = Device(*row)
-    _devices[sub] = d
+    _devices[sub] = (d, time.monotonic())
     return d
 
 

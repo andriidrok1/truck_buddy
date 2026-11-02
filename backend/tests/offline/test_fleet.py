@@ -308,3 +308,14 @@ def test_turn_stats_reads_old_and_new_lines():
     assert s["stages"]["stt"]["n"] == 4 and s["status"]["route_set"] == 3
     # pairs: drv_a s1 (go -> not_understood: a re-ask) and drv_b alone; the old line is its own dialog
     assert s["reask_rate"] == 1.0
+
+
+def test_device_cache_expires(monkeypatch):
+    """Another worker's cached device row is re-read after the TTL, so a bind made elsewhere is seen within a minute."""
+    clock = [1000.0]
+    monkeypatch.setattr(tenancy.time, "monotonic", lambda: clock[0])
+    tenancy._devices["sub_x"] = (tenancy.Device("sub_x", "drv_old", "org_old", None, "driver"), clock[0])
+    assert run(tenancy.device_of("sub_x")).org_id == "org_old"
+    clock[0] += tenancy.DEVICE_TTL_S + 1
+    assert run(tenancy.device_of("sub_x")) is None  # re-read: no such row in the store
+    tenancy._devices.pop("sub_x", None)
