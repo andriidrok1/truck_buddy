@@ -283,7 +283,6 @@ def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo
         seconds += s["summary"]["duration"]
         raw += [n for n in (s.get("notices") or []) if isinstance(n, dict)]
     stops_s = _stops_s(sections)
-    seconds += stops_s
     if not geometry:
         raise RuntimeError("HERE route has no geometry")
     notices, restricted = _notices(raw, truck or TruckProfile())
@@ -306,8 +305,9 @@ def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo
 
 def _stops_s(sections: List[dict]) -> float:
     """Seconds the truck stands at the via stops: the gap between one section's arrival and the next one's
-    departure. HERE keeps a via's stopDuration out of every section's `duration`, so summing sections alone
-    showed an ETA 30 minutes short per stop."""
+    departure. Informational only: HERE already adds a via's stopDuration to the `duration` of the section that
+    ends there (checked live 2026-11-02: 910 s -> 2710 s with stopDuration=1800), so adding it again put
+    30 extra minutes on the ETA per stop."""
     total = 0.0
     for a, b in zip(sections, sections[1:]):
         try:

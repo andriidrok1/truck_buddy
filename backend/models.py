@@ -150,7 +150,7 @@ class RouteInfo(BaseModel):
     handle: Optional[str] = None  # HERE routeHandle: lets the app re-route back onto this route after a deviation
     via: List[List[float]] = Field(default_factory=list)  # stops on the way, [[lat, lng], ...], in order
     section_starts: List[int] = Field(default_factory=list)  # geometry index where each HERE section begins
-    stops_s: float = 0  # seconds standing at the via stops (HERE stopDuration), already counted in duration_s
+    stops_s: float = 0  # seconds standing at the via stops (HERE stopDuration), already inside duration_s
     weather: List[WeatherAlert] = Field(default_factory=list)  # active NWS alerts along the route
     weather_known: bool = False  # the NWS lookup for this route completed; only then does an empty list mean clear
     weather_later: List[WeatherAlert] = Field(default_factory=list)  # alerts on the route that start after the truck is through
