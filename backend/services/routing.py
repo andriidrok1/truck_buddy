@@ -475,7 +475,9 @@ RESTRICTED_LINE = {
     "length": "This route has a {limit} length limit; your truck is {truck}.",
     "width": "This route has a {limit} width limit.",
     "blocked": "Part of this route is on a road closed to trucks.",
-    "other": "Part of this route breaks a truck restriction: {cause}.",
+    # HERE's `cause` is vendor text ("Violated access restriction for this type of vehicle"), spoken as is
+    # (QA 2026-11-02): it goes to the log, the driver hears plain words.
+    "other": "Part of this route is on a road with a truck restriction.",
 }
 LEGAL_LINE = "Your truck is over the legal {what} limit in {where} ({limit}); that takes a permit."
 
@@ -525,6 +527,8 @@ def _notices(raw: List[dict], t: TruckProfile) -> tuple[List[str], Optional[str]
             for d in details or [{}]:  # every detail: a notice can carry a height and a weight at once
                 kind, limit = _restriction(d)
                 cause = str(d.get("cause") or "").rstrip(".")
+                if kind == "other" and cause:
+                    logger.info("restriction without a known limit: %s", cause)
                 if kind == "other" and code != "violatedvehiclerestriction":
                     msg = "Part of this route uses roads not approved for trucks."
                 else:
