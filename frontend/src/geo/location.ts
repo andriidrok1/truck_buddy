@@ -47,7 +47,11 @@ export function subscribeLocation(listener: () => void): () => void {
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<T>((_, rej) => {
+    timer = setTimeout(() => rej(new Error("timeout")), ms);
+  });
+  return Promise.race([p, late]).finally(() => clearTimeout(timer));
 }
 
 const apply = (loc: Location.LocationObject) =>
@@ -62,22 +66,24 @@ const apply = (loc: Location.LocationObject) =>
   });
 
 /**
- * Asks for permission (only if the OS still allows asking) and starts watching the position. Safe to call
- * any number of times: one watch, one start in flight. Coming back to the app (location turned on in
- * Settings) tries again.
+ * Starts watching the position, asking for permission first when `ask` is set and the OS still allows the
+ * prompt. Safe to call any number of times: one watch, one start in flight. Coming back to the app (location
+ * turned on in Settings) tries again. The consent screen and the root layout pass `ask: false`: the consent
+ * screen has just shown the system prompt itself, and a "Deny" there must not be followed by a second prompt
+ * on top of onboarding (U1); the map screen and the "location off" tag ask.
  */
-export async function startLocation(): Promise<void> {
+export async function startLocation({ ask = true }: { ask?: boolean } = {}): Promise<void> {
   if (watch || starting) return;
   starting = true;
   if (!appStateHooked) {
     appStateHooked = true;
     AppState.addEventListener("change", (s) => {
-      if (s === "active") startLocation();
+      if (s === "active") startLocation({ ask: false });
     });
   }
   try {
     let perm = await withTimeout(Location.getForegroundPermissionsAsync(), 5000);
-    if (perm.status !== "granted" && perm.canAskAgain) {
+    if (perm.status !== "granted" && perm.canAskAgain && ask) {
       perm = await Location.requestForegroundPermissionsAsync();
     }
     if (perm.status !== "granted") throw new Error("denied");

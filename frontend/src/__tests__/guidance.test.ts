@@ -191,6 +191,9 @@ describe("announcement", () => {
     expect(announcement(arrive, "far", 1500)).toBe("In about a mile, you'll arrive at Pilot Travel Center on the right.");
     expect(announcement(arrive, "near", 500)).toBe("In a quarter mile, you'll arrive at Pilot Travel Center on the right.");
     expect(announcement(arrive, "now", 40)).toBe("Arrive at Pilot Travel Center on the right.");
+    expect(announcement({ action: "arrive", instruction: "Your destination is on the left" }, "near", 500)).toBe(
+      "In a quarter mile, your destination is on the left.",
+    );
   });
 });
 

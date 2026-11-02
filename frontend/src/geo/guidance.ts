@@ -159,7 +159,7 @@ export function spokenDistance(m: number) {
 export function announcement(next: Pick<Maneuver, "action" | "instruction">, stage: StageKey, toNextM: number) {
   if (stage === "now") return `${next.instruction}.`;
   const body =
-    next.action === "arrive"
+    next.action === "arrive" && /^arrive\b/i.test(next.instruction)
       ? next.instruction.replace(/^arrive\b/i, "you'll arrive")
       : `${next.instruction.charAt(0).toLowerCase()}${next.instruction.slice(1)}`;
   return `${spokenDistance(toNextM)}, ${body}.`;
