@@ -1,6 +1,7 @@
 """Eval 2026-11-02: the grounded check gives the verdict and, with OSM driveways on the frame, the entry; the
 bare-image call gives the parking spot; when one of them fails the other answers alone."""
 import asyncio
+from datetime import datetime, timezone
 
 import pytest
 
@@ -75,3 +76,29 @@ def test_slow_overpass_gives_no_markers_and_keeps_loading(monkeypatch):
         return await osm_access.around(1.0, 2.0, 0.01)
     assert asyncio.run(go()) == []
     assert osm_access._points == {"1.00000,2.00000": []}
+
+
+def test_osm_points_survive_a_restart_through_the_store(monkeypatch):
+    rows = {}
+
+    async def put(name, payload):
+        rows[name] = (payload, datetime.now(timezone.utc))
+
+    async def get(name):
+        return rows.get(name)
+
+    async def fetch(lat, lng, timeout=60):
+        calls.append((lat, lng))
+        return {"elements": [
+            {"type": "node", "id": 1, "lat": 1.0, "lon": 2.0}, {"type": "node", "id": 2, "lat": 1.0005, "lon": 2.0},
+            {"type": "way", "id": 10, "nodes": [1, 3], "tags": {"highway": "primary", "name": "Main St"}},
+            {"type": "way", "id": 11, "nodes": [1, 2], "tags": {"highway": "service"}}]}
+    calls = []
+    monkeypatch.setattr(osm_access.kv, "feed_put", put)
+    monkeypatch.setattr(osm_access.kv, "feed_get", get)
+    monkeypatch.setattr(osm_access, "fetch", fetch)
+    monkeypatch.setattr(osm_access, "_points", {})
+    first = asyncio.run(osm_access.around(1.0, 2.0, 5))
+    assert [a.road for a in first] == ["Main St"] and len(calls) == 1
+    monkeypatch.setattr(osm_access, "_points", {})  # restart: memory gone, store kept
+    assert asyncio.run(osm_access.around(1.0, 2.0, 5)) == first and len(calls) == 1

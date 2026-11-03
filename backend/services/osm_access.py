@@ -5,9 +5,11 @@ model only picks among these points (QA 2026-11-02: free-form vision coordinates
 import asyncio
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from services import kv
 from services.http import client
 
 logger = logging.getLogger("truckbuddy.osm_access")
@@ -20,6 +22,8 @@ PUBLIC = {"trunk", "trunk_link", "primary", "primary_link", "secondary", "second
 MERGE_M = 15.0  # two junctions closer than this are one driveway
 MAX_POINTS = 14
 CACHE_MAX = 500
+STORE_DAYS = 90  # driveways change rarely; the store row is refetched after this
+STORE_PREFIX = "osm:"  # rows in feed_cache: the junction list of one place (a few hundred bytes)
 
 
 @dataclass
@@ -96,8 +100,9 @@ _loading: dict[str, "asyncio.Task[list[Access]]"] = {}
 
 
 async def around(lat: float, lng: float, wait: float) -> list[Access]:
-    """Driveway junctions around a place, waiting at most `wait` s ([] then). The Overpass fetch keeps running in
-    the background, so the next check of the place (its one re-check) gets the markers."""
+    """Driveway junctions around a place: memory, then the store (survives restarts, shared by instances), then
+    Overpass. Waits at most `wait` s ([] then); the load keeps running in the background, so the next check of
+    the place (its one re-check) gets the markers."""
     k = f"{lat:.5f},{lng:.5f}"
     if k in _points:
         return _points[k]
@@ -113,10 +118,31 @@ async def around(lat: float, lng: float, wait: float) -> list[Access]:
 
 
 async def _load(k: str, lat: float, lng: float) -> list[Access]:
-    osm = await fetch(lat, lng, timeout=45)
-    if osm is None:
-        return []
+    pts = await _stored(k)
+    if pts is None:
+        osm = await fetch(lat, lng, timeout=45)
+        if osm is None:
+            return []
+        pts = points(osm, lat, lng)
+        try:
+            await kv.feed_put(STORE_PREFIX + k, [asdict(a) for a in pts])
+        except Exception as e:  # noqa: BLE001 - the store is a cache
+            logger.warning("osm store write failed for %s: %s", k, e)
     if len(_points) >= CACHE_MAX:
         _points.pop(next(iter(_points)))
-    _points[k] = points(osm, lat, lng)
-    return _points[k]
+    _points[k] = pts
+    return pts
+
+
+async def _stored(k: str) -> Optional[list[Access]]:
+    try:
+        row = await kv.feed_get(STORE_PREFIX + k)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("osm store read failed for %s: %s", k, e)
+        return None
+    if row is None or datetime.now(timezone.utc) - row[1] > timedelta(days=STORE_DAYS):
+        return None
+    try:
+        return [Access(**a) for a in row[0]]
+    except TypeError:
+        return None
