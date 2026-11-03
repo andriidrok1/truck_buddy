@@ -1,11 +1,11 @@
 {
  "model": "gpt-5.4-mini",
- "date": "2026-10-31",
+ "date": "2026-11-02",
  "adapter": "chat_json",
- "n_cases": 308,
- "n_results": 308,
- "intent_acc": 0.9545,
- "case_acc": 0.9156,
+ "n_cases": 305,
+ "n_results": 305,
+ "intent_acc": 0.9672,
+ "case_acc": 0.9443,
  "by_tag": {
   "address": {
    "n": 6,
@@ -15,17 +15,17 @@
   "ambiguous": {
    "n": 11,
    "intent_acc": 0.9091,
-   "case_acc": 0.4545
+   "case_acc": 0.9091
   },
   "core": {
    "n": 94,
-   "intent_acc": 0.9681,
-   "case_acc": 0.9362
+   "intent_acc": 0.9787,
+   "case_acc": 0.9681
   },
   "disfluency": {
-   "n": 94,
-   "intent_acc": 0.9787,
-   "case_acc": 0.9362
+   "n": 91,
+   "intent_acc": 0.978,
+   "case_acc": 0.967
   },
   "edge": {
    "n": 16,
@@ -34,8 +34,8 @@
   },
   "follow_up": {
    "n": 62,
-   "intent_acc": 0.9677,
-   "case_acc": 0.8871
+   "intent_acc": 1.0,
+   "case_acc": 1.0
   },
   "memory": {
    "n": 7,
@@ -49,15 +49,15 @@
   },
   "noisy_stt": {
    "n": 44,
-   "intent_acc": 0.8864,
-   "case_acc": 0.7727
+   "intent_acc": 0.9545,
+   "case_acc": 0.8409
   }
  },
  "by_preset": {
   "idle": {
-   "n": 162,
-   "intent_acc": 0.9506,
-   "case_acc": 0.9259
+   "n": 159,
+   "intent_acc": 0.9623,
+   "case_acc": 0.9371
   },
   "near_follow_up": {
    "n": 5,
@@ -66,8 +66,8 @@
   },
   "options_shown": {
    "n": 51,
-   "intent_acc": 0.9412,
-   "case_acc": 0.8824
+   "intent_acc": 0.9804,
+   "case_acc": 0.9804
   },
   "past_memory": {
    "n": 7,
@@ -82,7 +82,7 @@
   "route_active_alts": {
    "n": 13,
    "intent_acc": 1.0,
-   "case_acc": 0.8462
+   "case_acc": 1.0
   },
   "stops": {
    "n": 5,
@@ -138,19 +138,20 @@
   },
   "find": {
    "n": 90,
-   "intent_acc": 0.9222,
-   "case_acc": 0.9111,
+   "intent_acc": 0.9556,
+   "case_acc": 0.9333,
    "confusions": {
-    "breakdown": 4,
-    "add_stop": 1,
-    "unclear": 2
+    "breakdown": 3,
+    "add_stop": 1
    }
   },
   "go": {
    "n": 21,
-   "intent_acc": 1.0,
+   "intent_acc": 0.9524,
    "case_acc": 0.8571,
-   "confusions": {}
+   "confusions": {
+    "unclear": 1
+   }
   },
   "hos": {
    "n": 8,
@@ -166,12 +167,9 @@
   },
   "pick": {
    "n": 33,
-   "intent_acc": 0.9394,
-   "case_acc": 0.7879,
-   "confusions": {
-    "find": 1,
-    "unclear": 1
-   }
+   "intent_acc": 1.0,
+   "case_acc": 1.0,
+   "confusions": {}
   },
   "reviews": {
    "n": 8,
@@ -180,7 +178,7 @@
    "confusions": {}
   },
   "unclear": {
-   "n": 8,
+   "n": 5,
    "intent_acc": 1.0,
    "case_acc": 1.0,
    "confusions": {}
@@ -193,18 +191,16 @@
   }
  },
  "confusions": {
-  "find→breakdown": 4,
   "chat→bye": 4,
-  "find→unclear": 2,
-  "pick→find": 1,
+  "find→breakdown": 3,
   "chat→alternative": 1,
   "find→add_stop": 1,
-  "pick→unclear": 1
+  "go→unclear": 1
  },
- "p50_ms": 677.0,
- "p95_ms": 905.0,
- "cached_ratio": 0.927,
- "cost_usd": 0.0673,
+ "p50_ms": 699.0,
+ "p95_ms": 926.0,
+ "cached_ratio": 0.7036,
+ "cost_usd": 0.1246,
  "failures": [
   {
    "id": "h_find_def",
@@ -216,13 +212,6 @@
    },
    "got": {
     "intent": "breakdown",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": null,
-    "reply": null,
     "kind": "fuel",
     "detail": "low on DEF",
     "mode": "unknown",
@@ -232,31 +221,6 @@
    "mismatches": [
     "intent: expected 'find', got 'breakdown'",
     "category: expected 'truck_stop', got None"
-   ]
-  },
-  {
-   "id": "h_pick_reno_one",
-   "text": "the one in Reno",
-   "preset": "options_shown",
-   "expected": {
-    "intent": "pick",
-    "place_index": [
-     3
-    ]
-   },
-   "got": {
-    "intent": "find",
-    "category": "truck_stop",
-    "near": "Reno, NV",
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": null,
-    "reply": null
-   },
-   "mismatches": [
-    "intent: expected 'pick', got 'find'",
-    "place_index: expected one of [3], got None"
    ]
   },
   {
@@ -315,7 +279,7 @@
     "category": null,
     "near": null,
     "query": "ahead",
-    "when": "now",
+    "when": null,
     "place_index": null,
     "actions": null,
     "reply": null
@@ -339,7 +303,7 @@
     "when": null,
     "place_index": null,
     "actions": null,
-    "reply": "You’re welcome. Safe miles."
+    "reply": "You bet — safe travels."
    },
    "mismatches": [
     "intent: expected 'chat', got 'bye'"
@@ -360,7 +324,7 @@
     "when": null,
     "place_index": null,
     "actions": null,
-    "reply": "You bet. Safe travels."
+    "reply": "You’re welcome. Safe travels."
    },
    "mismatches": [
     "intent: expected 'chat', got 'bye'"
@@ -381,83 +345,10 @@
     "when": null,
     "place_index": null,
     "actions": null,
-    "reply": "You bet, drive safe."
+    "reply": "You got it, safe driving."
    },
    "mismatches": [
     "intent: expected 'chat', got 'bye'"
-   ]
-  },
-  {
-   "id": "h_pick_something_else",
-   "text": "something else",
-   "preset": "options_shown",
-   "expected": {
-    "intent": "pick",
-    "place_index": [
-     2,
-     3
-    ]
-   },
-   "got": {
-    "intent": "pick",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": null,
-    "reply": null
-   },
-   "mismatches": [
-    "place_index: expected one of [2, 3], got None"
-   ]
-  },
-  {
-   "id": "h_pick_something_else_alts",
-   "text": "something else",
-   "preset": "route_active_alts",
-   "expected": {
-    "intent": "pick",
-    "place_index": [
-     2,
-     3
-    ]
-   },
-   "got": {
-    "intent": "pick",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": null,
-    "reply": null
-   },
-   "mismatches": [
-    "place_index: expected one of [2, 3], got None"
-   ]
-  },
-  {
-   "id": "h_find_shower__stt_shower",
-   "text": "I need a sour",
-   "preset": "idle",
-   "expected": {
-    "intent": "find",
-    "category": "truck_stop"
-   },
-   "got": {
-    "intent": "unclear",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": null,
-    "reply": null
-   },
-   "mismatches": [
-    "intent: expected 'find', got 'unclear'",
-    "category: expected 'truck_stop', got None"
    ]
   },
   {
@@ -470,6 +361,13 @@
    },
    "got": {
     "intent": "breakdown",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null,
     "kind": "fuel",
     "detail": "low on DEF",
     "mode": "unknown",
@@ -491,6 +389,13 @@
    },
    "got": {
     "intent": "breakdown",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": null,
     "kind": "fuel",
     "detail": "low on DEF",
     "mode": "unknown",
@@ -536,18 +441,17 @@
     "category": "weigh_station"
    },
    "got": {
-    "intent": "unclear",
-    "category": null,
+    "intent": "find",
+    "category": "truck_stop",
     "near": null,
-    "query": null,
+    "query": "skill house",
     "when": null,
     "place_index": null,
     "actions": null,
     "reply": null
    },
    "mismatches": [
-    "intent: expected 'find', got 'unclear'",
-    "category: expected 'weigh_station', got None"
+    "category: expected 'weigh_station', got 'truck_stop'"
    ]
   },
   {
@@ -561,17 +465,18 @@
     }
    },
    "got": {
-    "intent": "go",
+    "intent": "unclear",
     "category": null,
     "near": null,
-    "query": "Lady",
+    "query": null,
     "when": null,
     "place_index": null,
     "actions": null,
     "reply": null
    },
    "mismatches": [
-    "query: expected to contain 'lodi', got 'Lady'"
+    "intent: expected 'go', got 'unclear'",
+    "query: expected to contain 'lodi', got None"
    ]
   },
   {
@@ -596,31 +501,6 @@
    },
    "mismatches": [
     "query: expected to contain 'reno', got 'Rina'"
-   ]
-  },
-  {
-   "id": "h_pick_reno_one__stt_reno",
-   "text": "the one in Rina",
-   "preset": "options_shown",
-   "expected": {
-    "intent": "pick",
-    "place_index": [
-     3
-    ]
-   },
-   "got": {
-    "intent": "unclear",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": null,
-    "reply": null
-   },
-   "mismatches": [
-    "intent: expected 'pick', got 'unclear'",
-    "place_index: expected one of [3], got None"
    ]
   },
   {
@@ -687,31 +567,10 @@
     "when": null,
     "place_index": null,
     "actions": null,
-    "reply": "You bet, stay safe out there."
+    "reply": "You got it. Safe travels."
    },
    "mismatches": [
     "intent: expected 'chat', got 'bye'"
-   ]
-  },
-  {
-   "id": "l_03_diesel_def__stt_diesel",
-   "text": "Need these all and DEF",
-   "preset": "idle",
-   "expected": {
-    "intent": "find",
-    "category": "truck_stop"
-   },
-   "got": {
-    "intent": "breakdown",
-    "kind": "fuel",
-    "detail": "Need diesel and DEF",
-    "mode": "unknown",
-    "tire_position": null,
-    "tire_size": null
-   },
-   "mismatches": [
-    "intent: expected 'find', got 'breakdown'",
-    "category: expected 'truck_stop', got None"
    ]
   },
   {
@@ -736,81 +595,6 @@
    },
    "mismatches": [
     "query: expected to contain 'reno', got 'Rina'"
-   ]
-  },
-  {
-   "id": "l_13_not_that_one__dis_uh",
-   "text": "uh, Not that one",
-   "preset": "options_shown",
-   "expected": {
-    "intent": "pick",
-    "place_index": [
-     2,
-     3
-    ]
-   },
-   "got": {
-    "intent": "pick",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": 1,
-    "actions": null,
-    "reply": null
-   },
-   "mismatches": [
-    "place_index: expected one of [2, 3], got 1"
-   ]
-  },
-  {
-   "id": "h_pick_something_else__dis_hey",
-   "text": "hey buddy something else",
-   "preset": "options_shown",
-   "expected": {
-    "intent": "pick",
-    "place_index": [
-     2,
-     3
-    ]
-   },
-   "got": {
-    "intent": "pick",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": null,
-    "reply": null
-   },
-   "mismatches": [
-    "place_index: expected one of [2, 3], got None"
-   ]
-  },
-  {
-   "id": "h_pick_not_that_one_alts__dis_hey",
-   "text": "hey buddy not that one",
-   "preset": "route_active_alts",
-   "expected": {
-    "intent": "pick",
-    "place_index": [
-     2,
-     3
-    ]
-   },
-   "got": {
-    "intent": "pick",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": null,
-    "reply": null
-   },
-   "mismatches": [
-    "place_index: expected one of [2, 3], got None"
    ]
   }
  ],
@@ -1013,8 +797,8 @@
    "ok_all": true
   },
   "h_pick_reno_one": {
-   "ok_intent": false,
-   "ok_all": false
+   "ok_intent": true,
+   "ok_all": true
   },
   "h_pick_third": {
    "ok_intent": true,
@@ -1462,7 +1246,7 @@
   },
   "h_pick_something_else": {
    "ok_intent": true,
-   "ok_all": false
+   "ok_all": true
   },
   "h_pick_not_that_one_alts": {
    "ok_intent": true,
@@ -1470,7 +1254,7 @@
   },
   "h_pick_something_else_alts": {
    "ok_intent": true,
-   "ok_all": false
+   "ok_all": true
   },
   "h_pick_second_one_alts": {
    "ok_intent": true,
@@ -1513,8 +1297,8 @@
    "ok_all": true
   },
   "h_find_shower__stt_shower": {
-   "ok_intent": false,
-   "ok_all": false
+   "ok_intent": true,
+   "ok_all": true
   },
   "h_find_shower__dis_uh": {
    "ok_intent": true,
@@ -1617,7 +1401,7 @@
    "ok_all": true
   },
   "h_find_scale_house__stt_scale": {
-   "ok_intent": false,
+   "ok_intent": true,
    "ok_all": false
   },
   "h_find_scale_house__dis_please": {
@@ -1645,7 +1429,7 @@
    "ok_all": true
   },
   "h_go_lodi__stt_lodi": {
-   "ok_intent": true,
+   "ok_intent": false,
    "ok_all": false
   },
   "h_go_lodi__stt_route": {
@@ -1701,8 +1485,8 @@
    "ok_all": true
   },
   "h_pick_reno_one__stt_reno": {
-   "ok_intent": false,
-   "ok_all": false
+   "ok_intent": true,
+   "ok_all": true
   },
   "h_pick_reno_one__dis_hey": {
    "ok_intent": true,
@@ -1888,11 +1672,11 @@
    "ok_intent": true,
    "ok_all": true
   },
-  "h_bd_wont_start__dis_please": {
+  "h_bd_wont_start__dis_uh": {
    "ok_intent": true,
    "ok_all": true
   },
-  "h_bd_reefer__dis_please": {
+  "h_bd_reefer__dis_uh": {
    "ok_intent": true,
    "ok_all": true
   },
@@ -1900,7 +1684,7 @@
    "ok_intent": true,
    "ok_all": true
   },
-  "h_bd_out_of_fuel__dis_please": {
+  "h_bd_out_of_fuel__dis_uh": {
    "ok_intent": true,
    "ok_all": true
   },
@@ -1920,19 +1704,11 @@
    "ok_intent": true,
    "ok_all": true
   },
-  "h_bye_bye__dis_please": {
+  "h_bye_bye__dis_uh": {
    "ok_intent": true,
    "ok_all": true
   },
   "h_bye_thats_it__dis_uh": {
-   "ok_intent": true,
-   "ok_all": true
-  },
-  "h_unclear_siren__dis_hey": {
-   "ok_intent": true,
-   "ok_all": true
-  },
-  "h_unclear_music__dis_please": {
    "ok_intent": true,
    "ok_all": true
   },
@@ -1957,8 +1733,8 @@
    "ok_all": true
   },
   "l_03_diesel_def__stt_diesel": {
-   "ok_intent": false,
-   "ok_all": false
+   "ok_intent": true,
+   "ok_all": true
   },
   "l_03_diesel_def__stt_def": {
    "ok_intent": true,
@@ -1982,7 +1758,7 @@
   },
   "l_13_not_that_one__dis_uh": {
    "ok_intent": true,
-   "ok_all": false
+   "ok_all": true
   },
   "l_14_second_one__dis_uh": {
    "ok_intent": true,
@@ -1992,11 +1768,7 @@
    "ok_intent": true,
    "ok_all": true
   },
-  "l_16_bye__dis_please": {
-   "ok_intent": true,
-   "ok_all": true
-  },
-  "l_19_beeping__dis_please": {
+  "l_16_bye__dis_uh": {
    "ok_intent": true,
    "ok_all": true
   },
@@ -2022,11 +1794,11 @@
   },
   "h_pick_something_else__dis_hey": {
    "ok_intent": true,
-   "ok_all": false
+   "ok_all": true
   },
   "h_pick_not_that_one_alts__dis_hey": {
    "ok_intent": true,
-   "ok_all": false
+   "ok_all": true
   },
   "h_pick_something_else_alts__dis_please": {
    "ok_intent": true,
@@ -2054,24 +1826,26 @@
   "has_baseline": true,
   "baseline_model": "gpt-5.4-mini",
   "baseline_date": "2026-10-31",
-  "baseline_intent_acc": 0.9642,
+  "baseline_intent_acc": 0.9545,
   "deltas": {
-   "intent_acc": -0.0097,
-   "case_acc": 0.0068,
-   "p50_ms": -11.0,
-   "p95_ms": -78.0,
-   "cached_ratio": 0.0074,
-   "cost_usd": -0.0015
+   "intent_acc": 0.0127,
+   "case_acc": 0.0287,
+   "p50_ms": 22.0,
+   "p95_ms": 21.0,
+   "cached_ratio": -0.2234,
+   "cost_usd": 0.0573
   },
-  "regressions": [
-   "h_alt_no_route",
-   "l_03_diesel_def__stt_diesel"
-  ],
+  "regressions": [],
   "fixes": [
-   "h_pick_reno_one__dis_hey",
-   "h_stop_pilot_fernley",
-   "h_unclear_siren__dis_hey",
-   "l_13_not_that_one"
+   "h_find_shower__stt_shower",
+   "h_pick_not_that_one_alts__dis_hey",
+   "h_pick_reno_one",
+   "h_pick_reno_one__stt_reno",
+   "h_pick_something_else",
+   "h_pick_something_else__dis_hey",
+   "h_pick_something_else_alts",
+   "l_03_diesel_def__stt_diesel",
+   "l_13_not_that_one__dis_uh"
   ]
  }
 }
