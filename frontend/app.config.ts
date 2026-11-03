@@ -42,8 +42,8 @@ const config: ExpoConfig = {
         "NSLocationWhenInUseUsageDescription": "TruckBuddy uses your location to find truck-friendly parking, fuel and repair shops near you and to plan truck-safe routes.",
         "NSMicrophoneUsageDescription": "TruckBuddy listens after you tap the copilot so you can ask for stops and directions by voice while driving.",
         "ITSAppUsesNonExemptEncryption": false,
-        // audio: the copilot keeps speaking with the screen off; location: takes effect once the background
-        // location task lands (plan A3), harmless until then.
+        // audio: the copilot keeps speaking with the screen off; location: the drive task keeps guidance going
+        // with the phone locked (src/geo/driveTracking.ts), on the while-in-use permission.
         "UIBackgroundModes": ["audio", "location"]
       },
       "buildNumber": "1",
@@ -146,14 +146,17 @@ const config: ExpoConfig = {
           "locationWhenInUsePermission": "TruckBuddy uses your location to find truck-friendly parking, fuel and repair shops near you and to plan truck-safe routes.",
           "locationAlwaysAndWhenInUsePermission": false,
           "locationAlwaysPermission": false,
-          "isAndroidBackgroundLocationEnabled": false
+          "isAndroidBackgroundLocationEnabled": false,
+          // Guidance with the screen off runs as a foreground service with a notification, started from the open
+          // app on Go: no ACCESS_BACKGROUND_LOCATION (still blocked below), only the service permissions.
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       [
         "expo-audio",
         {
           "microphonePermission": "TruckBuddy listens after you tap the copilot so you can ask for stops and directions by voice while driving.",
-          "enableBackgroundPlayback": false,
+          "enableBackgroundPlayback": true,
           "enableBackgroundRecording": false
         }
       ],
