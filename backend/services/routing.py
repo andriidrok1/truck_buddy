@@ -283,7 +283,6 @@ def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo
         seconds += s["summary"]["duration"]
         raw += [n for n in (s.get("notices") or []) if isinstance(n, dict)]
     stops_s = _stops_s(sections)
-    seconds += stops_s
     if not geometry:
         raise RuntimeError("HERE route has no geometry")
     notices, restricted = _notices(raw, truck or TruckProfile())
@@ -306,8 +305,9 @@ def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo
 
 def _stops_s(sections: List[dict]) -> float:
     """Seconds the truck stands at the via stops: the gap between one section's arrival and the next one's
-    departure. HERE keeps a via's stopDuration out of every section's `duration`, so summing sections alone
-    showed an ETA 30 minutes short per stop."""
+    departure. Informational only: HERE already adds a via's stopDuration to the `duration` of the section that
+    ends there (checked live 2026-11-02: 910 s -> 2710 s with stopDuration=1800), so adding it again put
+    30 extra minutes on the ETA per stop."""
     total = 0.0
     for a, b in zip(sections, sections[1:]):
         try:
@@ -475,7 +475,9 @@ RESTRICTED_LINE = {
     "length": "This route has a {limit} length limit; your truck is {truck}.",
     "width": "This route has a {limit} width limit.",
     "blocked": "Part of this route is on a road closed to trucks.",
-    "other": "Part of this route breaks a truck restriction: {cause}.",
+    # HERE's `cause` is vendor text ("Violated access restriction for this type of vehicle"), spoken as is
+    # (QA 2026-11-02): it goes to the log, the driver hears plain words.
+    "other": "Part of this route is on a road with a truck restriction.",
 }
 LEGAL_LINE = "Your truck is over the legal {what} limit in {where} ({limit}); that takes a permit."
 
@@ -525,6 +527,8 @@ def _notices(raw: List[dict], t: TruckProfile) -> tuple[List[str], Optional[str]
             for d in details or [{}]:  # every detail: a notice can carry a height and a weight at once
                 kind, limit = _restriction(d)
                 cause = str(d.get("cause") or "").rstrip(".")
+                if kind == "other" and cause:
+                    logger.info("restriction without a known limit: %s", cause)
                 if kind == "other" and code != "violatedvehiclerestriction":
                     msg = "Part of this route uses roads not approved for trucks."
                 else:
@@ -571,6 +575,9 @@ def _notices(raw: List[dict], t: TruckProfile) -> tuple[List[str], Optional[str]
         where = " and ".join(states) if states else "this state"
         legal_lines.append(LEGAL_LINE.format(what=what, where=where, limit=limit))
     return physical + legal_lines + other, restricted
+
+
+NO_TURNS_NOTICE = "The truck router is down, so this is a backup route: no turn prompts, follow the line on the map."
 
 
 async def _ors(fl: float, fg: float, tl: float, tg: float, t: TruckProfile, via: Via = ()) -> RouteInfo:
@@ -650,13 +657,18 @@ class TruckRoutingProvider:
                     else await fn(from_lat, from_lng, to_lat, to_lng, t, via)
                 info.approach = from_route(info)
                 info.via = via
+                if fn is _ors and failed:  # HERE is down: a line to follow, but no turn prompts
+                    info.notices.append(NO_TURNS_NOTICE)
                 for alt in info.alternatives:
                     alt.approach = from_route(alt)
                     alt.via = via
                 return info
-            except NoTruckRoute as e:  # the router answered: another provider may still know a way
+            except NoTruckRoute as e:
+                # HERE knows the truck's restrictions; ORS asked after its "no" found a way HERE had ruled
+                # out and handed it over without turns (review 2026-11-02, bug 20). The "no" is final.
                 logger.warning("%s found no truck route: %s", fn.__name__, e)
-                no_route = no_route or e
+                no_route = e
+                break
             except Exception as e:  # noqa: BLE001 - fall through to the next provider
                 logger.warning("%s routing failed: %s", fn.__name__, e)
                 failed.append(f"{fn.__name__}: {type(e).__name__}")

@@ -11,9 +11,11 @@ from services.routing import _here_parse
 
 DATA = fixture_json("here/route_sac_reno")
 SAC = {"lat": 38.5816, "lng": -121.4944}
-PARK = Place(id="g-49er", name="49er Travel Plaza", category="truck_stop", lat=38.60, lng=-121.55,
+# Both lie on the recorded Sacramento-Reno line, ahead of the truck: a stop on the way is only ever picked
+# ahead (review 2026-11-02, bug 19).
+PARK = Place(id="g-49er", name="49er Travel Plaza", category="truck_stop", lat=38.648, lng=-121.374,
              address="2828 El Centro Rd, Sacramento, CA", distance_mi=5.6)
-ROADYS = Place(id="g-roadys", name="Roady's Truck Stop", category="truck_stop", lat=38.57, lng=-121.56,
+ROADYS = Place(id="g-roadys", name="Roady's Truck Stop", category="truck_stop", lat=38.624, lng=-121.417,
                address="1 W Capitol Ave, West Sacramento, CA", distance_mi=6.4)
 
 
@@ -120,11 +122,18 @@ def test_a_named_pick_on_the_way_stops_at_that_place(agent_sandbox, fake_http):
 def test_the_same_stop_twice_is_said_not_added(agent_sandbox, fake_http):
     prov = _prov(agent_sandbox, fake_http)
     agent_sandbox.llm.on(r"diesel", {"intent": "add_stop", "category": "truck_stop"})
+    agent_sandbox.llm.on(r"roady", {"intent": "add_stop", "category": "truck_stop", "query": "Roady's"})
     req = AgentRequest(text="add diesel on the way", session_id="dup", active_place=PARK, **SAC)
     first = run(prov.handle(req, None))
     assert [o.id for o in first.options] == [ROADYS.id]
+    # the same words again add nothing (review 2026-11-02); "another" looks for another one (QA 2026-11-02),
+    # and Roady's is the only truck stop ahead
     again = run(prov.handle(req, None))
     assert again.status == "chat" and again.reply == "Roady's Truck Stop is already one of your stops."
+    another = run(prov.handle(req.model_copy(update={"text": "add another diesel on the way"}), None))
+    assert another.status == "chat" and another.reply == "I couldn't find another truck stop ahead on your route."
+    named = run(prov.handle(req.model_copy(update={"text": "stop at Roady's on the way"}), None))
+    assert named.status == "chat" and named.reply == "Roady's Truck Stop is already one of your stops."
     assert [s.id for s in agent._SESSIONS["dup"]["via"]["stops"]] == [ROADYS.id]
 
 

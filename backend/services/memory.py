@@ -154,18 +154,100 @@ async def set_facts(driver: str, facts: dict, turns_seen: int) -> None:
 
 
 async def clear_facts(driver: str) -> int:
+    """"Forget that": the learned facts and the visits (the count is facts rows)."""
     kind = store()
     if kind == "off":
         _off()
     if kind == "sqlite":
-        return await _sq_run(lambda con: con.execute("DELETE FROM driver_facts WHERE driver = ?", (driver,)).rowcount)
+        def _forget(con):
+            con.execute("DELETE FROM driver_visits WHERE driver = ?", (driver,))
+            con.execute("DELETE FROM driver_visit_trips WHERE driver = ?", (driver,))
+            return con.execute("DELETE FROM driver_facts WHERE driver = ?", (driver,)).rowcount
+        return await _sq_run(_forget)
     pool = await _db()
+    await pool.execute("DELETE FROM driver_visits WHERE driver = $1", driver)
+    await pool.execute("DELETE FROM driver_visit_trips WHERE driver = $1", driver)
     status = await pool.execute("DELETE FROM driver_facts WHERE driver = $1", driver)
     return int(status.split()[-1])
 
 
+# ---- visits: the places the driver arrived at (the app's "arrived" events), counted apart from the likes --------
+
+MAX_VISITS = 30  # places kept per driver, the most recently visited
+
+
+async def add_visits(driver: str, visits: list[tuple[str, str | None, str | None, datetime, str | None]]) -> None:
+    """One more visit to each (place_id, name, category, at, trip_id); the latest name and time win. A visit
+    counts once per place per trip (driver_visit_trips): the app sends a batch again when an upload failed after
+    it had landed, and a batch can hold two trips at one place. An arrival with no trip is not counted, nothing
+    tells it from one sent again. Beyond MAX_VISITS places the least recently visited go, with their trips."""
+    visits = [v for v in visits if v[4]]
+    if not visits:
+        return
+    kind = store()
+    if kind == "off":
+        _off()
+    if kind == "sqlite":
+        def _count(con):
+            con.execute("BEGIN")
+            try:
+                for place_id, name, category, at, trip in visits:
+                    new = con.execute("INSERT OR IGNORE INTO driver_visit_trips (driver, place_id, trip_id) "
+                                      "VALUES (?, ?, ?)", (driver, place_id, trip)).rowcount == 1
+                    con.execute(
+                        "INSERT INTO driver_visits (driver, place_id, name, category, count, last_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (driver, place_id) DO UPDATE SET "
+                        "count = count + excluded.count, "
+                        "name = coalesce(excluded.name, name), category = coalesce(excluded.category, category), "
+                        "last_at = max(last_at, excluded.last_at)",
+                        (driver, place_id, name, category, int(new), at.astimezone(timezone.utc).isoformat()))
+                con.execute("DELETE FROM driver_visits WHERE driver = ? AND place_id NOT IN (SELECT place_id FROM "
+                            "driver_visits WHERE driver = ? ORDER BY last_at DESC LIMIT ?)", (driver, driver, MAX_VISITS))
+                con.execute("DELETE FROM driver_visit_trips WHERE driver = ? AND place_id NOT IN (SELECT place_id "
+                            "FROM driver_visits WHERE driver = ?)", (driver, driver))
+                con.execute("COMMIT")
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+        await _sq_run(_count)
+        return
+    pool = await _db()
+    async with pool.acquire() as con, con.transaction():
+        for place_id, name, category, at, trip in visits:
+            status = await con.execute("INSERT INTO driver_visit_trips (driver, place_id, trip_id) VALUES ($1, $2, $3) "
+                                       "ON CONFLICT DO NOTHING", driver, place_id, trip)
+            await con.execute(
+                "INSERT INTO driver_visits (driver, place_id, name, category, count, last_at) "
+                "VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (driver, place_id) DO UPDATE SET "
+                "count = driver_visits.count + EXCLUDED.count, "
+                "name = coalesce(EXCLUDED.name, driver_visits.name), "
+                "category = coalesce(EXCLUDED.category, driver_visits.category), "
+                "last_at = greatest(driver_visits.last_at, EXCLUDED.last_at)",
+                driver, place_id, name, category, int(status.split()[-1]), at)
+        await con.execute("DELETE FROM driver_visits WHERE driver = $1 AND place_id NOT IN (SELECT place_id FROM "
+                          "driver_visits WHERE driver = $1 ORDER BY last_at DESC LIMIT $2)", driver, MAX_VISITS)
+        await con.execute("DELETE FROM driver_visit_trips WHERE driver = $1 AND place_id NOT IN (SELECT place_id "
+                          "FROM driver_visits WHERE driver = $1)", driver)
+
+
+async def visits(driver: str) -> list[dict]:
+    """The driver's visits, the most visited first: {place_id, name, category, count, last_at (datetime)}."""
+    kind = store()
+    if kind == "off":
+        _off()
+    cols = "place_id, name, category, count, last_at"
+    if kind == "sqlite":
+        rows = await _sq_run(lambda con: con.execute(
+            f"SELECT {cols} FROM driver_visits WHERE driver = ? ORDER BY count DESC, last_at DESC", (driver,)).fetchall())
+        return [{"place_id": r[0], "name": r[1], "category": r[2], "count": int(r[3]),
+                 "last_at": datetime.fromisoformat(r[4])} for r in rows]
+    pool = await _db()
+    rows = await pool.fetch(f"SELECT {cols} FROM driver_visits WHERE driver = $1 ORDER BY count DESC, last_at DESC", driver)
+    return [{**dict(r), "count": int(r["count"])} for r in rows]
+
+
 async def clear(driver: str) -> int:
-    """Everything about the driver: the turns, the learned facts and the trip events (the count is turns)."""
+    """Everything about the driver: the turns, the learned facts, the visits and the trip events (the count is turns)."""
     if _pending.get(driver):
         await asyncio.gather(*list(_pending[driver]), return_exceptions=True)
     kind = store()
@@ -175,11 +257,15 @@ async def clear(driver: str) -> int:
         def _wipe(con):
             n = con.execute("DELETE FROM conversation WHERE driver = ?", (driver,)).rowcount
             con.execute("DELETE FROM driver_facts WHERE driver = ?", (driver,))
+            con.execute("DELETE FROM driver_visits WHERE driver = ?", (driver,))
+            con.execute("DELETE FROM driver_visit_trips WHERE driver = ?", (driver,))
             con.execute("DELETE FROM trip_events WHERE driver = ?", (driver,))
             return n
         return await _sq_run(_wipe)
     pool = await _db()
     status = await pool.execute("DELETE FROM conversation WHERE driver = $1", driver)
     await pool.execute("DELETE FROM driver_facts WHERE driver = $1", driver)
+    await pool.execute("DELETE FROM driver_visits WHERE driver = $1", driver)
+    await pool.execute("DELETE FROM driver_visit_trips WHERE driver = $1", driver)
     await pool.execute("DELETE FROM trip_events WHERE driver = $1", driver)
     return int(status.split()[-1])
