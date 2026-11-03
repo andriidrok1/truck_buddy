@@ -101,13 +101,15 @@ async def vehicles(principal: auth.Principal = Depends(reader)):
 @router.get("/vehicles/{vehicle_id}/events")
 async def vehicle_events(vehicle_id: str = Path(max_length=64), day: Optional[str] = Query(None, pattern=DAY_RE),
                          limit: int = Query(2000, ge=1, le=5000), principal: auth.Principal = Depends(reader)):
-    """One truck's day, oldest first, without transcripts; 404 for a truck that is not the caller's."""
+    """One truck's day, oldest first, without transcripts; 404 for a truck that is not the caller's. `truncated`
+    says the day has more than `limit` events (the list used to stop at 2000 with nothing to say so, bug 10)."""
     start, end, label = _day(day)
     trucks = await _guarded(tenancy.org_vehicles(principal.org_id))
     if vehicle_id not in {v["id"] for v in trucks}:
         raise HTTPException(status_code=404, detail="No such vehicle")
-    events = await _guarded(trip_events.vehicle_day(principal.org_id, vehicle_id, start, end, limit))
-    return {"day": label, "vehicle_id": vehicle_id, "events": [public_event(e) for e in events]}
+    events = await _guarded(trip_events.vehicle_day(principal.org_id, vehicle_id, start, end, limit + 1))
+    return {"day": label, "vehicle_id": vehicle_id, "events": [public_event(e) for e in events[:limit]],
+            "truncated": len(events) > limit}
 
 
 SUMMARY_COUNTS = ("routes", "reroutes", "guard_questions", "failed_turns", "route_failures")

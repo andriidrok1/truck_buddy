@@ -441,3 +441,14 @@ def test_device_cache_expires(monkeypatch):
     clock[0] += tenancy.DEVICE_TTL_S + 1
     assert run(tenancy.device_of("sub_x")) is None  # re-read: no such row in the store
     tenancy._devices.pop("sub_x", None)
+
+
+def test_vehicle_events_say_when_the_day_is_cut(client):
+    # Bug 10: the day stopped at the limit with nothing in the answer to say so.
+    f = _two_fleets(client)
+    client.post("/api/trips/events", headers=f["a_drv"], json=[
+        _ev("maneuver_said", index=i, t=f"2026-11-02T17:{i:02d}:00Z") for i in range(3)])
+    url = f"/api/fleet/vehicles/{f['t1']}/events?day=2026-11-02"
+    cut = client.get(url + "&limit=2", headers=f["a_disp"]).json()
+    assert [e["data"]["index"] for e in cut["events"]] == [0, 1] and cut["truncated"] is True
+    assert client.get(url + "&limit=3", headers=f["a_disp"]).json()["truncated"] is False
