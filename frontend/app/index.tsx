@@ -1,11 +1,15 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
+import { Alert, AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as Sentry from "@sentry/react-native";
 
 import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
+import { newSessionId, useCopilotTurn, type AnswerContext } from "@/src/dialog/useCopilotTurn";
+import { useFillers } from "@/src/dialog/useFillers";
+import { lineCaption, replyCaption, replyEnded, type Caption } from "@/src/dialog/caption";
 import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
 import { Icon } from "@/src/components/Icon";
@@ -19,10 +23,13 @@ import { RestoredBanner } from "@/src/components/RestoredBanner";
 import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
-import { logAnnouncement } from "@/src/dev/announcements";
 import { isTester } from "@/src/auth";
 import { chainControlAhead, routePointsAhead } from "@/src/geo/ahead";
-import { swapAlternative, switchedLine } from "@/src/geo/routeChoice";
+import { switchedLine } from "@/src/geo/routeChoice";
+import { farFromRoute } from "@/src/geo/guidance";
+import { startDriveTracking, stopDriveTracking } from "@/src/geo/driveTracking";
+import { arrivals, loadArrived, saveArrived } from "@/src/geo/arrival";
+import { createRerouteGate } from "@/src/geo/offroute";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
 import { useOfflineGuidance, type OfflineGuidance } from "@/src/hooks/useOfflineGuidance";
@@ -30,25 +37,25 @@ import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
-import { getTruckProfile, isOnboarded, saveTruckProfile, setHandsFree, setNudgesEnabled, takeTruckReroute, truckLabel, useHandsFree, useNudgesEnabled, useTruckProfile } from "@/src/hooks/useTruckProfile";
+import { saveProfile, setMidTripCheck } from "@/src/data/profile";
+import { getTruckProfile, isOnboarded, truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
-import { WAKE_SUPPORTED, useWakeWord } from "@/src/hooks/useWakeWord";
+import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
-import { setActiveRoute } from "@/src/state/activeRoute";
+import { providerPlace, restoreSavedTrip, selectPlaces, startTripPersistence, stopsAhead, useTripStore, viaOf } from "@/src/state/tripStore";
+import { setHandsFree, setNudgesEnabled, setVoiceGuidance, takeTruckReroute, useHandsFree, useNudgesEnabled, useVoiceGuidance } from "@/src/state/settingsStore";
 import { reduceAgentResponse } from "@/src/state/agentReducer";
+import { applyEffects } from "@/src/state/applyEffects";
 import { offlineTurn } from "@/src/state/offlineTurn";
-import { clearSavedRoute, loadActiveRoute, saveActiveRoute } from "@/src/state/routeStore";
-import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult, RouteInfo } from "@/src/types";
-import { storage } from "@/src/utils/storage";
+import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, Phase, Place, RouteInfo } from "@/src/types";
 import { backAction } from "@/src/utils/backAction";
-import { planFiller, type FillerPlan } from "@/src/voice/fillers";
 import { PRIORITY } from "@/src/voice/queue";
-import { buildSttHint, streetFromInstruction } from "@/src/voice/sttHint";
+import { streetFromInstruction } from "@/src/voice/sttHint";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 import { RECORD_DRIVES, recorder } from "@/src/geo/driveRecorder";
 import { subscribeReplay, takeReplayRequest } from "@/src/geo/replayRequest";
-import { newTripId, startTripLog, stopTripLog, tripLog } from "@/src/net/tripEvents";
+import { startPositionHeartbeat, startTripLog, stopTripLog, tripLog } from "@/src/net/tripEvents";
 import { playTrace } from "@/src/sim";
 
 /** Toast for a failed /route: the router's "no truck route" is a destination problem, not a retry. */
@@ -59,35 +66,20 @@ function routeFailText(e: unknown): string {
 // Below this much visible map (layout units) the bubble would cover the route; the sheet shows the text.
 // The route card leaves about 220 at the default font, about 120 at 130 %.
 const MIN_MAP_FOR_BUBBLE = 180;
-type Caption = { reply: string; heard?: string; kind?: "reply" | "line"; at?: number };
-/** The copilot's answer: kept until the next turn (a driver who looks later must still see it). */
-const replyCaption = (reply: string, heard?: string): Caption => ({ reply, heard, kind: "reply", at: Date.now() });
-/** A spoken line (turn, nudge, parking tip): gone 8 s after it is said, and never over an answer under 6 s old. */
-const lineCaption = (text: string, prev: Caption | null): Caption =>
-  prev?.kind === "reply" && Date.now() - (prev.at ?? 0) < 6000 ? prev : { reply: text, kind: "line", at: Date.now() };
 
-const VOICE_GUIDANCE_KEY = "voice_guidance_v1";
+const KEEP_AWAKE_TAG = "driving";
+
+// "End route" asks first while more than this is left of the drive.
+const END_CONFIRM_ABOVE_S = 10 * 60;
+
 const RESEARCH_INTERIM = "Reading reviews now, almost there.";
 const RESEARCH_INTERIM_MS = 7000;
-const providerPlace = (p: Provider): Place => ({
-  id: p.id, name: p.name, category: "service", lat: p.lat, lng: p.lng, tags: [],
-  address: p.address, rating: p.rating, rating_count: p.rating_count, distance_mi: p.distance_mi,
-});
 
-const REQUEST_TIMEOUT_MS = 60000;
-const NO_CONNECTION = "I can't reach the server right now. Check your signal and try again.";
-const STT_SLOW = "Speech recognition is slow right now. Give it a moment and try again.";
-const RATE_LIMITED = "One second, let me catch up.";
-const STAGES = ["Searching nearby…", "Setting route…"];
-const STAGE_MS = 3500;
-const WAKE_SLEEP_MS = 10 * 60 * 1000; // background without a route: turn the wake word off
-const SESSION_IDLE_MS = 10 * 60 * 1000; // no turn for this long: the next one starts a fresh session
-const newSessionId = () => `dlg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const ROUTE_STAGE = "Setting route…";
 // Nudges (/api/nudges): first ask a minute into the drive, then every five minutes; a nudge that
 // is still waiting when the next one comes is stale. After one plays the mic opens for ~7 s.
 const NUDGE_FIRST_MS = 60 * 1000;
 const NUDGE_EVERY_MS = 5 * 60 * 1000;
-const NUDGE_ANSWER_MS = 7000;
 const NUDGE_KEY_PREFIX = "nudge-";
 /** " There's a lot with trailers to the southeast, looks like a private yard." (or "") */
 const APPROACH_TIPS_M = 800; // about half a mile: the entry tip is useful here, not six miles out
@@ -107,21 +99,9 @@ const nearbyLine = (pk: ParkingCheck) => {
   const look = pk.nearby.kind === "unclear" ? "" : `, looks like a ${pk.nearby.kind}`;
   return ` There's a lot with trailers to the ${pk.nearby.direction}${look}.`;
 };
-const FILLER_DELAY_MS = 300; // after the driver stops talking; an answer faster than this needs no filler
-const FILLER_SECOND_MS = 4000; // first clip played and still no answer: "Still looking."
-const FILLER_SECOND = "Still looking.";
-const SLOW_TURN_MS = 2500; // a previous turn slower than this: the filler is skipped less often
-// Shortest first: planFiller() picks from the top more often.
-const FILLERS = [
-  "Hang on.",
-  "On it.",
-  "Checking.",
-  "Okay, one sec.",
-  "Got it, checking.",
-  "Sure, one moment.",
-  "Alright, let me look.",
-  "Let me see what's around.",
-];
+// The trip (route, driving, stops, options, providers, parking, sheet) lives in src/state/tripStore.ts;
+// async handlers read `trip()` at the moment they need a value instead of a ref mirror of a render.
+const trip = useTripStore.getState;
 
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
@@ -141,31 +121,38 @@ export default function MapScreen() {
   // (no camera refit on a drag) but the chrome above the sheet moves down into the freed room.
   const [peekH, setPeekH] = useState<number | null>(null);
   const chromeBottom = (peekH ?? sheetH) + spacing.lg;
-  const [phase, setPhase] = useState<Phase>("ready");
-  // Mirrors of the state the async handlers read after an await (they outlive the render that
-  // made them). Written at commit, so a handler never sees a value from an uncommitted render.
-  const phaseRef = useRef<Phase>("ready");
+  const active = useTripStore((s) => s.active);
+  const driving = useTripStore((s) => s.driving);
+  const options = useTripStore((s) => s.options);
+  const providers = useTripStore((s) => s.providers);
+  const parking = useTripStore((s) => s.parking);
+  const sheet = useTripStore((s) => s.sheet);
+  const restoredId = useTripStore((s) => s.restoredId);
+  const places = useTripStore(selectPlaces);
+  // The dialog's own phases (listening, thinking) sit on top of the sheet.
+  const [dialogPhase, setDialogPhase] = useState<"listening" | "thinking" | null>(null);
+  const phase: Phase = dialogPhase ?? sheet;
+  const phaseRef = useRef<Phase>(phase);
   useLayoutEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
-  const drivingRef = useRef(false);
-  const [active, setActive] = useState<ActiveRoute | null>(null);
-  const [places, setPlaces] = useState<Place[]>([]);
+  const setPhase = (p: Phase) => {
+    if (p === "listening" || p === "thinking") setDialogPhase(p);
+    else {
+      setDialogPhase(null);
+      trip().setSheet(p);
+    }
+  };
   const [toast, setToast] = useState<ToastData | null>(null);
   // kind "reply" = the copilot's answer, kept until the next turn (a driver who looks later must still
   // see it); kind "line" = a spoken line (turn, nudge, parking tip), gone 8 s after it is said.
   const [caption, setCaption] = useState<Caption | null>(null);
-  /** A spoken line's caption; it never covers an answer that is less than 6 s old. */
+  /** A spoken line's caption; it never covers an answer said less than REPLY_HOLD_MS ago. */
   const showLine = (text: string) => setCaption((prev) => lineCaption(text, prev));
   const [micCard, setMicCard] = useState<Exclude<MicPermission, "granted"> | null>(null);
   const [fit, setFit] = useState<{ key: string; points: LatLng[] }>({ key: "init", points: [] });
   const [thinkingText, setThinkingText] = useState<string | undefined>(undefined);
-  const [options, setOptions] = useState<Place[]>([]);
-  const [parking, setParking] = useState<Record<string, ParkingState>>({});
-  const [driving, setDriving] = useState(false);
-  useLayoutEffect(() => {
-    drivingRef.current = driving;
-  }, [driving]);
+  const setDriving = (v: boolean) => trip().setDriving(v);
   const [overview, setOverview] = useState(false);
   // The list of the other routes the engine offered (the "Routes (N)" chip, before "Go").
   const [routesOpen, setRoutesOpen] = useState(false);
@@ -184,36 +171,11 @@ export default function MapScreen() {
     const t = setTimeout(() => setOverview(false), 15000);
     return () => clearTimeout(t);
   }, [overview]);
-  const [voiceOn, setVoiceOnState] = useState(true);
+  const voiceOn = useVoiceGuidance();
+  const setVoiceOn = setVoiceGuidance;
   const { online } = useOnline();
-  const [providers, setProviders] = useState<ProvidersResult | null>(null);
-  const providersRef = useRef<ProvidersResult | null>(null);
-  useLayoutEffect(() => {
-    providersRef.current = providers;
-  }, [providers]);
 
-  useEffect(() => {
-    storage.getItem(VOICE_GUIDANCE_KEY, true as boolean).then((v) => setVoiceOnState(v !== false));
-  }, []);
-  const setVoiceOn = (v: boolean) => {
-    setVoiceOnState(v);
-    storage.setItem(VOICE_GUIDANCE_KEY, v);
-  };
-
-  const turn = useRef(0);
   const searchBlurGuard = useRef(false); // while set, "Where to?" gives a focus it gets back (see onSubmitText)
-  const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stageTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const inflight = useRef<AbortController | null>(null);
-  const filler = useRef<FillerPlan | null>(null); // the acknowledgement planned for the turn in flight
-  const activeRef = useRef<ActiveRoute | null>(null);
-  useLayoutEffect(() => {
-    activeRef.current = active;
-  }, [active]);
-  const optionsRef = useRef<Place[]>([]);
-  useLayoutEffect(() => {
-    optionsRef.current = options;
-  }, [options]);
 
   const showToast = useCallback((text: string, kind: ToastData["kind"] = "error") => {
     setToast({ id: Date.now(), text, kind });
@@ -235,7 +197,7 @@ export default function MapScreen() {
     (item) => {
       if (item.key?.startsWith(NUDGE_KEY_PREFIX)) nudgeAnswer.current();
     },
-    (item, why) => tripLog.log("speech_dropped", { key: item.key ?? null, priority: item.priority, kind: item.kind, why }, activeRef.current?.trip_id),
+    (item, why) => tripLog.log("speech_dropped", { key: item.key ?? null, priority: item.priority, kind: item.kind, why }, trip().active?.trip_id),
   );
   // The trip log mirrors its backlog to storage and flushes once a minute while the screen lives; the
   // drive recorder marks every logged event on its timeline.
@@ -266,8 +228,8 @@ export default function MapScreen() {
       const { trace, speedFactor, name } = req;
       if (trace.place && trace.route) {
         clearSpeech();
-        setActive({ place: trace.place, route: trace.route, trip_id: trace.trip_id ?? undefined });
-        setPhase("navigating");
+        trip().startRoute({ place: trace.place, route: trace.route, trip_id: trace.trip_id ?? undefined });
+        setDialogPhase(null);
         setDriving(true);
       }
       playTrace(trace.fixes, speedFactor, { id: `trace-${name}`, label: `Replay: ${name} (${speedFactor}x)` });
@@ -282,6 +244,13 @@ export default function MapScreen() {
     const t = setTimeout(() => setToast(null), 3200);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // The answer's hold over spoken lines starts when its audio ends, not when it arrived.
+  const wasSpeaking = useRef(false);
+  useEffect(() => {
+    if (wasSpeaking.current && !voice.speaking) setCaption((prev) => replyEnded(prev));
+    wasSpeaking.current = voice.speaking;
+  }, [voice.speaking]);
 
   useEffect(() => {
     if (!caption || voice.speaking || caption.kind === "reply") return; // answers stay until the next turn
@@ -298,13 +267,13 @@ export default function MapScreen() {
   }, []);
 
   // Break reminder while a route is active.
-  const routeStart = useRef<number | null>(null);
   useEffect(() => {
     if (!active || !truck.break_hours) return;
     const limitMs = truck.break_hours * 3600 * 1000;
     const t = setInterval(() => {
-      if (!routeStart.current || Date.now() - routeStart.current < limitMs) return;
-      routeStart.current = Date.now(); // remind again after the next interval
+      const start = trip().routeStart;
+      if (!start || Date.now() - start < limitMs) return;
+      useTripStore.setState({ routeStart: Date.now() }); // remind again after the next interval
       const who = truck.driver_name ? `Hey ${truck.driver_name}, ` : "";
       const hrs = truck.break_hours === 1 ? "an hour" : `${truck.break_hours} hours`;
       const text = `${who}you've been driving for ${hrs}. Want me to find a rest area?`;
@@ -343,7 +312,7 @@ export default function MapScreen() {
     if (optionsFit) setFit({ key: optionsFit, points: [loc.coords, ...options] });
   }
 
-  const sayReply = (res: AgentResponse) => {
+  const sayReply = (res: AgentResponse, isCurrent: () => boolean = () => true) => {
     setCaption(replyCaption(res.reply, res.transcript || undefined));
     if (!res.audio_url) return Promise.resolve();
     // The playback timeouts are sized from the text behind each clip: the server says how it split
@@ -353,7 +322,6 @@ export default function MapScreen() {
     const rest = restParts.join(" ");
     const done = voice.playAndWait(absoluteUrl(res.audio_url), Math.min(20000, 1500 + first.length * 65));
     if (!res.audio_url_2) return done;
-    const myTurn = turn.current;
     // Buffer the second half while the first plays, so it starts right after it (<150 ms gap).
     const url2 = absoluteUrl(res.audio_url_2);
     const next = voice.preload(url2);
@@ -361,7 +329,7 @@ export default function MapScreen() {
       .then((r) => r.ok)
       .catch(() => false);
     return done.then(async () => {
-      if (myTurn !== turn.current) {
+      if (!isCurrent()) {
         next.remove();
         return;
       }
@@ -371,7 +339,7 @@ export default function MapScreen() {
         setCaption(replyCaption(res.reply, res.transcript || undefined));
         return;
       }
-      if (myTurn !== turn.current) {
+      if (!isCurrent()) {
         next.remove();
         return;
       }
@@ -379,46 +347,7 @@ export default function MapScreen() {
     });
   };
 
-  // Instant acknowledgement while the real answer is on its way (cached TTS, rotated).
-  // Keyed by text so the dev log can name the clip; the URL is what plays.
-  const fillerUrls = useRef<Map<string, string>>(new Map());
-  const lastFiller = useRef<string | null>(null);
-  const lastTurnSlow = useRef(false); // previous turn's timings.total > SLOW_TURN_MS
-  useEffect(() => {
-    const texts = [...FILLERS, FILLER_SECOND];
-    Promise.allSettled(texts.map((t) => api.speak(t).then((r) => absoluteUrl(r.audio_url)))).then((all) => {
-      const m = new Map<string, string>();
-      all.forEach((r, i) => {
-        if (r.status === "fulfilled") m.set(texts[i], r.value);
-      });
-      fillerUrls.current = m;
-    });
-  }, []);
-  /**
-   * Acknowledgement planned the moment the driver stops talking: the first clip after
-   * FILLER_DELAY_MS unless the answer is already there, "Still looking." once at FILLER_SECOND_MS
-   * if it still is not. Short fillers (listed first) are picked more often; never the same twice
-   * in a row; skipped 1 in 4 (1 in 10 after a slow turn).
-   * Returns `cancel()` (true if nothing had played) and `done` (resolves when nothing more will play).
-   */
-  const scheduleFiller = () => {
-    const urls = fillerUrls.current;
-    const clips = FILLERS.filter((t) => urls.has(t));
-    return planFiller({
-      clips,
-      secondClip: urls.has(FILLER_SECOND) ? FILLER_SECOND : null,
-      delayMs: FILLER_DELAY_MS,
-      secondMs: FILLER_SECOND_MS,
-      skipRate: lastTurnSlow.current ? 0.1 : 0.25,
-      lastClip: lastFiller.current,
-      play: (clip) => {
-        const url = urls.get(clip);
-        if (!url) return Promise.resolve();
-        if (clip !== FILLER_SECOND) lastFiller.current = clip;
-        return voice.playAndWait(url, 4000);
-      },
-    });
-  };
+  const fillers = useFillers(voice.playAndWait);
 
   // Warm Places + parking caches around the driver: app on screen, no active route,
   // real GPS fix (or demo after location resolved), then again after moving ~5 km.
@@ -450,13 +379,14 @@ export default function MapScreen() {
     api
       .places("truck_stop", at)
       .then((res) => {
-        if (cancelled || activeRef.current || phaseRef.current !== "ready" || optionsRef.current.length) return;
+        const t = trip();
+        if (cancelled || t.active || phaseRef.current !== "ready" || t.options.length) return;
         if (!res.places.length) {
           startPinsEmptyAt.current = at;
           return;
         }
         const nearest = res.places.slice(0, 8);
-        setPlaces(nearest);
+        t.setStartPins(nearest);
         setFit({ key: `start-pins-${at.lat.toFixed(3)},${at.lng.toFixed(3)}`, points: [at, ...nearest.slice(0, 3)] });
       })
       .catch(() => {});
@@ -466,22 +396,23 @@ export default function MapScreen() {
   }, [active, phase, options.length, providers, places.length, loc.coords, loc.isDemo, loc.resolved]);
 
   /** Satellite parking check runs after the route is set; its directions are spoken when the reply ends. */
-  const followParking = async (place: Place, replyDone: Promise<void>, myTurn: number, approach = activeRef.current?.route.approach) => {
+  const followParking = async (place: Place, replyDone: Promise<void>, isCurrent: () => boolean, approach = trip().active?.route.approach) => {
     if (place.category === "service") return; // breakdown provider: no truck-parking check
     try {
       const pk = await api.parking(place, approach);
       // The card always takes the result if it's still the same destination.
-      setActive((a) => (a && a.place.id === place.id ? { ...a, parking: pk } : a));
+      trip().setActiveParking(place.id, pk);
       const e = entrySpot(pk);
-      if (e && activeRef.current?.place.id === place.id && !routeEndsAt(activeRef.current.route, e)) {
+      const cur = trip().active;
+      if (e && cur?.place.id === place.id && !routeEndsAt(cur.route, e)) {
         // Route to E. An off-route reroute landing meanwhile makes this plan stale and it is dropped; one
         // more try against the route that replaced it, so the truck is still guided to the entrance.
-        reroute(myTurn, "entrance").then((applied) => {
-          const now = activeRef.current;
-          if (!applied && now?.place.id === place.id && !routeEndsAt(now.route, e)) reroute(myTurn, "entrance");
+        reroute("entrance").then((applied) => {
+          const now = trip().active;
+          if (!applied && now?.place.id === place.id && !routeEndsAt(now.route, e)) reroute("entrance");
         });
       }
-      if (myTurn !== turn.current || activeRef.current?.place.id !== place.id) return;
+      if (!isCurrent() || trip().active?.place.id !== place.id) return;
       // Spoken right after the answer: the verdict only. The entry and parking tips stay on the card and
       // are said when the truck is within half a mile (approachTips below) or on "how do I get in".
       // The whole set after every answer ran 17 s (QA 2026-10-28, U5).
@@ -489,10 +420,10 @@ export default function MapScreen() {
       if (!text) return;
       const audio = api.speak(text); // generate while the first answer is still playing
       await replyDone;
-      if (myTurn !== turn.current || activeRef.current?.place.id !== place.id) return;
+      if (!isCurrent() || trip().active?.place.id !== place.id) return;
       showLine(text);
       const r = await audio;
-      if (myTurn === turn.current && activeRef.current?.place.id === place.id) {
+      if (isCurrent() && trip().active?.place.id === place.id) {
         await voice.playAndWait(absoluteUrl(r.audio_url), Math.min(15000, 1500 + text.length * 65));
       }
     } catch {
@@ -500,135 +431,46 @@ export default function MapScreen() {
     }
   };
 
-  // ---- Live dialog: one tap starts it, the copilot keeps listening after each answer. ----
-  // dialog.current = the backend session (found places, "the second one", rejected, reply rotation).
-  // live.current = the hands-free loop (mic reopens after each answer). A route stops the loop but keeps
-  // the session; a fresh session only after end_route, bye, 2 misses or 10 min without a turn.
-  const dialog = useRef<string | null>(null);
-  const live = useRef(false);
-  const lastTurnAt = useRef(0);
-  const misses = useRef(0);
-  const endDialog = () => {
-    dialog.current = null;
-    live.current = false;
-    misses.current = 0;
-  };
-  const pauseDialog = () => {
-    live.current = false;
-  };
-  const sessionStale = () => !dialog.current || Date.now() - lastTurnAt.current > SESSION_IDLE_MS;
-  const ensureSession = () => {
-    if (sessionStale()) {
-      dialog.current = newSessionId();
-      misses.current = 0;
-    }
-    lastTurnAt.current = Date.now();
-  };
-  const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-  /**
-   * After an answer: keep talking unless the conversation is over. `force` (a confirm question,
-   * "Did you say Reno?") reopens the mic even when the loop was paused: the next "yes" / "no"
-   * resolves it. beginListening turns the loop back on from there.
-   */
-  const continueDialog = async (myTurn: number, res: AgentResponse | null, spoken: Promise<void>, force = false) => {
-    if (!dialog.current) return;
-    misses.current = res && res.status !== "not_understood" ? 0 : misses.current + 1;
-    if (res?.end_conversation || misses.current >= 2) {
-      endDialog();
-      return;
-    }
-    if (!live.current && !force) return;
-    await spoken;
-    if (myTurn !== turn.current || (!live.current && !force)) return;
-    listenNow();
-  };
-
   const startRoute = (next: ActiveRoute) => {
-    if (!activeRef.current) routeStart.current = Date.now();
-    const tripped: ActiveRoute = { ...next, trip_id: next.trip_id ?? newTripId() };
+    const tripped = trip().startRoute(next);
     tripLog.log("route_started", {
       place_id: next.place.id, category: next.place.category, distance_m: next.route.distance_m, duration_s: next.route.duration_s,
       alternatives: next.route.alternatives?.length ?? 0, restricted: next.route.restricted ?? null, source: next.route.source,
     }, tripped.trip_id);
-    setActive(tripped);
-    setPhase("navigating");
+    setDialogPhase(null);
     // Not while driving: the follow camera stays on the truck (the whole-route fit flashed for a second
     // and snapped back on the next fix).
-    if (!drivingRef.current) setFit({ key: `route-${next.place.id}-${Date.now()}`, points: [loc.coords, next.place] });
+    if (!trip().driving) setFit({ key: `route-${next.place.id}-${Date.now()}`, points: [loc.coords, next.place] });
   };
 
-  const clearTimers = () => {
-    if (watchdog.current) clearTimeout(watchdog.current);
-    if (stageTimer.current) clearInterval(stageTimer.current);
-    watchdog.current = null;
-    stageTimer.current = null;
-  };
+  const backToIdle = () => setPhase(trip().idleSheet());
 
-  /**
-   * Drops the turn in flight: the late answer is discarded (turn counter), the request is aborted,
-   * the acknowledgement clip never starts (or is cut), the thinking stages stop. The dialog session
-   * stays, so the next turn lands on the same backend conversation. The phase is the caller's to set.
-   */
-  const cancelTurn = () => {
-    clearTimers();
-    turn.current++;
-    inflight.current?.abort();
-    inflight.current = null;
-    filler.current?.cancel();
-    filler.current = null;
-    voice.stopSpeaking();
-    setThinkingText(undefined);
-  };
-
-  const startStages = () => {
-    let i = 0;
-    setThinkingText(STAGES[0]);
-    stageTimer.current = setInterval(() => {
-      i = Math.min(i + 1, STAGES.length - 1);
-      setThinkingText(STAGES[i]);
-    }, STAGE_MS);
-  };
-
-  const backToIdle = () =>
-    setPhase(activeRef.current ? "navigating" : providersRef.current ? "providers" : optionsRef.current.length ? "options" : "ready");
-
-  // Dev tools (tester replay) read the active route from here; the disk copy survives a restart.
-  // Every change of `active` (new route, alternative, stops, reroute, parking) is written; the
-  // object that was just restored is not written again, so its saved time stays the original.
-  // Every Sentry event of a drive carries its trip id, so a crash can be put next to the trip log.
+  // The disk copy of the trip survives a restart (src/state/tripStore.ts writes every change); every Sentry
+  // event of a drive carries its trip id, so a crash can be put next to the trip log.
   useEffect(() => {
     Sentry.setTag("trip_id", active?.trip_id ?? "none");
   }, [active?.trip_id]);
-  const skipSave = useRef<ActiveRoute | null>(null);
-  useEffect(() => {
-    setActiveRoute(active);
-    if (active && active !== skipSave.current) saveActiveRoute(active);
-  }, [active]);
+  useEffect(() => startTripPersistence(), []);
 
   // A route saved before the last restart (crash, dead zone, phone off) comes back silently, not
   // driving, with a banner: Resume drives it, Dismiss forgets it.
-  const [restoredId, setRestoredId] = useState<string | null>(null);
   useEffect(() => {
-    loadActiveRoute().then((saved) => {
-      if (!saved || activeRef.current) return;
-      const restored: ActiveRoute = saved.active.trip_id ? saved.active : { ...saved.active, trip_id: newTripId() };
-      skipSave.current = restored;
-      routeStart.current = Date.now();
-      tripLog.log("route_restored", { place_id: restored.place.id, saved_age_s: Math.round((Date.now() - saved.savedAt) / 1000) }, restored.trip_id);
-      setActive(restored);
-      setPhase("navigating");
-      setRestoredId(saved.active.place.id);
+    restoreSavedTrip().then((r) => {
+      if (!r) return;
+      const { restored: res, saved } = r;
+      tripLog.log("route_restored", { place_id: res.place.id, saved_age_s: Math.round((Date.now() - saved.savedAt) / 1000), was_driving: saved.driving === true }, res.trip_id);
+      setDialogPhase(null);
       // The whole saved line: the GPS fix is not in yet, and the demo point would span half the country.
-      const line = saved.active.route.geometry.filter((_, i) => i % 25 === 0).map(([lat, lng]) => ({ lat, lng }));
-      setFit({ key: `restored-${saved.active.place.id}`, points: [...line, saved.active.place] });
+      const line = res.route.geometry.filter((_, i) => i % 25 === 0).map(([lat, lng]) => ({ lat, lng }));
+      setFit({ key: `restored-${res.place.id}`, points: [...line, res.place] });
     });
   }, []);
   const restored = restoredId !== null && active?.place.id === restoredId && !driving;
   useEffect(() => {
-    // Nothing pressed in 20 s: the banner goes, the route stays in preview (same as "Keep").
-    if (!restored) return;
-    const t = setTimeout(() => setRestoredId(null), 20000);
+    // Nothing pressed in 20 s: the banner goes, the route stays in preview (same as "Keep"). Not when the truck
+    // was driving when the app died: then Resume is what the driver came back for, and it stays until pressed.
+    if (!restored || trip().restoredDriving) return;
+    const t = setTimeout(() => trip().dismissRestored(), 20000);
     return () => clearTimeout(t);
   }, [restored]);
 
@@ -643,7 +485,7 @@ export default function MapScreen() {
    * the card with the red banner is not on screen then, and the turn calls would otherwise just carry on.
    */
   const warnRestricted = (route: RouteInfo) => {
-    if (!route.restricted || !drivingRef.current) return;
+    if (!route.restricted || !trip().driving) return;
     const line = route.notices?.[0] ?? "";
     const text =
       route.restricted === "legal"
@@ -653,11 +495,13 @@ export default function MapScreen() {
   };
 
   const rerouting = useRef(false);
+  const rerouteGate = useRef(createRerouteGate()).current;
   const offlineRef = useRef<OfflineGuidance | null>(null);
   const rerouteOffRoute = async (g: Guidance) => {
-    const cur = activeRef.current;
-    if (!cur || rerouting.current || !driving) return;
+    const cur = trip().active;
+    if (!cur || rerouting.current || !trip().driving) return;
     if (loc.sim && !loc.sim.trace) return;
+    if (!rerouteGate.allow(Date.now())) return;
     // No signal: no /reroute. Point the driver back at the loaded line instead; the reroute
     // runs as soon as the signal is back (useOfflineGuidance calls this again).
     if (!isOnline()) {
@@ -672,7 +516,11 @@ export default function MapScreen() {
     const sectionStart = starts[sectionIndex] ?? 0;
     const traveledM = Math.max(0, g.alongM - (g.cum[sectionStart] ?? 0));
     say("Rerouting.", { priority: PRIORITY.MANEUVER, kind: "system", key: "reroute", ttlMs: 20000 });
+    const gen = trip().routeGen;
     const event = { cause: "off_route", dist_m: Math.round(g.distM), threshold_m: g.thresholdM, handle: !!route.handle, section_index: sectionIndex };
+    // /reroute gets the whole via list and the section index and drops the stops behind on its side; the
+    // fallback /route and the stop chips only get what is still ahead.
+    const ahead = cur.stops?.length ? cur.stops.slice(Math.min(sectionIndex, cur.stops.length)) : cur.stops;
     let fallback = false;
     try {
       let res;
@@ -691,14 +539,11 @@ export default function MapScreen() {
       } catch (e) {
         console.log(`[reroute] /reroute failed (${String(e)}), planning from scratch`);
         fallback = true;
-        res = await api.route(loc.coords, cur.place, false, route.via ?? [], cur.trip_id ?? null);
+        res = await api.route(loc.coords, cur.place, false, (route.via ?? []).slice(sectionIndex), cur.trip_id ?? null);
       }
       // Only onto the route the truck left: a stop added or a route picked while this ran is newer.
-      const applied = activeRef.current?.place.id === cur.place.id && activeRef.current.route === route;
-      if (applied) {
-        setActive((a) => (a ? { ...a, route: res.route } : a));
-        warnRestricted(res.route);
-      }
+      const applied = trip().applyRoute(gen, res.route, ahead, res.parking);
+      if (applied) warnRestricted(res.route);
       tripLog.log("reroute", { ...event, ok: true, fallback, applied, restricted: res.route.restricted ?? null }, cur.trip_id);
       g.resetOffRoute();
     } catch {
@@ -706,6 +551,7 @@ export default function MapScreen() {
       showToast("Couldn't reroute. Follow the map for now and watch the truck signs.");
     } finally {
       rerouting.current = false;
+      rerouteGate.done(Date.now());
     }
   };
   // One object per GPS fix (not per render): useGuidance pushes each fix into the off-route tracker once.
@@ -715,7 +561,7 @@ export default function MapScreen() {
   );
   const guidance = useGuidance(active, fix, driving, voiceOn, say, rerouteOffRoute, (next, stage, toNextM) => {
     // The "now" call is the one that can come late: under 60 m at 65 mph is less than two seconds.
-    if (stage === "now") tripLog.log("maneuver_said", { action: next.action, index: next.index, to_next_m: Math.round(toNextM) }, activeRef.current?.trip_id);
+    if (stage === "now") tripLog.log("maneuver_said", { action: next.action, index: next.index, to_next_m: Math.round(toNextM) }, trip().active?.trip_id);
   });
 
   // Half a mile out, once per destination: the entry and parking tips from the card, through the speech
@@ -753,14 +599,67 @@ export default function MapScreen() {
     coordsRef.current = loc.coords;
   }, [loc.coords]);
 
+  // ---- The dialog: src/dialog/turnMachine.ts decides, useCopilotTurn runs the commands (listen, STT, the agent
+  // call, the mic reopening), this screen supplies what they need and applies each answer. Everything read
+  // after an await comes through refs or getters, never from the render that started the turn. ----
+  const handsFree = useHandsFree();
+  const handsFreeRef = useRef(handsFree);
+  const voiceOnRef = useRef(voiceOn);
+  const locRef = useRef(loc);
+  const captionRef = useRef(caption);
+  useLayoutEffect(() => {
+    handsFreeRef.current = handsFree;
+    voiceOnRef.current = voiceOn;
+    locRef.current = loc;
+    captionRef.current = caption;
+  });
+  const { turn } = useCopilotTurn({
+    voice: { listen: (o) => voice.listen(o), cancelRecording: voice.cancelRecording, stopSpeaking: voice.stopSpeaking },
+    api: { transcribe: api.transcribe, agentSpeak: api.agentSpeak },
+    fillers,
+    offline: () => offlineTurn({ isOnline, say, setCaption }),
+    context: () => {
+      const t = trip();
+      const cur = t.active;
+      return {
+        coords: coordsRef.current, // the truck moved while the driver talked and the words were transcribed
+        active: cur,
+        ui: { driving: t.driving, voice_guidance: voiceOnRef.current, hands_free: handsFreeRef.current && WAKE_SUPPORTED, options_count: t.options.length,
+          option_ids: t.options.slice(0, 20).map((p) => p.id) },
+        heading: locRef.current.heading ?? null,
+        speed: locRef.current.speed ?? null,
+        limitMph: limitRef.current,
+        // Names the recogniser should expect: what is on screen and on the route, most useful first.
+        hintNames: [
+          cur?.place.name,
+          ...t.options.map((p) => p.name),
+          ...t.places().map((p) => p.name),
+          ...(cur?.stops ?? []).map((s) => s.name),
+          ...(cur?.route.labels ?? []),
+          streetFromInstruction(guidanceRef.current.next?.instruction),
+        ],
+      };
+    },
+    onPhase: setPhase,
+    onIdle: () => backToIdle(),
+    onThinking: setThinkingText,
+    onHeard: (transcript) => setCaption({ reply: "…", heard: transcript }),
+    onNotUnderstood: () => {
+      if (!captionRef.current) setCaption({ reply: MESSAGES.notUnderstood });
+    },
+    onError: (message) => setCaption(replyCaption(message)),
+    onListenFailed: () => showToast(MESSAGES.notUnderstood),
+    onResponse: (res, ctx) => applyResponse(res, ctx),
+  });
+  // A nudge just played: a short mic window for the "yes" (the speech queue's onDone, registered above).
+  useEffect(() => {
+    nudgeAnswer.current = turn.nudgeOffer;
+  });
+
   // ---- Nudges: while driving, every few minutes the backend may have something to offer (a
   // break coming due, parking ahead). Each line is spoken as ambient; once it has played the mic
   // opens for a few seconds (listenForAnswer) and the backend keeps the offer pending for the next
   // turn of the same session, so "yes" is enough. Not offline, not before "Go". ----
-  const drivingSince = useRef<number | null>(null);
-  useEffect(() => {
-    drivingSince.current = driving ? Date.now() : null;
-  }, [driving]);
   const hasRoute = !!active;
   const nudgesOn = useNudgesEnabled();
   useEffect(() => {
@@ -769,14 +668,13 @@ export default function MapScreen() {
     let every: ReturnType<typeof setInterval> | null = null;
     const poll = async () => {
       if (!isOnline()) return;
-      const cur = activeRef.current;
+      const cur = trip().active;
       if (!cur) return;
       const g = guidanceRef.current;
       // The offer must land in the session the answer will use: a live one, else one started here.
-      const stale = sessionStale();
-      const before = dialog.current;
-      const sessionId = stale || !before ? newSessionId() : before;
-      const since = drivingSince.current;
+      const before = turn.dialogId();
+      const sessionId = turn.isStale() || !before ? newSessionId() : before;
+      const since = trip().drivingSince;
       try {
         const { nudges } = await api.nudges(
           {
@@ -793,11 +691,7 @@ export default function MapScreen() {
           ctrl.signal,
         );
         if (ctrl.signal.aborted || !nudges.length) return;
-        if (stale && dialog.current === before) {
-          dialog.current = sessionId;
-          misses.current = 0;
-        }
-        if (dialog.current === sessionId) lastTurnAt.current = Date.now(); // the answer must not start a fresh session
+        turn.adoptSession(sessionId); // the answer must not start a fresh session
         for (const n of nudges) {
           say(n.text, { priority: PRIORITY.WEATHER, kind: "ambient", key: `${NUDGE_KEY_PREFIX}${n.kind}`, ttlMs: NUDGE_EVERY_MS });
         }
@@ -814,10 +708,10 @@ export default function MapScreen() {
       if (every) clearInterval(every);
       ctrl.abort();
     };
-  }, [driving, hasRoute, nudgesOn, say]); // refs and a stable callback; `active` itself must not restart the timer
+  }, [driving, hasRoute, nudgesOn, say, turn]); // refs and a stable callback; `active` itself must not restart the timer
 
   const onGo = () => {
-    pauseDialog();
+    turn.pause();
     voice.stopSpeaking();
     setCaption(null);
     setRoutesOpen(false);
@@ -832,288 +726,72 @@ export default function MapScreen() {
     // "Where to?" box took it after every typed request and kept the keyboard over the answer.
     searchBlurGuard.current = true;
     setTimeout(() => (searchBlurGuard.current = false), 1500);
-    if (phaseRef.current === "thinking") cancelTurn();
     voice.stopSpeaking();
-    voice.cancelRecording().catch(() => {});
-    pauseDialog();
-    ensureSession();
     setCaption(null);
-    submitTurn(undefined, text);
+    turn.text(text);
     return true;
   };
 
-  const submitTurn = async (recorded?: string, typed?: string) => {
-    clearTimers();
-    const myTurn = ++turn.current;
-    // No signal: nothing to transcribe with and nobody to ask. Said, shown, and the turn is over
-    // (no STT, no /agent). The route, the turns and the advisories keep working from what we loaded.
-    if (offlineTurn({ isOnline, say, setCaption })) {
-      voice.cancelRecording().catch(() => {});
-      pauseDialog();
-      backToIdle();
-      return;
-    }
-    setPhase("thinking");
-    startStages();
-    const ctrl = new AbortController();
-    inflight.current = ctrl;
-    const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
-    let plan: FillerPlan | null = null;
-    let sttMs: number | null = null;
-    let sttConfidence: number | null = null;
-    try {
-      let transcript = typed ?? "";
-      if (typed === undefined) {
-        const uri = recorded ?? (await voice.stopRecording());
-        if (!uri) throw new Error("no recording");
-        // Planned before STT, so the driver hears something ~300 ms after they stop talking
-        // (the transcript alone takes 1-1.5 s to come back).
-        plan = scheduleFiller();
-        filler.current = plan;
-        // Names the recogniser should expect: what is on screen and on the route, most useful first.
-        const cur = activeRef.current;
-        const hint = buildSttHint([
-          cur?.place.name,
-          ...optionsRef.current.map((p) => p.name),
-          ...places.map((p) => p.name),
-          ...(cur?.stops ?? []).map((s) => s.name),
-          ...(cur?.route.labels ?? []),
-          streetFromInstruction(guidanceRef.current.next?.instruction),
-        ]);
-        const stt = await api.transcribe(uri, ctrl.signal, hint || undefined);
-        sttMs = stt.stt_ms;
-        sttConfidence = stt.stt_confidence;
-        transcript = stt.transcript;
-        if (!transcript) plan.cancel(); // nothing heard: no "Hang on." for silence
-      }
-      if (myTurn !== turn.current) return;
-      if (transcript) setCaption({ reply: "…", heard: transcript });
-      const res = await api.agentSpeak(
-        transcript,
-        coordsRef.current, // the truck moved while the driver talked and the words were transcribed
-        activeRef.current,
-        ctrl.signal,
-        dialog.current ?? undefined,
-        {
-          driving,
-          voice_guidance: voiceOn,
-          hands_free: handsFree && WAKE_SUPPORTED,
-          options_count: optionsRef.current.length,
-        },
-        loc.heading ?? null,
-        limitRef.current,
-        sttMs,
-        sttConfidence,
-        loc.speed,
-      );
-      if (myTurn !== turn.current) return;
-      lastTurnSlow.current = (res.timings?.total ?? 0) > SLOW_TURN_MS;
-      // Fast answer: the filler never starts. Otherwise the answer waits for it to finish.
-      plan?.cancel();
-      const afterFiller = plan?.done ?? Promise.resolve();
-      if (__DEV__ && plan) {
-        // Ms after the driver stopped talking. No filler on air: the reply is the first sound, about now.
-        const at = plan.startedAt();
-        const line = `[turn] filler=${at === null ? "none" : plan.picked} at=${at ?? "-"} first_audio=${at ?? plan.elapsed()}`;
-        console.log(line);
-        logAnnouncement(line, "system");
-      }
-      const speak = () => afterFiller.then(() => (myTurn === turn.current ? sayReply(res) : undefined));
-      await applyAgentResponse(res, myTurn, ctrl.signal, afterFiller, speak);
-    } catch (e) {
-      plan?.cancel();
-      if (myTurn !== turn.current) return; // cancelled by the driver (barge-in, close): nothing to report
-      const err = String(e);
-      const msg = err.includes("422")
-        ? "Check your truck profile and try again."
-        : err.includes("502")
-          ? MESSAGES.placesUnavailable
-          : err.includes("504")
-            ? STT_SLOW
-            : err.includes("429")
-              ? RATE_LIMITED
-              : /abort|network|timed? ?out|failed to fetch/i.test(err)
-                ? NO_CONNECTION
-                : MESSAGES.notUnderstood;
-      setCaption(replyCaption(msg));
-      backToIdle();
-      continueDialog(myTurn, null, wait(1200));
-    } finally {
-      clearTimeout(timer);
-      if (myTurn !== turn.current) plan?.cancel(); // turn abandoned: never start its filler
-      if (myTurn === turn.current) clearTimers();
-      if (filler.current === plan) filler.current = null;
-    }
-  };
-
   /** Breakdown: say "give me a minute", wait for the research, an interim line at ~7 s, then the list. */
-  const runResearch = async (res: AgentResponse, myTurn: number, signal: AbortSignal) => {
-    clearTimers();
+  const runResearch = async (res: AgentResponse, ctx: AnswerContext): Promise<{ spoken: Promise<void> }> => {
     setThinkingText("Checking who's around…");
-    const intro = sayReply(res);
+    const intro = sayReply(res, ctx.isCurrent);
     let done = false;
     const interimAudio = api.speak(RESEARCH_INTERIM).catch(() => null);
     let interimPlayed: Promise<unknown> = Promise.resolve();
     const interim = setTimeout(() => {
-      if (done || myTurn !== turn.current) return;
+      if (done || !ctx.isCurrent()) return;
       setThinkingText("Reading reviews…");
       interimPlayed = intro.then(async () => {
         const a = await interimAudio;
-        if (a && !done && myTurn === turn.current) await voice.playAndWait(absoluteUrl(a.audio_url), 4000);
+        if (a && !done && ctx.isCurrent()) await voice.playAndWait(absoluteUrl(a.audio_url), 4000);
       });
     }, RESEARCH_INTERIM_MS);
     let out: AgentResponse;
     try {
-      out = await api.breakdownResult(res.research_id!, signal);
+      out = await api.breakdownResult(res.research_id!, ctx.signal);
     } finally {
       done = true; // a failed research must not play "Reading reviews" afterwards
       clearTimeout(interim);
     }
-    if (myTurn !== turn.current) return;
+    if (!ctx.isCurrent()) return { spoken: Promise.resolve() };
     await intro;
     await interimPlayed;
-    if (myTurn !== turn.current) return;
+    if (!ctx.isCurrent()) return { spoken: Promise.resolve() };
     if (out.status === "providers" && out.providers?.length) {
       const list = out.providers;
-      setProviders({ providers: list, call_card: out.call_card, summary: out.summary, provider_source: out.provider_source });
-      setPlaces(list.map(providerPlace));
+      trip().setProviders({ providers: list, call_card: out.call_card, summary: out.summary, provider_source: out.provider_source });
       setPhase("providers");
-      setFit({ key: `providers-${myTurn}`, points: [loc.coords, ...list] }); // one research per turn: unique
+      setFit({ key: `providers-${ctx.turnId}`, points: [loc.coords, ...list] }); // one research per turn: unique
     } else backToIdle();
-    continueDialog(myTurn, out, sayReply(out));
+    turn.answered(out.status, !!out.end_conversation); // the loop follows the final answer, not the "give me a minute"
+    return { spoken: sayReply(out, ctx.isCurrent) };
   };
 
-  // Hands-free: listening stops by itself when the driver pauses (tap to stop early).
-  // `maxMs` caps the window (a nudge's "yes" window); the default is a full turn.
-  const beginListening = async (fromWake = false, maxMs?: number) => {
-    // Offline the mic stays shut: recording seven seconds for a transcription that cannot happen helps nobody.
-    if (offlineTurn({ isOnline, say, setCaption })) {
-      pauseDialog();
-      return;
-    }
-    ensureSession();
-    live.current = true;
-    setPhase("listening");
-    clearTimers();
-    const myTurn = ++turn.current;
-    let res: string;
-    try {
-      res = await voice.listen({ chime: !fromWake, maxMs }); // the wake word plays its own chime
-    } catch {
-      pauseDialog();
-      showToast(MESSAGES.notUnderstood);
-      backToIdle();
-      return;
-    }
-    if (res === "cancelled" || myTurn !== turn.current) return;
-    if (res === "silent") {
-      // Silence stops listening; on the very first turn tell the driver we heard nothing.
-      if (misses.current === 0 && !caption) setCaption({ reply: MESSAGES.notUnderstood });
-      pauseDialog();
-      backToIdle();
-      return;
-    }
-    submitTurn(res);
-  };
-
-  // ---- Hands-free wake word: same beginListening() as a tap, no separate dialog logic. ----
-  const handsFree = useHandsFree();
-  const [micOk, setMicOk] = useState(false);
+  // Modal screens (onboarding, truck profile): a return re-plans with a changed truck (below).
   const [focused, setFocused] = useState(true);
-  const [asleep, setAsleep] = useState(false);
-  const wake = useWakeWord(() => {
-    // Barge-in: the wake word interrupts the copilot's speech and starts listening.
-    voice.stopSpeaking();
-    if (!dialog.current) setCaption(null);
-    beginListening(true);
-  });
-  /** The recorder and the wake word can't share the mic (Android): pause it first. */
-  const listenNow = async () => {
-    await wake.stop();
-    beginListening();
-  };
-  /** A nudge just played: a short mic window for the "yes", unless a turn is already under way. */
-  const listenForAnswer = async () => {
-    if (phaseRef.current === "listening" || phaseRef.current === "thinking") return;
-    await wake.stop();
-    beginListening(false, NUDGE_ANSWER_MS);
-  };
-  useEffect(() => {
-    nudgeAnswer.current = listenForAnswer;
-  });
-
-  const { micPermission } = voice;
-  const checkMic = useCallback(() => {
-    micPermission().then((p) => setMicOk(p === "granted")).catch(() => setMicOk(false));
-  }, [micPermission]);
-
-  // Modal screens (onboarding, truck profile) pause the wake word.
   useFocusEffect(
     useCallback(() => {
       setFocused(true);
-      checkMic();
       return () => setFocused(false);
-    }, [checkMic]),
+    }, []),
   );
-
-  // Battery: in the background with no route for 10 min, turn it off; back in the app, on again.
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const sub = AppState.addEventListener("change", (s) => {
-      if (timer) clearTimeout(timer);
-      timer = null;
-      if (s === "active") {
-        setAsleep(false);
-        checkMic();
-      } else if (s === "background") {
-        timer = setTimeout(() => {
-          if (!activeRef.current) setAsleep(true);
-        }, WAKE_SLEEP_MS);
-      }
-    });
-    return () => {
-      sub.remove();
-      if (timer) clearTimeout(timer);
-    };
-  }, [checkMic]);
-
-  const idle = phase === "ready" || phase === "navigating" || phase === "options" || phase === "providers";
-  // iOS v1 has no background audio mode: the wake word listens only while the app is on screen.
-  const wakeArmed = wake.supported && handsFree && micOk && !asleep && (Platform.OS !== "ios" || appActive);
-  // Not while a reply plays: starting the wake engine switches the audio session under the player
-  // (iOS moves the voice to the earpiece mid-sentence, Porcupine can error out and stay dead).
-  useEffect(() => {
-    if (!wakeArmed) wake.shutdown();
-    else if (focused && idle && !voice.speaking) wake.start();
-    else wake.stop();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wakeArmed, focused, idle, voice.speaking]);
-  // Keep the recorder ready for an instant tap-to-talk, unless the wake word holds the mic.
-  const { setPrewarm } = voice;
-  useEffect(() => {
-    setPrewarm(micOk && focused && !wakeArmed);
-  }, [setPrewarm, micOk, focused, wakeArmed]);
-
 
   const onAvatarPress = async () => {
     if (phase === "listening") {
       voice.finishListening();
       return;
     }
-    // Barge-in: a tap while the copilot is still working drops that turn and listens again
-    // (same session, so "no, the other one" lands where it should).
-    if (phase === "thinking") {
-      cancelTurn();
-      backToIdle();
-    }
+    // Barge-in: a tap while the copilot is still working drops that turn and listens again (same session,
+    // so "no, the other one" lands where it should); useCopilotTurn does the dropping.
     voice.stopSpeaking();
     const perm = await voice.micPermission();
     if (perm !== "granted") {
       setMicCard(perm);
       return;
     }
-    if (!dialog.current) setCaption(null);
-    listenNow();
+    if (!turn.dialogId()) setCaption(null);
+    turn.tap();
   };
 
   const onAllowMic = async () => {
@@ -1125,8 +803,7 @@ export default function MapScreen() {
     ]);
     if (perm === "granted") {
       setMicCard(null);
-      setMicOk(true);
-      listenNow();
+      turn.tap();
     } else {
       // Asked once with context; after that only Settings can fix it.
       setMicCard("blocked");
@@ -1134,6 +811,7 @@ export default function MapScreen() {
   };
 
   const onOptionParking = async (p: Place) => {
+    const setParking = trip().setParking;
     setParking((s) => ({ ...s, [p.id]: { loading: true } }));
     try {
       const result = await api.parking(p);
@@ -1145,25 +823,28 @@ export default function MapScreen() {
   };
 
   const onClose = () => {
-    pauseDialog();
-    cancelTurn(); // discard any in-flight turn
+    turn.pause();
+    turn.cancel(); // discard any in-flight turn
     voice.cancelRecording().catch(() => {});
+    const t = trip();
     if (phase === "providers") {
-      setProviders(null);
-      setPlaces([]);
+      t.setProviders(null);
+      t.setAgentPlaces([]);
+      t.setStartPins([]);
       setCaption(null);
-      setPhase(activeRef.current ? "navigating" : "ready");
+      setPhase(t.active ? "navigating" : "ready");
       return;
     }
     if (phase === "options") {
       // Back to the route card if one is active, otherwise clear the list.
-      if (activeRef.current) {
+      if (t.active) {
         setPhase("navigating");
         return;
       }
-      setOptions([]);
-      setParking({});
-      setPlaces([]);
+      t.setOptions([]);
+      t.setParking({});
+      t.setAgentPlaces([]);
+      t.setStartPins([]);
       setCaption(null);
       setPhase("ready");
       return;
@@ -1171,9 +852,20 @@ export default function MapScreen() {
     backToIdle();
   };
 
+  /** The End route button. Mid-trip it asks first: one stray tap ended a 2.5-hour trip with no way back
+   *  (QA 2026-11-02). Near the end, or before Go, it ends at once. */
+  const onEndRoutePress = () => {
+    const name = trip().active?.place.name.split(",")[0] ?? "this route";
+    if (!trip().driving || guidance.remainingS < END_CONFIRM_ABOVE_S) return onEndRoute();
+    Alert.alert(`End the route to ${name}?`, undefined, [
+      { text: "Keep driving", style: "cancel" },
+      { text: "End route", style: "destructive", onPress: onEndRoute },
+    ]);
+  };
+
   const onEndRoute = () => {
-    endDialog();
-    turn.current++;
+    turn.cancel(); // a turn in flight is dropped with the route
+    turn.endRoute();
     voice.cancelRecording().catch(() => {});
     voice.stopSpeaking();
     clearRoute();
@@ -1182,50 +874,41 @@ export default function MapScreen() {
 
   /** Route state reset without touching audio (used by the copilot so its reply isn't cut). */
   const clearRoute = () => {
-    const ended = activeRef.current;
+    const since = trip().drivingSince;
     if (recorder.isRecording()) recorder.stop().catch(() => {});
+    const ended = trip().endRoute(); // the store clears the route, the options, the parking and the saved copy
     if (ended) {
-      const since = drivingSince.current;
       tripLog.log("route_ended", {
         place_id: ended.place.id, driving_s: since ? Math.round((Date.now() - since) / 1000) : 0,
         along_m: Math.round(guidance.alongM), remaining_m: Math.round(guidance.remainingM),
       }, ended.trip_id);
       tripLog.flush().catch(() => {});
     }
-    routeStart.current = null;
     clearSpeech(); // queued maneuver calls belong to the route that just ended
-    clearSavedRoute();
-    setRestoredId(null);
-    setDriving(false);
     setRoutesOpen(false);
-    setActive(null);
     setCaption(null);
-    setOptions([]);
-    setParking({});
-    // A route to a breakdown provider: back to the providers list.
-    const prov = providersRef.current;
-    setPlaces(prov ? prov.providers.map(providerPlace) : []);
-    setPhase(prov ? "providers" : "ready");
+    setDialogPhase(null);
     setFit({ key: `end-${Date.now()}`, points: [loc.coords] });
   };
 
   // Hardware Back closes the top layer (src/utils/backAction.ts); only with nothing of ours open does
   // it leave the app. While driving it does nothing: one stray press must not drop the route.
-  // State and handlers are mirrored at commit (like phaseRef above), so the one listener registered on
-  // mount always acts on the current render, never on a stale closure.
+  // The screen's own layers and handlers are mirrored at commit (like phaseRef above), the route and the
+  // driving flag are read from the trip store, so the one listener registered on mount never acts on a
+  // stale closure.
   const backRefs = useRef({
-    state: { micCard: false, routesOpen: false, phase: "ready" as Phase, hasRoute: false, driving: false },
+    state: { micCard: false, routesOpen: false, phase: "ready" as Phase },
     cancel: () => {},
     closeOptions: () => {},
     endRoute: () => {},
   });
   useLayoutEffect(() => {
     backRefs.current = {
-      state: { micCard: !!micCard, routesOpen, phase, hasRoute: !!active, driving },
+      state: { micCard: !!micCard, routesOpen, phase },
       cancel: () => {
-        cancelTurn();
+        turn.cancel();
         voice.cancelRecording().catch(() => {});
-        pauseDialog();
+        turn.pause();
         backToIdle();
       },
       closeOptions: onClose,
@@ -1236,7 +919,8 @@ export default function MapScreen() {
     if (Platform.OS !== "android") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       const { state, cancel, closeOptions, endRoute } = backRefs.current;
-      switch (backAction(state)) {
+      const t = trip();
+      switch (backAction({ ...state, hasRoute: !!t.active, driving: t.driving })) {
         case "closeMicCard":
           setMicCard(null);
           return true;
@@ -1263,34 +947,35 @@ export default function MapScreen() {
 
   /** Re-plans the active route with the current truck profile (after a voice change) or to the entrance;
    * the stops on the way stay (they used to vanish from the line while their chips stayed on screen). */
-  const reroute = async (myTurn: number, cause: "profile" | "entrance", failMsg = "Couldn't update the route. Try again."): Promise<boolean> => {
-    const cur = activeRef.current;
+  const reroute = async (cause: "profile" | "entrance" | "resume", failMsg = "Couldn't update the route. Try again."): Promise<boolean> => {
+    const cur = trip().active;
+    const gen = trip().routeGen;
     if (!cur) return false;
     try {
-      // From where the truck is now, not where it was when the driver tapped the mic.
-      const res = await api.route(coordsRef.current, cur.place, false, cur.route.via ?? [], cur.trip_id ?? null);
-      // The destination and the route must still be the ones this started from: a stop added or an
+      // From where the truck is now, not where it was when the driver tapped the mic, and only through the
+      // stops still ahead (a fresh /route knows no section index to drop the ones already made).
+      const stops = stopsAhead(cur.route, cur.stops, coordsRef.current);
+      const res = await api.route(coordsRef.current, cur.place, false, viaOf(stops), cur.trip_id ?? null);
+      // The route must still be the one this started from (the store's generation): a stop added or an
       // off-route reroute that landed meanwhile is newer than this plan. The caller learns whether it landed.
-      const applied = activeRef.current?.place.id === cur.place.id && activeRef.current.route === cur.route;
-      if (applied) {
-        setActive((a) => (a ? { ...a, route: res.route } : a));
-        warnRestricted(res.route);
-      }
+      const applied = trip().applyRoute(gen, res.route, stops, res.parking);
+      if (applied) warnRestricted(res.route);
       tripLog.log("reroute", { cause, ok: true, applied, restricted: res.route.restricted ?? null }, cur.trip_id);
       return applied;
     } catch (e) {
       tripLog.log("reroute", { cause, ok: false, no_route: isNoTruckRoute(e) }, cur.trip_id);
-      if (myTurn === turn.current) showToast(isNoTruckRoute(e) ? routeFailText(e) : failMsg);
+      if (trip().routeGen === gen) showToast(isNoTruckRoute(e) ? routeFailText(e) : failMsg);
       return false;
     }
   };
 
   /** "×" on a stop chip: re-plan through the remaining stops (plain /route when none are left). */
   const onRemoveStop = async (stop: Place) => {
-    const cur = activeRef.current;
+    const cur = trip().active;
+    const gen = trip().routeGen;
     if (!cur) return;
-    const stops = (cur.stops ?? []).filter((s) => s.id !== stop.id);
-    const via = stops.map((s): [number, number] => [s.lat, s.lng]);
+    const stops = stopsAhead(cur.route, cur.stops, loc.coords).filter((s) => s.id !== stop.id);
+    const via = viaOf(stops);
     try {
       const res = via.length
         ? await api.reroute({
@@ -1305,9 +990,8 @@ export default function MapScreen() {
             trip_id: cur.trip_id ?? null,
           })
         : await api.route(coordsRef.current, cur.place, false, [], cur.trip_id ?? null);
-      if (activeRef.current?.place.id === cur.place.id && activeRef.current.route === cur.route) {
+      if (trip().applyRoute(gen, res.route, stops, res.parking)) {
         tripLog.log("stop_removed", { stops: stops.length, duration_s: res.route.duration_s }, cur.trip_id);
-        setActive((a) => (a ? { ...a, route: res.route, stops } : a));
       }
     } catch {
       showToast("Couldn't update the stops. Try again.");
@@ -1320,172 +1004,218 @@ export default function MapScreen() {
    * (spoken set, matcher, off-route tracker all key on it); the queue is emptied of the old one's lines.
    */
   const onPickAlternative = (i: number) => {
-    const cur = activeRef.current;
+    const cur = trip().active;
     if (!cur) return;
-    const { route } = swapAlternative(cur.route, i);
-    if (route === cur.route) return;
+    const route = trip().pickAlternative(i);
+    if (!route) return;
     clearSpeech();
     tripLog.log("alternative_picked", { index: i, labels: route.labels ?? [], duration_s: route.duration_s, distance_m: route.distance_m }, cur.trip_id);
-    setActive({ ...cur, route });
     setRoutesOpen(false);
     say(switchedLine(route, i), { priority: PRIORITY.MANEUVER, kind: "system", key: "route-switch", ttlMs: 15000 });
+    // The other way may arrive from another street: the entry tip on the card follows it (cached verdict, no
+    // new satellite call), and only while this route is still the one on screen.
+    if (cur.place.category !== "service" && route.approach) {
+      api
+        .parking(cur.place, route.approach)
+        .then((pk) => {
+          if (trip().active?.route === route) trip().setActiveParking(cur.place.id, pk);
+        })
+        .catch(() => {});
+    }
   };
+
+  // Driving: fixes keep coming with the screen off (a location task, src/geo/driveTracking.ts), and with the app
+  // open the screen stays on. Where the task can't run (Expo Go, refused) the awake screen is all there is.
+  const drivingTo = driving ? (active?.place.name.split(",")[0] ?? "your stop") : null;
+  useEffect(() => {
+    if (!drivingTo) {
+      stopDriveTracking();
+      deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
+      return;
+    }
+    activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
+    startDriveTracking(drivingTo);
+  }, [drivingTo]);
+  useEffect(() => () => {
+    stopDriveTracking();
+    deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
+  }, []);
+
+  // A fleet truck's stored sizes are not pulled over a trip's own change (src/data/profile.ts).
+  useEffect(() => setMidTripCheck(() => !!trip().active), []);
+
+  // A position for the fleet dashboard every few minutes while driving (lat/lng are stamped by the log).
+  const speedRef = useRef<number | null>(null);
+  useEffect(() => {
+    speedRef.current = loc.speed;
+  });
+  useEffect(() => {
+    if (!driving) return;
+    return startPositionHeartbeat(tripLog, () => ({ tripId: trip().active?.trip_id ?? null, speedMps: speedRef.current }));
+  }, [driving]);
+
+  // Arrival at a stop or the destination: one trip event each (the server counts visits, the fleet reads the time).
+  // The places already reported live on disk with the trip id, so a restart mid-trip doesn't report them again.
+  const arrived = useRef<{ trip: string | null; seen: Set<string> | null }>({ trip: null, seen: null });
+  useEffect(() => {
+    const cur = trip().active;
+    if (!cur || !driving || loc.isDemo) return;
+    const tripId = cur.trip_id ?? null;
+    const fix = { ...loc.coords, speed: loc.speed };
+    const check = (seen: Set<string>) => {
+      const found = arrivals(fix, cur.stops, cur.place, seen);
+      for (const a of found) {
+        tripLog.log("arrived", { place_id: a.place.id, kind: a.kind, category: a.place.category, name: a.place.name }, tripId);
+      }
+      if (found.length) saveArrived(tripId, seen).catch(() => {});
+    };
+    if (arrived.current.trip === tripId && arrived.current.seen) return check(arrived.current.seen);
+    arrived.current = { trip: tripId, seen: null };
+    loadArrived(tripId).then((seen) => {
+      if (arrived.current.trip !== tripId) return;
+      arrived.current.seen = seen;
+      check(seen);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loc.ts, driving]);
+
+  // Resume of a restored route: the first real fix after it decides whether the truck is still near the line.
+  // A parked truck never trips the off-route tracker, so far from it the plan is redone right away.
+  // Checked at once when a real fix is already there (the truck parked: no new fix may come for a while),
+  // else on the first one that arrives.
+  const replanOnFix = useRef(false);
+  const replanIfFar = () => {
+    if (!replanOnFix.current || loc.isDemo) return;
+    replanOnFix.current = false;
+    const cur = trip().active;
+    if (!cur || !trip().driving || !farFromRoute(cur.route.geometry, loc.coords)) return;
+    say("Rerouting.", { priority: PRIORITY.MANEUVER, kind: "system", key: "reroute", ttlMs: 20000 });
+    reroute("resume");
+  };
+  useEffect(() => {
+    replanIfFar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loc.ts, loc.isDemo]);
 
   // Back from the truck editor with new dimensions: same reroute as the voice change, nothing spoken.
   useEffect(() => {
-    if (focused && takeTruckReroute() && activeRef.current) {
-      reroute(turn.current, "profile", "Couldn't update the route for the new truck size.");
+    if (focused && takeTruckReroute() && trip().active) {
+      reroute("profile", "Couldn't update the route for the new truck size.");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focused]);
 
   /**
    * One copilot reply: src/state/agentReducer.ts decides what happens (state patch + ordered effects),
-   * this applies it. Effects run in order; `speak` sets the promise that `followParking`,
-   * `parkingFollowup` and `continueDialog` chain on. Only `research` awaits (it waits for the
-   * breakdown result); everything else runs synchronously in this tick, as the inline code used to.
+   * src/state/applyEffects.ts runs the effects through the handlers below. `speak` is the promise that
+   * `followParking` and `parkingFollowup` chain on; the dialog reopens the mic itself once it resolves.
    */
-  const applyAgentResponse = async (res: AgentResponse, myTurn: number, signal: AbortSignal, afterFiller: Promise<void>, speak: () => Promise<void>) => {
+  const applyResponse = async (res: AgentResponse, ctx: AnswerContext): Promise<{ spoken: Promise<void> }> => {
+    const t = trip();
     const { patch, effects } = reduceAgentResponse(res, {
-      activePlaceId: activeRef.current?.place.id ?? null,
-      optionsCount: optionsRef.current.length,
+      activePlaceId: t.active?.place.id ?? null,
+      optionsCount: t.options.length,
       favoriteChains: getTruckProfile().favorite_chains,
     });
-    if (patch.options) setOptions(patch.options);
-    if (patch.parking) setParking(patch.parking);
-    if (patch.places) setPlaces(patch.places);
+    if (patch.options) t.setOptions(patch.options);
+    if (patch.parking) t.setParking(patch.parking);
+    if (patch.places) t.setAgentPlaces(patch.places);
     if (patch.phase) setPhase(patch.phase);
     if (patch.activeRoute) {
       // Same destination, new route: the card, parking and dialog stay; only the line changes.
-      const { route, stops } = patch.activeRoute;
-      const cur = activeRef.current;
+      const { route, stops, parking } = patch.activeRoute;
+      const cur = t.active;
       if (cur && cur.place.id === res.place?.id) {
-        const before = cur.route.via?.length ?? 0;
-        const after = route.via?.length ?? 0;
+        const before = cur.stops?.length ?? cur.route.via?.length ?? 0;
+        const after = stops.length;
         if (after !== before) tripLog.log(after > before ? "stop_added" : "stops_cleared", { stops: after, duration_s: route.duration_s }, cur.trip_id);
         else tripLog.log("route_replaced", { by: "copilot", duration_s: route.duration_s, labels: route.labels ?? [] }, cur.trip_id);
+        t.applyRoute(t.routeGen, route, stops, parking);
       }
-      setActive((a) => (a && a.place.id === res.place?.id ? { ...a, route, stops } : a));
     }
     if (res.status === "not_understood" || res.status === "error") {
-      tripLog.log("turn_failed", { status: res.status, text: res.transcript, intent: res.intent ?? null }, activeRef.current?.trip_id);
+      tripLog.log("turn_failed", { status: res.status, text: res.transcript, intent: res.intent ?? null }, t.active?.trip_id);
     }
-    let spoken: Promise<void> = Promise.resolve();
-    for (const e of effects) {
-      switch (e.type) {
-        case "dial":
-          dial(e.phone);
-          break;
-        case "research":
-          await afterFiller;
-          await runResearch(res, myTurn, signal);
-          break;
-        case "startRoute":
-          startRoute({ place: e.place, route: e.route, parking: e.parking });
-          break;
-        case "speak":
-          spoken = speak();
-          break;
-        case "toast":
-          showToast(e.text);
-          break;
-        case "backToIdle":
-          backToIdle();
-          break;
-        case "pauseDialog":
-          pauseDialog();
-          break;
-        case "endDialog":
-          endDialog();
-          break;
-        case "continueDialog":
-          continueDialog(myTurn, res, spoken, e.force);
-          break;
-        case "followParking":
-          followParking(e.place, spoken, myTurn, e.approach);
-          break;
-        case "parkingFollowup": {
-          const fPlace = [activeRef.current?.place, ...optionsRef.current, ...places].find((p) => p?.id === e.placeId);
-          if (!fPlace) break;
-          spoken = parkingFollowup(fPlace, spoken, {
-            isCurrent: () => myTurn === turn.current,
-            busy: () => phaseRef.current === "listening" || phaseRef.current === "thinking",
-            say: async (text, url) => {
-              showLine(text);
-              const a = toAudio(url);
-              if (a) await voice.playAndWait(a, 6000);
-            },
-          });
-          break;
+    return applyEffects(effects, res, {
+      dial,
+      research: (r) => runResearch(r, ctx),
+      startRoute: (place, route, parking) => {
+        startRoute({ place, route, parking });
+        turn.routeSet();
+      },
+      speak: () => ctx.afterFiller.then(() => (ctx.isCurrent() ? sayReply(res, ctx.isCurrent) : undefined)),
+      toast: showToast,
+      backToIdle,
+      pauseDialog: turn.pause,
+      endDialog: turn.endRoute,
+      continueDialog: () => {}, // the machine reopens the mic from the answer's status once the reply has played
+      followParking: (place, spoken, approach) => followParking(place, spoken, ctx.isCurrent, approach),
+      parkingFollowup: (placeId, spoken) => {
+        const fPlace = [trip().active?.place, ...trip().options, ...trip().places()].find((p) => p?.id === placeId);
+        if (!fPlace) return null;
+        return parkingFollowup(fPlace, spoken, {
+          isCurrent: ctx.isCurrent,
+          busy: () => phaseRef.current === "listening" || phaseRef.current === "thinking",
+          say: async (text, url) => {
+            showLine(text);
+            const a = toAudio(url);
+            if (a) await voice.playAndWait(a, 6000);
+          },
+        });
+      },
+      clearRoute,
+      startDriving: () => {
+        turn.pause();
+        setDriving(true);
+      },
+      openOptions: () => setPhase("options"),
+      recenter: () => {
+        setOverview(false);
+        mapRef.current?.recenter();
+      },
+      overview: () => {
+        const cur = trip().active;
+        if (cur) {
+          // Stay in driving mode; the camera stops following for a moment.
+          setOverview(true);
+          setFit({ key: `overview-${Date.now()}`, points: [loc.coords, cur.place] });
         }
-        case "clearRoute":
-          clearRoute();
-          break;
-        case "startDriving":
-          pauseDialog();
-          setDriving(true);
-          break;
-        case "openOptions":
-          setPhase("options");
-          break;
-        case "recenter":
-          setOverview(false);
-          mapRef.current?.recenter();
-          break;
-        case "overview":
-          if (activeRef.current) {
-            // Stay in driving mode; the camera stops following for a moment.
-            setOverview(true);
-            setFit({ key: `overview-${Date.now()}`, points: [loc.coords, activeRef.current.place] });
-          }
-          break;
-        case "zoomBy":
-          mapRef.current?.zoomBy(e.delta);
-          break;
-        case "setVoiceGuidance":
-          setVoiceOn(e.on);
-          break;
-        case "setHandsFree":
-          setHandsFree(e.on);
-          break;
-        case "setNudges":
-          setNudgesEnabled(e.on);
-          break;
-        case "saveProfile":
-          saveTruckProfile({ ...getTruckProfile(), ...e.patch });
-          break;
-        case "reroute":
-          // Save first so the new route uses the new profile.
-          saveTruckProfile({ ...getTruckProfile(), ...e.patch }).then(() => reroute(myTurn, "profile"));
-          break;
-      }
-    }
+      },
+      zoomBy: (delta) => mapRef.current?.zoomBy(delta),
+      setVoiceGuidance: setVoiceOn,
+      setHandsFree,
+      setNudges: setNudgesEnabled,
+      saveProfile: (patch) => saveProfile({ ...getTruckProfile(), ...patch }),
+      unknownAction: (action) => tripLog.log("turn_unknown_action", { action }, trip().active?.trip_id),
+      // Save first so the new route uses the new profile.
+      reroute: (patch) => saveProfile({ ...getTruckProfile(), ...patch }).then(() => reroute("profile")),
+    });
   };
 
   const onPlacePress = async (p: Place) => {
     if (phase === "thinking") return;
-    const prev = activeRef.current;
-    const myTurn = ++turn.current;
+    const t = trip();
+    const prev = t.active;
+    const gen = t.claimRoute(); // the last tap wins over a route still in flight
+    turn.cancel(); // a copilot turn in flight gives way to the tap
     voice.stopSpeaking();
     setCaption(null);
     setPhase("thinking");
-    setThinkingText(STAGES[1]);
+    setThinkingText(ROUTE_STAGE);
     try {
       // Breakdown providers: the driver needs the shop, not a satellite parking check (faster route).
-      const isProvider = p.category === "service" || !!providersRef.current?.providers.some((x) => x.id === p.id);
+      const isProvider = p.category === "service" || !!t.providers?.providers.some((x) => x.id === p.id);
       const res = await api.route(coordsRef.current, p, isProvider);
-      if (myTurn !== turn.current) return;
+      if (trip().routeGen !== gen) return; // a newer route landed while this one was planned
       // Keep the previous destination among the alternatives.
-      setOptions((list) => [...(prev ? [prev.place] : []), ...list].filter((o) => o.id !== p.id));
+      trip().setOptions((list) => [...(prev ? [prev.place] : []), ...list].filter((o) => o.id !== p.id));
       startRoute(res);
     } catch (e) {
-      if (myTurn !== turn.current) return;
+      if (trip().routeGen !== gen) return;
       backToIdle();
       showToast(routeFailText(e));
     }
   };
-
-  useEffect(() => () => clearTimers(), []);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.mapPlaceholder }]} testID="map-screen">
@@ -1503,7 +1233,7 @@ export default function MapScreen() {
         // Pins stay on the map while driving; a stray touch on one must not swap the destination mid-drive.
         // (The Route buttons in the options and providers lists still work: those are deliberate taps.)
         onPlacePress={(p) => {
-          if (!drivingRef.current) onPlacePress(p);
+          if (!trip().driving) onPlacePress(p);
         }}
         follow={following}
         onUserPan={() => {
@@ -1587,19 +1317,19 @@ export default function MapScreen() {
         onSubmitText={onSubmitText}
         lastReply={caption?.kind === "reply" ? caption.reply : null}
         onClose={onClose}
-        onEndRoute={onEndRoute}
+        onEndRoute={onEndRoutePress}
         onRemoveStop={onRemoveStop}
         onShowRoutes={() => setRoutesOpen(true)}
         offlineMap={offlineMap.state}
         onDownloadMap={offlineMap.download}
         onLayout={setSheetH}
         onPeekHeight={setPeekH}
-        wakePhrase={wake.active ? wake.phrase : null}
+        wakePhrase={null}
         panel={providers ? <ProvidersList data={providers} onRoute={(p) => onPlacePress(providerPlace(p))} /> : null}
       />
 
       {routesOpen && active && !driving && !!active.route.alternatives?.length && (
-        <AlternativesSheet primary={active.route} bottom={chromeBottom} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
+        <AlternativesSheet primary={active.route} bottom={chromeBottom} top={topH + spacing.sm} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
       )}
 
       {micCard && (
@@ -1617,8 +1347,10 @@ export default function MapScreen() {
           note={offlineMap.state?.kind === "saved" ? "Map saved" : null}
           top={topH + spacing.sm}
           onResume={() => {
-            setRestoredId(null);
+            trip().dismissRestored();
             onGo();
+            replanOnFix.current = true;
+            replanIfFar();
           }}
           onDismiss={clearRoute}
         />
