@@ -116,3 +116,39 @@ def test_postgres_migrates_and_round_trips(monkeypatch):
         run(scenario())
     finally:  # the pool died with its loop; a later test must not find a closed pool
         db._pool, db._pool_lock = None, None
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="needs TEST_DATABASE_URL (a throwaway Postgres)")
+def test_postgres_motive_index_stops_on_duplicates(monkeypatch):
+    """Bug 9: one Motive user per driver was held by code only. 0006 adds a unique index; a store that already
+    has two drivers on one Motive user stops the migration and names them instead of failing on the index."""
+    import asyncpg
+    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    sql = next(p for v, p in db.migration_files("pg") if v == 6).read_text()
+
+    async def scenario():
+        pool = await db._db()
+        async with pool.acquire() as con:
+            tr = con.transaction()
+            await tr.start()
+            try:
+                await con.execute("DROP INDEX IF EXISTS drivers_org_motive_user")
+                await con.execute("INSERT INTO orgs (id, name, solo, created_at) VALUES ('o-dup', 'Dup', 0, now())")
+                for d in ("dr-a", "dr-b"):
+                    await con.execute("INSERT INTO drivers (id, org_id, motive_user_id, created_at) VALUES ($1, 'o-dup', '42', now())", d)
+                with pytest.raises(asyncpg.RaiseError, match="o-dup / Motive user 42"):
+                    async with con.transaction():
+                        await con.execute(sql)
+                await con.execute("UPDATE drivers SET motive_user_id = NULL WHERE id = 'dr-b'")
+                await con.execute(sql)
+                with pytest.raises(asyncpg.UniqueViolationError):
+                    async with con.transaction():
+                        await con.execute("UPDATE drivers SET motive_user_id = '42' WHERE id = 'dr-b'")
+            finally:
+                await tr.rollback()
+        await db.close()
+
+    try:
+        run(scenario())
+    finally:
+        db._pool, db._pool_lock = None, None

@@ -10,11 +10,14 @@ Every function returns None / does nothing when the store is off (keyless dev, m
 import json
 import logging
 import secrets
+import sqlite3
 import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+import asyncpg
 
 from models import TruckProfile
 from services import db
@@ -263,27 +266,27 @@ class MotiveUserTaken(Exception):
 
 async def set_motive_user(org_id: str, driver_id: str, user_id: Optional[str]) -> bool:
     """Maps the org's driver to a Motive user id (None unmaps); False when the driver is not in this org,
-    MotiveUserTaken when another driver of the org already has that id (their hours would be read twice)."""
+    MotiveUserTaken when another driver of the org already has that id (their hours would be read twice). The
+    unique index drivers_org_motive_user (0006) decides; a check in code under a lock did before (bug 9)."""
     k = db.store()
     if k == "off":
         raise RuntimeError("store is off")
-    taken = "SELECT 1 FROM drivers WHERE org_id = {p1} AND motive_user_id = {p2} AND id <> {p3}"
     update = "UPDATE drivers SET motive_user_id = {p2} WHERE org_id = {p1} AND id = {p3}"
+    n: Optional[int]
     if k == "sqlite":
-        def _set(con):  # check and write under the one connection's lock
-            if user_id is not None and con.execute(taken.format(p1="?", p2="?", p3="?"), (org_id, user_id, driver_id)).fetchone():
+        def _set(con):
+            try:
+                return con.execute(update.format(p1="?", p2="?", p3="?"), (user_id, org_id, driver_id)).rowcount
+            except sqlite3.IntegrityError:
                 return None
-            return con.execute(update.format(p1="?", p2="?", p3="?"), (user_id, org_id, driver_id)).rowcount
         n = await db._sq_run(_set)
     else:
         pool = await db._db()
-        async with pool.acquire() as con, con.transaction():
-            await con.execute("SELECT pg_advisory_xact_lock(hashtext($1))", f"motive:{org_id}")
-            if user_id is not None and await con.fetchval(taken.format(p1="$1", p2="$2", p3="$3"), org_id, user_id, driver_id):
-                n = None
-            else:
-                status = await con.execute(update.format(p1="$1", p2="$2", p3="$3"), org_id, user_id, driver_id)
-                n = int(status.split()[-1])
+        try:
+            status = await pool.execute(update.format(p1="$1", p2="$2", p3="$3"), org_id, user_id, driver_id)
+            n = int(status.split()[-1])
+        except asyncpg.UniqueViolationError:
+            n = None
     if n is None:
         raise MotiveUserTaken(user_id)
     _motive_users.pop(driver_id, None)
