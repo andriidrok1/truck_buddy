@@ -3,6 +3,7 @@ import { AgentResponseSchema, checkContract, RouteResultSchema } from "./api/sch
 import { eldHeader } from "./eld";
 import { ensureTruckProfile, type TruckProfile } from "./hooks/useTruckProfile";
 import { isNetworkError, offlineHint } from "./net/offlineHint";
+import { stopsAhead, viaOf } from "./state/tripStore";
 import { uploadForm } from "./utils/upload";
 import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, Nudge, NudgeRequest, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
 import { BASE } from "./url";
@@ -302,6 +303,10 @@ export const api = {
         truck_profile: await ensureTruckProfile(),
         session_id: sessionId,
         active_place: active?.place,
+        // The route as it is, so the copilot can check chains or other ways on it after a restart (its session
+        // cache is gone then): HERE handle and the stops still ahead.
+        route_handle: active?.route.handle ?? null,
+        route_via: active ? viaOf(stopsAhead(active.route, active.stops, at)) : [],
         active_distance_mi: active?.route.distance_mi,
         active_duration_min: active?.route.duration_min,
         trip_id: active?.trip_id,

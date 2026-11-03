@@ -618,7 +618,8 @@ export default function MapScreen() {
       return {
         coords: coordsRef.current, // the truck moved while the driver talked and the words were transcribed
         active: cur,
-        ui: { driving: t.driving, voice_guidance: voiceOnRef.current, hands_free: handsFreeRef.current && WAKE_SUPPORTED, options_count: t.options.length },
+        ui: { driving: t.driving, voice_guidance: voiceOnRef.current, hands_free: handsFreeRef.current && WAKE_SUPPORTED, options_count: t.options.length,
+          option_ids: t.options.slice(0, 20).map((p) => p.id) },
         heading: locRef.current.heading ?? null,
         speed: locRef.current.speed ?? null,
         limitMph: limitRef.current,

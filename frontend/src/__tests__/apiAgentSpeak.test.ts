@@ -26,6 +26,23 @@ describe("api.agentSpeak", () => {
     expect(body.session_id).toBe("s1");
   });
 
+  test("sends the active route's handle and the stops still ahead", async () => {
+    const fetchMock = jest.fn(async () => jsonResponse({ status: "chat", reply: "ok" }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    // start -> s1 -> s2 -> Reno; the truck is past s1
+    const geometry: [number, number][] = [[38.58, -121.6], [38.58, -121.55], [38.58, -121.45], [38.58, -121.4]];
+    const stop = (id: string, lng: number) => ({ id, name: id, category: "fuel", lat: 38.58, lng }) as never;
+    const active = {
+      place: stop("reno", -121.4),
+      stops: [stop("s1", -121.55), stop("s2", -121.45)],
+      route: { geometry, section_starts: [0, 1, 2], handle: "h-1", via: [[38.58, -121.55], [38.58, -121.45]] },
+    } as never;
+    await api.agentSpeak("any chains ahead", { lat: 38.58, lng: -121.52 }, active);
+    const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.route_handle).toBe("h-1");
+    expect(body.route_via).toEqual([[38.58, -121.45]]);
+  });
+
   test("typed text sends stt_ms and stt_confidence as null", async () => {
     const fetchMock = jest.fn(async () => jsonResponse({ status: "chat", reply: "ok" }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
