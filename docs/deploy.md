@@ -1,0 +1,75 @@
+# Deploying the backend
+
+## What happens on a push to main
+
+`.github/workflows/deploy-backend.yml` runs on every push to `main` that touches `backend/**` (and on manual
+dispatch). It tars `backend/` without `tests/` and `__pycache__`, streams the tarball over SSH to
+`tbdeploy@$TRUCKBUDDY_HOST` (AWS Lightsail) whose authorized key is restricted to one forced command, with the
+short commit hash as the only argument, then polls `http://$HOST/api/health` up to 30 times, 5 s apart.
+Secrets: `TRUCKBUDDY_DEPLOY_KEY`, `TRUCKBUDDY_KNOWN_HOSTS`, `TRUCKBUDDY_HOST`.
+
+The forced command on the server (unpack, install, restart, keep data dirs) is **not in this repo**.
+
+## Database
+
+Production uses Postgres via `DATABASE_URL` (Neon). The schema is managed by numbered files in
+`backend/migrations/` (Postgres) and `backend/migrations/sqlite/` (the twin for tests); `services/db.py`
+applies the pending ones at startup (`memory.warm()` → `db.migrate()`) and on the first connection, recording
+them in `schema_version`. A deploy with a new migration needs nothing else; a rollback of code that depends on
+a newer table is not covered (write migrations additive).
+
+Without `DATABASE_URL` the store is SQLite at `MEMORY_SQLITE_PATH` (default `backend/data/memory.sqlite`),
+meant for tests and a keyless dev box, not for production.
+
+## Environment
+
+Read at startup or on use (see README.md "Backend environment" for meanings):
+`ACCESS_CODE`, `TESTER_CODE`, `JWT_SECRET`, `OPENAI_API_KEY`, `OPENAI_TTS_MODEL`, `HERE_API_KEY`,
+`ORS_API_KEY`, `GOOGLE_MAPS_API_KEY`, `EIA_API_KEY`, `EIA_ENABLED`, `DATABASE_URL`, `MEMORY_STORE`,
+`MEMORY_SQLITE_PATH`, `PARKING_CACHE_DIR`, `PARKING_WARM`, `TPIMS_ENABLED`, `TPIMS_FEEDS`, `WEATHER_ALERTS`,
+`NWS_USER_AGENT`, `CHAIN_CONTROLS`, `CHAIN_DISTRICTS`, `HOS_MOTIVE`, `PLACE_REVIEWS`, `CATEGORIES_EXTRA`,
+`ROUTE_ALTERNATIVES`, `ROUTE_INCIDENTS`, `ROUTE_SPEED_LIMITS`, `REROUTE_ENABLED`, `RATE_LIMIT_PER_MIN`,
+`CORS_ORIGINS`, `DEV_DOCS`, `TRIP_EVENTS_DAYS`, `WORKERS` (or uvicorn's `WEB_CONCURRENCY`), `TTS_DIR`,
+`SESSION_STORE`, `TTS_STREAM`, `CREDENTIALS_KEY`, `LOG_TRANSCRIPTS`, `HEALTH_HERE`.
+
+## Logs and health
+
+Every line carries the request id (`X-Request-Id` from the client or generated, echoed in the response) after the
+level. A copilot turn is one `turn {json}` line with `req`, `driver`, `sid`, `org`, status, intent and timings;
+`scripts/turn_stats.py` reads it and the older `turn k=v` lines. Driver transcripts stay out of the log stream
+unless `LOG_TRANSCRIPTS=1` (set it on the test stand, not in production). `/api/health?deep=1` (tester token only) adds a
+database `SELECT 1` and one HERE geocode call (cached 30 s per worker, one refresh at a time; `HEALTH_HERE=0` skips
+HERE) and answers 503 when one fails. httpx and httpcore log at WARNING, so request URLs (HERE's `apiKey`, a
+driver's geocode text and position) never reach the log.
+
+## More than one worker
+
+The process holds no state a second worker needs: the dialog lives in `dialog_sessions`, breakdown results in
+`jobs`, parking verdicts and the approach to each entrance in `parking_checks` (mirrored in memory, refreshed
+every minute), TTS clips in `TTS_DIR` (default `backend/data/tts`, keep it outside the unpacked tree and shared
+between workers on one box), and the feeds one worker polls for all (NWS alerts, Caltrans chain controls,
+TPIMS counts) in `feed_cache`; the poller is whichever worker holds the Postgres advisory lock for that feed, so with
+the lock held only one worker fetches each feed (the others read the cached copy); without Postgres every
+worker polls. The lock calls share one connection and run one at a time.
+Set `WORKERS` to the number uvicorn runs: the per-driver budgets (`RATE_LIMIT_PER_MIN`, `RATE_PER_10MIN`,
+`RATE_PER_DAY`) are per process and are divided by it. `TTS_STREAM` is ignored with more than one worker (a
+stream lives in the process that started it). Shutdown waits up to 5 s for background writes (memory, trip
+events, jobs, parking) before closing the pool, so a deploy mid-dialog loses nothing.
+
+Data that must survive a deploy: `DATABASE_URL` (or the SQLite file), `TTS_DIR` (clips and the pinned fixed lines),
+`PARKING_CACHE_DIR` only when the store is off (files are the fallback). The forced command must keep them outside the unpacked tree.
+
+## Smoke after a deploy
+
+`live-smoke.yml` is manual and expects `SMOKE_BASE_URL` / `SMOKE_ACCESS_CODE`. Locally:
+
+```
+EXPO_PUBLIC_BACKEND_URL=https://api.truckbuddy.io ACCESS_CODE=… python -m pytest -n 0 -m smoke tests/smoke -q
+```
+
+## TODO (Abdul)
+
+- systemd unit name and where the forced command script lives on the box
+- install path of the unpacked backend, the venv, and the data directories it preserves
+- how to roll back to the previous tarball (is the previous release kept?)
+- where the logs go (`journalctl -u …`) and their retention

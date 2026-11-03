@@ -32,6 +32,9 @@ OFFLINE_ENV = {
     "OPENAI_API_KEY": "test-openai",
     "PARKING_WARM": "0",
     "DEV_DOCS": "0",
+    # The TPIMS poller starts with every TestClient; a first poll that lands after a test installed fake_http shows
+    # up in its calls[0] (test_tpims turns it on itself).
+    "TPIMS_ENABLED": "0",
 }
 
 
@@ -269,3 +272,14 @@ def api_client():
             yield c
     finally:
         mp.undo()
+
+
+@pytest.fixture
+def sqlite_store(tmp_path, monkeypatch):
+    """The conversation memory and the trip log on a throwaway SQLite file."""
+    from services import memory
+    monkeypatch.setenv("MEMORY_STORE", "sqlite")
+    monkeypatch.setenv("MEMORY_SQLITE_PATH", str(tmp_path / "mem.sqlite"))
+    run(memory.close())
+    yield tmp_path / "mem.sqlite"
+    run(memory.close())

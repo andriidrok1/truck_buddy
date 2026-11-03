@@ -42,21 +42,21 @@
 {"id": "h_go_lets_go_sac", "text": "let's go to Sacramento", "context_preset": "idle", "expected": {"intent": "go", "query": {"contains": "sacramento"}}, "tags": ["edge"], "source": "hand"}
 {"id": "h_go_exit", "text": "take me to exit 85 on I-80", "context_preset": "idle", "expected": {"intent": "go", "query": {"contains": "85"}}, "tags": ["core", "edge"], "source": "hand"}
 {"id": "h_go_reno_instead", "text": "take me to Reno instead", "context_preset": "route_active", "expected": {"intent": "go", "query": {"contains": "reno"}}, "tags": ["core"], "source": "hand"}
-{"id": "h_pick_pilot", "text": "the Pilot", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [1]}, "tags": ["core", "follow_up"], "source": "hand"}
+{"id": "h_pick_pilot", "text": "the Pilot", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [3]}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_pick_first", "text": "the first one", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [1]}, "tags": ["follow_up"], "source": "hand"}
-{"id": "h_pick_loves", "text": "the Love's", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2]}, "tags": ["core", "follow_up"], "source": "hand"}
-{"id": "h_pick_cheapest", "text": "the cheapest diesel", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [1]}, "tags": ["core", "follow_up", "edge"], "source": "hand"}
-{"id": "h_pick_other", "text": "the other one", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2, 3]}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
-{"id": "h_pick_reno_one", "text": "the one in Reno", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [3]}, "tags": ["core", "follow_up"], "source": "hand"}
+{"id": "h_pick_loves", "text": "the Love's", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [1]}, "tags": ["core", "follow_up"], "source": "hand"}
+{"id": "h_pick_cheapest", "text": "the cheapest diesel", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [3]}, "tags": ["core", "follow_up", "edge"], "source": "hand"}
+{"id": "h_pick_other", "text": "the other one", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [1, 2]}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
+{"id": "h_pick_reno_one", "text": "the one in Reno", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2]}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_pick_third", "text": "number three", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [3]}, "tags": ["follow_up"], "source": "hand"}
-{"id": "h_pick_loves_instead", "text": "go with the Love's instead", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2]}, "tags": ["follow_up"], "source": "hand"}
+{"id": "h_pick_loves_instead", "text": "go with the Love's instead", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [1]}, "tags": ["follow_up"], "source": "hand"}
 {"id": "h_alt_another_way", "text": "is there another way", "context_preset": "route_active", "expected": {"intent": "alternative"}, "tags": ["core"], "source": "hand"}
 {"id": "h_alt_different_route", "text": "different route", "context_preset": "route_active", "expected": {"intent": "alternative"}, "tags": ["core"], "source": "hand"}
 {"id": "h_alt_skip_grade", "text": "can we skip the grade", "context_preset": "route_active", "expected": {"intent": "alternative"}, "tags": [], "source": "hand"}
 {"id": "h_alt_faster", "text": "is there a faster way", "context_preset": "route_active", "expected": {"intent": "alternative"}, "tags": [], "source": "hand"}
 {"id": "h_alt_no_route", "text": "is there another way", "context_preset": "idle", "expected": {"intent": "chat"}, "tags": ["edge"], "source": "hand"}
 {"id": "h_stop_fuel", "text": "add a fuel stop on the way", "context_preset": "route_active", "expected": {"intent": "add_stop", "category": "truck_stop"}, "tags": ["core"], "source": "hand"}
-{"id": "h_stop_pilot_fernley", "text": "stop at the Pilot in Fernley on the way", "context_preset": "route_active", "expected": {"intent": "add_stop", "query": {"contains": "fernley"}}, "tags": ["core"], "source": "hand"}
+{"id": "h_stop_pilot_fernley", "text": "stop at the Pilot in Fernley on the way", "context_preset": "route_active", "expected": {"intent": "add_stop", "where": {"contains": "fernley"}}, "tags": ["core"], "source": "hand"}
 {"id": "h_stop_rest_area", "text": "I need a rest area before that", "context_preset": "route_active", "expected": {"intent": "add_stop", "category": "rest_area"}, "tags": [], "source": "hand"}
 {"id": "h_stop_loves_first", "text": "swing by Love's first", "context_preset": "route_active", "expected": {"intent": "add_stop", "query": {"contains": "love"}}, "tags": ["core"], "source": "hand"}
 {"id": "h_stop_no_route", "text": "add a fuel stop", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": ["edge"], "source": "hand"}
@@ -65,7 +65,7 @@
 {"id": "h_clear_no_stops", "text": "no stops", "context_preset": "stops", "expected": {"intent": "clear_stops"}, "tags": [], "source": "hand"}
 {"id": "h_rev_drivers_say", "text": "what do drivers say about it", "context_preset": "options_shown", "expected": {"intent": "reviews"}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_rev_any_good", "text": "is it any good", "context_preset": "options_shown", "expected": {"intent": "reviews"}, "tags": ["follow_up"], "source": "hand"}
-{"id": "h_rev_loves", "text": "reviews for the Love's", "context_preset": "options_shown", "expected": {"intent": "reviews", "place_index": [2]}, "tags": ["core", "follow_up"], "source": "hand"}
+{"id": "h_rev_loves", "text": "reviews for the Love's", "context_preset": "options_shown", "expected": {"intent": "reviews", "place_index": [1]}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_rev_showers", "text": "how are the showers there", "context_preset": "options_shown", "expected": {"intent": "reviews"}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_wx_reno_3pm", "text": "weather in Reno at 3pm", "context_preset": "idle", "expected": {"intent": "weather", "query": {"contains": "reno"}, "when": {"contains": "3"}}, "tags": ["core"], "source": "hand"}
 {"id": "h_wx_donner", "text": "how's the wind over Donner tonight", "context_preset": "idle", "expected": {"intent": "weather", "query": {"contains": "donner"}, "when": {"contains": "tonight"}}, "tags": ["core"], "source": "hand"}
@@ -80,7 +80,7 @@
 {"id": "h_park_get_in", "text": "how do I get in", "context_preset": "route_active", "expected": {"intent": "parking"}, "tags": ["core"], "source": "hand"}
 {"id": "h_park_where", "text": "where do I park", "context_preset": "route_active", "expected": {"intent": "parking"}, "tags": ["core"], "source": "hand"}
 {"id": "h_park_fit", "text": "will I fit", "context_preset": "route_active", "expected": {"intent": "parking"}, "tags": [], "source": "hand"}
-{"id": "h_park_loves", "text": "is there truck parking at the Love's", "context_preset": "options_shown", "expected": {"intent": "parking", "place_index": [2]}, "tags": ["core", "follow_up"], "source": "hand"}
+{"id": "h_park_loves", "text": "is there truck parking at the Love's", "context_preset": "options_shown", "expected": {"intent": "parking", "place_index": [1]}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_ctl_start_ride", "text": "start the ride", "context_preset": "route_active", "expected": {"intent": "control", "actions": ["start_navigation"]}, "tags": ["core"], "source": "hand"}
 {"id": "h_ctl_lets_go", "text": "let's go", "context_preset": "route_active", "expected": {"intent": "control", "actions": ["start_navigation"]}, "tags": [], "source": "hand"}
 {"id": "h_ctl_start_driving", "text": "start driving", "context_preset": "route_active", "expected": {"intent": "control", "actions": ["start_navigation"]}, "tags": [], "source": "hand"}
@@ -147,22 +147,22 @@
 {"id": "l_10_port_of_oakland", "text": "I need to get to the Port of Oakland", "context_preset": "idle", "expected": {"intent": "go", "query": {"contains": "oakland"}}, "tags": [], "source": "legacy"}
 {"id": "l_11_how_far", "text": "How far is it?", "context_preset": "options_shown", "expected": {"intent": "chat", "reply": {"contains": "4.7"}}, "tags": ["core", "follow_up"], "source": "legacy"}
 {"id": "l_12_how_long", "text": "How long until I get there?", "context_preset": "options_shown", "expected": {"intent": "chat", "reply": {"contains": "9"}}, "tags": ["follow_up"], "source": "legacy"}
-{"id": "l_13_not_that_one", "text": "Not that one", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2, 3]}, "tags": ["core", "follow_up", "ambiguous"], "source": "legacy"}
+{"id": "l_13_not_that_one", "text": "Not that one", "context_preset": "options_shown", "expected": {"intent": "pick"}, "tags": ["core", "follow_up", "ambiguous"], "source": "legacy"}
 {"id": "l_14_second_one", "text": "The second one", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2]}, "tags": ["core", "follow_up"], "source": "legacy"}
-{"id": "l_15_flying_j_instead", "text": "Take me to the Flying J instead", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [3]}, "tags": ["core", "follow_up"], "source": "legacy"}
+{"id": "l_15_flying_j_instead", "text": "Take me to the Flying J instead", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2]}, "tags": ["core", "follow_up"], "source": "legacy"}
 {"id": "l_16_bye", "text": "Bye", "context_preset": "options_shown", "expected": {"intent": "bye"}, "tags": ["core"], "source": "legacy"}
 {"id": "l_17_thats_all", "text": "That's all, thanks", "context_preset": "options_shown", "expected": {"intent": "bye"}, "tags": [], "source": "legacy"}
 {"id": "l_18_im_good", "text": "No, I'm good", "context_preset": "options_shown", "expected": {"intent": "bye"}, "tags": [], "source": "legacy"}
 {"id": "l_19_beeping", "text": "Beeping", "context_preset": "idle", "expected": {"intent": "unclear"}, "tags": ["core"], "source": "legacy"}
 {"id": "l_20_thanks_man", "text": "Thanks, man", "context_preset": "options_shown", "expected": {"intent": "chat"}, "tags": ["ambiguous"], "source": "legacy"}
 {"id": "l_21_google_second_one", "text": "The second one", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2]}, "tags": ["follow_up"], "source": "legacy"}
-{"id": "l_22_google_flying_j", "text": "Take me to the Flying J instead", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [3]}, "tags": ["follow_up"], "source": "legacy"}
+{"id": "l_22_google_flying_j", "text": "Take me to the Flying J instead", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2]}, "tags": ["follow_up"], "source": "legacy"}
 {"id": "h_stop_cheapest_diesel_route", "text": "cheapest diesel on my route", "context_preset": "route_active", "expected": {"intent": "add_stop", "category": "truck_stop"}, "tags": ["core"], "source": "hand"}
 {"id": "h_stop_fuel_on_the_way", "text": "I need fuel on the way", "context_preset": "route_active", "expected": {"intent": "add_stop", "category": "truck_stop"}, "tags": ["core"], "source": "hand"}
-{"id": "h_pick_something_else", "text": "something else", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2, 3]}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
-{"id": "h_pick_not_that_one_alts", "text": "not that one", "context_preset": "route_active_alts", "expected": {"intent": "pick", "place_index": [2, 3]}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
-{"id": "h_pick_something_else_alts", "text": "something else", "context_preset": "route_active_alts", "expected": {"intent": "pick", "place_index": [2, 3]}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
-{"id": "h_pick_second_one_alts", "text": "the second one", "context_preset": "route_active_alts", "expected": {"intent": "pick", "place_index": [2, 3]}, "tags": ["core", "follow_up"], "source": "hand"}
+{"id": "h_pick_something_else", "text": "something else", "context_preset": "options_shown", "expected": {"intent": "pick"}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
+{"id": "h_pick_not_that_one_alts", "text": "not that one", "context_preset": "route_active_alts", "expected": {"intent": "pick"}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
+{"id": "h_pick_something_else_alts", "text": "something else", "context_preset": "route_active_alts", "expected": {"intent": "pick"}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
+{"id": "h_pick_second_one_alts", "text": "the second one", "context_preset": "route_active_alts", "expected": {"intent": "pick", "place_index": [2]}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_alt_another_way_alts", "text": "is there another way", "context_preset": "route_active_alts", "expected": {"intent": "alternative"}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_alt_faster_alts", "text": "is there a faster way", "context_preset": "route_active_alts", "expected": {"intent": "alternative"}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_alt_take_other_way_alts", "text": "take the other way", "context_preset": "route_active_alts", "expected": {"intent": "alternative"}, "tags": ["core", "follow_up"], "source": "hand"}

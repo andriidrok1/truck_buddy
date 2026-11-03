@@ -1,8 +1,8 @@
 """Long-term conversation memory per driver, kept until the driver clears it.
 
 Two stores behind the same functions: Postgres (DATABASE_URL, e.g. Neon) for production, and a local
-SQLite file when there is no DATABASE_URL (MEMORY_SQLITE_PATH, default backend/data/memory.sqlite), so a
-dev box or a single server without Postgres still remembers. MEMORY_STORE=pg|sqlite|off forces one.
+SQLite file for tests and a keyless dev box (services/db.py owns the connections and the migrations;
+MEMORY_STORE=pg|sqlite|off forces one).
 
 The store is never on the hot path of a voice turn: writes go through add_later() (background task),
 and the agent reads recent() under its own short timeout. A slow or unreachable store only costs memory.
@@ -10,149 +10,34 @@ and the agent reads recent() under its own short timeout. A slow or unreachable 
 import asyncio
 import json
 import logging
-import os
-import sqlite3
-import threading
-from pathlib import Path
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-import asyncpg
+from services import db
+from services.db import _db, _sq_run, close, sqlite_path, store  # noqa: F401 - the store's plumbing lives in db.py
 
 logger = logging.getLogger("truckbuddy.memory")
 
-CONNECT_TIMEOUT_S = 8.0  # Neon resumes an idle compute in 1-3 s
-COMMAND_TIMEOUT_S = 10.0
-
-_pool: asyncpg.Pool | None = None
-_pool_lock: asyncio.Lock | None = None
 _tasks: set = set()
 _pending: "defaultdict[str, set]" = defaultdict(set)  # driver -> saves still in flight
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS conversation (
-    id BIGSERIAL PRIMARY KEY,
-    driver TEXT NOT NULL,
-    role TEXT NOT NULL,
-    text TEXT NOT NULL,
-    at TIMESTAMPTZ NOT NULL
-);
-CREATE INDEX IF NOT EXISTS conversation_driver_at ON conversation (driver, at);
-CREATE TABLE IF NOT EXISTS driver_facts (
-    driver TEXT PRIMARY KEY,
-    facts TEXT NOT NULL,
-    turns_seen INTEGER NOT NULL DEFAULT 0,
-    updated_at TIMESTAMPTZ NOT NULL
-);
-"""
-
-
-_SQLITE_SCHEMA = """
-CREATE TABLE IF NOT EXISTS conversation (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    driver TEXT NOT NULL,
-    role TEXT NOT NULL,
-    text TEXT NOT NULL,
-    at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS conversation_driver_at ON conversation (driver, at);
-CREATE TABLE IF NOT EXISTS driver_facts (
-    driver TEXT PRIMARY KEY,
-    facts TEXT NOT NULL,
-    turns_seen INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL
-);
-"""
-_sqlite: sqlite3.Connection | None = None
-_sqlite_lock = threading.Lock()
-
-
-def store() -> str:
-    """"pg" | "sqlite" | "off". MEMORY_STORE wins; otherwise Postgres when DATABASE_URL is set, else SQLite."""
-    forced = os.environ.get("MEMORY_STORE", "").strip().lower()
-    if forced in ("pg", "postgres", "sqlite", "off"):
-        return "pg" if forced == "postgres" else forced
-    return "pg" if os.environ.get("DATABASE_URL") else "sqlite"
-
-
-def sqlite_path() -> Path:
-    return Path(os.environ.get("MEMORY_SQLITE_PATH") or Path(__file__).resolve().parents[1] / "data" / "memory.sqlite")
-
-
-def _sq_run(fn):
-    """Run a sqlite callback in a worker thread, serialised on one connection."""
-    def _call():
-        with _sqlite_lock:
-            return fn(_sq_conn_unlocked())
-    return asyncio.to_thread(_call)
-
-
-def _sq_conn_unlocked() -> sqlite3.Connection:
-    global _sqlite
-    if _sqlite is None:
-        path = sqlite_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        con = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
-        con.execute("PRAGMA journal_mode=WAL")
-        con.executescript(_SQLITE_SCHEMA)
-        _sqlite = con
-    return _sqlite
 
 
 def _off():
     raise RuntimeError("memory store is off")
 
 
-def _dsn() -> str:
-    # Neon connection strings carry channel_binding, which asyncpg doesn't accept; sslmode stays.
-    url = urlsplit(os.environ["DATABASE_URL"])
-    query = urlencode([(k, v) for k, v in parse_qsl(url.query) if k != "channel_binding"])
-    return urlunsplit(url._replace(query=query))
-
-
-async def _db() -> asyncpg.Pool:
-    global _pool, _pool_lock
-    if _pool is not None:
-        return _pool
-    if _pool_lock is None:  # created lazily so importing the module needs no running loop
-        _pool_lock = asyncio.Lock()
-    async with _pool_lock:  # two first requests at once must not open two pools
-        if _pool is None:
-            pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=5,
-                                             timeout=CONNECT_TIMEOUT_S, command_timeout=COMMAND_TIMEOUT_S)
-            async with pool.acquire() as con:
-                await con.execute(_SCHEMA)
-            _pool = pool
-    return _pool
-
-
 async def warm() -> None:
-    """Open the pool at startup so the first driver doesn't pay the connect + schema check."""
+    """Open the store at startup and bring its schema up to date, so the first driver doesn't pay for either."""
     kind = store()
     if kind == "off":
         logger.info("memory store off")
         return
     try:
-        if kind == "sqlite":
-            await _sq_run(lambda con: con.execute("SELECT 1").fetchone())
-            logger.info("memory store: sqlite at %s", sqlite_path())
-        else:
-            await _db()
-            logger.info("memory store: postgres")
+        applied = await db.migrate()
+        logger.info("memory store: %s%s", "postgres" if kind == "pg" else f"sqlite at {sqlite_path()}",
+                    f", migrated {applied}" if applied else "")
     except Exception as e:  # noqa: BLE001 - the server runs without memory
         logger.warning("memory store unavailable at startup: %s", e)
-
-
-async def close() -> None:
-    global _pool, _sqlite
-    if _pool is not None:
-        await _pool.close()
-        _pool = None
-    with _sqlite_lock:
-        if _sqlite is not None:
-            _sqlite.close()
-            _sqlite = None
 
 
 async def add(driver: str, turns: list[tuple[str, str]]) -> None:
@@ -269,18 +154,100 @@ async def set_facts(driver: str, facts: dict, turns_seen: int) -> None:
 
 
 async def clear_facts(driver: str) -> int:
+    """"Forget that": the learned facts and the visits (the count is facts rows)."""
     kind = store()
     if kind == "off":
         _off()
     if kind == "sqlite":
-        return await _sq_run(lambda con: con.execute("DELETE FROM driver_facts WHERE driver = ?", (driver,)).rowcount)
+        def _forget(con):
+            con.execute("DELETE FROM driver_visits WHERE driver = ?", (driver,))
+            con.execute("DELETE FROM driver_visit_trips WHERE driver = ?", (driver,))
+            return con.execute("DELETE FROM driver_facts WHERE driver = ?", (driver,)).rowcount
+        return await _sq_run(_forget)
     pool = await _db()
+    await pool.execute("DELETE FROM driver_visits WHERE driver = $1", driver)
+    await pool.execute("DELETE FROM driver_visit_trips WHERE driver = $1", driver)
     status = await pool.execute("DELETE FROM driver_facts WHERE driver = $1", driver)
     return int(status.split()[-1])
 
 
+# ---- visits: the places the driver arrived at (the app's "arrived" events), counted apart from the likes --------
+
+MAX_VISITS = 30  # places kept per driver, the most recently visited
+
+
+async def add_visits(driver: str, visits: list[tuple[str, str | None, str | None, datetime, str | None]]) -> None:
+    """One more visit to each (place_id, name, category, at, trip_id); the latest name and time win. A visit
+    counts once per place per trip (driver_visit_trips): the app sends a batch again when an upload failed after
+    it had landed, and a batch can hold two trips at one place. An arrival with no trip is not counted, nothing
+    tells it from one sent again. Beyond MAX_VISITS places the least recently visited go, with their trips."""
+    visits = [v for v in visits if v[4]]
+    if not visits:
+        return
+    kind = store()
+    if kind == "off":
+        _off()
+    if kind == "sqlite":
+        def _count(con):
+            con.execute("BEGIN")
+            try:
+                for place_id, name, category, at, trip in visits:
+                    new = con.execute("INSERT OR IGNORE INTO driver_visit_trips (driver, place_id, trip_id) "
+                                      "VALUES (?, ?, ?)", (driver, place_id, trip)).rowcount == 1
+                    con.execute(
+                        "INSERT INTO driver_visits (driver, place_id, name, category, count, last_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (driver, place_id) DO UPDATE SET "
+                        "count = count + excluded.count, "
+                        "name = coalesce(excluded.name, name), category = coalesce(excluded.category, category), "
+                        "last_at = max(last_at, excluded.last_at)",
+                        (driver, place_id, name, category, int(new), at.astimezone(timezone.utc).isoformat()))
+                con.execute("DELETE FROM driver_visits WHERE driver = ? AND place_id NOT IN (SELECT place_id FROM "
+                            "driver_visits WHERE driver = ? ORDER BY last_at DESC LIMIT ?)", (driver, driver, MAX_VISITS))
+                con.execute("DELETE FROM driver_visit_trips WHERE driver = ? AND place_id NOT IN (SELECT place_id "
+                            "FROM driver_visits WHERE driver = ?)", (driver, driver))
+                con.execute("COMMIT")
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+        await _sq_run(_count)
+        return
+    pool = await _db()
+    async with pool.acquire() as con, con.transaction():
+        for place_id, name, category, at, trip in visits:
+            status = await con.execute("INSERT INTO driver_visit_trips (driver, place_id, trip_id) VALUES ($1, $2, $3) "
+                                       "ON CONFLICT DO NOTHING", driver, place_id, trip)
+            await con.execute(
+                "INSERT INTO driver_visits (driver, place_id, name, category, count, last_at) "
+                "VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (driver, place_id) DO UPDATE SET "
+                "count = driver_visits.count + EXCLUDED.count, "
+                "name = coalesce(EXCLUDED.name, driver_visits.name), "
+                "category = coalesce(EXCLUDED.category, driver_visits.category), "
+                "last_at = greatest(driver_visits.last_at, EXCLUDED.last_at)",
+                driver, place_id, name, category, int(status.split()[-1]), at)
+        await con.execute("DELETE FROM driver_visits WHERE driver = $1 AND place_id NOT IN (SELECT place_id FROM "
+                          "driver_visits WHERE driver = $1 ORDER BY last_at DESC LIMIT $2)", driver, MAX_VISITS)
+        await con.execute("DELETE FROM driver_visit_trips WHERE driver = $1 AND place_id NOT IN (SELECT place_id "
+                          "FROM driver_visits WHERE driver = $1)", driver)
+
+
+async def visits(driver: str) -> list[dict]:
+    """The driver's visits, the most visited first: {place_id, name, category, count, last_at (datetime)}."""
+    kind = store()
+    if kind == "off":
+        _off()
+    cols = "place_id, name, category, count, last_at"
+    if kind == "sqlite":
+        rows = await _sq_run(lambda con: con.execute(
+            f"SELECT {cols} FROM driver_visits WHERE driver = ? ORDER BY count DESC, last_at DESC", (driver,)).fetchall())
+        return [{"place_id": r[0], "name": r[1], "category": r[2], "count": int(r[3]),
+                 "last_at": datetime.fromisoformat(r[4])} for r in rows]
+    pool = await _db()
+    rows = await pool.fetch(f"SELECT {cols} FROM driver_visits WHERE driver = $1 ORDER BY count DESC, last_at DESC", driver)
+    return [{**dict(r), "count": int(r["count"])} for r in rows]
+
+
 async def clear(driver: str) -> int:
-    """Everything about the driver: the turns and the learned facts."""
+    """Everything about the driver: the turns, the learned facts, the visits and the trip events (the count is turns)."""
     if _pending.get(driver):
         await asyncio.gather(*list(_pending[driver]), return_exceptions=True)
     kind = store()
@@ -290,9 +257,15 @@ async def clear(driver: str) -> int:
         def _wipe(con):
             n = con.execute("DELETE FROM conversation WHERE driver = ?", (driver,)).rowcount
             con.execute("DELETE FROM driver_facts WHERE driver = ?", (driver,))
+            con.execute("DELETE FROM driver_visits WHERE driver = ?", (driver,))
+            con.execute("DELETE FROM driver_visit_trips WHERE driver = ?", (driver,))
+            con.execute("DELETE FROM trip_events WHERE driver = ?", (driver,))
             return n
         return await _sq_run(_wipe)
     pool = await _db()
     status = await pool.execute("DELETE FROM conversation WHERE driver = $1", driver)
     await pool.execute("DELETE FROM driver_facts WHERE driver = $1", driver)
+    await pool.execute("DELETE FROM driver_visits WHERE driver = $1", driver)
+    await pool.execute("DELETE FROM driver_visit_trips WHERE driver = $1", driver)
+    await pool.execute("DELETE FROM trip_events WHERE driver = $1", driver)
     return int(status.split()[-1])

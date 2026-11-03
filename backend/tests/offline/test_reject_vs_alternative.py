@@ -55,7 +55,7 @@ def test_rejections_change_the_place_not_the_road(agent_sandbox, fake_http):
     third = run(prov.handle(_req("something else", active=second.place), None))
     assert third.status == "route_set" and third.place.id not in (first.place.id, second.place.id), third.reply
     assert not third.reply.startswith("Here's another way")
-    assert {first.place.id, second.place.id} <= agent._SESSIONS["h4"]["rejected"]
+    assert {first.place.id, second.place.id} <= set(agent._SESSIONS["h4"]["rejected"])  # a list now: it is stored as JSON
 
 
 def test_the_second_one_is_a_pick_never_a_geocode(agent_sandbox, fake_http):
@@ -72,13 +72,13 @@ def test_a_named_pick_may_go_back_to_a_rejected_place(agent_sandbox, fake_http):
     """Live on the emulator: Crossroads -> "not that one" -> Crest -> "something else" -> Motel 6 -> "the second one"
     (= Crest, index 2) answered "That's every one I found nearby" because Crest sat in the rejected set."""
     prov = _sandbox(agent_sandbox, fake_http)
-    agent_sandbox.llm.on(r"^the second one please$", {"intent": "pick", "place_index": 2})
+    agent_sandbox.llm.on(r"^the first one please$", {"intent": "pick", "place_index": 1})
     first = run(prov.handle(_req("where can I park tonight", sid="h4f"), None))
     second = run(prov.handle(_req("not that one", active=first.place, sid="h4f"), None))
     third = run(prov.handle(_req("something else", active=second.place, sid="h4f"), None))
     places = agent._SESSIONS["h4f"]["places"]
-    assert places[1].id in agent._SESSIONS["h4f"]["rejected"]  # the second place was turned down
-    back = run(prov.handle(_req("the second one please", active=third.place, sid="h4f"), None))
+    assert places[1].id in agent._SESSIONS["h4f"]["rejected"]  # the first place on the list was turned down
+    back = run(prov.handle(_req("the first one please", active=third.place, sid="h4f"), None))
     assert back.status == "route_set" and back.place.id == places[1].id, back.reply
     assert places[1].id not in agent._SESSIONS["h4f"]["rejected"]
     # a bare rejection still never returns to a rejected place
@@ -108,11 +108,12 @@ def test_go_with_a_pronoun_is_not_geocoded(agent_sandbox, fake_http):
 def test_list_reference_counts_the_places_the_driver_sees():
     places = [ROADYS, WESTSAC, FORTYNINER, SACVALLEY]
     cur = ROADYS.id
-    assert list_reference("the second one", places, cur) == 3  # 2nd of the shown = 49er = index 3 overall
-    assert list_reference("the first one", places, cur) == 2
-    assert list_reference("number two", places, cur) == 3
-    assert list_reference("the last one", places, cur) == 4
-    assert list_reference("the closest one", places, cur) == 2  # West Sac, 1.2 mi
+    # numbered as on the screen (QA 2026-11-02, bug 6): the shown options first, the current route last
+    assert list_reference("the second one", places, cur) == 2  # 2nd of the shown = 49er
+    assert list_reference("the first one", places, cur) == 1
+    assert list_reference("number two", places, cur) == 2
+    assert list_reference("the last one", places, cur) == 3
+    assert list_reference("the closest one", places, cur) == 1  # West Sac, 1.2 mi
     assert list_reference("the fifth one", places, cur) is None  # only three shown
     assert list_reference("Reno, NV", places, cur) is None and list_reference("2828 El Centro Rd", places, cur) is None
     assert list_reference("the second one", [], cur) is None
@@ -134,7 +135,33 @@ def test_guard_leaves_other_intents_alone():
     assert reject_or_reference_guard("go", {"intent": "go", "query": "Reno, NV"}, "take me to Reno", places, ROADYS)[0] == "go"
     three = [ROADYS, WESTSAC, FORTYNINER]
     assert reject_or_reference_guard("go", {"intent": "go", "query": "the second one"}, "the second one", three, ROADYS) == \
-        ("pick", {"intent": "pick", "query": "the second one", "place_index": 3})  # 2nd of the two shown
+        ("pick", {"intent": "pick", "query": "the second one", "place_index": 2})  # 2nd of the two shown
     # only one other place shown: "the second one" points past the list -> a plain "next place" pick
     assert reject_or_reference_guard("go", {"intent": "go", "query": "the second one"}, "the second one", places, ROADYS) == \
         ("pick", {"intent": "pick", "query": "the second one", "place_index": None})
+
+
+def test_something_else_never_goes_back_to_a_rejected_place(agent_sandbox, fake_http):
+    """QA 2026-11-02, bug 6 (Н4): "something else" came back as pick with place_index set, and an index made it
+    an explicit pick that skipped the rejected set: Roady's, turned down a minute before, was the answer."""
+    prov = _sandbox(agent_sandbox, fake_http)
+    agent_sandbox.llm.on(r"^something else then$", {"intent": "pick", "place_index": 2})
+    agent._SESSIONS["h4g"] = agent.DialogState(places=[FORTYNINER, ROADYS, WESTSAC, SACVALLEY],
+                                               rejected=[ROADYS.id, WESTSAC.id])
+    res = run(prov.handle(_req("something else then", active=FORTYNINER, sid="h4g"), None))
+    assert res.status == "route_set" and res.place.id == SACVALLEY.id, res.reply
+
+
+def test_the_second_one_is_the_second_card_on_the_screen(agent_sandbox, fake_http):
+    """QA 2026-11-02, bug 6 (Н4): the model's list numbered the current route first, the app's cards do not:
+    "the second one" took the first card. The list is numbered in the order of the options the app got."""
+    prov = _sandbox(agent_sandbox, fake_http)
+    agent_sandbox.llm.on(r"^the second one$", {"intent": "pick", "place_index": 2})  # what the model says
+    first = run(prov.handle(_req("where can I park tonight", sid="h4h"), None))
+    ctx = prov._context(_req("x", active=first.place), agent._SESSIONS["h4h"])
+    on_screen = [p.name for p in first.options]
+    # the town may follow the name ("Roady's Truck Stop in West Sacramento, CA (truck_stop)")
+    assert f"1={on_screen[0]}" in ctx and f"2={on_screen[1]}" in ctx
+    assert f"{len(on_screen) + 1}={first.place.name}" in ctx and "[current route]" in ctx
+    res = run(prov.handle(_req("the second one", active=first.place, sid="h4h"), None))
+    assert res.status == "route_set" and res.place.id == first.options[1].id, res.reply

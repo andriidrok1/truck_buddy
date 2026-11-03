@@ -15,8 +15,8 @@ PROMPT = """- control: the driver wants the app to DO something or CHANGE a sett
   voice_guidance value=true|false (spoken turn directions), wake_word value=true|false (hands-free wake-word listening), stop_talking (be quiet now),
   set_height_in value=total inches (13 ft 6 in = 162), set_trailer_ft value=feet, set_weight_lb value=pounds (70k = 70000), set_hazmat value=true|false,
   set_driver_name value=name, avoid_tolls value=true|false, avoid_ferries_tunnels value=true|false,
-  add_favorite_chain value=chain name, remove_favorite_chain value=chain name, set_break_hours value=hours or null to turn reminders off,
-  set_chains_on_board value=true|false (tire chains carried), set_nudges value=true|false ("stop suggesting" turns the copilot's own break/parking/chain suggestions off).
+  add_favorite_chain value=chain name, remove_favorite_chain value=chain name, set_break_hours value=hours or null to turn break reminders off ("stop reminding me about breaks" is this, not set_nudges),
+  set_chains_on_board value=true|false (tire chains carried), set_nudges value=true|false ("stop suggesting" / "quit the suggestions" turns ALL the copilot's own break/parking/chain suggestions off; one kind named = that kind's own control).
   Several actions are allowed in one turn. Use control (not chat) whenever the driver asks for any of these."""
 
 ROUTE_FIELDS = {"set_height_in", "set_trailer_ft", "set_weight_lb", "set_hazmat", "avoid_tolls", "avoid_ferries_tunnels"}

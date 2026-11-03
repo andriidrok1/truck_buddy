@@ -3,7 +3,8 @@ answers to "how do I get in / where do I park / will I fit", and routing to the 
 
 - from_route(): heading over the last 300 m, the route point 100 m before the finish and the
   street of the last HERE maneuver.
-- side(): right/left of the entrance E by geometry (sign of the 2D cross product), no vision call.
+- side(): right/left of the entrance E by geometry (sign of the 2D cross product), no vision call; the side the
+  route turns off the named street near the end (Approach.exit_side) wins over it.
 - relative(): "On your {side}, off {street}, {landmarks}"; landmarks = the base entry tip
   reworded by a small text model (compass and left/right words removed). < 1 s, cached.
 - answer(): spoken parking answer, waiting up to WAIT_S for a check in flight.
@@ -17,18 +18,21 @@ from typing import Literal, Optional
 
 
 from models import Approach, ParkingCheck, Place, RouteInfo
-from services import llm
+from services import llm, parking_store
 
 logger = logging.getLogger("truckbuddy.approach")
 
 SPAN_M = 300.0  # heading is measured over the last 300 m
 POINT_M = 100.0  # approach point: 100 m before the finish
+EXIT_M = 600.0  # a turn off the named street this close to the finish is the way in
+SIDE_MIN_M = 5.0  # E closer than this to the heading line is ahead, not on a side
 WAIT_S = 15.0
 LANDMARK_TIMEOUT_S = 3.0
 CACHE_MAX = 500
 COMPASS = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"]
 LOOKING = "Let me look at the satellite."
 STILL = "Still looking at the satellite, I'll tell you when I have it."
+_U_TURN = re.compile(r"\bu-?turn\b", re.I)
 _STREET = re.compile(r"\b(?:onto|on)\s+(.+?)(?:\.\s|\.?$|,| toward)", re.I)
 # Words that only make sense from the satellite's point of view (north-up), not the driver's.
 _DIRECTIONAL = re.compile(
@@ -45,7 +49,6 @@ class _LRU(OrderedDict):
             self.popitem(last=False)
 
 
-_last: _LRU = _LRU()  # place key -> approach of the latest route to it
 _landmarks: _LRU = _LRU()  # base entry tip -> landmark phrase ("" = none)
 _tasks: set = set()
 
@@ -92,16 +95,25 @@ def from_route(route: RouteInfo) -> Optional[Approach]:
         return None
     b = _bearing(g[i], g[-1])
     p = g[_back(g, POINT_M)[0]]
-    street = None
-    for m in reversed(route.maneuvers):
-        if m.action == "arrive":
-            continue
-        hit = _STREET.search(m.instruction)
+    street, exit_side = None, None
+    moves = [m for m in route.maneuvers if m.action != "arrive"]
+    for k in range(len(moves) - 1, -1, -1):
+        hit = _STREET.search(moves[k].instruction)
         if hit:
             street = hit.group(1).strip()[:60]
+            # The route leaves the street without a name of its own ("Keep right" into the rest area): that turn
+            # is the way in, the side to say. The heading below is the last 300 m, often that very ramp, with the
+            # lot nearly dead ahead of it (Elkhorn, QA 2026-11-02: "On your left, off I-5 S", it is on the right).
+            leave = moves[k + 1] if k + 1 < len(moves) else None
+            # A U-turn's "left" is the way the truck turns around, not the side the place is on (review
+            # 2026-11-02): no side from it, the geometry below decides.
+            if leave is not None and leave.direction in ("right", "left") and not _U_TURN.search(
+                    f"{leave.action} {leave.instruction}") and \
+                    sum(_m(g[j - 1], g[j]) for j in range(max(1, leave.index + 1), len(g))) <= EXIT_M:
+                exit_side = leave.direction
             break
     return Approach(bearing=round(b) % 360, compass=COMPASS[round(((b + 180) % 360) / 45) % 8], street=street,
-                    lat=p[0], lng=p[1])
+                    lat=p[0], lng=p[1], exit_side=exit_side)
 
 
 def side(ap: Approach, e_lat: float, e_lng: float) -> Optional[Literal["right", "left"]]:
@@ -116,20 +128,26 @@ def side(ap: Approach, e_lat: float, e_lng: float) -> Optional[Literal["right", 
     hx, hy = math.sin(b), math.cos(b)
     vx = (e_lng - ap.lng) * 111320 * math.cos(math.radians(ap.lat))
     vy = (e_lat - ap.lat) * 111320
-    cross = hx * vy - hy * vx
-    if abs(cross) < 1.0:  # dead ahead: don't guess
+    cross = hx * vy - hy * vx  # meters to the side of the heading line
+    if abs(cross) < SIDE_MIN_M:  # (nearly) dead ahead: a few meters of noise must not pick a side
         return None
     return "right" if cross < 0 else "left"
 
 
 def remember(place: Place, ap: Optional[Approach]) -> None:
+    """The way the latest route arrives at this place; kept in the parking store so every worker routes to the
+    same entrance and a restart does not forget it."""
     if ap:
-        _last.put(_pkey(place), ap)
+        parking_store.approach_set(_pkey(place), ap)
+
+
+def _last_approach(place: Place) -> Optional[Approach]:
+    return parking_store.approach_get(_pkey(place))
 
 
 def has_approach(place: Place) -> bool:
     """A route to this place was built (its entry tip will be phrased relative to the driver)."""
-    return _pkey(place) in _last
+    return _last_approach(place) is not None
 
 
 def _entry(c: Optional[ParkingCheck]):
@@ -140,10 +158,19 @@ def best(place: Place) -> Optional[ParkingCheck]:
     """Cached check; entry tip relative to the driver when the approach and E are known (sync, cached text)."""
     from services.parking import cached_parking
     base = cached_parking(place)
-    ap = _last.get(_pkey(place))
+    ap = _last_approach(place)
     if not base or not ap or not base.entry_tip or base.entry_tip not in _landmarks:
         return base
     return _phrase(base, ap, _landmarks[base.entry_tip])
+
+
+def for_route(place: Place, route: RouteInfo) -> Optional[ParkingCheck]:
+    """The check phrased for the route the truck now drives. Every route built to a place (the first one, the
+    one to the entrance, an off-route reroute, a stop added) remembers its own approach, so the card and the
+    spoken "how do I get in" name the same side and street (QA 2026-11-02: card "right, off El Centro Rd",
+    voice "left, off W El Camino Ave" after the route moved to the entrance)."""
+    remember(place, route.approach)
+    return best(place)
 
 
 def target(place: Place) -> tuple[float, float]:
@@ -190,14 +217,39 @@ async def landmarks(tip: str) -> str:
     return out
 
 
+_ROAD_WORDS = {"n", "s", "e", "w", "north", "south", "east", "west", "ave", "avenue", "st", "street", "rd", "road",
+               "blvd", "boulevard", "dr", "drive", "hwy", "highway", "way", "ln", "lane", "pkwy", "parkway", "ct", "the"}
+_BARE_ROAD = re.compile(r"\s*\b(?:off|from|on|along)\s+(?:the\s+)?(?:(?:frontage|access|main|service)\s+)?road$", re.I)
+
+
+def _marks(marks: str, street: Optional[str]) -> str:
+    """The landmark phrase without what "off <street>" said already: "the wide driveway off the road" read as
+    "On your left, off West Capitol Ave, the wide driveway off the road" (QA 2026-11-02). A clause's bare "off the
+    (frontage) road" tail and a clause about the same street go; the rest of the landmark stays."""
+    if not marks or not street:
+        return marks
+    core = [w for w in re.findall(r"[a-z0-9-]+", street.lower()) if w not in _ROAD_WORDS]
+    same = re.compile(r"\s*\b(?:off|from|on|onto|along|at)\s+[^,]*\b(?:" + "|".join(map(re.escape, core)) + r")\b.*$",
+                      re.I) if core else None
+    kept = []
+    for clause in (c.strip() for c in marks.split(",")):
+        clause = _BARE_ROAD.sub("", clause)
+        if same is not None:
+            clause = same.sub("", clause)
+        if clause.strip():
+            kept.append(clause.strip())
+    return ", ".join(kept)
+
+
 def _phrase(base: ParkingCheck, ap: Approach, marks: str) -> ParkingCheck:
     e = _entry(base)
-    s = side(ap, e.lat, e.lng) if e else None
+    s = (ap.exit_side or side(ap, e.lat, e.lng)) if e else None
     if not s:
         return base  # no E (or straight ahead): keep the base tip, don't name a side
     parts = [f"On your {s}"]
     if ap.street:
         parts.append(f"off {ap.street}")
+    marks = _marks(marks, ap.street)
     if marks:
         parts.append(marks)
     return base.model_copy(update={"entry_tip": ", ".join(parts), "relative": True})
@@ -262,7 +314,7 @@ def speech(c: ParkingCheck, ask: str = "all") -> str:
 async def answer(place: Place, wait: float = WAIT_S) -> tuple[str, str, Optional[ParkingCheck]]:
     """-> (status "ready" | "pending", spoken reply, check). Starts the check if needed, waits up to `wait`."""
     from services.parking import check_parking
-    task = asyncio.ensure_future(check_parking(place, _last.get(_pkey(place))))
+    task = asyncio.ensure_future(check_parking(place, _last_approach(place)))
     try:
         c = await asyncio.wait_for(asyncio.shield(task), wait)
     except asyncio.TimeoutError:

@@ -24,7 +24,7 @@ def test_start_navigation_needs_route():
 def test_truck_changes_reroute_when_active():
     acts, say, _ = apply_actions([{"type": "set_height_in", "value": "158"}, {"type": "set_hazmat", "value": True}], req())
     assert types(acts) == [("set_height_in", 158), ("set_hazmat", True), ("reroute", None)]
-    assert say.startswith("Done.") and "13 foot 2" in say
+    assert say.startswith("Done, ") and "13 foot 2" in say
     acts, _, _ = apply_actions([{"type": "set_weight_lb", "value": 70000}], req(active=False))
     assert types(acts) == [("set_weight_lb", 70000)]
 
