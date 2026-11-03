@@ -2,6 +2,7 @@
 public road (or a highway ramp, for rest areas). Coordinates come from the map, never from the vision model; the
 model only picks among these points (QA 2026-11-02: free-form vision coordinates landed on lawns and roofs).
 """
+import asyncio
 import logging
 import math
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ PUBLIC = {"trunk", "trunk_link", "primary", "primary_link", "secondary", "second
           "tertiary_link", "unclassified", "residential", "living_street", "road"}
 MERGE_M = 15.0  # two junctions closer than this are one driveway
 MAX_POINTS = 14
+CACHE_MAX = 500
 
 
 @dataclass
@@ -87,3 +89,34 @@ def points(osm: dict, lat: float, lng: float, half_m: float = 195.0) -> list[Acc
         out.append(Access(lat=p_lat, lng=p_lng, road=public.get(n, ""), ramp=n not in public, private=private))
     out.sort(key=lambda a: _m(lat, lng, a.lat, a.lng))
     return out[:MAX_POINTS]
+
+
+_points: dict[str, list[Access]] = {}
+_loading: dict[str, "asyncio.Task[list[Access]]"] = {}
+
+
+async def around(lat: float, lng: float, wait: float) -> list[Access]:
+    """Driveway junctions around a place, waiting at most `wait` s ([] then). The Overpass fetch keeps running in
+    the background, so the next check of the place (its one re-check) gets the markers."""
+    k = f"{lat:.5f},{lng:.5f}"
+    if k in _points:
+        return _points[k]
+    task = _loading.get(k)
+    if task is None:
+        task = asyncio.create_task(_load(k, lat, lng))
+        _loading[k] = task
+        task.add_done_callback(lambda _t: _loading.pop(k, None))
+    try:
+        return await asyncio.wait_for(asyncio.shield(task), wait)
+    except asyncio.TimeoutError:
+        return []
+
+
+async def _load(k: str, lat: float, lng: float) -> list[Access]:
+    osm = await fetch(lat, lng, timeout=45)
+    if osm is None:
+        return []
+    if len(_points) >= CACHE_MAX:
+        _points.pop(next(iter(_points)))
+    _points[k] = points(osm, lat, lng)
+    return _points[k]
