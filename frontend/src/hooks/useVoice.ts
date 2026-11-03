@@ -8,6 +8,8 @@ import {
   type AudioPlayer,
 } from "expo-audio";
 import * as Haptics from "expo-haptics";
+
+import { acquireAudioSession, releaseAudioSession } from "./audioSession";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 
@@ -29,7 +31,15 @@ const CHIME = require("../../assets/sounds/chime.mp3");
 // The recorder's prepare reuses the options of the last mode, so it must follow RECORD_MODE.
 const RECORD_MODE = { allowsRecording: true, playsInSilentMode: true, shouldRouteThroughEarpiece: false };
 // Replies play in a pure playback session (never play-and-record, which iOS sends to the earpiece).
-const PLAYBACK_MODE = { allowsRecording: false, playsInSilentMode: true, shouldRouteThroughEarpiece: false };
+// It keeps playing with the screen off or another app in front (turn calls while the phone is locked), and lowers
+// the radio or music under it instead of stopping it (plan A3, 2026-11-02).
+const PLAYBACK_MODE = {
+  allowsRecording: false,
+  playsInSilentMode: true,
+  shouldRouteThroughEarpiece: false,
+  shouldPlayInBackground: true,
+  interruptionMode: "duckOthers",
+} as const;
 
 type ListenOptions = { maxMs?: number; silenceMs?: number; startTimeoutMs?: number; chime?: boolean };
 
@@ -143,6 +153,7 @@ export function useVoice() {
     }
     player.current = null;
     setSpeaking(false);
+    if (p) releaseAudioSession(); // the radio comes back up, also when the reply was cut short
     playDone.current?.();
     playDone.current = null;
     // A reply just finished (or was cut): get the mic ready for the next tap.
@@ -172,6 +183,7 @@ export function useVoice() {
   const startRecording = useCallback(async () => {
     stopSpeaking();
     audioGen.current++;
+    await acquireAudioSession();
     await setAudioModeAsync(RECORD_MODE);
     await ensurePrepared();
     prepared.current = false;
@@ -322,7 +334,8 @@ export function useVoice() {
       // Native: the playback session must be in place before the first sample (loudspeaker on iOS).
       // That leaves no prepared recorder behind, so the next tap prepares it again.
       prepared.current = false;
-      setAudioModeAsync(PLAYBACK_MODE)
+      acquireAudioSession()
+        .then(() => setAudioModeAsync(PLAYBACK_MODE))
         .catch((e) => console.log(`[voice] playback mode failed: ${String(e)}`))
         .finally(() => {
           if (player.current === p) p.play();

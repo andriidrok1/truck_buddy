@@ -16,6 +16,7 @@ import { saveProfile } from "@/src/data/profile";
 import { setOnboarded, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
+import { truckErrors, truckFromInputs } from "@/src/truck/validate";
 
 type Step = "name" | "truck" | "prefs" | "done";
 type Mode = "speaking" | "listening" | "thinking" | "waiting";
@@ -56,12 +57,12 @@ function thought(step: Step, name: string) {
   }
 }
 
-function Num({ label, value, onChange, unit, testID }: { label: string; value: string; onChange: (s: string) => void; unit: string; testID: string }) {
+function Num({ label, value, onChange, unit, testID, bad = false }: { label: string; value: string; onChange: (s: string) => void; unit: string; testID: string; bad?: boolean }) {
   const { colors } = useTheme();
   return (
     <View style={styles.field}>
       <Text style={[styles.label, { color: colors.onSurfaceSecondary }]}>{label}</Text>
-      <View style={[styles.inputRow, { backgroundColor: colors.surfaceSecondary }]}>
+      <View style={[styles.inputRow, { backgroundColor: colors.surfaceSecondary }, bad && { borderWidth: 1.5, borderColor: colors.error }]}>
         <TextInput testID={testID} value={value} onChangeText={onChange} keyboardType="number-pad" style={[styles.input, { color: colors.onSurface }]} />
         <Text style={[styles.unit, { color: colors.muted }]}>{unit}</Text>
       </View>
@@ -69,6 +70,16 @@ function Num({ label, value, onChange, unit, testID }: { label: string; value: s
   );
 }
 
+/** The out-of-range message under its own field (one line for all three left the driver guessing). */
+function FieldError({ text, testID }: { text?: string; testID: string }) {
+  const { colors } = useTheme();
+  if (!text) return null;
+  return (
+    <Text testID={testID} style={[styles.error, { color: colors.error }]}>
+      {text}
+    </Text>
+  );
+}
 
 export default function Onboarding() {
   const router = useRouter();
@@ -119,14 +130,10 @@ export default function Onboarding() {
 
   const set = (u: Partial<TruckProfile>) => setDraft((d) => ({ ...d, ...u }));
 
-  const truckFrom = (f: string, i: string, t: string, w: string): Partial<TruckProfile> | null => {
-    const h = toInt(f) * 12 + toInt(i || "0");
-    const tr = toInt(t);
-    const wt = toInt(w);
-    if (!(h >= 60 && h <= 203 && toInt(i || "0") <= 11 && tr >= 10 && tr <= 65 && wt >= 5000 && wt <= 200000)) return null;
-    return { height_in: h, trailer_ft: tr, weight_lb: wt };
-  };
-  const truckOk = truckFrom(feet, inches, trailer, weight) !== null;
+  const truckFrom = (f: string, i: string, t: string, w: string): Partial<TruckProfile> | null =>
+    truckFromInputs({ feet: f, inches: i, trailer: t, weight: w });
+  const truckErr = truckErrors({ feet, inches, trailer, weight });
+  const truckOk = Object.keys(truckErr).length === 0;
 
   const say = async (text: string, token: number) => {
     setMode("speaking");
@@ -442,20 +449,18 @@ export default function Onboarding() {
           <Animated.View entering={FadeInDown.duration(220)} style={styles.body}>
             <View style={styles.row}>
               <View style={styles.flex}>
-                <Num label="Height" value={feet} onChange={setFeet} unit="ft" testID="onboarding-height-feet-input" />
+                <Num label="Height" value={feet} onChange={setFeet} unit="ft" testID="onboarding-height-feet-input" bad={!!truckErr.height} />
               </View>
               <View style={styles.flex}>
-                <Num label=" " value={inches} onChange={setInches} unit="in" testID="onboarding-height-inches-input" />
+                <Num label=" " value={inches} onChange={setInches} unit="in" testID="onboarding-height-inches-input" bad={!!truckErr.height} />
               </View>
             </View>
-            <Num label="Trailer length" value={trailer} onChange={setTrailer} unit="ft" testID="onboarding-trailer-input" />
-            <Num label="Gross weight" value={weight} onChange={setWeight} unit="lb" testID="onboarding-weight-input" />
+            <FieldError testID="onboarding-height-error" text={truckErr.height} />
+            <Num label="Trailer length" value={trailer} onChange={setTrailer} unit="ft" testID="onboarding-trailer-input" bad={!!truckErr.trailer} />
+            <FieldError testID="onboarding-trailer-error" text={truckErr.trailer} />
+            <Num label="Gross weight" value={weight} onChange={setWeight} unit="lb" testID="onboarding-weight-input" bad={!!truckErr.weight} />
+            <FieldError testID="onboarding-weight-error" text={truckErr.weight} />
             <ToggleRow title="Hazardous materials" value={draft.hazmat} onChange={(v) => set({ hazmat: v })} testID="onboarding-hazmat-switch" />
-            {!truckOk && (
-              <Text testID="onboarding-truck-error" style={[styles.error, { color: colors.error }]}>
-                Height 5–16 ft 11 in, trailer 10–65 ft, weight 5,000–200,000 lb.
-              </Text>
-            )}
           </Animated.View>
         )}
       </KeyboardAwareScrollView>

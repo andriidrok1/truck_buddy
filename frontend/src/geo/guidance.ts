@@ -144,12 +144,25 @@ export function markSpoken(spoken: Set<string>, maneuverIndex: number, stage: St
   STAGES.slice(0, upto + 1).forEach((s) => spoken.add(spokenKey(maneuverIndex, s.key)));
 }
 
-/** Spoken lead-in before the maneuver: "In half a mile", "In a quarter mile", "In 500 feet". */
+/**
+ * The distance the driver sees and hears, rounded once: feet in 50s under 1000 ft, else miles to a tenth
+ * (whole miles from 10). The banner read "600 ft" while the voice said "In 500 feet" in the same second: the
+ * voice had a fixed phrase per stage (QA 2026-11-02). Banner and voice both read this.
+ */
+export function roundedDistance(m: number): { n: number; unit: "ft" | "mi" } {
+  const ft = m * 3.28084;
+  if (ft < 1000) return { n: Math.max(50, Math.round(ft / 50) * 50), unit: "ft" };
+  const mi = m / 1609.34;
+  return { n: mi < 10 ? Math.round(mi * 10) / 10 : Math.round(mi), unit: "mi" };
+}
+
+/** Spoken lead-in before the maneuver: "In 600 feet", "In half a mile", "In 1.2 miles". */
 export function spokenDistance(m: number) {
-  if (m > 1200) return "In about a mile";
-  if (m > 600) return "In half a mile";
-  if (m > 300) return "In a quarter mile"; // the "near" call can come anywhere in 120..900 m; 600 m is not 500 ft
-  return "In 500 feet";
+  const { n, unit } = roundedDistance(m);
+  if (unit === "ft") return `In ${n} feet`;
+  if (n === 0.5) return "In half a mile";
+  if (n === 1) return "In a mile";
+  return `In ${n} miles`;
 }
 
 /**
@@ -184,12 +197,10 @@ export function remainingSeconds(
   return (driving * remainingM) / (totalM || 1) + (stops ? (stopsS / stops) * ahead : 0);
 }
 
-/** "0.4 mi" / "500 ft" for the banner. */
+/** "0.4 mi" / "500 ft" for the banner (the same rounding the voice reads). */
 export function formatDistance(m: number) {
-  const ft = m * 3.28084;
-  if (ft < 1000) return `${Math.max(50, Math.round(ft / 50) * 50)} ft`;
-  const mi = m / 1609.34;
-  return mi < 10 ? `${mi.toFixed(1)} mi` : `${Math.round(mi)} mi`;
+  const { n, unit } = roundedDistance(m);
+  return unit === "ft" ? `${n} ft` : `${n.toFixed(n < 10 ? 1 : 0)} mi`;
 }
 
 /** Beyond this from the line, a resumed route is replanned at once: the off-route tracker waits for the

@@ -1,5 +1,6 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { Alert, AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -26,6 +27,8 @@ import { isTester } from "@/src/auth";
 import { chainControlAhead, routePointsAhead } from "@/src/geo/ahead";
 import { switchedLine } from "@/src/geo/routeChoice";
 import { farFromRoute } from "@/src/geo/guidance";
+import { startDriveTracking, stopDriveTracking } from "@/src/geo/driveTracking";
+import { arrivals, loadArrived, saveArrived } from "@/src/geo/arrival";
 import { createRerouteGate } from "@/src/geo/offroute";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
@@ -64,6 +67,8 @@ function routeFailText(e: unknown): string {
 // The route card leaves about 220 at the default font, about 120 at 130 %.
 const MIN_MAP_FOR_BUBBLE = 180;
 
+const KEEP_AWAKE_TAG = "driving";
+
 // "End route" asks first while more than this is left of the drive.
 const END_CONFIRM_ABOVE_S = 10 * 60;
 
@@ -94,6 +99,10 @@ const nearbyLine = (pk: ParkingCheck) => {
   const look = pk.nearby.kind === "unclear" ? "" : `, looks like a ${pk.nearby.kind}`;
   return ` There's a lot with trailers to the ${pk.nearby.direction}${look}.`;
 };
+// The trip (route, driving, stops, options, providers, parking, sheet) lives in src/state/tripStore.ts;
+// async handlers read `trip()` at the moment they need a value instead of a ref mirror of a render.
+const trip = useTripStore.getState;
+
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
@@ -112,9 +121,6 @@ export default function MapScreen() {
   // (no camera refit on a drag) but the chrome above the sheet moves down into the freed room.
   const [peekH, setPeekH] = useState<number | null>(null);
   const chromeBottom = (peekH ?? sheetH) + spacing.lg;
-  // The trip (route, driving, stops, options, providers, parking, sheet) lives in src/state/tripStore.ts;
-  // async handlers read `trip()` at the moment they need a value instead of a ref mirror of a render.
-  const trip = useTripStore.getState;
   const active = useTripStore((s) => s.active);
   const driving = useTripStore((s) => s.driving);
   const options = useTripStore((s) => s.options);
@@ -1018,17 +1024,60 @@ export default function MapScreen() {
     }
   };
 
+  // Driving: fixes keep coming with the screen off (a location task, src/geo/driveTracking.ts), and with the app
+  // open the screen stays on. Where the task can't run (Expo Go, refused) the awake screen is all there is.
+  const drivingTo = driving ? (active?.place.name.split(",")[0] ?? "your stop") : null;
+  useEffect(() => {
+    if (!drivingTo) {
+      stopDriveTracking();
+      deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
+      return;
+    }
+    activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
+    startDriveTracking(drivingTo);
+  }, [drivingTo]);
+  useEffect(() => () => {
+    stopDriveTracking();
+    deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
+  }, []);
+
   // A fleet truck's stored sizes are not pulled over a trip's own change (src/data/profile.ts).
   useEffect(() => setMidTripCheck(() => !!trip().active), []);
 
   // A position for the fleet dashboard every few minutes while driving (lat/lng are stamped by the log).
   const speedRef = useRef<number | null>(null);
-  speedRef.current = loc.speed;
+  useEffect(() => {
+    speedRef.current = loc.speed;
+  });
   useEffect(() => {
     if (!driving) return;
     return startPositionHeartbeat(tripLog, () => ({ tripId: trip().active?.trip_id ?? null, speedMps: speedRef.current }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driving]);
+
+  // Arrival at a stop or the destination: one trip event each (the server counts visits, the fleet reads the time).
+  // The places already reported live on disk with the trip id, so a restart mid-trip doesn't report them again.
+  const arrived = useRef<{ trip: string | null; seen: Set<string> | null }>({ trip: null, seen: null });
+  useEffect(() => {
+    const cur = trip().active;
+    if (!cur || !driving || loc.isDemo) return;
+    const tripId = cur.trip_id ?? null;
+    const fix = { ...loc.coords, speed: loc.speed };
+    const check = (seen: Set<string>) => {
+      const found = arrivals(fix, cur.stops, cur.place, seen);
+      for (const a of found) {
+        tripLog.log("arrived", { place_id: a.place.id, kind: a.kind, category: a.place.category, name: a.place.name }, tripId);
+      }
+      if (found.length) saveArrived(tripId, seen).catch(() => {});
+    };
+    if (arrived.current.trip === tripId && arrived.current.seen) return check(arrived.current.seen);
+    arrived.current = { trip: tripId, seen: null };
+    loadArrived(tripId).then((seen) => {
+      if (arrived.current.trip !== tripId) return;
+      arrived.current.seen = seen;
+      check(seen);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loc.ts, driving]);
 
   // Resume of a restored route: the first real fix after it decides whether the truck is still near the line.
   // A parked truck never trips the off-route tracker, so far from it the plan is redone right away.

@@ -319,6 +319,9 @@ export const api = {
         // cache is gone then): HERE handle and the stops still ahead.
         route_handle: active?.route.handle ?? null,
         route_via: active ? viaOf(stopsAhead(active.route, active.stops, at)) : [],
+        // The same stops as places: the trip lives on the phone, and the copilot names, adds and drops stops by
+        // what they are (after a restart its session knew only coordinates).
+        route_stops: active ? stopsAhead(active.route, active.stops, at) : [],
         active_distance_mi: active?.route.distance_mi,
         active_duration_min: active?.route.duration_min,
         trip_id: active?.trip_id,

@@ -41,6 +41,7 @@ describe("api.agentSpeak", () => {
     const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
     expect(body.route_handle).toBe("h-1");
     expect(body.route_via).toEqual([[38.58, -121.45]]);
+    expect(body.route_stops.map((p: { id: string }) => p.id)).toEqual(["s2"]);
   });
 
   test("typed text sends stt_ms and stt_confidence as null", async () => {
