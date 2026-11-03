@@ -672,22 +672,28 @@ ROAD_PREFS = ((re.compile(r"\btolls?\b|\btoll ?roads?\b", re.I), "tolls", "avoid
 BYE_PHRASE = re.compile(r"^(?:no,? )?(?:nothing else|that'?s (?:all|it)|i'?m (?:good|all set)|all set|no thanks?)[.!]?$", re.I)
 
 
-def numbered(places: list[Place], current_id: Optional[str]) -> list[Place]:
-    """The dialog's places in the order the model numbers them: the options in the order the app got them (its
-    cards on screen), then the current route. The model's list used to start with the current route while the
-    cards do not, and "the second one" took the first card (QA 2026-11-02, bug 6). The app does not send the
-    order of its cards; the options it was given are that order."""
-    return [p for p in places if p.id != current_id] + [p for p in places if p.id == current_id]
+def numbered(places: list[Place], current_id: Optional[str], screen: Optional[list[str]] = None) -> list[Place]:
+    """The dialog's places in the order the model numbers them: the cards on screen in screen order (ui.option_ids,
+    when the app sends them), then the other options in the order the app got them, then the current route. The
+    model's list used to start with the current route while the cards do not, and "the second one" took the first
+    card (QA 2026-11-02, bug 6)."""
+    others = [p for p in places if p.id != current_id]
+    by_id = {p.id: p for p in others}
+    shown = [by_id[i] for i in dict.fromkeys(screen or []) if i in by_id]
+    return shown + [p for p in others if p not in shown] + [p for p in places if p.id == current_id]
 
 
-def list_reference(query: str, places: list[Place], current_id: Optional[str]) -> Optional[int]:
+def list_reference(query: str, places: list[Place], current_id: Optional[str],
+                   screen: Optional[list[str]] = None) -> Optional[int]:
     """1-based index into numbered(places) for "the second one" & co, counted over the places the driver can
-    see (the current route excluded, as on the options list); None when the query is not a reference."""
+    see (the cards on screen when the app names them, else the options; the current route excluded, as on the
+    options list); None when the query is not a reference."""
     m = LIST_REF.match((query or "").strip())
     if not m:
         return None
-    order = numbered(places, current_id)
-    shown = [p for p in places if p.id != current_id] or list(places)
+    order = numbered(places, current_id, screen)
+    on_screen = [p for p in order if p.id in set(screen or []) and p.id != current_id]
+    shown = on_screen or [p for p in places if p.id != current_id] or list(places)
     if not shown:
         return None
     word = m.group("ord").lower()
@@ -757,7 +763,7 @@ def named_in_text(text: str, places: list[Place]) -> Optional[Place]:
 
 
 def reject_or_reference_guard(intent: str, d: dict, text: str, places: list[Place],
-                              active: Optional[Place]) -> tuple[str, dict]:
+                              active: Optional[Place], screen: Optional[list[str]] = None) -> tuple[str, dict]:
     """Rewrites two classifier mistakes before anything acts on them:
     - alternative + a rejection phrase (and no road word) -> pick without an index (= the next place);
     - go + a list reference ("the second one", place_index given) -> pick with that index;
@@ -769,7 +775,7 @@ def reject_or_reference_guard(intent: str, d: dict, text: str, places: list[Plac
         return "bye", {**d, "intent": "bye", "place_index": None}
     if intent == "pick" and places and LIST_REF.match(text.strip()):
         # "the second one" is counted here, not by the model (QA 2026-11-02, bug 6)
-        ref = list_reference(text.strip(), places, current_id)
+        ref = list_reference(text.strip(), places, current_id, screen)
         if ref is not None and ref != d.get("place_index"):
             logger.info("agent pick %s: the model said %s, the list says %s", said(text), d.get("place_index"), ref)
             return "pick", {**d, "place_index": ref}
@@ -778,9 +784,9 @@ def reject_or_reference_guard(intent: str, d: dict, text: str, places: list[Plac
         return "pick", {**d, "intent": "pick", "place_index": None}
     if intent == "go":
         query = str(d.get("query") or "").strip()
-        ref = list_reference(query, places, current_id) if places else None
+        ref = list_reference(query, places, current_id, screen) if places else None
         if ref is None and places and LIST_REF.match(text.strip()):
-            ref = list_reference(text.strip(), places, current_id)
+            ref = list_reference(text.strip(), places, current_id, screen)
         if ref is not None:
             logger.info("agent go %s is a list reference -> pick %s", said(query or text), ref)
             return "pick", {**d, "intent": "pick", "place_index": ref}
@@ -794,13 +800,14 @@ def reject_or_reference_guard(intent: str, d: dict, text: str, places: list[Plac
     return intent, d
 
 
-def pick_place(d: dict, places: list[Place], current_id: Optional[str] = None) -> Optional[Place]:
+def pick_place(d: dict, places: list[Place], current_id: Optional[str] = None,
+               screen: Optional[list[str]] = None) -> Optional[Place]:
     """Resolves the model's 1-based place_index into a place found earlier, numbered as the model saw them."""
     try:
         i = int(d.get("place_index"))
     except (TypeError, ValueError):
         return None
-    order = numbered(places, current_id)
+    order = numbered(places, current_id, screen)
     return order[i - 1] if 1 <= i <= len(order) else None
 
 
@@ -998,7 +1005,7 @@ class LlmAgentProvider:
                 f"{i}={p.name} ({p.category}) {p.distance_mi or 0:.1f} mi{_diesel_note(p)}{_rating_note(p)}: "
                 f"{approach.note(p)}"
                 + (" [current route]" if req.active_place and p.id == req.active_place.id else "")
-                for i, p in enumerate(numbered(sess["places"], _id(req.active_place)), 1)) + "."
+                for i, p in enumerate(numbered(sess["places"], _id(req.active_place), req.ui.option_ids), 1)) + "."
         cur = req.active_place
         if cur:
             context += f" Current route: {cur.name} ({cur.address or 'address unknown'})"
@@ -1102,11 +1109,11 @@ class LlmAgentProvider:
         cached = sess.get("alternatives") or {}
         route = cached.get("current") if cached.get("place") == req.active_place.id else None
         if route is None:
-            # The app restarted and resumed the trip: a new dialog with no route of its own, and the request
-            # names only the destination (QA 2026-11-02, bug 7: "Set a route..." during live navigation). The
-            # route is planned from the truck with this truck, and kept as the one being driven.
+            # The app restarted and resumed the trip: a new dialog with no route of its own (QA 2026-11-02, bug
+            # 7: "Set a route..." during live navigation). The route the app drives is rebuilt from the request
+            # (its handle, else a plan through its stops) and kept as the one being driven.
             try:
-                route = await self._route_with_stops(req, [])
+                route = await self._route_from_request(req, sess)
             except RouteFailed as e:
                 logger.warning("chain question: no route to check: %s", e)
                 return AgentResponse(status="chat", transcript=text, reply=CHAINS_DOWN, source=self.source)
@@ -1304,7 +1311,7 @@ class LlmAgentProvider:
 
     async def _reviews(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
         """"What do drivers say about it?": the spoken gist of the place's Google reviews."""
-        place = pick_place(d, sess["places"], _id(req.active_place)) or req.active_place or (sess["places"][0] if sess["places"] else None)
+        place = pick_place(d, sess["places"], _id(req.active_place), req.ui.option_ids) or req.active_place or (sess["places"][0] if sess["places"] else None)
         if not place:
             return AgentResponse(status="chat", transcript=text, reply=WHICH_PLACE, source=self.source)
         if not place.reviews:  # the app's copy may be older than the search; refresh from the provider cache
@@ -1396,7 +1403,7 @@ class LlmAgentProvider:
         if said:
             logger.info("add_stop: the driver named %s", said.name)
             return said
-        picked = pick_place(d, sess["places"], _id(req.active_place))
+        picked = pick_place(d, sess["places"], _id(req.active_place), req.ui.option_ids)
         if picked:
             return picked
         query = str(d.get("query") or "").strip()
@@ -1503,6 +1510,32 @@ class LlmAgentProvider:
         reply = _with_warnings(VIA_DROPPED.format(name=name, what=CATEGORY_WORD.get(stop.category, "stop")) + rest, route)
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
                              route=route, parking=approach.for_route(place, route), options=kept, source=self.source)
+
+    def _via_now(self, req: AgentRequest, sess: dict) -> list[list[float]]:
+        """The stops on the way as [[lat, lng], ...]: the dialog's own when it set the stops for this destination,
+        else the app's (route_via; a dialog that starts after a restart knows nothing of them)."""
+        via = sess.get("via")
+        if via and req.active_place and via.get("place") == req.active_place.id:
+            return [[s.lat, s.lng] for s in self._stops(req, sess)]
+        return [list(v) for v in req.route_via]
+
+    async def _route_from_request(self, req: AgentRequest, sess: dict) -> RouteInfo:
+        """The route the app is driving when the dialog has none: by its HERE handle (the same road; HERE falls
+        back to a fresh plan when the handle has expired), else planned from the truck through the stops."""
+        via = self._via_now(req, sess)
+        with stage("tools"):
+            try:
+                if req.route_handle:
+                    route = await get_routing_provider().reroute(req.route_handle, req.lat, req.lng, None,
+                                                                 *approach.target(req.active_place), req.truck_profile,
+                                                                 via=via)
+                else:
+                    route = await get_routing_provider().route(req.lat, req.lng, *approach.target(req.active_place),
+                                                               req.truck_profile, alternatives=0, via=via)
+            except Exception as e:  # noqa: BLE001
+                raise RouteFailed(f"{type(e).__name__}: {e}") from e
+        route.alternatives = []
+        return route
 
     async def _route_with_stops(self, req: AgentRequest, stops: list[Place]) -> RouteInfo:
         with stage("tools"):
@@ -1635,12 +1668,11 @@ class LlmAgentProvider:
             return AgentResponse(status="chat", transcript=text, reply=ALT_NO_ROUTE, source=self.source)
         cached = sess.get("alternatives")
         if self._alternatives_stale(cached, req, place):
-            stops = self._stops(req, sess)
             with stage("tools"):
                 try:
                     fresh = await get_routing_provider().route(req.lat, req.lng, *approach.target(place),
                                                                req.truck_profile, alternatives=ALTERNATIVES_FRESH,
-                                                               via=[[s.lat, s.lng] for s in stops])
+                                                               via=self._via_now(req, sess))
                 except Exception as e:  # noqa: BLE001
                     raise RouteFailed(f"{type(e).__name__}: {e}") from e
             # The fastest way from here is the one to come back to; the diff is spoken against it.
@@ -1668,7 +1700,7 @@ class LlmAgentProvider:
 
     def _parking(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
         """Cached verdict -> answer now; otherwise "Let me look" and the app fetches /parking/answer."""
-        place = pick_place(d, sess["places"], _id(req.active_place)) or req.active_place or (sess["places"][0] if sess["places"] else None)
+        place = pick_place(d, sess["places"], _id(req.active_place), req.ui.option_ids) or req.active_place or (sess["places"][0] if sess["places"] else None)
         if not place:
             return AgentResponse(status="chat", transcript=text, reply="Which place? Find one or set a route first.",
                                  source=self.source)
@@ -1868,7 +1900,8 @@ class LlmAgentProvider:
                 intent = "add_stop"
         # The model's word is not the last word on two things the driver says a lot (QA 2026-10-30, H4):
         # a rejected place read as "another road", and a reference into the list read as an address.
-        intent, d = reject_or_reference_guard(intent, d, text, sess["places"], req.active_place)
+        intent, d = reject_or_reference_guard(intent, d, text, sess["places"], req.active_place,
+                                              req.ui.option_ids)
         if intent == "not_understood":
             return _not_understood(text, self.source)
         if intent not in ("go", "find", "pick", "add_stop", "alternative") and REMEMBER.search(text):
@@ -1915,7 +1948,7 @@ class LlmAgentProvider:
             if intent == "memory":
                 return await self._memory_intent(req, sess, d, text)
             if intent == "pick":
-                place = pick_place(d, sess["places"], _id(req.active_place))
+                place = pick_place(d, sess["places"], _id(req.active_place), req.ui.option_ids)
                 # A named pick ("the second one", "the Pilot") may go back to a place turned down earlier: the
                 # driver changed their mind, and "want me to go back to one of them?" is what we offer. Only
                 # a bare rejection skips the rejected set, also when the model gave it an index ("something
