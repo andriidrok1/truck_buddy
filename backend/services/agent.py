@@ -454,6 +454,7 @@ CHAIN_QUESTION = re.compile(r"\bchain[ -]?(?:control|law|requirement|restriction
 CHAINS_NO_ROUTE = "Set a route and I'll check Caltrans chain controls along it."
 CHAINS_OUTSIDE = "I only have chain controls for California, and this route doesn't go through it."
 CHAINS_NONE = "No chain controls on your route right now."
+CHAINS_DOWN = "I can't check chain controls on your route right now. Try again in a minute."
 ALT_NO_ROUTE = "Set a route first and I'll look for other ways."
 VIA_ADDED = "Added {name}{ahead}. New total {time}, {mi} miles{dwell}."
 VIA_DWELL = ", counting {minutes} minutes at {each}"  # HERE adds VIA_STOP_S per stop; the total looked wrong without it (H9)
@@ -1076,10 +1077,20 @@ class LlmAgentProvider:
 
     async def _chains_question(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
         """Chain controls along the route the driver is on, from Caltrans; without a route, say what is needed."""
-        cached = sess.get("alternatives") or {}
-        route = cached.get("current") if req.active_place and cached.get("place") == req.active_place.id else None
-        if route is None:
+        if not req.active_place:
             return AgentResponse(status="chat", transcript=text, reply=CHAINS_NO_ROUTE, source=self.source)
+        cached = sess.get("alternatives") or {}
+        route = cached.get("current") if cached.get("place") == req.active_place.id else None
+        if route is None:
+            # The app restarted and resumed the trip: a new dialog with no route of its own, and the request
+            # names only the destination (QA 2026-11-02, bug 7: "Set a route..." during live navigation). The
+            # route is planned from the truck with this truck, and kept as the one being driven.
+            try:
+                route = await self._route_with_stops(req, [])
+            except RouteFailed as e:
+                logger.warning("chain question: no route to check: %s", e)
+                return AgentResponse(status="chat", transcript=text, reply=CHAINS_DOWN, source=self.source)
+            self._remember_driven(req, sess, route)
         if not chains.touches_california(route.geometry):
             return AgentResponse(status="chat", transcript=text, reply=CHAINS_OUTSIDE, source=self.source)
         line = await self._route_chains(route)
