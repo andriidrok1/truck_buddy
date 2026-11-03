@@ -55,15 +55,28 @@ export function parseStoredProfile(raw: unknown): Partial<TruckProfile> | null {
   return value as Partial<TruckProfile>;
 }
 
+let loading: Promise<void> | null = null;
+let savedSinceLoad = false; // a save while the disk read is in flight wins over what the read returns
+
 async function load() {
   if (loaded) return;
   loaded = true;
   const raw = await storage.getItem<Record<string, unknown> | string | null>(KEY, null);
   const parsed = parseStoredProfile(raw);
-  if (parsed) {
+  if (parsed && !savedSinceLoad) {
     current = { ...DEFAULT_TRUCK, ...parsed };
     listeners.forEach((l) => l(current));
   }
+}
+
+/**
+ * The saved profile, loaded if it isn't yet. Every request that carries the truck awaits this: until the
+ * store has read it, `current` is the 13'6" default, and a route planned for the default is a route a
+ * 14-footer can't take. Storage failures resolve to whatever is in memory (never a rejected request).
+ */
+export function ensureTruckProfile(): Promise<TruckProfile> {
+  if (!loading) loading = load().catch(() => undefined);
+  return loading.then(() => current);
 }
 
 // The truck editor saved new dimensions: the map screen reroutes the active route once it is back in focus.
@@ -79,6 +92,9 @@ export const takeTruckReroute = () => {
 
 
 export async function saveTruckProfile(t: TruckProfile) {
+  loaded = true; // a save is newer than anything on disk; a late or in-flight load must not overwrite it
+  savedSinceLoad = true;
+  if (!loading) loading = Promise.resolve();
   current = t;
   listeners.forEach((l) => l(t));
   await storage.setItem(KEY, t); // the wrapper serialises once; load() still reads the older double-encoded form
@@ -183,7 +199,7 @@ export function useTruckProfile() {
   const [truck, setTruck] = useState<TruckProfile>(current);
   useEffect(() => {
     listeners.add(setTruck);
-    load();
+    ensureTruckProfile(); // the same single read the requests await, whichever effect runs first
     return () => {
       listeners.delete(setTruck);
     };

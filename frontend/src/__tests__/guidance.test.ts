@@ -8,6 +8,7 @@ import {
   markSpoken,
   nextManeuver,
   projectOnRoute,
+  remainingSeconds,
   stageFor,
 } from "../geo/guidance";
 import type { RouteInfo } from "../types";
@@ -181,12 +182,33 @@ describe("announcement", () => {
   test("lead-in by distance, instruction lower-cased", () => {
     expect(announcement(turn, "far", 1500)).toBe("In about a mile, turn right onto US-50 E.");
     expect(announcement(turn, "near", 800)).toBe("In half a mile, turn right onto US-50 E.");
+    expect(announcement(turn, "near", 550)).toBe("In a quarter mile, turn right onto US-50 E.");
     expect(announcement(turn, "near", 300)).toBe("In 500 feet, turn right onto US-50 E.");
     expect(announcement(turn, "now", 40)).toBe("Turn right onto US-50 E.");
   });
 
-  test("arrive uses raw instruction", () => {
-    expect(announcement(arrive, "far", 1500)).toBe("Arrive at Pilot Travel Center on the right.");
-    expect(announcement(arrive, "near", 500)).toBe("Arrive at Pilot Travel Center on the right.");
+  test("arrive gets a lead-in before the end, the raw line at the end", () => {
+    expect(announcement(arrive, "far", 1500)).toBe("In about a mile, you'll arrive at Pilot Travel Center on the right.");
+    expect(announcement(arrive, "near", 500)).toBe("In a quarter mile, you'll arrive at Pilot Travel Center on the right.");
+    expect(announcement(arrive, "now", 40)).toBe("Arrive at Pilot Travel Center on the right.");
+    expect(announcement({ action: "arrive", instruction: "Your destination is on the left" }, "near", 500)).toBe(
+      "In a quarter mile, your destination is on the left.",
+    );
+  });
+});
+
+
+describe("remainingSeconds", () => {
+  const route = { duration_s: 3600 + 1800, stops_s: 1800, section_starts: [0, 50] }; // 1 h driving, one 30-min stop at vertex 50
+
+  test("the stop ahead is added whole, the driving time by distance", () => {
+    expect(remainingSeconds(route, 10000, 10000, 0)).toBe(3600 + 1800); // at the start
+    expect(remainingSeconds(route, 5000, 10000, 10)).toBe(1800 + 1800); // halfway, stop still ahead
+    expect(remainingSeconds(route, 5000, 10000, 60)).toBe(1800); // past the stop: its 30 min are gone
+  });
+
+  test("without stops it is the plain share of the distance", () => {
+    expect(remainingSeconds({ duration_s: 600, section_starts: [0] }, 300, 1200, 3)).toBe(150);
+    expect(remainingSeconds({ duration_s: 600 }, 0, 0, 0)).toBe(0);
   });
 });

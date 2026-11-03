@@ -378,8 +378,16 @@ export function CopilotSheet(props: Props) {
                 Estimated route · truck restrictions not checked
               </Text>
             )}
+            {!!active.route.restricted && (
+              <View testID="route-restricted" style={styles.restricted}>
+                <Icon name="alert" size={18} color={colors.error} />
+                <Text style={[styles.restrictedText, { color: colors.error }]}>
+                  {active.route.restricted === "legal" ? "Permit load on this route" : "Not a legal truck route"}
+                </Text>
+              </View>
+            )}
             {!!active.route.notices?.length && (
-              <Text testID="route-notices" numberOfLines={2} style={[styles.notice, { color: colors.error }]}>
+              <Text testID="route-notices" numberOfLines={active.route.restricted ? 3 : 2} style={[styles.notice, { color: colors.error }]}>
                 {active.route.notices.slice(0, 2).join(" · ")}
               </Text>
             )}
@@ -563,6 +571,8 @@ const styles = StyleSheet.create({
   tagRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.xs },
   tags: { fontFamily: fonts.medium, fontSize: 14, flexShrink: 1 },
   notice: { fontFamily: fonts.medium, fontSize: 12 },
+  restricted: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 },
+  restrictedText: { fontFamily: fonts.semibold, fontSize: 15 },
   entryRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   stopsRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: spacing.xs },
   stopsLabel: { fontFamily: fonts.medium, fontSize: 13 },

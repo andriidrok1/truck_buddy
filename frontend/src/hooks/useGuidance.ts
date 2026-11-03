@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 
 import { limitAt } from "../geo/advisories";
-import { announcement, createRouteMatcher, markSpoken, nextManeuver, stageFor } from "../geo/guidance";
+import { announcement, createRouteMatcher, markSpoken, nextManeuver, remainingSeconds, stageFor } from "../geo/guidance";
 import { createOffRouteTracker, thresholdM } from "../geo/offroute";
 import type { ActiveRoute, LatLng, Maneuver } from "../types";
 import { PRIORITY } from "../voice/queue";
@@ -85,7 +85,7 @@ export function useGuidance(
     const ts = driver.ts ?? 0;
     const offRoute = ts > 0 && tracker.push({ distM: m.distM, speed, accuracy: driver.accuracy ?? null, ts, thresholdM: threshold }) === "off";
     return {
-      next, toNextM, remainingM, remainingS: (route.duration_s * remainingM) / total,
+      next, toNextM, remainingM, remainingS: remainingSeconds(route, remainingM, total, m.index),
       matchedIndex: m.index, alongM: m.alongM, distM: m.distM, cum,
       limitMph, thresholdM: threshold, offRoute, resetOffRoute: tracker.reset,
     };
