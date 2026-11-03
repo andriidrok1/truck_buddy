@@ -1,5 +1,6 @@
 """Stops on the way (HERE via=): request shape, section starts, and the add_stop / clear_stops dialog."""
 import copy
+import re
 
 import httpx
 
@@ -318,3 +319,66 @@ def test_a_chain_name_is_the_truck_stop_nearby_before_any_geocode(agent_sandbox,
     run(prov.handle(_req("take me to Reno", active=None), None))
     res = run(prov.handle(_req("stop at the Pilot"), None))
     assert res.status == "route_set" and [o.id for o in res.options] == [near.id]  # not the Fernley geocode
+
+
+def test_not_that_one_after_a_stop_turns_the_stop_down(agent_sandbox, fake_http):
+    """Review 2026-11-02, bug 15: going to Reno, "add a fuel stop" added the closest truck stop and "not that
+    one" turned Reno down instead: a new search found the same stop and routed there as the destination, Reno
+    and the stops gone. The rejection is about the last thing offered, the stop; the destination stays."""
+    prov = _sandbox(agent_sandbox, fake_http)
+    agent_sandbox.llm.on(r"not that one", {"intent": "pick", "category": "truck_stop", "place_index": None})
+    agent_sandbox.places_provider.places = [LOVES, FOURTH]
+    run(prov.handle(_req("take me to Reno", sid="nt", active=None), None))
+    res = run(prov.handle(_req("add a fuel stop", sid="nt"), None))
+    assert [o.id for o in res.options] == [LOVES.id]
+
+    res = run(prov.handle(_req("not that one", sid="nt"), None))
+    assert res.status == "route_set" and res.place.id == RENO.id
+    assert res.reply.startswith("Okay, not Love's Travel Stop. Added Flying J,")
+    assert [o.id for o in res.options] == [FOURTH.id]
+    assert _vias(fake_http.calls_to("router.hereapi.com")[-1]) == [f"{FOURTH.lat},{FOURTH.lng}!stopDuration=1800"]
+    sess = agent._SESSIONS["nt"]
+    assert LOVES.id in sess["rejected"] and RENO.id not in sess["rejected"]
+
+    res = run(prov.handle(_req("not that one", sid="nt"), None))  # nothing else of the kind: the stop goes, Reno stays
+    assert res.status == "route_set" and res.place.id == RENO.id and res.options == []
+    assert res.reply.startswith("Okay, no stop at Flying J. I couldn't find another truck stop on the way. Straight there,")
+    assert _vias(fake_http.calls_to("router.hereapi.com")[-1]) == [] and "via" not in sess
+
+
+DAVIS = Place(id="g-davis", name="Pilot Travel Center Davis", category="truck_stop", lat=38.55, lng=-121.74,
+              address="Davis, CA", distance_mi=13.0)  # west of Sacramento: behind a truck headed for Reno
+
+
+def test_a_stop_by_category_is_only_ahead_on_the_route(agent_sandbox, fake_http):
+    """Review 2026-11-02, bug 19: "add a fuel stop on the way" took the nearest truck stop around the truck, also
+    one behind it; the detour question only asks past 45 minutes, so a U-turn to a stop 13 miles back was
+    added without a word. Only places ahead along the route are candidates."""
+    prov = _sandbox(agent_sandbox, fake_http)
+    agent_sandbox.places_provider.places = [DAVIS, LOVES]
+    run(prov.handle(_req("take me to Reno", sid="ahead", active=None), None))
+    res = run(prov.handle(_req("add a fuel stop", sid="ahead"), None))
+    assert res.status == "route_set" and [o.id for o in res.options] == [LOVES.id]
+
+    # no route line in this dialog (the app restarted): ahead = nearer to the destination than the truck is
+    res = run(prov.handle(_req("add a fuel stop", sid="ahead-fresh"), None))
+    assert res.status == "route_set" and [o.id for o in res.options] == [LOVES.id]
+
+    agent_sandbox.places_provider.places = [DAVIS]
+    res = run(prov.handle(_req("add a fuel stop", sid="ahead"), None))
+    assert res.status == "chat" and res.reply == "I couldn't find a truck stop ahead on your route."
+    res = run(prov.handle(_req("add a fuel stop", sid="behind-only"), None))
+    assert res.status == "chat" and res.reply == "I couldn't find a truck stop ahead on your route."
+
+
+def test_a_named_stop_in_another_town_is_that_towns(agent_sandbox, fake_http):
+    # Eval 2026-11-02: for "stop at the Pilot in Fernley on the way" the model sometimes puts the town in `near`
+    # and only "Pilot" in `query`; the search by name then took the Pilot next to the truck in Sacramento.
+    prov = _sandbox(agent_sandbox, fake_http)
+    pilot_sac = Place(id="g-pilot-sac", name="Pilot Travel Center", category="truck_stop", lat=38.6, lng=-121.5,
+                      address="West Sacramento, CA", distance_mi=3.0)
+    agent_sandbox.places_provider.places = [pilot_sac]
+    agent_sandbox.llm.rules.insert(0, (re.compile(r"pilot in fernley", re.I), {"intent": "add_stop", "query": "Pilot", "near": "Fernley, NV"}))
+    run(prov.handle(_req("take me to Reno", sid="near", active=None), None))
+    res = run(prov.handle(_req("stop at the Pilot in Fernley on the way", sid="near"), None))
+    assert [o.id for o in res.options] == [PILOT.id]

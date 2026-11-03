@@ -87,6 +87,23 @@ def test_sqlite_at_0004_with_rows_upgrades(tmp_path, monkeypatch):
     con.close()
 
 
+def test_sqlite_at_0009_keeps_the_trips_already_counted(tmp_path, monkeypatch):
+    """0010 moves the one trip 0009 kept per place (last_trip) into driver_visit_trips: that trip sent again after
+    the upgrade is not another visit."""
+    path = tmp_path / "visits.sqlite"
+    files = db.migration_files("sqlite")
+    monkeypatch.setattr(db, "migration_files", lambda dialect: [f for f in files if f[0] <= 9])
+    con = sqlite3.connect(str(path), isolation_level=None)
+    db._migrate_sqlite(con)
+    con.execute("INSERT INTO driver_visits (driver, place_id, name, category, count, last_at, last_trip) "
+                "VALUES ('d1', 'g-pilot', 'Pilot', 'truck_stop', 1, '2026-11-01T17:00:00+00:00', 't1')")
+    monkeypatch.setattr(db, "migration_files", lambda dialect: files)
+    assert 10 in db._migrate_sqlite(con)
+    assert con.execute("SELECT driver, place_id, trip_id FROM driver_visit_trips").fetchall() == [("d1", "g-pilot", "t1")]
+    assert "last_trip" not in {r[1] for r in con.execute("PRAGMA table_info(driver_visits)")}
+    con.close()
+
+
 @pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="needs TEST_DATABASE_URL (a throwaway Postgres)")
 def test_postgres_migrates_and_round_trips(monkeypatch):
     """Run with a throwaway Postgres, e.g.

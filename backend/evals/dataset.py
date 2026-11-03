@@ -3,7 +3,8 @@
 Line schema:
   {"id", "text", "context_preset", "expected": {...}, "tags": [...], "source": "hand"|"legacy"|"gen:<rule>", "parent"?}
 expected fields: intent (exact), category (exact or null), query/near/when/kind (exact string, null, or
-{"contains": "lowercase substring"}), place_index (list of accepted ints), reply ({"contains": ...} only),
+{"contains": "lowercase substring"}), where ({"contains": ...} over query and near together), place_index (list
+of accepted ints), reply ({"contains": ...} only),
 actions (list of action types that must all be present).
 """
 import json
@@ -14,7 +15,7 @@ from typing import Iterable, Optional
 from evals import GENERATED_FILE, HAND_FILE, TAGS
 
 STRING_FIELDS = ("query", "near", "when", "kind")
-EXPECTED_FIELDS = ("intent", "category") + STRING_FIELDS + ("place_index", "reply", "actions")
+EXPECTED_FIELDS = ("intent", "category") + STRING_FIELDS + ("where", "place_index", "reply", "actions")
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -101,6 +102,8 @@ def validate(cases: list[dict], presets: Iterable[str], intents: set[str], categ
         pi = exp.get("place_index")
         if "place_index" in exp and not (isinstance(pi, list) and pi and all(isinstance(i, int) for i in pi)):
             problems.append(f"{where}: place_index must be a non-empty list of ints")
+        if "where" in exp and not _is_contains(exp["where"]):
+            problems.append(f"{where}: where must be {{\"contains\": ...}}")
         if "reply" in exp and not _is_contains(exp["reply"]):
             problems.append(f"{where}: reply must be {{\"contains\": ...}}")
         acts = exp.get("actions")

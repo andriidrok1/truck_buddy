@@ -93,15 +93,13 @@ MOCK_PLACES = [
      "tags": ["53 ft parking", "Truck access", "Diesel", "Showers"], "address": "2151 South Ave, Corning"},
     {"id": "ts-loves-williams", "name": "Love's Travel Stop", "category": "truck_stop", "lat": 39.16765, "lng": -122.14382,
      "tags": ["Truck access", "Diesel"], "address": "100 Marguerite St, Williams"},
-    # Truck stops: Bay Area (Port of Oakland / I-880) and I-80 Fairfield
+    # Truck stops: Bay Area (Port of Oakland / I-880)
     {"id": "ts-sfoakland", "name": "SF Oakland Truck Stop", "category": "truck_stop", "lat": 37.74891, "lng": -122.19173,
      "tags": ["Truck access", "Diesel"], "address": "8255 San Leandro St, Oakland"},
     {"id": "ts-valleyoil-mv", "name": "Valley Oil", "category": "truck_stop", "lat": 37.3815, "lng": -122.06982,
      "tags": ["Diesel", "Truck access"], "address": "785 Yuba Dr, Mountain View"},
     {"id": "ts-western-sanleandro", "name": "Western States Oil", "category": "truck_stop", "lat": 37.70687, "lng": -122.1594,
      "tags": ["Diesel", "Truck access"], "address": "2709 Teagarden St, San Leandro"},
-    {"id": "ts-fairfield", "name": "Fairfield Travel Center", "category": "truck_stop", "lat": 38.25706, "lng": -122.06737,
-     "tags": ["Truck access", "Diesel"], "address": "1351 Oliver Rd, Fairfield (I-80)"},
     # Hotels (purple): motels at freeway exits
     {"id": "ht-baybreeze", "name": "Bay Breeze Inn", "category": "hotel", "lat": 37.76387, "lng": -122.21577,
      "tags": ["Truck parking nearby"], "address": "4919 Coliseum Way, Oakland"},
@@ -116,7 +114,7 @@ MOCK_PLACES = [
     {"id": "ht-crossroads", "name": "Crossroads Inn", "category": "hotel", "lat": 38.59582, "lng": -121.50509,
      "tags": ["Parking"], "address": "221 Jibboom St, Sacramento"},
     # Rest areas (green)
-    {"id": "ra-hunterhill", "name": "Hunter Hill Rest Area", "category": "rest_area", "lat": 38.15428, "lng": -122.21707,
+    {"id": "ra-hunterhill", "name": "Hunter Hill Rest Area", "category": "rest_area", "lat": 38.1516, "lng": -122.2172,
      "tags": ["Truck parking", "Restrooms"], "address": "I-80 Westbound, Vallejo"},
     {"id": "ra-crystalsprings", "name": "Crystal Springs Rest Area", "category": "rest_area", "lat": 37.53937, "lng": -122.36464,
      "tags": ["Restrooms"], "address": "I-280, Burlingame"},
