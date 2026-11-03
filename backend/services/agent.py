@@ -487,6 +487,7 @@ VIA_STRAIGHT = "Straight there, {time}, {mi} miles."
 VIA_CLEARED = "Stops cleared. " + VIA_STRAIGHT
 VIA_NONE = "There are no stops on this route."
 VIA_NONE_AHEAD = "I couldn't find a {what} ahead on your route."
+VIA_NO_OTHER = "I couldn't find another {what} ahead on your route."
 VIA_REJECTED = "Okay, not {name}. "
 VIA_DROPPED = "Okay, no stop at {name}. I couldn't find another {what} on the way. "
 VIA_LEFT = "New total {time}, {mi} miles."
@@ -1647,9 +1648,18 @@ class LlmAgentProvider:
             # geocode of it came back as a new place (QA 2026-10-31, H9)
             return AgentResponse(status="chat", transcript=text, source=self.source,
                                  reply=VIA_IS_DESTINATION.format(name=place.name.split(",")[0]))
-        if any(s.id == stop.id for s in stops):  # "stop at the 49er" when it already is one (QA 2026-10-31, H9)
-            return AgentResponse(status="chat", transcript=text, source=self.source,
-                                 reply=VIA_DUPLICATE.format(name=stop.name.split(",")[0]))
+        if any(s.id == stop.id for s in stops):
+            if named_in_text(text, [stop]):  # "stop at the 49er" when it already is one (QA 2026-10-31, H9)
+                return AgentResponse(status="chat", transcript=text, source=self.source,
+                                     reply=VIA_DUPLICATE.format(name=stop.name.split(",")[0]))
+            # "add another truck stop": the model's "truck stop" or its index landed on a stop already on the route
+            # and the copilot said so instead of looking (QA 2026-11-02). Another one of the kind, never these.
+            category = d.get("category") if d.get("category") in CATEGORIES else stop.category
+            taken = {place.id, *(s.id for s in stops)}
+            stop = await self._stop_search(req, sess, category, taken)
+            if stop is None or stop.id in taken:
+                return AgentResponse(status="chat", transcript=text, source=self.source,
+                                     reply=VIA_NO_OTHER.format(what=CATEGORY_WORD.get(category, "stop")))
         before = len(stops)
         stops = self._order_stops(req, sess, stops + [stop])
         route = await self._route_with_stops(req, stops)
