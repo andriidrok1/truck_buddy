@@ -69,7 +69,7 @@ class MemorySessionStore:
 
 class DbSessionStore:
     def __init__(self) -> None:
-        self._last_sweep = 0.0
+        self._last_sweep = float("-inf")  # sweep on the first save, even on a host up for under SWEEP_EVERY_S
 
     async def load(self, sid: str) -> DialogState:
         kind = db.store()

@@ -227,6 +227,23 @@ def speech(facts: Optional[dict], truck=None) -> str:
     return " ".join(out)
 
 
+VISITS_SAID = 3  # visits to a place before "what do you know about me" says them
+VISITS_NAMED = 3  # places said at most
+
+
+def visits_speech(visits: list[dict]) -> str:
+    """"You've stopped at TA Sparks 5 times and Pilot Travel Center 3 times.": the places the driver arrived at
+    often, as visits and nothing more (whether they are likes is not decided, 2026-11-02). Destinations (a town, a
+    customer's address) are left out: those are where the loads go, not stops."""
+    often = [v for v in visits if int(v.get("count") or 0) >= VISITS_SAID and v.get("category") != "destination"
+             and str(v.get("name") or "").strip()]
+    often.sort(key=lambda v: -int(v["count"]))
+    if not often:
+        return ""
+    said = [f"{str(v['name']).split(',')[0].strip()} {v['count']} times" for v in often[:VISITS_NAMED]]
+    return f"You've stopped at {_join(said)}."
+
+
 _REMEMBER = re.compile(r"\b(?:remember|keep in mind|make a note|note|don'?t forget)\b(?:\s+(?:that|this))?[,:]?\s*", re.I)
 _DISLIKE = r"hate|avoid|don'?t like|do not like|can'?t stand|never (?:go to|use|stop at)|stay away from"
 _LIKE = r"like|love|prefer"

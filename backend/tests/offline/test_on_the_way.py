@@ -126,9 +126,12 @@ def test_the_same_stop_twice_is_said_not_added(agent_sandbox, fake_http):
     req = AgentRequest(text="add diesel on the way", session_id="dup", active_place=PARK, **SAC)
     first = run(prov.handle(req, None))
     assert [o.id for o in first.options] == [ROADYS.id]
-    # the kind again looks for another one (QA 2026-11-02); Roady's is the only truck stop ahead
+    # the same words again add nothing (review 2026-11-02); "another" looks for another one (QA 2026-11-02),
+    # and Roady's is the only truck stop ahead
     again = run(prov.handle(req, None))
-    assert again.status == "chat" and again.reply == "I couldn't find another truck stop ahead on your route."
+    assert again.status == "chat" and again.reply == "Roady's Truck Stop is already one of your stops."
+    another = run(prov.handle(req.model_copy(update={"text": "add another diesel on the way"}), None))
+    assert another.status == "chat" and another.reply == "I couldn't find another truck stop ahead on your route."
     named = run(prov.handle(req.model_copy(update={"text": "stop at Roady's on the way"}), None))
     assert named.status == "chat" and named.reply == "Roady's Truck Stop is already one of your stops."
     assert [s.id for s in agent._SESSIONS["dup"]["via"]["stops"]] == [ROADYS.id]
