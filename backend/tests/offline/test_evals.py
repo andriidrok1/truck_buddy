@@ -114,11 +114,17 @@ def test_generated_variants_follow_the_rules():
     for parent_id, kids in per_parent.items():
         assert sum("noisy_stt" in k["tags"] for k in kids) <= gen_variants.MAX_NOISY_PER_CASE
         assert sum("disfluency" in k["tags"] for k in kids) == 1
-    core = [c for c in hand.values() if "core" in c["tags"]]
-    assert set(per_parent) == {c["id"] for c in core}
+    # every core case has variants, except noise with nothing to mishear and no wrapper (intent unclear)
+    core = [c for c in hand.values() if "core" in c["tags"] and c["expected"].get("intent") not in gen_variants.NO_WRAPPER]
+    assert set(per_parent) >= {c["id"] for c in core}
     noisy = [g for g in gen if "noisy_stt" in g["tags"]]
     assert any(g["text"] == "I need few" for g in noisy)  # l_02 "I need fuel", fuel -> few
     assert any(g["text"].endswith(" please") for g in gen) and any(g["text"].startswith("uh, ") for g in gen)
+    # no "please" on a goodbye, a breakdown or noise; no wrapper on noise at all
+    for g in gen:
+        intent = g["expected"].get("intent")
+        assert not (g["text"].endswith(" please") and intent in gen_variants.NOT_A_REQUEST), g["text"]
+        assert not ("disfluency" in g["tags"] and intent in gen_variants.NO_WRAPPER), g["text"]
 
 
 def test_variants_of_one_case():

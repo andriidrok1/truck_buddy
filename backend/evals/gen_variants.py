@@ -2,7 +2,8 @@
 
 For every case tagged `core` in intents.jsonl:
 - noisy_stt: one homophone substitution per variant (HOMOPHONES, in table order), at most 2 variants;
-- disfluency: one wrapper ("uh, ...", "... please", "hey buddy ..."), chosen by a hash of the case id.
+- disfluency: one wrapper ("uh, ...", "... please", "hey buddy ..."), chosen by a hash of the case id; "please"
+  only on a request (else "uh, ..."), and no wrapper on noise (intent unclear).
 The expected answer is inherited from the parent: the prompt tells the model to read misheard words by
 what makes sense for a trucker, so the variant must still land on the parent's intent and fields.
 
@@ -43,6 +44,12 @@ WRAPPERS: list[tuple[str, str]] = [  # (name, template)
 ]
 
 
+# A driver doesn't say "bye please", "truck won't start please" or "hey buddy siren" (review 2026-11-02): no
+# "please" on what isn't a request, no wrapper at all on noise the recogniser heard as words.
+NOT_A_REQUEST = {"bye", "chat", "breakdown", "unclear"}
+NO_WRAPPER = {"unclear"}
+
+
 def _slug(key: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")
 
@@ -77,7 +84,12 @@ def variants_of(case: dict) -> list[dict]:
         noisy = _substitute(text, key, HOMOPHONES[key])
         if noisy != text:
             out.append(_child(case, f"stt_{_slug(key)}", noisy, "noisy_stt", f"homophone:{_slug(key)}"))
+    intent = (case.get("expected") or {}).get("intent")
+    if intent in NO_WRAPPER:
+        return out
     name, template = WRAPPERS[_wrapper_index(case["id"])]
+    if name == "please" and intent in NOT_A_REQUEST:
+        name, template = WRAPPERS[0]  # "uh, ..." fits any spoken line
     base = text.rstrip("?.! ") if name == "please" else text
     out.append(_child(case, f"dis_{name}", template.format(text=base), "disfluency", f"wrapper:{name}"))
     return out
