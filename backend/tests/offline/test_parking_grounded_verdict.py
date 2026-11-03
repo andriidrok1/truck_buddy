@@ -1,17 +1,20 @@
-"""Eval 2026-11-02: the grounded check gives the verdict, the bare-image call still gives the directions; when
-one of them fails the other answers alone."""
+"""Eval 2026-11-02: the grounded check gives the verdict and, with OSM driveways on the frame, the entry; the
+bare-image call gives the parking spot; when one of them fails the other answers alone."""
 import asyncio
 
 import pytest
 
-from models import Place
+from models import ParkingSpot, Place
 from services import osm_access, parking
 
 P = Place(id="t", name="Test Stop", category="truck_stop", lat=38.5, lng=-121.5, tags=[])
+E_BARE = ParkingSpot(kind="entry", x=0.1, y=0.1, lat=38.6, lng=-121.6)
+E_MAP = ParkingSpot(kind="entry", x=0.2, y=0.2, lat=38.5, lng=-121.5)
+PARK = ParkingSpot(kind="park", x=0.5, y=0.5, lat=38.5, lng=-121.5)
 BARE = {"fits": "likely", "reason": "big lot", "entry_tip": "Use the east driveway", "park_tip": "Park out back",
-        "spots": ["entry"], "nearby": None}
-GROUNDED = {"fits": "unlikely", "reason": "car-only lot", "entry_tip": None, "park_tip": None, "spots": [],
-            "usage": {}, "samples": []}
+        "spots": [E_BARE, PARK], "nearby": None}
+GROUNDED = {"fits": "unlikely", "reason": "car-only lot", "entry_tip": "Use the west driveway off Main St",
+            "park_tip": None, "spots": [E_MAP], "usage": {}, "samples": [], "markers": 3}
 
 
 def _stub(monkeypatch, bare, grounded):
@@ -23,16 +26,24 @@ def _stub(monkeypatch, bare, grounded):
     monkeypatch.setattr(parking, "_ask_grounded", lambda place: ask(grounded))
 
 
-def test_verdict_from_grounded_directions_from_bare(monkeypatch):
+def test_verdict_and_entry_from_grounded_park_from_bare(monkeypatch):
     _stub(monkeypatch, BARE, GROUNDED)
     v = asyncio.run(parking._ask_vision(b"", P))
     assert (v["fits"], v["reason"]) == ("unlikely", "car-only lot")
-    assert (v["entry_tip"], v["spots"]) == ("Use the east driveway", ["entry"])
+    assert (v["entry_tip"], v["park_tip"], v["spots"]) == ("Use the west driveway off Main St", "Park out back",
+                                                           [E_MAP, PARK])
 
 
-def test_grounded_failure_keeps_the_bare_check(monkeypatch):
+def test_no_map_driveways_no_entry(monkeypatch):
+    _stub(monkeypatch, BARE, {**GROUNDED, "markers": 0, "entry_tip": "Use the north driveway"})
+    v = asyncio.run(parking._ask_vision(b"", P))
+    assert (v["entry_tip"], v["spots"]) == (None, [PARK])
+
+
+def test_grounded_failure_keeps_the_bare_verdict_without_entry(monkeypatch):
     _stub(monkeypatch, BARE, TimeoutError())
-    assert asyncio.run(parking._ask_vision(b"", P)) == BARE
+    v = asyncio.run(parking._ask_vision(b"", P))
+    assert (v["fits"], v["park_tip"], v["entry_tip"], v["spots"]) == ("likely", "Park out back", None, [PARK])
 
 
 def test_bare_failure_keeps_the_grounded_check(monkeypatch):

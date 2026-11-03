@@ -4,8 +4,10 @@
 2. Always fetch an Esri World Imagery satellite tile around the place and ask
    GPT 5.5 (vision) whether a 53 ft tractor-trailer can park there.
 3. The verdict comes from the grounded check (services.parking_ground: ringed place, grid, OSM driveways, two
-   samples); the entry and parking directions still come from the bare-image call. Eval 2026-11-02 (41 hand-
-   labelled places): grounded verdict 29/34 right with 3 confident mistakes vs 26/34 and 6; entry points no better.
+   samples), and so does the entry when OSM driveways were on the frame; without them there is no entry point
+   (the route goes to the place). The parking spot comes from the bare-image call. Eval 2026-11-02, 41 + 34
+   hand-labelled places: grounded verdict 60/67 right, 3 confident mistakes (bare 58/67, 7); entry points more
+   than 60 m off: grounded 7/43, bare 16/43; parking spot within 60 m: bare 37/44, grounded 33/44.
 Results and images are cached in memory (keyed by rounded coordinates).
 """
 import asyncio
@@ -152,8 +154,8 @@ def _nearby(v) -> Optional[NearbyLot]:
 
 
 async def _ask_vision(img: bytes, place: Place) -> dict:
-    """Both checks at once: the verdict from the grounded one, directions from the bare one; either alone if the
-    other fails."""
+    """Both checks at once: verdict and entry from the grounded one, the parking spot from the bare one; either
+    alone if the other fails."""
     bare, grounded = await asyncio.gather(_ask_bare(img, place),
                                           asyncio.wait_for(_ask_grounded(place), GROUNDED_TIMEOUT_S),
                                           return_exceptions=True)
@@ -161,18 +163,28 @@ async def _ask_vision(img: bytes, place: Place) -> dict:
         if isinstance(bare, BaseException):
             raise bare
         logger.warning("grounded check failed for %s: %r", place.name, grounded)
-        return bare
+        return _without_entry(bare)
+    if not grounded["markers"]:
+        grounded = _without_entry(grounded)
     if isinstance(bare, BaseException):
         logger.warning("bare vision check failed for %s: %r", place.name, bare)
         return {**grounded, "nearby": None}
     return {**bare, "fits": grounded["fits"], "reason": grounded["reason"] or bare["reason"],
+            "entry_tip": grounded["entry_tip"],
+            "spots": [s for s in grounded["spots"] if s.kind == "entry"] + [s for s in bare["spots"] if s.kind == "park"],
             "nearby": bare["nearby"] if grounded["fits"] == "unlikely" else None}
+
+
+def _without_entry(v: dict) -> dict:
+    """An entry not taken from a map driveway was more than 60 m off in 16 of 43 places (eval 2026-11-02): no
+    point, the route goes to the place itself; the one re-check (no entry) usually has the OSM markers by then."""
+    return {**v, "entry_tip": None, "spots": [s for s in v["spots"] if s.kind != "entry"]}
 
 
 async def _ask_grounded(place: Place) -> dict:
     access, img = await asyncio.gather(osm_access.around(place.lat, place.lng, OSM_WAIT_S),
                                        parking_ground.fetch_image(place.lat, place.lng))
-    v = await parking_ground.check(place, access, img)
+    v = {**await parking_ground.check(place, access, img), "markers": len(access)}
     logger.info("grounded %s: %s, %d markers, samples %s", place.name, v["fits"], len(access),
                 [(s["fits"], s["entries"]) for s in v["samples"]])
     return v
