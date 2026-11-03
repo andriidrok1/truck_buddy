@@ -97,3 +97,14 @@ test("the watch and the drive task feed one store; an older or repeated fix is d
   expect(getLocation().coords.lat).toBe(38.6);
   expect(getLocation().ts).toBe(2000);
 });
+
+test("a fix dated in the future does not freeze the store", () => {
+  resetLocationForTests();
+  const now = 1_700_000_000_000;
+  const at = (ts: number, lat: number) => ({ coords: { latitude: lat, longitude: -121.5, heading: 0, speed: 20, accuracy: 5, altitude: 0, altitudeAccuracy: 0 }, timestamp: ts }) as never;
+  publishFix(at(now + 3_600_000, 38.5), now); // one bogus fix an hour ahead
+  publishFix(at(now + 1000, 38.6), now + 1000); // the next real one
+  expect(getLocation().coords.lat).toBe(38.6);
+  publishFix(at(now + 1000, 38.7), now + 1000); // and the guard is back: the same fix again is dropped
+  expect(getLocation().coords.lat).toBe(38.6);
+});
