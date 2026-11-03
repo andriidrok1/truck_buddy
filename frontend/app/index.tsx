@@ -26,6 +26,7 @@ import { isTester } from "@/src/auth";
 import { chainControlAhead, routePointsAhead } from "@/src/geo/ahead";
 import { switchedLine } from "@/src/geo/routeChoice";
 import { farFromRoute } from "@/src/geo/guidance";
+import { arrivals } from "@/src/geo/arrival";
 import { createRerouteGate } from "@/src/geo/offroute";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
@@ -1029,6 +1030,19 @@ export default function MapScreen() {
     return startPositionHeartbeat(tripLog, () => ({ tripId: trip().active?.trip_id ?? null, speedMps: speedRef.current }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driving]);
+
+  // Arrival at a stop or the destination: one trip event each (the server counts visits, the fleet reads the time).
+  const arrived = useRef<{ trip: string | null; seen: Set<string> }>({ trip: null, seen: new Set() });
+  useEffect(() => {
+    const cur = trip().active;
+    if (!cur || !driving || loc.isDemo) return;
+    const tripId = cur.trip_id ?? null;
+    if (arrived.current.trip !== tripId) arrived.current = { trip: tripId, seen: new Set() };
+    for (const a of arrivals({ ...loc.coords, speed: loc.speed }, cur.stops, cur.place, arrived.current.seen)) {
+      tripLog.log("arrived", { place_id: a.place.id, kind: a.kind, category: a.place.category, name: a.place.name }, tripId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loc.ts, driving]);
 
   // Resume of a restored route: the first real fix after it decides whether the truck is still near the line.
   // A parked truck never trips the off-route tracker, so far from it the plan is redone right away.
