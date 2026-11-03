@@ -10,7 +10,7 @@ import logging
 import math
 import os
 import re
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 
 import httpx
 
@@ -678,40 +678,61 @@ def _route_head(place: Place, route: RouteInfo, n: int = 0, driver: Optional[str
 # The driver's name: the profile line asks the model for "now and then" and it said "Mike" in three replies of four
 # (QA 2026-11-02). The turn decides: at most once in NAME_EVERY replies of a dialog, never in a short reply, and
 # every other direct address ("Mike, ...", "..., Mike.", "Thanks Mike!") is cut out of whatever was written.
+# Only a vocative is an address: the name used to go wherever it was the last word before a comma or a full stop,
+# and drivers are called Austin, Jackson and Will ("heading to, 240 miles", "Sounds good, I.", review 2026-11-02).
 NAME_EVERY = 4
 NAME_MIN_WORDS = 6
+_SENTENCE_START = r"(?:^|(?<=[.!?])\s+)"
+# what opens a sentence before the name in "Thanks Mike!", "No problem, Mike, I've got it", "Okay, Rob."
+_INTERJECTION = (r"(?i:hey|hi|hello|thanks|thank you|okay|ok|alright|all right|sure(?: thing)?|no problem|you bet|"
+                 r"got it|roger(?: that)?|copy(?: that)?|will do|sounds good|(?:good )?(?:morning|afternoon|evening|night)|"
+                 r"yes|yeah|yep|no|nope|well)")
 
 
 def _address(name: str) -> re.Pattern:
+    """Case-sensitive: "Will" is a name, "will" is not."""
     n = re.escape(name)
-    return re.compile(rf"(?P<lead>(?:^|(?<=[.!?])\s+)(?:(?:hey|hi)\s+)?{n}\s*[,!.]\s*)"  # "Mike, you've got..."
-                      rf"|\s*,\s*{n}\b(?!['’])(?=\s*(?:[,.!?;]|$))"  # "Sure thing, Mike." / "safe, Mike, and"
-                      rf"|(?<=\w)\s+{n}\b(?!['’])(?=\s*(?:[,.!?;]|$))", re.I)  # "Thanks Mike!" ("Mike's" stays)
+    return re.compile(rf"(?P<lead>{_SENTENCE_START}(?:(?i:hey|hi|hello),?\s+)?{n}\s*[,!.]\s*)"  # "Hey Mike, you've got..."
+                      rf"|{_SENTENCE_START}{_INTERJECTION}(?P<inter>,?\s+{n})(?=\s*[,.!?])"  # "Thanks Mike!", "Okay, Rob."
+                      rf"|(?P<tail>\s*,\s*{n})(?=[.!?](?:\s|$)|\s*$)")  # "Sure thing, Mike." ("safe, Mike, and" stays)
+
+
+def _a_place(text: str, name: str, places: Iterable[Place]) -> bool:
+    """The name is a town or a word of a place: one of the dialog's ("Jackson, MS") or written as one ("Austin, TX")."""
+    if re.search(rf"\b{re.escape(name)},?\s+[A-Z]{{2}}\b", text):
+        return True
+    word = name.lower()
+    return any(word in _name_tokens(f"{p.name} {p.address or ''}") for p in places if p)
 
 
 def _cut(text: str, spans: list[re.Match]) -> str:
     for m in reversed(spans):
-        rest = text[m.end():]
         if m.group("lead") is not None:  # the sentence now starts with what followed the name
+            rest = text[m.end():]
             rest = rest[:1].upper() + rest[1:]
             text = text[:m.start()] + (" " if m.start() > 0 else "") + rest
         else:
-            text = text[:m.start()] + rest
+            g = "inter" if m.group("inter") is not None else "tail"
+            text = text[:m.start(g)] + text[m.end(g):]
     return text
 
 
-def without_name(text: str, name: str) -> str:
+def without_name(text: str, name: str, places: Iterable[Place] = ()) -> str:
     """The reply with no direct address to the driver."""
-    return _cut(text, list(_address(name).finditer(text))) if name else text
+    if not name or not text or _a_place(text, name, places):
+        return text
+    return _cut(text, list(_address(name).finditer(text)))
 
 
-def name_policy(text: str, name: str, allowed: bool) -> tuple[str, bool]:
+def name_policy(text: str, name: str, allowed: bool, places: Iterable[Place] = ()) -> tuple[str, bool]:
     """(the reply, whether it still addresses the driver): the first address is kept only when the dialog is due
-    one and the reply is long enough to carry it; the rest go."""
-    spans = list(_address(name).finditer(text)) if name and text else []
+    one and the reply is long enough to carry it; the rest go. A name that is not an address is left alone and
+    does not count as one."""
+    places = list(places)
+    spans = list(_address(name).finditer(text)) if name and text and not _a_place(text, name, places) else []
     if not spans:
         return text, False
-    keep = allowed and len(without_name(text, name).split()) >= NAME_MIN_WORDS
+    keep = allowed and len(_cut(text, spans).split()) >= NAME_MIN_WORDS
     return _cut(text, spans[1:] if keep else spans), keep
 
 
@@ -1052,7 +1073,9 @@ class LlmAgentProvider:
         n = sess.get("replies", 0) if sess is not None else 0
         last = sess.get("name_at") if sess is not None else None
         if name and res.reply:
-            res.reply, used = name_policy(res.reply, name, last is None or n - last >= NAME_EVERY)
+            places = [req.active_place, res.place, *res.options, *req.route_stops,
+                      *((sess or {}).get("places") or [])]
+            res.reply, used = name_policy(res.reply, name, last is None or n - last >= NAME_EVERY, places)
             if used and sess is not None:
                 sess["name_at"] = n
         if sess is not None:
