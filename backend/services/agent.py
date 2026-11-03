@@ -1412,8 +1412,14 @@ class LlmAgentProvider:
         if named:
             logger.info("add_stop query %r names a listed place -> %s", query, named.name)
             return named
+        # "the Pilot in Fernley": the model may put the town in `near` and only "Pilot" in `query`. The town
+        # goes into the search, and a chain name is no longer looked up next to the truck (eval 2026-11-02:
+        # the Pilot in Sacramento was added instead of the one in Fernley).
+        near = str(d.get("near") or "").strip()
+        if query and near and near.split(",")[0].strip().lower() not in query.lower():
+            query = f"{query}, {near}"
         if query:
-            if TRUCK_STOP_NAME.search(query) and not re.search(r"\d", query):
+            if not near and TRUCK_STOP_NAME.search(query) and not re.search(r"\d", query):
                 # "the Pilot", "Love's in Auburn": a chain name is a truck stop near the driver before it is an
                 # address (the geocoder once answered with the hamlet of Pilot, NV, 300 miles past the destination)
                 stop = await self._truck_stop_named(req, query)
@@ -1421,7 +1427,7 @@ class LlmAgentProvider:
                     return stop
             with stage("tools"):
                 matches = await geocode(with_city(query, sess.get("city")), req.lat, req.lng)
-            if not matches or is_street(matches[0]):
+            if (not matches or is_street(matches[0])) and not near:
                 stop = await self._truck_stop_named(req, query)
                 if stop:
                     return stop
