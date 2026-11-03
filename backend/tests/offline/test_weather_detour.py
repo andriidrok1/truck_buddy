@@ -390,3 +390,16 @@ def test_reroute_carries_weather(api_client, fake_http, monkeypatch):
     assert r.status_code == 200
     w = r.json()["route"]["weather"]
     assert len(w) == 1 and w[0]["event"] == "High Wind Warning"
+
+
+def test_a_road_the_truck_may_not_take_is_never_the_way_around():
+    # Review 2026-11-02, bug 23: the weather detour skipped closures but not restricted roads.
+    r = _route()
+    ca89, i580 = r.alternatives
+    r.weather = [_alert("High Wind Warning", _i(0.2673))]
+    ca89.weather, i580.weather = [], []
+    ca89.weather_known = i580.weather_known = True
+    ca89.restricted = "height"
+    assert weather.better_route(r) is i580
+    i580.restricted = "legal"
+    assert weather.better_route(r) is None

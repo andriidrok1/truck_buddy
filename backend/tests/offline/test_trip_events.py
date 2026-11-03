@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import httpx
+import pytest
 from conftest import fixture_json, run
 
 from models import Place
@@ -28,6 +29,13 @@ def _ev(kind, trip="trip-1", **data):
     return {"t": "2026-11-01T17:02:11.120Z", "trip_id": trip, "kind": kind, "data": data}
 
 
+@pytest.fixture(autouse=True)
+def _frozen_now(monkeypatch):
+    """Events here carry fixed times around 2026-11-01; the server's clock is pinned near them (the client's time
+    is kept within 24 hours of it)."""
+    monkeypatch.setattr(trip_events, "_utcnow", lambda: datetime(2026, 11, 1, 20, 0, tzinfo=timezone.utc))
+
+
 def test_add_read_by_trip_and_driver_isolation(sqlite_store):
     run(trip_events.add("d1", [_ev("route_started", place="p1"), _ev("reroute", cause="off_route", ok=True),
                                _ev("route_started", trip="trip-2"), {"kind": "not_understood", "data": {"text": "hm"}}]))
@@ -50,7 +58,10 @@ def test_time_parsing_and_clamp():
     assert trip_events.parse_time(hour_ago.timestamp() * 1000, now) == hour_ago  # epoch ms
     assert trip_events.parse_time(hour_ago.timestamp(), now) == hour_ago  # epoch s
     assert trip_events.parse_time(None, now) == now and trip_events.parse_time("garbage", now) == now
-    assert trip_events.parse_time("1999-01-01T00:00:00Z", now) == now - timedelta(days=30)  # a clock set back
+    assert trip_events.parse_time("1999-01-01T00:00:00Z", now) == now - timedelta(hours=24)  # a clock set back
+    # an offline tail of a few hours keeps its own time; a day's worth more is pinned to the window (bug 4)
+    assert trip_events.parse_time("2026-11-01T03:00:00Z", now) == datetime(2026, 11, 1, 3, 0, tzinfo=timezone.utc)
+    assert trip_events.parse_time("2026-10-25T03:00:00Z", now) == now - timedelta(hours=24)
     assert trip_events.parse_time("2027-01-01T00:00:00Z", now) == now + timedelta(minutes=5)
 
 
@@ -152,7 +163,9 @@ def test_reroute_endpoint_records_a_request(api_client, fake_http, sqlite_store,
     events = api_client.get("/api/trips/trip-r/events").json()["events"]
     assert [(e["kind"], e["data"].get("ok"), e["data"].get("error")) for e in events] == [
         ("reroute_requested", True, None), ("route_failed", None, "no_truck_route"), ("reroute_requested", False, "no_truck_route")]
-    assert events[0]["data"] == {"section_index": 0, "handle": False, "via": 0, "ok": True}
+    data = events[0]["data"]
+    assert {k: data[k] for k in ("section_index", "handle", "via", "ok")} == {"section_index": 0, "handle": False, "via": 0, "ok": True}
+    assert (data["lat"], data["lng"]) == (38.9, -121.07) and len(data["req"]) == 16  # where the truck was, the request id
 
 
 def test_prune_drops_old_rows(sqlite_store):

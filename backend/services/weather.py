@@ -575,10 +575,12 @@ def score(alerts: list[WeatherAlert]) -> int:
 
 def better_route(route: RouteInfo) -> Optional[RouteInfo]:
     """Among the alternatives (each with its own `weather`), the one that weighs least, the fastest on a tie;
-    None when nothing beats the route the driver has. A road with a closure on it is never the way around."""
+    None when nothing beats the route the driver has. A road with a closure on it, or one that breaks the
+    truck's restrictions, is never the way around."""
     if not route.weather or not route.alternatives:
         return None
-    open_roads = [r for r in route.alternatives if r.weather_known and not any(i.closed for i in r.incidents)]
+    open_roads = [r for r in route.alternatives
+                  if r.weather_known and not r.restricted and not any(i.closed for i in r.incidents)]
     if not open_roads:
         return None
     best = min(open_roads, key=lambda r: (score(r.weather), r.duration_min))

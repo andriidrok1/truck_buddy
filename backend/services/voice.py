@@ -16,6 +16,7 @@ from typing import Optional
 import imageio_ffmpeg
 
 from services import llm
+from services.logs import said
 from services.settings import settings
 from services.http import client
 from services.speech_text import spoken
@@ -129,7 +130,7 @@ async def transcribe_full(data: bytes, filename: str, hint: Optional[str] = None
             nsp, lp, cr = _get(s, "no_speech_prob", 0), _get(s, "avg_logprob", 0), _get(s, "compression_ratio", 0)
             seg = (_get(s, "text", "") or "").strip()
             if (nsp >= NO_SPEECH_PROB and lp < NO_SPEECH_LOGPROB) or lp < MIN_AVG_LOGPROB or cr > MAX_COMPRESSION:
-                logger.info("stt dropped segment %r no_speech=%.2f logprob=%.2f compression=%.2f", seg, nsp, lp, cr)
+                logger.info("stt dropped segment %s no_speech=%.2f logprob=%.2f compression=%.2f", said(seg), nsp, lp, cr)
             else:
                 kept.append(seg)
         text = " ".join(kept).strip()
@@ -144,10 +145,10 @@ async def transcribe_full(data: bytes, filename: str, hint: Optional[str] = None
 def _clean(text: str) -> str:
     if NOISE_ONLY.fullmatch(text):
         if text:
-            logger.info("stt dropped noise-only text %r", text)
+            logger.info("stt dropped noise-only text %s", said(text))
         return ""
     if PROMPT_ECHO.search(text) or HALLUCINATION.search(text):  # prompt echo / Whisper's stock lines on noise
-        logger.info("stt dropped hallucination %r", text)
+        logger.info("stt dropped hallucination %s", said(text))
         return ""
     return text
 

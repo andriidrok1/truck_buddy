@@ -80,6 +80,9 @@ def match_case(expected: dict, got: dict) -> tuple[bool, bool, list[str]]:
     for name in ("query", "near", "when", "kind"):
         if name in expected:
             _match_string(name, expected[name], got.get(name), mismatches)
+    if "where" in expected:  # the place may be named in query or near ("Pilot" + "Fernley, NV")
+        both = " ".join(x for x in (_norm(got.get("query")), _norm(got.get("near"))) if x) or None
+        _match_string("where", expected["where"], both, mismatches)
     if "place_index" in expected:
         try:
             g = int(got.get("place_index"))

@@ -36,7 +36,7 @@ def _usage(res) -> dict:
 
 
 async def complete_full(system: str, text: str, model: str = "gpt-5.4-mini", image_b64: Optional[str] = None,
-                        cache_key: Optional[str] = None) -> LlmResult:
+                        cache_key: Optional[str] = None, reasoning_effort: Optional[str] = None) -> LlmResult:
     """One system + user turn with token usage. `cache_key` routes requests that share a prefix to the
     same prompt cache (OpenAI prompt_cache_key). Token counts also land in the request timings as n_*."""
     content: str | list = text
@@ -44,6 +44,8 @@ async def complete_full(system: str, text: str, model: str = "gpt-5.4-mini", ima
         content = [{"type": "text", "text": text},
                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}]
     extra = {"prompt_cache_key": cache_key} if cache_key else {}
+    if reasoning_effort:
+        extra["reasoning_effort"] = reasoning_effort
     res = await client().chat.completions.create(
         model=model, messages=[{"role": "system", "content": system}, {"role": "user", "content": content}],
         extra_body=extra or None)

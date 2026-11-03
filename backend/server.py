@@ -20,18 +20,24 @@ from services.agent import get_agent_provider  # noqa: E402
 from services import breakdown, flags, nudges  # noqa: E402
 from services.speech_text import split_reply  # noqa: E402
 from services.google_places import PlacesUnavailable  # noqa: E402
-from services.parking import cached_parking, check_parking, fetch_satellite  # noqa: E402
+from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import approach, approach_api, auth, chains, kv, leader, memory, onboarding, parking_store, parking_warm, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services import approach, approach_api, auth, chains, db, fleet_api, kv, leader, memory, onboarding, parking_store, parking_warm, reqid, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services.http import client as http_client  # noqa: E402
+from services.logs import said, transcripts_on  # noqa: E402
 from services.settings import settings  # noqa: E402
 
 WEATHER_BUDGET_S = 2.5  # NWS alerts on /route may add at most this much; never the route itself
 from pydantic import BaseModel, Field  # noqa: E402
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+reqid.install_log_field()  # %(req)s: the request id on every line (services/reqid.py)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(req)s - %(message)s")
 logger = logging.getLogger("truckbuddy")
+# httpx logs every request URL at INFO: HERE's apiKey, the driver's geocode text and position. Warnings only.
+for _noisy in ("httpx", "httpcore"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 app = FastAPI(
     title="TruckBuddy API",
@@ -109,9 +115,13 @@ async def auth_fleet_code(req: FleetCodeRequest, principal: auth.Principal = Dep
 
 
 @api.get("/me/profile", response_model=TruckProfile)
-async def me_profile(principal: auth.Principal = Depends(auth.require_driver)):
+async def me_profile(response: Response, principal: auth.Principal = Depends(auth.require_driver)):
     """The truck profile the server routes for when the app sends none: the vehicle's when the device is bound to
-    one, else the driver's. 404 when nothing is stored yet (the app keeps its local copy)."""
+    one, else the driver's. 404 when nothing is stored yet (the app keeps its local copy). X-Profile-Source says
+    which: "vehicle" is the fleet's truck, which a driver's own change does not overwrite (it holds for the trip
+    on the phone), "driver" is the driver's own copy."""
+    fleet_truck = bool(principal.vehicle_id) and principal.role == "driver"
+    response.headers["X-Profile-Source"] = "vehicle" if fleet_truck else "driver"
     try:
         profile = await tenancy.profile_get(principal.sub)
     except Exception as e:  # noqa: BLE001
@@ -151,9 +161,17 @@ async def memory_list(driver: str = Depends(auth.require_driver), limit: int = Q
 
 @api.delete("/memory")
 async def memory_clear(driver: str = Depends(auth.require_driver)):
+    """"Delete my data": the dialogs, the remembered turns and facts, the trip events (after the saves still in
+    flight land) and the driver's own stored truck profile (a fleet truck's profile belongs to the fleet).
+    `deleted` counts turns, as before."""
     await agent_sessions_drop(driver)
+
+    async def wipe() -> dict:
+        events = await trip_events.clear(driver)
+        turns = await memory.clear(driver)
+        return {"deleted": turns, "trip_events": events, "profile": await tenancy.profile_clear(driver)}
     try:
-        return {"deleted": await asyncio.wait_for(memory.clear(driver), MEMORY_WAIT_S)}
+        return await asyncio.wait_for(wipe(), MEMORY_WAIT_S)
     except Exception as e:  # noqa: BLE001
         logger.warning("memory clear failed: %s", e)
         raise HTTPException(status_code=503, detail="Memory is unavailable right now")
@@ -164,9 +182,69 @@ async def agent_sessions_drop(driver: str) -> None:
     await session_store.drop_prefix(driver)
 
 
+DEEP_CACHE_S = 30.0  # /health?deep=1: one HERE call per this many seconds per worker at most, whoever asks
+DEEP_TIMEOUT_S = 4.0
+HERE_HEALTH_URL = "https://geocode.search.hereapi.com/v1/geocode"
+_deep: dict = {}  # {"at": monotonic, "checks": {...}}
+_deep_lock: tuple = (None, None)  # (loop, asyncio.Lock): a lock is bound to the loop it first waited on
+
+
+async def _check_db() -> dict:
+    """SELECT 1 on the configured store; {"ok": None} when the store is off (nothing to check)."""
+    kind = db.store()
+    if kind == "off":
+        return {"ok": None, "store": "off"}
+    t0 = asyncio.get_running_loop().time()
+    try:
+        if kind == "sqlite":
+            await asyncio.wait_for(db._sq_run(lambda con: con.execute("SELECT 1").fetchone()), DEEP_TIMEOUT_S)
+        else:
+            pool = await asyncio.wait_for(db._db(), DEEP_TIMEOUT_S)
+            await asyncio.wait_for(pool.fetchval("SELECT 1"), DEEP_TIMEOUT_S)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "store": kind, "error": type(e).__name__}
+    return {"ok": True, "store": kind, "ms": round((asyncio.get_running_loop().time() - t0) * 1000)}
+
+
+async def _check_here() -> dict:
+    """One HERE geocode (the cheapest call on the key routing uses); skipped without a key or with HEALTH_HERE=0."""
+    key = os.environ.get("HERE_API_KEY", "").strip()
+    if not key or not flags.on("HEALTH_HERE"):
+        return {"ok": None, "skipped": True}
+    t0 = asyncio.get_running_loop().time()
+    try:
+        r = await http_client().get(HERE_HEALTH_URL, params={"q": "Sacramento, CA", "limit": 1, "apiKey": key},
+                                    timeout=DEEP_TIMEOUT_S)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": type(e).__name__}
+    ms = round((asyncio.get_running_loop().time() - t0) * 1000)
+    if r.is_error:
+        return {"ok": False, "status": r.status_code, "ms": ms}
+    return {"ok": True, "ms": ms}
+
+
+async def _deep_checks() -> dict:
+    """The cached db + HERE checks, refreshed at most once per DEEP_CACHE_S: concurrent callers wait for the one
+    refresh in flight instead of each calling HERE."""
+    global _deep_lock
+    loop = asyncio.get_running_loop()
+    if _deep_lock[0] is not loop:
+        _deep_lock = (loop, asyncio.Lock())
+    async with _deep_lock[1]:
+        now = loop.time()
+        if not _deep or now - _deep["at"] >= DEEP_CACHE_S:
+            db_check, here_check = await asyncio.gather(_check_db(), _check_here())
+            _deep.update(at=now, checks={"db": db_check, "here": here_check})
+        return _deep["checks"]
+
+
 @public.get("/health")
-async def health():
-    return {
+async def health(deep: bool = Query(False), credentials=Depends(auth._bearer)):
+    """Liveness and the providers in use (public); ?deep=1 (tester token only) also checks the database and one
+    HERE call (cached DEEP_CACHE_S) and answers 503 when either fails."""
+    if deep:
+        await auth.require_tester(credentials)
+    out = {
         "ok": True,
         "providers": {
             "places": get_places_provider().source,
@@ -176,6 +254,13 @@ async def health():
         },
         "parking_cache": parking_store.stats(),
     }
+    if not deep:
+        return out
+    out["checks"] = await _deep_checks()
+    if any(c.get("ok") is False for c in out["checks"].values()):
+        out["ok"] = False
+        return JSONResponse(status_code=503, content=out)
+    return out
 
 
 @api.get("/places", response_model=PlacesResponse)
@@ -205,25 +290,28 @@ async def build_route(req: RouteRequest, driver: str = Depends(auth.require_driv
         route = await get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile,
                                                    via=req.via)
     except NoTruckRoute:
-        trip_events.add_later(driver, req.trip_id, "route_failed", {"where": "route", "error": "no_truck_route", "place_id": place.id})
+        trip_events.add_later(driver, req.trip_id, "route_failed", {"where": "route", "error": "no_truck_route", "place_id": place.id},
+                              pos=(req.lat, req.lng))
         raise HTTPException(status_code=422, detail="No truck route to this place from here")
     except RoutingUnavailable:
-        trip_events.add_later(driver, req.trip_id, "route_failed", {"where": "route", "error": "unavailable", "place_id": place.id})
+        trip_events.add_later(driver, req.trip_id, "route_failed", {"where": "route", "error": "unavailable", "place_id": place.id},
+                              pos=(req.lat, req.lng))
         raise HTTPException(status_code=503, detail="Truck routing is unavailable right now")
     # NWS alerts and Caltrans chain controls along the way; slow or down sources cost at most WEATHER_BUDGET_S
     # and never the route itself.
     await _advisories(route, WEATHER_BUDGET_S, WEATHER_BUDGET_S)
     if req.skip_parking:  # breakdown providers: the driver needs the shop, no parking check at all
         return RouteResponse(place=place, route=route, parking=None)
+    parking = approach.for_route(place, route)
     approach.background(check_parking(place, route.approach))  # don't wait for the satellite; app re-asks /parking
-    return RouteResponse(place=place, route=route, parking=cached_parking(place))
+    return RouteResponse(place=place, route=route, parking=parking)
 
 
 @api.post("/nudges", response_model=NudgeResponse)
 async def nudges_endpoint(req: NudgeRequest, request: Request, driver: str = Depends(auth.require_driver)):
     """Anything the copilot wants to say on its own right now (break due, parking before the shift ends)."""
     _require_us(req.lat, req.lng)
-    req.motive_key = _motive_key(request)
+    req.motive_key, req.motive_user = await motive_auth(request, driver)
     req.truck_profile = await tenancy.effective_profile(driver, req.truck_profile)
     if req.session_id:
         req.session_id = f"{driver}:{req.session_id}"[:64]
@@ -252,7 +340,8 @@ REROUTE_ADVISORY_BUDGET_S = 1.0
 @api.post("/reroute", response_model=RouteResponse)
 async def reroute(req: RerouteRequest, driver: str = Depends(auth.require_driver)):
     """The app detected the driver left the route: a new route from the current position to the same place.
-    No new satellite check (the destination hasn't changed); the cached parking verdict comes along."""
+    No new satellite check (the destination hasn't changed); the cached verdict comes along, its entry tip
+    phrased for the way this route arrives."""
     _require_us(req.lat, req.lng)
     _require_us(req.place.lat, req.place.lng)
     for stop in req.via:
@@ -275,7 +364,7 @@ async def reroute(req: RerouteRequest, driver: str = Depends(auth.require_driver
     # The new route needs its own alerts and chain controls, or the advisories vanish after a reroute; the
     # driver is off the route while this runs, so the budget is shorter.
     await _advisories(route, REROUTE_ADVISORY_BUDGET_S, 0)
-    return RouteResponse(place=req.place, route=route, parking=cached_parking(req.place))
+    return RouteResponse(place=req.place, route=route, parking=approach.for_route(req.place, route))
 
 
 def _reroute_event(driver: str, req: RerouteRequest, ok: bool, error: Optional[str] = None) -> None:
@@ -283,8 +372,9 @@ def _reroute_event(driver: str, req: RerouteRequest, ok: bool, error: Optional[s
     data = {"section_index": req.section_index, "handle": bool(req.handle), "via": len(req.via), "ok": ok}
     if error:
         data["error"] = error
-        trip_events.add_later(driver, req.trip_id, "route_failed", {"where": "reroute", "error": error, "place_id": req.place.id})
-    trip_events.add_later(driver, req.trip_id, "reroute_requested", data)
+        trip_events.add_later(driver, req.trip_id, "route_failed", {"where": "reroute", "error": error, "place_id": req.place.id},
+                              pos=(req.lat, req.lng))
+    trip_events.add_later(driver, req.trip_id, "reroute_requested", data, pos=(req.lat, req.lng))
 
 
 async def _advisories(route: RouteInfo, budget_s: float, alt_budget_s: float) -> None:
@@ -322,7 +412,7 @@ async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = Non
     if driver and req.session_id:
         req.session_id = f"{driver}:{req.session_id}"[:64]  # sessions can't be shared across drivers
     res = await get_agent_provider().handle(req, driver)
-    logger.info("agent text=%r status=%s place=%s", req.text, res.status, res.place.name if res.place else None)
+    logger.info("agent text=%s status=%s place=%s", said(req.text), res.status, res.place.name if res.place else None)
     return await _speak(res, speak)
 
 
@@ -351,8 +441,10 @@ TURN_STAGES = ("upload", "stt", "llm_round_1", "tools", "tts")
 
 
 def _finish(res: AgentResponse, extra: Optional[dict] = None, driver: Optional[str] = None,
-            trip_id: Optional[str] = None) -> AgentResponse:
-    """Timings onto the response, one `turn ...` log line per copilot turn (scripts/turn_stats.py reads them), and
+            trip_id: Optional[str] = None, sid: Optional[str] = None,
+            pos: Optional[tuple[float, float]] = None) -> AgentResponse:
+    """Timings onto the response, one `turn {json}` log line per copilot turn (scripts/turn_stats.py reads it:
+    request id, device, driver, the app's session id, org, status, intent, notes, timings; never the transcript), and
     the turn's trip events when the driver is known (services/trip_events.from_turn)."""
     res.timings = {**(extra or {}), **timing.current()}
     res.timings["total"] = sum(v for k, v in res.timings.items() if k != "total" and not timing.is_counter(k))
@@ -360,10 +452,14 @@ def _finish(res: AgentResponse, extra: Optional[dict] = None, driver: Optional[s
     res.timings["first_audio"] = sum(res.timings.get(k, 0) for k in TURN_STAGES)
     notes = timing.notes()
     res.intent = notes.get("intent") or res.intent
-    fields = {"status": res.status, "intent": res.intent or "-", **{k: v for k, v in notes.items() if k != "intent"},
-              **res.timings}
-    logger.info("turn %s", " ".join(f"{k}={v}" for k, v in fields.items()))
-    trip_events.from_turn(driver, trip_id, res.status, res.intent, notes, res.transcript or "")
+    # device = the phone's sub, driver = drivers.id (the row the fleet tables use); both look like drv_…, and
+    # "driver" used to be the sub, which no fleet table could be joined on (review 2026-11-02, bug 11).
+    fields = {"req": reqid.current(), "device": str(driver) if driver else None,
+              "driver": getattr(driver, "driver_id", None), "sid": sid, "org": getattr(driver, "org_id", None),
+              "status": res.status, "intent": res.intent or "-",
+              **{k: v for k, v in notes.items() if k != "intent"}, **res.timings}
+    logger.info("turn %s", json.dumps(fields, separators=(",", ":"), default=str))
+    trip_events.from_turn(driver, trip_id, res.status, res.intent, notes, res.transcript or "", pos=pos)
     return res
 
 
@@ -371,15 +467,41 @@ def _finish(res: AgentResponse, extra: Optional[dict] = None, driver: Optional[s
 async def agent(req: AgentRequest, request: Request, speak: bool = Query(False),
                 driver: str = Depends(auth.require_driver)):
     timing.begin()
-    req.motive_key = _motive_key(request)
+    req.motive_key, req.motive_user = await motive_auth(request, driver)
     req.truck_profile = await tenancy.effective_profile(driver, req.truck_profile)
-    return _finish(await _run_agent(req, speak, driver), {"stt": req.stt_ms} if req.stt_ms else None, driver, req.trip_id)
+    sid = req.session_id
+    return _finish(await _run_agent(req, speak, driver), {"stt": req.stt_ms} if req.stt_ms else None, driver, req.trip_id,
+                   sid, (req.lat, req.lng))
 
 
 def _motive_key(request: Request) -> Optional[str]:
     """The driver's Motive API key, sent per request by the app; used for one call, never kept."""
     key = (request.headers.get("X-Motive-Key") or "").strip()
     return key[:200] or None
+
+
+async def motive_auth(request: Optional[Request], driver) -> tuple[Optional[str], Optional[str]]:
+    """(key, Motive user id) for the HOS lookup. The X-Motive-Key header wins (a solo driver's own key, user id
+    None). Without it, the org's stored key, but only for a driver the fleet has mapped to a Motive user: a fleet
+    key answers for every driver of the company. (None, None) when there is nothing to use."""
+    key = _motive_key(request) if request is not None else None
+    if key:
+        return key, None
+    org_id = getattr(driver, "org_id", None)
+    if not org_id:
+        return None, None
+    try:
+        secret = await tenancy.credential_get(org_id, "motive")
+        if not secret:
+            return None, None
+        user = await tenancy.motive_user(getattr(driver, "driver_id", None))
+    except Exception as e:  # noqa: BLE001 - HOS is optional; the turn goes on without it
+        logger.info("fleet motive lookup skipped: %s", type(e).__name__)
+        return None, None
+    if not user:
+        logger.info("fleet motive key present but driver %s is not mapped to a Motive user", getattr(driver, "driver_id", None))
+        return None, None
+    return secret, user
 
 
 @api.get("/breakdown/{rid}", response_model=AgentResponse)
@@ -475,12 +597,12 @@ async def voice_turn(
     except Exception:
         logger.exception("transcription failed")
         text = ""
-    logger.info("voice transcript=%r confidence=%s", text, confidence)
+    logger.info("voice transcript=%s confidence=%s", said(text), confidence)
+    key, user = await motive_auth(request, driver)
     req = AgentRequest(text=text, lat=lat, lng=lng, active_place=current, truck_profile=truck, session_id=session_id,
                        active_distance_mi=active_distance_mi, active_duration_min=active_duration_min,
-                       stt_confidence=confidence, trip_id=trip_id,
-                       motive_key=_motive_key(request) if request is not None else None)
-    return _finish(await _run_agent(req, speak=True, driver=driver), None, driver, trip_id)
+                       stt_confidence=confidence, trip_id=trip_id, motive_key=key, motive_user=user)
+    return _finish(await _run_agent(req, speak=True, driver=driver), None, driver, trip_id, session_id, (lat, lng))
 
 
 @api.post("/voice/transcribe")
@@ -508,7 +630,7 @@ async def voice_transcribe(audio: UploadFile = File(...), hint: Optional[str] = 
         logger.exception("transcription failed")
         text = ""
     t = timing.current()
-    logger.info("voice transcribe bytes=%d transcript=%r confidence=%s %s", len(data), text, confidence,
+    logger.info("voice transcribe bytes=%d transcript=%s confidence=%s %s", len(data), said(text), confidence,
                 " ".join(f"{k}={v}" for k, v in t.items()))
     return {"transcript": text, "stt_confidence": confidence, "timings": t}
 
@@ -569,7 +691,8 @@ async def onboarding_parse(audio: UploadFile = File(...), step: str = Form(...))
         logger.exception("transcription failed")
         text = ""
     updates = await onboarding.extract(step, text)
-    logger.info("onboarding step=%s transcript=%r updates=%s", step, text, updates)
+    # the updates are the driver's own answers (name, truck): their values only with LOG_TRANSCRIPTS on
+    logger.info("onboarding step=%s transcript=%s updates=%s", step, said(text), updates if transcripts_on() else sorted(updates or {}))
     return {"transcript": text, "updates": updates}
 
 
@@ -615,6 +738,7 @@ app.include_router(public)
 app.include_router(api)
 app.include_router(approach_api.router, dependencies=[Depends(auth.rate_limited)])
 app.include_router(trips_api.router)
+app.include_router(fleet_api.router)
 app.include_router(parking_warm.router)
 
 
@@ -672,4 +796,6 @@ app.add_middleware(
     allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-Id"],
 )
+app.add_middleware(reqid.RequestIdMiddleware)  # outermost: the id is set before anything else runs

@@ -149,3 +149,12 @@ def test_ors_rounds_up_too(fake_http, monkeypatch):
 def test_avoid_tunnel_violation_is_named():
     lines, restricted = _notices([{"code": "violatedAvoidTunnel", "severity": "info"}], TruckProfile())
     assert lines == ["A tunnel couldn't be avoided on this route."] and restricted is None
+
+
+def test_a_restriction_without_a_limit_is_said_in_plain_words():
+    # QA 2026-11-02: the driver heard HERE's own "Violated access restriction for this type of vehicle".
+    lines, restricted = _notices([{"code": "violatedVehicleRestriction", "severity": "critical",
+                                   "details": [{"type": "restriction", "cause": "Violated access restriction for this type of vehicle"}]}],
+                                 TruckProfile())
+    assert restricted == "other"
+    assert lines == ["Part of this route is on a road with a truck restriction."]

@@ -230,10 +230,13 @@ def test_no_false_24_7_guard():
 
 
 def test_superlatives_in_code():
-    a, b = dict(prov("a", 5, prices=True), name="A"), dict(prov("b", 1), name="B")
-    assert bd.pick_superlative([a, b], "cheapest")["id"] == "a"  # one priced provider is enough
+    # the dialog keeps Provider models (QA 2026-11-02, bug 3), so the follow-up picks among those
+    base = {"lat": 38.6, "lng": -121.5, "source": "google", "score": 0, "shop_only": False}
+    a = bd.to_provider({**base, **prov("a", 5, prices=True), "name": "A"})
+    b = bd.to_provider({**base, **prov("b", 1), "name": "B"})
+    assert bd.pick_superlative([a, b], "cheapest").id == "a"  # one priced provider is enough
     assert bd.pick_superlative([b], "cheapest") is None
-    assert bd.pick_superlative([a, b], "closest")["id"] == "b"
+    assert bd.pick_superlative([a, b], "closest").id == "b"
     assert bd.SUPERLATIVE.search("call the cheapest one") and bd.DO_CALL.search("call the cheapest one")
 
 

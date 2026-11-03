@@ -1,4 +1,5 @@
 """The per-turn log line, token counters in timings, and scripts/turn_stats.py."""
+import json
 import logging
 import re
 import sys
@@ -45,7 +46,10 @@ def test_turn_line_through_the_api(api_client, agent_sandbox, fake_http, caplog)
     assert body["timings"]["n_cached_tokens"] == 1536 and body["timings"]["n_prompt_tokens"] == 2100
     assert body["timings"]["first_audio"] >= 820
     line = next(rec.getMessage() for rec in caplog.records if rec.getMessage().startswith("turn "))
-    assert "status=route_set" in line and "intent=go" in line and "stt=820" in line and "n_cached_tokens=1536" in line
+    fields = json.loads(line[len("turn "):])
+    assert fields["status"] == "route_set" and fields["intent"] == "go" and fields["stt"] == 820
+    assert fields["n_cached_tokens"] == 1536 and fields["req"] == r.headers["x-request-id"]
+    assert fields["device"] and "driver" in fields and "sid" in fields and "org" in fields  # driver: drivers.id, None with the store off
     parsed = turn_stats.parse_line(line)
     assert parsed["status"] == "route_set" and parsed["intent"] == "go" and parsed["n_cached_tokens"] == 1536
 

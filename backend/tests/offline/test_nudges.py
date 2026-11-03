@@ -37,7 +37,7 @@ def _req(**kw) -> NudgeRequest:
 def test_break_nudge_once_per_cycle(agent_sandbox, monkeypatch):
     agent_sandbox.places_provider.places = [PILOT, REST]
 
-    async def fake_hos(key):
+    async def fake_hos(key, user_id=None):
         return hos.Hos(drive_min=200, shift_min=500, cycle_min=2000, break_min=45)
 
     monkeypatch.setattr(hos, "available_time", fake_hos)
@@ -49,7 +49,7 @@ def test_break_nudge_once_per_cycle(agent_sandbox, monkeypatch):
     assert sess["pending"]["d"] == {"intent": "add_stop", "place": PILOT.model_dump()}
     assert run(nudges.compute(_req(), sess, "key")) == []  # not again this cycle
 
-    async def after_break(key):
+    async def after_break(key, user_id=None):
         return hos.Hos(drive_min=480, shift_min=400, cycle_min=2000, break_min=470)
 
     monkeypatch.setattr(hos, "available_time", after_break)
@@ -74,7 +74,7 @@ def test_break_without_motive_uses_the_profile_reminder(agent_sandbox):
 def test_parking_nudge_by_shift_and_by_clock(agent_sandbox, monkeypatch):
     agent_sandbox.places_provider.places = [PILOT]
 
-    async def late_shift(key):
+    async def late_shift(key, user_id=None):
         return hos.Hos(drive_min=300, shift_min=80, cycle_min=2000, break_min=200)
 
     monkeypatch.setattr(hos, "available_time", late_shift)
@@ -109,7 +109,7 @@ def test_yes_after_a_break_nudge_adds_the_stop(agent_sandbox, fake_http, monkeyp
     fake_http.add("cwwp2.dot.ca.gov", "/data/", json={"data": []})
     agent_sandbox.places_provider.places = [PILOT]
 
-    async def fake_hos(key):
+    async def fake_hos(key, user_id=None):
         return hos.Hos(drive_min=40, shift_min=500, cycle_min=2000)
 
     monkeypatch.setattr(hos, "available_time", fake_hos)
@@ -138,7 +138,7 @@ def test_yes_after_a_parking_nudge_routes_there(agent_sandbox, fake_http, monkey
 def test_nudges_endpoint(api_client, agent_sandbox, monkeypatch):
     agent_sandbox.places_provider.places = [PILOT]
 
-    async def fake_hos(key):
+    async def fake_hos(key, user_id=None):
         assert key == "motive-key"
         return hos.Hos(drive_min=30, shift_min=500, cycle_min=2000)
 
