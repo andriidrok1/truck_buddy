@@ -8,6 +8,8 @@ import {
   type AudioPlayer,
 } from "expo-audio";
 import * as Haptics from "expo-haptics";
+
+import { acquireAudioSession, releaseAudioSession } from "./audioSession";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 
@@ -151,6 +153,7 @@ export function useVoice() {
     }
     player.current = null;
     setSpeaking(false);
+    if (p) releaseAudioSession(); // the radio comes back up, also when the reply was cut short
     playDone.current?.();
     playDone.current = null;
     // A reply just finished (or was cut): get the mic ready for the next tap.
@@ -180,6 +183,7 @@ export function useVoice() {
   const startRecording = useCallback(async () => {
     stopSpeaking();
     audioGen.current++;
+    await acquireAudioSession();
     await setAudioModeAsync(RECORD_MODE);
     await ensurePrepared();
     prepared.current = false;
@@ -330,7 +334,8 @@ export function useVoice() {
       // Native: the playback session must be in place before the first sample (loudspeaker on iOS).
       // That leaves no prepared recorder behind, so the next tap prepares it again.
       prepared.current = false;
-      setAudioModeAsync(PLAYBACK_MODE)
+      acquireAudioSession()
+        .then(() => setAudioModeAsync(PLAYBACK_MODE))
         .catch((e) => console.log(`[voice] playback mode failed: ${String(e)}`))
         .finally(() => {
           if (player.current === p) p.play();
