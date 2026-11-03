@@ -52,7 +52,7 @@ import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 import { RECORD_DRIVES, recorder } from "@/src/geo/driveRecorder";
 import { subscribeReplay, takeReplayRequest } from "@/src/geo/replayRequest";
-import { startTripLog, stopTripLog, tripLog } from "@/src/net/tripEvents";
+import { startPositionHeartbeat, startTripLog, stopTripLog, tripLog } from "@/src/net/tripEvents";
 import { playTrace } from "@/src/sim";
 
 /** Toast for a failed /route: the router's "no truck route" is a destination problem, not a retry. */
@@ -1016,6 +1016,15 @@ export default function MapScreen() {
         .catch(() => {});
     }
   };
+
+  // A position for the fleet dashboard every few minutes while driving (lat/lng are stamped by the log).
+  const speedRef = useRef<number | null>(null);
+  speedRef.current = loc.speed;
+  useEffect(() => {
+    if (!driving) return;
+    return startPositionHeartbeat(tripLog, () => ({ tripId: trip().active?.trip_id ?? null, speedMps: speedRef.current }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driving]);
 
   // Resume of a restored route: the first real fix after it decides whether the truck is still near the line.
   // A parked truck never trips the off-route tracker, so far from it the plan is redone right away.
