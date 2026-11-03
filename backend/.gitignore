@@ -11,3 +11,4 @@ test_reports/
 data/memory.sqlite*
 # TTS clips (TTS_DIR default); in production TTS_DIR lives outside the tree, here only test runs write it
 data/tts/
+voice_agent/rig_out/

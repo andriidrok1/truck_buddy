@@ -1,0 +1,7 @@
+# The duplex voice worker (spike). Separate from requirements.txt: livekit-agents needs openai>=3.28 while the API
+# server pins 1.99.9 (the offline suite passes on 3.44; bump the server before shipping the worker).
+-r ../requirements.txt
+livekit-agents[silero,openai,turn-detector]==1.8.10
+livekit-api==1.2.2
+openai==3.44.0
+numpy
