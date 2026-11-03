@@ -1,4 +1,4 @@
-import { fitCamera, project, unproject } from "../map/fitCamera";
+import { cameraSettled, fitCamera, project, unproject } from "../map/fitCamera";
 
 const SAC = { lat: 38.5816, lng: -121.4944 };
 const ROADYS = { lat: 38.5796, lng: -121.5542 }; // ~5 km west
@@ -35,5 +35,27 @@ describe("fitCamera", () => {
   test("one point and no points do not throw", () => {
     expect(fitCamera([SAC], 412, 600)).toEqual({ center: { lat: expect.closeTo(SAC.lat, 5), lng: expect.closeTo(SAC.lng, 5) }, zoom: 16 });
     expect(fitCamera([], 412, 600).zoom).toBe(3);
+  });
+});
+
+describe("cameraSettled", () => {
+  const target = fitCamera([SAC, ROADYS], 412, 400);
+
+  test("the camera the fit asked for counts as settled, tiny drift included", () => {
+    expect(cameraSettled(target, { center: target.center, zoom: target.zoom }, 412, 400)).toBe(true);
+    const drift = { lat: target.center.lat + 0.0005, lng: target.center.lng - 0.0005 };
+    expect(cameraSettled(target, { center: drift, zoom: target.zoom + 0.3 }, 412, 400)).toBe(true);
+  });
+
+  test("a camera left on the previous view is not settled", () => {
+    // stayed on the start pins around Roady's at a closer zoom (the Н7 miss)
+    expect(cameraSettled(target, { center: { lat: 38.594, lng: -121.557 }, zoom: 13.24 }, 412, 400)).toBe(false);
+    // right zoom, wrong place
+    expect(cameraSettled(target, { center: RENO, zoom: target.zoom }, 412, 400)).toBe(false);
+  });
+
+  test("nothing to compare against counts as settled", () => {
+    expect(cameraSettled(target, null, 412, 400)).toBe(true);
+    expect(cameraSettled(target, { center: target.center, zoom: null }, 412, 400)).toBe(true);
   });
 });

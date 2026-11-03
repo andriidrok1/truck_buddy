@@ -56,15 +56,33 @@ const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLaye
   };
   useImperativeHandle(ref, () => ({ recenter, zoomBy }));
 
-  useEffect(() => {
+  // A camera command before the style has loaded is dropped; the first fit can come in that window once the
+  // GPS fix is in before this mounts, so it waits for the map and runs then.
+  const ready = useRef(false);
+  const pendingFit = useRef(false);
+  const fit = () => {
+    if (!ready.current) {
+      pendingFit.current = true;
+      return;
+    }
     if (fitPoints.length > 1) {
       const b = routeBounds(fitPoints.map((p) => [p.lat, p.lng] as [number, number]), 0);
       if (b) camera.current?.fitBounds(toLngLatBounds(b), { padding: FIT_PADDING, duration: 500 });
     } else if (fitPoints.length === 1) {
       camera.current?.easeTo({ center: toLngLat(fitPoints[0]), zoom: DEFAULT_ZOOM, duration: 450 });
     }
+  };
+  useEffect(() => {
+    fit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitKey]);
+  const onMapLoaded = () => {
+    ready.current = true;
+    if (pendingFit.current) {
+      pendingFit.current = false;
+      fit();
+    }
+  };
 
   const route = active?.route;
   const routeData = useMemo(() => (route ? lineFeature(route.geometry) : null), [route]);
@@ -80,6 +98,7 @@ const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLaye
   return (
     <View style={StyleSheet.absoluteFill} testID="map-view-libre">
       <Map
+        onDidFinishLoadingMap={onMapLoaded}
         ref={map}
         style={StyleSheet.absoluteFill}
         mapStyle={scheme === "dark" ? OPENFREEMAP_DARK_STYLE : OPENFREEMAP_STYLE}
