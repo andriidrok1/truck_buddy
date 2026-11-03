@@ -7,12 +7,14 @@ org_id, so a truck id from another fleet is a 404 and another fleet's events nev
 on the server: an event's data leaves with numbers, flags and known code fields only (public_event), on the way out
 (decision 2026-10-30: the owner sees what happened, not what was said). The tester route /api/trips/recent is unchanged.
 
-Days are UTC calendar days (?day=YYYY-MM-DD, default today).
+Days are the fleet's calendar days in its own time zone (orgs.timezone, America/Los_Angeles unless the owner set
+one with PUT /api/fleet/timezone); ?day=YYYY-MM-DD, default today there.
 """
 import asyncio
 import logging
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
@@ -58,13 +60,16 @@ def public_event(e: dict) -> dict:
     return {**e, "data": {k: v for k, v in (e.get("data") or {}).items() if _public_value(kind, k, v)}}
 
 
-def _day(day: Optional[str]) -> tuple[datetime, datetime, str]:
+def _day(day: Optional[str], tz: ZoneInfo) -> tuple[datetime, datetime, str]:
+    """The fleet's calendar day [start, end) in UTC. A UTC day split a California evening shift in two at 4-5 pm
+    (review 2026-11-02, bug 4); a DST day is 23 or 25 hours long."""
     try:
-        d = date.fromisoformat(day) if day else datetime.now(timezone.utc).date()
+        d = date.fromisoformat(day) if day else datetime.now(tz).date()
     except ValueError:
         raise HTTPException(status_code=422, detail="day is YYYY-MM-DD")
-    start = datetime.combine(d, dtime.min, tzinfo=timezone.utc)
-    return start, start + timedelta(days=1), d.isoformat()
+    start = datetime.combine(d, dtime.min, tzinfo=tz)
+    end = datetime.combine(d + timedelta(days=1), dtime.min, tzinfo=tz)
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc), d.isoformat()
 
 
 async def _guarded(coro):
@@ -104,7 +109,7 @@ async def vehicle_events(vehicle_id: str = Path(max_length=64), day: Optional[st
                          limit: int = Query(2000, ge=1, le=5000), principal: auth.Principal = Depends(reader)):
     """One truck's day, oldest first, without transcripts; 404 for a truck that is not the caller's. `truncated`
     says the day has more than `limit` events (the list used to stop at 2000 with nothing to say so, bug 10)."""
-    start, end, label = _day(day)
+    start, end, label = _day(day, await _guarded(tenancy.org_timezone(principal.org_id)))
     trucks = await _guarded(tenancy.org_vehicles(principal.org_id))
     if vehicle_id not in {v["id"] for v in trucks}:
         raise HTTPException(status_code=404, detail="No such vehicle")
@@ -133,7 +138,8 @@ async def vehicle_profile(profile: TruckProfile, vehicle_id: str = Path(max_leng
 async def summary(day: Optional[str] = Query(None, pattern=DAY_RE), principal: auth.Principal = Depends(reader)):
     """Per truck for the day: routes started, reroutes, far-stop questions the guard asked, failed copilot turns,
     routing failures. Events from a phone not bound to a truck are counted under vehicle_id null."""
-    start, end, label = _day(day)
+    tz = await _guarded(tenancy.org_timezone(principal.org_id))
+    start, end, label = _day(day, tz)
     trucks = await _guarded(tenancy.org_vehicles(principal.org_id))
     events = await _guarded(trip_events.org_day(principal.org_id, start, end, SUMMARY_KINDS))
     labels = {v["id"]: v["label"] for v in trucks}
@@ -153,7 +159,7 @@ async def summary(day: Optional[str] = Query(None, pattern=DAY_RE), principal: a
             r["route_failures"] += 1
     totals = {k: sum(r[k] for r in rows.values()) for k in SUMMARY_COUNTS}
     ordered = sorted(rows.values(), key=lambda r: (r["vehicle_id"] is None, r["label"] or "", r["vehicle_id"] or ""))
-    return {"day": label, "vehicles": ordered, "totals": totals}
+    return {"day": label, "timezone": tz.key, "vehicles": ordered, "totals": totals}
 
 
 @router.get("/drivers")
@@ -181,6 +187,19 @@ async def driver_motive(body: MotiveUserIn, driver_id: str = Path(max_length=64)
 
 class MotiveKeyIn(BaseModel):
     key: str = Field(min_length=8, max_length=200)
+
+
+class TimezoneBody(BaseModel):
+    timezone: str = Field(..., max_length=64)
+
+
+@router.put("/timezone")
+async def put_timezone(body: TimezoneBody, principal: auth.Principal = Depends(owner)):
+    """The fleet's time zone (IANA name, e.g. America/Chicago): its "today" in the summary and a truck's day."""
+    if not tenancy.valid_timezone(body.timezone):
+        raise HTTPException(status_code=422, detail="Unknown time zone")
+    await _guarded(tenancy.set_org_timezone(principal.org_id, body.timezone))
+    return {"timezone": body.timezone}
 
 
 @router.put("/credentials/motive")

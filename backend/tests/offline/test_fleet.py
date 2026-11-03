@@ -53,6 +53,14 @@ def _device(c, code=None) -> dict:
     return h
 
 
+@pytest.fixture(autouse=True)
+def _frozen_now(monkeypatch):
+    """The events below carry fixed times on 2026-11-02; the server's clock is pinned near them, so a run on
+    another day sees the same window (trip_events keeps a client's time within 24 hours)."""
+    from datetime import datetime, timezone
+    monkeypatch.setattr(trip_events, "_utcnow", lambda: datetime(2026, 11, 3, 2, 0, tzinfo=timezone.utc))
+
+
 def _sub(h: dict) -> str:
     return _claims(h["Authorization"].split()[1])["sub"]
 
@@ -516,3 +524,23 @@ def test_the_owner_and_the_dispatcher_set_the_trucks_sizes(client):
     assert client.put(url, json=body, headers=f["a_owner"]).status_code == 200
     client.put("/api/me/profile", json=TruckProfile(height_in=150).model_dump(), headers=f["solo"])
     assert client.get("/api/me/profile", headers=f["solo"]).headers["x-profile-source"] == "driver"
+
+
+def test_the_fleets_day_is_its_own_calendar_day(client):
+    # Bug 4 (decision 2026-11-02): "today" was a UTC day, so a California evening shift was split at 4-5 pm.
+    f = _two_fleets(client)
+    client.post("/api/trips/events", headers=f["a_drv"], json=[
+        _ev("route_started", t="2026-11-02T17:00:00Z"),   # 9 am Pacific
+        _ev("route_started", t="2026-11-03T01:30:00Z")])  # 5:30 pm Pacific, already Nov 3 in UTC
+    day = client.get("/api/fleet/summary?day=2026-11-02", headers=f["a_disp"]).json()
+    assert day["timezone"] == "America/Los_Angeles" and day["totals"]["routes"] == 2
+    assert client.get("/api/fleet/summary?day=2026-11-03", headers=f["a_disp"]).json()["totals"]["routes"] == 0
+    # the owner moves the fleet to Berlin: 01:30 UTC is 2:30 am there on Nov 3
+    assert client.put("/api/fleet/timezone", json={"timezone": "Europe/Berlin"}, headers=f["a_disp"]).status_code == 403
+    assert client.put("/api/fleet/timezone", json={"timezone": "Mars/Olympus"}, headers=f["a_owner"]).status_code == 422
+    assert client.put("/api/fleet/timezone", json={"timezone": "Europe/Berlin"}, headers=f["a_owner"]).status_code == 200
+    assert client.get("/api/fleet/summary?day=2026-11-03", headers=f["a_disp"]).json()["totals"]["routes"] == 1
+    events = client.get(f"/api/fleet/vehicles/{f['t1']}/events?day=2026-11-02", headers=f["a_disp"]).json()["events"]
+    assert len(events) == 1
+    # another fleet keeps its own zone
+    assert client.get("/api/fleet/summary", headers=f["b_disp"]).json()["timezone"] == "America/Los_Angeles"

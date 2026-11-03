@@ -16,6 +16,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import asyncpg
 
@@ -485,6 +486,43 @@ async def effective_profile(sub: Optional[str], sent: TruckProfile) -> TruckProf
         logger.info("stored profile lookup skipped: %s", e)
         return sent
     return stored or sent
+
+
+# ---- org time zone -------------------------------------------------------------------------------------------
+
+DEFAULT_TZ = "America/Los_Angeles"
+
+
+def valid_timezone(name: str) -> bool:
+    try:
+        ZoneInfo(name)
+        return True
+    except (ZoneInfoNotFoundError, ValueError):
+        return False
+
+
+async def org_timezone(org_id: str) -> ZoneInfo:
+    """The fleet's own time zone, which its "today" is counted in (America/Los_Angeles unless the owner set one)."""
+    k = db.store()
+    name = None
+    if k == "sqlite":
+        row = await db._sq_run(lambda con: con.execute("SELECT timezone FROM orgs WHERE id = ?", (org_id,)).fetchone())
+        name = row[0] if row else None
+    elif k == "pg":
+        pool = await db._db()
+        name = await pool.fetchval("SELECT timezone FROM orgs WHERE id = $1", org_id)
+    return ZoneInfo(name if name and valid_timezone(name) else DEFAULT_TZ)
+
+
+async def set_org_timezone(org_id: str, name: str) -> None:
+    k = db.store()
+    if k == "off":
+        raise RuntimeError("store is off")
+    if k == "sqlite":
+        await db._sq_run(lambda con: con.execute("UPDATE orgs SET timezone = ? WHERE id = ?", (name, org_id)))
+    else:
+        pool = await db._db()
+        await pool.execute("UPDATE orgs SET timezone = $1 WHERE id = $2", name, org_id)
 
 
 # ---- org credentials -----------------------------------------------------------------------------------------
