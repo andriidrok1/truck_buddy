@@ -10,6 +10,8 @@ event). Kept RETENTION_DAYS, pruned at startup and lazily.
 The kinds a fleet dashboard reads (DASHBOARD_MODELS) have their data checked against a model; a wrong type is a
 422 for the batch like any other bad event. Extra fields pass, and every other kind is stored as is.
 
+The app's "arrived" events are also counted as visits per place (memory.add_visits), apart from the likes.
+
 The transcript of a failed turn is stored as is (decision 2026-11-01): it is what tells us what drivers say and
 what the copilot missed. It is read only by the driver's own routes and the tester route; the fleet routes
 (services/fleet_api.py) strip it before anything leaves the server.
@@ -208,8 +210,32 @@ async def add(driver: str, events: list[dict], source: str = "app") -> int:
         pool = await memory._db()
         await pool.executemany(
             f"INSERT INTO trip_events ({_INSERT_COLS}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", rows)
+    if source == "app":
+        await _count_visits(str(driver), rows)
     _maybe_prune()
     return len(rows)
+
+
+async def _count_visits(driver: str, rows: list[tuple]) -> None:
+    """The app's "arrived" events, one more visit each to the place (services/memory.py keeps them apart from the
+    likes). Best effort: the events are stored either way."""
+    visits = []
+    for r in rows:
+        if r[2] != "arrived":
+            continue
+        data = json.loads(r[5])
+        place_id = data.get("place_id")
+        if not isinstance(place_id, str) or not place_id.strip() or len(place_id) > 200:
+            continue
+        name, category = data.get("name"), data.get("category")
+        visits.append((place_id.strip(), name[:120] if isinstance(name, str) and name.strip() else None,
+                       category[:40] if isinstance(category, str) and category.strip() else None, r[3]))
+    if not visits:
+        return
+    try:
+        await memory.add_visits(driver, visits)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("visits not counted: %s: %s", type(e).__name__, e)
 
 
 def add_later(driver: Optional[str], trip_id: Optional[str], kind: str, data: Optional[dict] = None,

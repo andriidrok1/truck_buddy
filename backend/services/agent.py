@@ -1399,7 +1399,8 @@ class LlmAgentProvider:
                 except Exception as e:  # noqa: BLE001
                     logger.warning("clear_facts failed: %s", type(e).__name__)
             return AgentResponse(status="chat", transcript=text, reply=profile_learn.FORGOT, source=self.source)
-        line = profile_learn.speech(sess.get("facts"), req.truck_profile)
+        line = " ".join(x for x in (profile_learn.speech(sess.get("facts"), req.truck_profile),
+                                    await self._visits_line(sess.get("driver"))) if x)
         prefs = profile_learn.prefs_line(req.truck_profile)
         if line:
             reply = profile_learn.KNOW.format(facts=line) + (f" {prefs}" if prefs else "")
@@ -1410,6 +1411,17 @@ class LlmAgentProvider:
             # from them, as it was before facts existed (live test test_long_term_recall_across_sessions).
             reply = await profile_learn.recall(text, sess.get("past") or []) or prefs or profile_learn.KNOW_NOTHING
         return AgentResponse(status="chat", transcript=text, reply=reply, source=self.source)
+
+    @staticmethod
+    async def _visits_line(driver: Optional[str]) -> str:
+        """The places the driver stopped at often, read when asked (bounded; a slow store only leaves them out)."""
+        if not driver:
+            return ""
+        try:
+            return profile_learn.visits_speech(await asyncio.wait_for(memory.visits(driver), 2.0))
+        except Exception as e:  # noqa: BLE001 - incl. the store off and a timeout
+            logger.info("visits skipped: %s", type(e).__name__)
+            return ""
 
     @staticmethod
     async def _regional_note(place: Place) -> str:
