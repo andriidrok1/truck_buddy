@@ -58,6 +58,22 @@ def test_a_resent_batch_counts_a_visit_once_per_trip(sqlite_store):
     assert run(memory.visits("dv9"))[0]["count"] == 2
 
 
+def test_a_resent_batch_with_two_trips_at_one_place_counts_each_once(sqlite_store):
+    # Review 2026-11-02: the dedupe kept only the last trip per place, so a resent batch with two trips at the
+    # Pilot counted both again (t2 was the last, t1 was "new").
+    batch = [_arrived("g-pilot", trip="t1"), _arrived("g-pilot", trip="t2")]
+    run(trip_events.add("dv10", batch))
+    run(trip_events.add("dv10", batch))
+    assert run(memory.visits("dv10"))[0]["count"] == 2
+
+
+def test_an_arrival_with_no_trip_is_not_counted(sqlite_store):
+    # with no trip there is nothing to tell a resent arrival from a new one
+    run(trip_events.add("dv11", [_arrived("g-pilot", trip=None)]))
+    run(trip_events.add("dv11", [_arrived("g-pilot", trip=None)]))
+    assert run(memory.visits("dv11")) == []
+
+
 def test_visits_keep_the_most_recent_places(sqlite_store):
     events = [_arrived(f"p{i}", f"Stop {i}", t=_ago(3600 - i * 60)) for i in range(memory.MAX_VISITS + 5)]
     run(trip_events.add("dv2", events))
@@ -110,6 +126,8 @@ def test_visits_on_postgres(monkeypatch):
             await memory.clear("pgv")
             for trip in ("t1", "t2", "t3"):
                 await trip_events.add("pgv", [_arrived("g-pilot", trip=trip)])
+            await trip_events.add("pgv", [_arrived("g-pilot", trip="t1"), _arrived("g-pilot", trip="t2"),
+                                          _arrived("g-pilot", trip=None)])  # resent and untagged: no more visits
             await trip_events.add("pgv", [_arrived(f"p{i}", f"Stop {i}", t=_ago(3600 - i * 60))
                                           for i in range(memory.MAX_VISITS)])
             got = await memory.visits("pgv")
