@@ -1,6 +1,6 @@
 import * as Location from "expo-location";
 
-import { enableLocation, getLocation, resetLocationForTests, startLocation, subscribeLocation } from "../geo/location";
+import { enableLocation, getLocation, publishFix, resetLocationForTests, startLocation, subscribeLocation } from "../geo/location";
 
 jest.mock("expo-location", () => ({
   Accuracy: { High: 4, Balanced: 3 },
@@ -12,8 +12,8 @@ jest.mock("expo-location", () => ({
 }));
 
 const L = Location as jest.Mocked<typeof Location>;
-const fix = (lat: number, lng: number) =>
-  ({ coords: { latitude: lat, longitude: lng, heading: 90, speed: 20, accuracy: 5 }, timestamp: 1700000000000 }) as Location.LocationObject;
+const fix = (lat: number, lng: number, timestamp = 1700000000000) =>
+  ({ coords: { latitude: lat, longitude: lng, heading: 90, speed: 20, accuracy: 5 }, timestamp }) as Location.LocationObject;
 
 beforeEach(() => {
   resetLocationForTests();
@@ -44,7 +44,7 @@ test("a second start is a no-op: one watch for the app", async () => {
 test("the watch feeds every later fix", async () => {
   await startLocation();
   const onFix = L.watchPositionAsync.mock.calls[0][1] as (l: Location.LocationObject) => void;
-  onFix(fix(38.0, -121.0));
+  onFix(fix(38.0, -121.0, 1700000001000));
   expect(getLocation().coords).toEqual({ lat: 38.0, lng: -121.0 });
 });
 
@@ -85,4 +85,15 @@ test("the first fix timing out keeps the watch and marks the demo point resolved
   const onFix = L.watchPositionAsync.mock.calls[0][1] as (l: Location.LocationObject) => void;
   onFix(fix(38.0, -121.0));
   expect(getLocation()).toMatchObject({ isDemo: false, coords: { lat: 38.0, lng: -121.0 } });
+});
+
+test("the watch and the drive task feed one store; an older or repeated fix is dropped", () => {
+  resetLocationForTests();
+  const fix = (ts: number, lat: number) => ({ coords: { latitude: lat, longitude: -121.5, heading: 0, speed: 20, accuracy: 5, altitude: 0, altitudeAccuracy: 0 }, timestamp: ts }) as never;
+  publishFix(fix(1000, 38.5));
+  publishFix(fix(2000, 38.6));
+  publishFix(fix(2000, 38.7)); // the same fix from the other source
+  publishFix(fix(1500, 38.8)); // late
+  expect(getLocation().coords.lat).toBe(38.6);
+  expect(getLocation().ts).toBe(2000);
 });

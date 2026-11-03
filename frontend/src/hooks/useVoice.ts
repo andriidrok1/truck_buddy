@@ -29,7 +29,15 @@ const CHIME = require("../../assets/sounds/chime.mp3");
 // The recorder's prepare reuses the options of the last mode, so it must follow RECORD_MODE.
 const RECORD_MODE = { allowsRecording: true, playsInSilentMode: true, shouldRouteThroughEarpiece: false };
 // Replies play in a pure playback session (never play-and-record, which iOS sends to the earpiece).
-const PLAYBACK_MODE = { allowsRecording: false, playsInSilentMode: true, shouldRouteThroughEarpiece: false };
+// It keeps playing with the screen off or another app in front (turn calls while the phone is locked), and lowers
+// the radio or music under it instead of stopping it (plan A3, 2026-11-02).
+const PLAYBACK_MODE = {
+  allowsRecording: false,
+  playsInSilentMode: true,
+  shouldRouteThroughEarpiece: false,
+  shouldPlayInBackground: true,
+  interruptionMode: "duckOthers",
+} as const;
 
 type ListenOptions = { maxMs?: number; silenceMs?: number; startTimeoutMs?: number; chime?: boolean };
 

@@ -1,5 +1,6 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { Alert, AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -26,6 +27,7 @@ import { isTester } from "@/src/auth";
 import { chainControlAhead, routePointsAhead } from "@/src/geo/ahead";
 import { switchedLine } from "@/src/geo/routeChoice";
 import { farFromRoute } from "@/src/geo/guidance";
+import { startDriveTracking, stopDriveTracking } from "@/src/geo/driveTracking";
 import { arrivals } from "@/src/geo/arrival";
 import { createRerouteGate } from "@/src/geo/offroute";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
@@ -64,6 +66,8 @@ function routeFailText(e: unknown): string {
 // Below this much visible map (layout units) the bubble would cover the route; the sheet shows the text.
 // The route card leaves about 220 at the default font, about 120 at 130 %.
 const MIN_MAP_FOR_BUBBLE = 180;
+
+const KEEP_AWAKE_TAG = "driving";
 
 // "End route" asks first while more than this is left of the drive.
 const END_CONFIRM_ABOVE_S = 10 * 60;
@@ -1018,6 +1022,23 @@ export default function MapScreen() {
         .catch(() => {});
     }
   };
+
+  // Driving: fixes keep coming with the screen off (a location task, src/geo/driveTracking.ts), and with the app
+  // open the screen stays on. Where the task can't run (Expo Go, refused) the awake screen is all there is.
+  const drivingTo = driving ? (active?.place.name.split(",")[0] ?? "your stop") : null;
+  useEffect(() => {
+    if (!drivingTo) {
+      stopDriveTracking();
+      deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
+      return;
+    }
+    activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
+    startDriveTracking(drivingTo);
+  }, [drivingTo]);
+  useEffect(() => () => {
+    stopDriveTracking();
+    deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
+  }, []);
 
   // A fleet truck's stored sizes are not pulled over a trip's own change (src/data/profile.ts).
   useEffect(() => setMidTripCheck(() => !!trip().active), []);

@@ -54,6 +54,15 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([p, late]).finally(() => clearTimeout(timer));
 }
 
+/**
+ * One fix into the store, from the foreground watch or the drive task (src/geo/driveTracking.ts). Both run
+ * while driving; a fix not newer than the last one is dropped, so the off-route tracker never counts one twice.
+ */
+export const publishFix = (loc: Location.LocationObject) => {
+  if (!state.isDemo && loc.timestamp <= state.ts) return;
+  apply(loc);
+};
+
 const apply = (loc: Location.LocationObject) =>
   set({
     coords: { lat: loc.coords.latitude, lng: loc.coords.longitude },
@@ -89,7 +98,7 @@ export async function startLocation({ ask = true }: { ask?: boolean } = {}): Pro
     if (perm.status !== "granted") throw new Error("denied");
     const last = await Location.getLastKnownPositionAsync().catch(() => null);
     if (last) apply(last);
-    watch = await Location.watchPositionAsync({ accuracy: Location.Accuracy.High, distanceInterval: 20 }, apply);
+    watch = await Location.watchPositionAsync({ accuracy: Location.Accuracy.High, distanceInterval: 20 }, publishFix);
     // A first fix right away; the watch keeps it fresh. No fix (e.g. indoors) keeps the last known one.
     if (!last) apply(await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), 10000));
   } catch {

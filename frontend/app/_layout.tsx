@@ -14,6 +14,7 @@ import { useAuthState } from "@/src/auth";
 import { loadThemePref, useTheme } from "@/src/theme";
 import { ConsentGate } from "@/src/components/ConsentGate";
 import { startLocation } from "@/src/geo/location";
+import "@/src/geo/driveTracking"; // defines the background location task at startup (the OS may wake the app for it)
 import { ensureTruckProfile } from "@/src/hooks/useTruckProfile";
 import { ensureSettings } from "@/src/state/settingsStore";
 import { migrateStorage } from "@/src/utils/storageMigrations";
