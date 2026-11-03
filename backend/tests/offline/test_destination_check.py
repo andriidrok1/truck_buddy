@@ -124,3 +124,15 @@ def test_after_an_stt_question_the_destination_is_spoken_not_asked(agent_sandbox
     res = run(prov.handle(_req("yes", "dc5"), None))
     assert res.status == "route_set" and "Payson in Phoenix, Arizona" in res.reply
     assert timing.notes()["dest_check"] == "spoken"
+
+
+def test_no_with_another_destination_declines_and_goes_there(agent_sandbox, fake_http):
+    """Review 2026-11-02, bug 17: the same on the destination question: "No, take me to Reno" is a no to the
+    match and a new destination, not "say the town and state"."""
+    prov = _sandbox(agent_sandbox, fake_http, {"payson": [BUSINESS], "reno": [RENO]})
+    agent_sandbox.llm.on(r"^no, take me to reno$", {"intent": "go", "query": "Reno, NV"})
+    assert run(prov.handle(_req("take me to Payson, AZ", "dc6"), None)).status == "confirm"
+    timing.begin()
+    res = run(prov.handle(_req("no, take me to Reno", "dc6"), None))
+    assert res.status == "route_set" and res.place.id == RENO.id
+    assert timing.notes()["dest_check"] == "declined" and BUSINESS.id in agent._SESSIONS["dc6"]["dest_declined"]

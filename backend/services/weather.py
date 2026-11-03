@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 from models import RouteInfo, WeatherAlert
 from services.flags import on
 from services.geo import haversine_km
+from services import kv, leader
 from services.http import client
 
 logger = logging.getLogger("truckbuddy.weather")
@@ -258,9 +259,30 @@ async def _fetch_feed() -> list[dict]:
     return feats
 
 
+FEED_NAME = "nws_alerts"  # the row in feed_cache the leading worker writes and the others read
+
+
+async def _shared_feed(now: float) -> Optional[list[dict]]:
+    """The leader's copy of the feed from the shared cache, when fresh enough to serve; None otherwise."""
+    try:
+        row = await kv.feed_get(FEED_NAME)
+    except Exception as e:  # noqa: BLE001
+        logger.info("NWS shared feed unreadable: %s", type(e).__name__)
+        return None
+    if not row:
+        return None
+    alerts, fetched_at = row
+    age = (datetime.now(timezone.utc) - fetched_at).total_seconds()
+    if age >= FEED_STALE_MAX_S or not isinstance(alerts, list):
+        return None
+    _feed_cache.update({"at": now - age, "alerts": alerts})
+    return alerts
+
+
 async def _feed(now: float) -> list[dict]:
     """The truck-relevant active alerts, refreshed every FEED_TTL_S; a stale copy is served while a refresh
-    runs in the background, up to FEED_STALE_MAX_S."""
+    runs in the background, up to FEED_STALE_MAX_S. One worker (the leader) fetches NWS and shares the feed
+    through feed_cache; the others take that copy and only fetch themselves when it is missing or too old."""
     global _feed_refresh
     at = _feed_cache.get("at")
     age = (now - at) if isinstance(at, (int, float)) else None
@@ -270,15 +292,35 @@ async def _feed(now: float) -> list[dict]:
         if _feed_refresh is None or _feed_refresh.done():
             _feed_refresh = asyncio.ensure_future(refresh_feed())
         return _feed_cache["alerts"]  # type: ignore[return-value]
+    if not await leader.try_lead(FEED_NAME):
+        shared = await _shared_feed(now)
+        if shared is not None:
+            return shared
     alerts = await _fetch_feed()
     _feed_cache.update({"at": now, "alerts": alerts})
+    await _share(alerts)
     return alerts
+
+
+async def _share(alerts: list[dict]) -> None:
+    if not await leader.try_lead(FEED_NAME):
+        return
+    try:
+        await kv.feed_put(FEED_NAME, alerts)
+    except Exception as e:  # noqa: BLE001
+        logger.info("NWS feed not shared: %s", type(e).__name__)
 
 
 async def refresh_feed() -> None:
     try:
+        if not await leader.try_lead(FEED_NAME):
+            shared = await _shared_feed(time.monotonic())
+            if shared is not None:  # the leader refreshed it already
+                await _zones_for(shared)
+                return
         alerts = await _fetch_feed()
         _feed_cache.update({"at": time.monotonic(), "alerts": alerts})
+        await _share(alerts)
         await _zones_for(alerts)
     except Exception as e:  # noqa: BLE001
         logger.info("NWS feed refresh failed: %s", type(e).__name__)
@@ -533,10 +575,12 @@ def score(alerts: list[WeatherAlert]) -> int:
 
 def better_route(route: RouteInfo) -> Optional[RouteInfo]:
     """Among the alternatives (each with its own `weather`), the one that weighs least, the fastest on a tie;
-    None when nothing beats the route the driver has. A road with a closure on it is never the way around."""
+    None when nothing beats the route the driver has. A road with a closure on it, or one that breaks the
+    truck's restrictions, is never the way around."""
     if not route.weather or not route.alternatives:
         return None
-    open_roads = [r for r in route.alternatives if r.weather_known and not any(i.closed for i in r.incidents)]
+    open_roads = [r for r in route.alternatives
+                  if r.weather_known and not r.restricted and not any(i.closed for i in r.incidents)]
     if not open_roads:
         return None
     best = min(open_roads, key=lambda r: (score(r.weather), r.duration_min))

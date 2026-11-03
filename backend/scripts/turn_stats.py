@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Latency and quality stats from the backend's `turn ...` log lines.
+"""Latency and quality stats from the backend's `turn ...` log lines: `turn {json}` (since 2026-11-02, with
+req/driver/sid/org) and the older `turn k=v k=v`; a log that spans the switch reads as one.
 
     railway logs > turns.log   (or docker logs, or journalctl)
     python scripts/turn_stats.py turns.log
@@ -9,8 +10,9 @@ Prints p50/p95 per stage (stt, llm_round_1, tools, tts, first_audio, total), tur
 intent, LLM timeouts/errors, cached-token ratio, and the re-ask rate (a turn followed within 30 s by
 another turn with the same intent, a "no / not that / wrong", or a not_understood). Timestamps are
 taken from the start of each line when present (uvicorn/railway formats); without them re-ask uses
-line adjacency.
+line adjacency. Turns that name their driver and session are paired only within that dialog.
 """
+import json
 import re
 import sys
 from collections import Counter
@@ -18,23 +20,44 @@ from datetime import datetime
 from typing import Iterable, Optional
 
 TURN = re.compile(r"\bturn ((?:\w+=\S+ ?)+)$")
+TURN_JSON = re.compile(r"\bturn (\{.*\})\s*$")
 STAMP = re.compile(r"(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)")
 STAGES = ("stt", "llm_round_1", "tools", "tts", "first_audio", "total")
 REASK_RE = re.compile(r"\b(no|nope|not that|wrong|that's not|i said)\b", re.I)
 REASK_WINDOW_S = 30
 
 
-def parse_line(line: str) -> Optional[dict]:
-    m = TURN.search(line.strip())
-    if not m:
+def _fields_json(text: str) -> Optional[dict]:
+    try:
+        got = json.loads(text)
+    except ValueError:
         return None
+    if not isinstance(got, dict):
+        return None
+    # numbers as ints like the old format (timings are whole ms); None (no driver, no session) is dropped
+    return {k: (int(v) if isinstance(v, float) and v.is_integer() else v) for k, v in got.items() if v is not None}
+
+
+def _fields_kv(text: str) -> dict:
     out: dict = {}
-    for pair in m.group(1).split():
+    for pair in text.split():
         k, _, v = pair.partition("=")
         if v.lstrip("-").isdigit():
             out[k] = int(v)
         else:
             out[k] = v
+    return out
+
+
+def parse_line(line: str) -> Optional[dict]:
+    line = line.strip()
+    m = TURN_JSON.search(line)
+    out = _fields_json(m.group(1)) if m else None
+    if out is None:
+        m = TURN.search(line)
+        if not m:
+            return None
+        out = _fields_kv(m.group(1))
     s = STAMP.search(line)
     if s:
         try:
@@ -56,19 +79,30 @@ def pct(values: list[int], p: float) -> Optional[int]:
     return vs[k]
 
 
+def _dialog(t: dict) -> tuple:
+    """The dialog a turn belongs to: (device, sid) when the line names them, else one shared bucket. Lines before
+    2026-11-02 carried the device's sub under "driver"."""
+    who = t.get("device") or t.get("driver")
+    return (who, t.get("sid")) if who else (None, None)
+
+
 def reask_rate(turns: list[dict]) -> Optional[float]:
-    """Share of turns followed (within 30 s, same session when known) by a re-ask."""
-    if len(turns) < 2:
+    """Share of turns followed (within 30 s, same dialog when known) by a re-ask."""
+    dialogs: dict[tuple, list[dict]] = {}
+    for t in turns:
+        dialogs.setdefault(_dialog(t), []).append(t)
+    pairs = [(a, b) for ts in dialogs.values() for a, b in zip(ts, ts[1:])]
+    if not pairs:
         return None
     flagged = 0
-    for a, b in zip(turns, turns[1:]):
+    for a, b in pairs:
         if "_t" in a and "_t" in b and (b["_t"] - a["_t"]).total_seconds() > REASK_WINDOW_S:
             continue
         same_intent = a.get("intent") not in (None, "-", "none") and a.get("intent") == b.get("intent") \
             and a.get("status") not in ("chat", "confirm")
         if same_intent or b.get("status") == "not_understood" or REASK_RE.search(str(b.get("text", ""))):
             flagged += 1
-    return flagged / (len(turns) - 1)
+    return flagged / len(pairs)
 
 
 def summarize(turns: list[dict]) -> dict:

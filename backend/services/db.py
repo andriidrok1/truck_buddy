@@ -4,8 +4,10 @@ bring either up to the current schema.
 
 Migrations are numbered SQL files in backend/migrations/ (Postgres) with a twin in migrations/sqlite/ where
 the dialect differs (AUTOINCREMENT, text timestamps). schema_version records what has been applied; each
-file runs once, inside a transaction, in order. migrate() is idempotent and runs at startup (memory.warm)
-and lazily on the first connection, so a fresh database and an existing one end up identical.
+file runs once, inside a transaction together with its schema_version row, in order. SQLite has no
+ADD COLUMN IF NOT EXISTS, so there an ALTER TABLE ... ADD COLUMN for a column that already exists is skipped.
+migrate() is idempotent and runs at startup (memory.warm) and lazily on the first connection, so a fresh
+database and an existing one end up identical.
 
 MEMORY_STORE=pg|sqlite|off picks the store (the name predates this module); without it, Postgres when
 DATABASE_URL is set, else SQLite at MEMORY_SQLITE_PATH (default backend/data/memory.sqlite).
@@ -28,6 +30,7 @@ CONNECT_TIMEOUT_S = 8.0  # Neon resumes an idle compute in 1-3 s
 COMMAND_TIMEOUT_S = 10.0
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 _VERSION_RE = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
+_ADD_COLUMN_RE = re.compile(r"^(?:\s*--[^\n]*\n)*\s*ALTER\s+TABLE\s+(\w+)\s+ADD\s+(?:COLUMN\s+)?(\w+)", re.IGNORECASE)
 
 _pool: asyncpg.Pool | None = None
 _pool_lock: asyncio.Lock | None = None
@@ -65,19 +68,48 @@ def migration_files(dialect: str) -> list[tuple[int, Path]]:
     return sorted(files.items())
 
 
+def _sqlite_statements(script: str) -> list[str]:
+    """The script's statements, split where sqlite itself sees one end (semicolons in comments and strings
+    don't count)."""
+    out, buf = [], ""
+    for line in script.splitlines(keepends=True):
+        buf += line
+        if sqlite3.complete_statement(buf):
+            out.append(buf.strip())
+            buf = ""
+    if buf.strip():
+        out.append(buf.strip())
+    return out
+
+
+def _has_column(con: sqlite3.Connection, table: str, column: str) -> bool:
+    return any(r[1].lower() == column.lower() for r in con.execute(f"PRAGMA table_info({table})").fetchall())
+
+
 def _migrate_sqlite(con: sqlite3.Connection) -> list[int]:
-    """Applies the pending sqlite migrations; returns the versions applied."""
+    """Applies the pending sqlite migrations; returns the versions applied. Each file and its schema_version row
+    commit together (the connection is in autocommit mode, so BEGIN/COMMIT are explicit; executescript would
+    commit after every statement), and a column that is already there is not added again, so a run cut short
+    before the version row, or a schema someone patched by hand, still migrates."""
     con.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
     done = {r[0] for r in con.execute("SELECT version FROM schema_version").fetchall()}
     applied = []
     for version, path in migration_files("sqlite"):
         if version in done:
             continue
-        # executescript commits any open transaction and runs the file as a script (DDL is idempotent by
-        # construction: CREATE IF NOT EXISTS); the version row follows on the autocommit connection.
-        con.executescript(path.read_text())
-        con.execute("INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
-                    (version, datetime.now(timezone.utc).isoformat()))
+        con.execute("BEGIN")
+        try:
+            for stmt in _sqlite_statements(path.read_text()):
+                m = _ADD_COLUMN_RE.match(stmt)
+                if m and _has_column(con, m.group(1), m.group(2)):
+                    continue
+                con.execute(stmt)
+            con.execute("INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+                        (version, datetime.now(timezone.utc).isoformat()))
+            con.execute("COMMIT")
+        except BaseException:
+            con.execute("ROLLBACK")
+            raise
         applied.append(version)
     return applied
 

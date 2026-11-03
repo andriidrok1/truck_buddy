@@ -102,14 +102,14 @@ async def place_ahead(req: NudgeRequest, categories: tuple[str, ...], window: tu
     return chosen, round(miles)
 
 
-async def _hos(sess: dict, key: Optional[str]) -> Optional[hos.Hos]:
+async def _hos(sess: dict, key: Optional[str], user_id: Optional[str] = None) -> Optional[hos.Hos]:
     if not key or not hos.enabled():
         return None
     cached = sess.get("hos_cache")
     if cached and time.time() - cached[0] < HOS_CACHE_S:  # epoch time: the state crosses processes
         return cached[1]
     try:
-        h = await hos.available_time(key)
+        h = await hos.available_time(key, user_id)
     except Exception as e:  # noqa: BLE001
         logger.info("nudge hos lookup failed: %s", type(e).__name__)
         return None
@@ -126,7 +126,7 @@ async def compute(req: NudgeRequest, sess: dict, motive_key: Optional[str]) -> l
     if not req.driving:
         return []
     out: list[Nudge] = []
-    h = await _hos(sess, motive_key)
+    h = await _hos(sess, motive_key, req.motive_user)
 
     if on("NUDGE_BREAK"):
         due = break_due_min(h, req.drive_elapsed_min, req.truck_profile.break_hours)
