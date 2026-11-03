@@ -109,6 +109,16 @@ def needs_question(d: dict) -> Optional[str]:
     return None
 
 
+def defaulted(d: dict) -> str:
+    """What the search goes with when the driver did not answer the question: "I'll look for someone who can come
+    out to you, tell them which tire when you call"."""
+    what = ("I'll look for a shop you can roll to" if resolve_mode(d) == "shop_ok"
+            else "I'll look for someone who can come out to you")
+    if d.get("kind") == "tire" and not d.get("tire_position"):
+        what += ", tell them which tire when you call"
+    return what
+
+
 def resolve_mode(d: dict) -> str:
     if d.get("kind") in ("tow", "fuel"):
         return "mobile_needed"
@@ -511,6 +521,12 @@ async def from_intent(d: dict, req: AgentRequest, sess: dict, text: str, source:
     if d.get("kind") not in ps.KINDS:
         d["kind"] = "mechanic"
     q = needs_question(d)
+    if q and sess.pop("breakdown_asked", None) == q:
+        # Asked a moment ago and the driver said something else ("call the cheapest" before "which tire", QA
+        # 2026-11-02): never the same question twice in a row. The search starts with the default and says which.
+        res = start_research(d, req, sess, text, source)
+        res.reply = f"Okay, {defaulted(d)}. " + START.removeprefix("Okay. ")
+        return res
     if q:
         sess["breakdown_pending"] = {"text": text, "kind": d["kind"], "detail": d.get("detail"), "question": q}
         return AgentResponse(status="chat", transcript=text, reply=q, breakdown_kind=d["kind"], source=source)
@@ -532,6 +548,7 @@ async def handle(req: AgentRequest, sess: dict, text: str, source: str) -> Optio
 
 
 async def _handle(req: AgentRequest, sess: dict, text: str, source: str) -> Optional[AgentResponse]:
+    sess.pop("breakdown_asked", None)  # only ever about the turn right after the question
     pending = sess.get("breakdown_pending")
     if pending:
         with stage("llm_round_1"):
@@ -539,7 +556,10 @@ async def _handle(req: AgentRequest, sess: dict, text: str, source: str) -> Opti
                                          f"Then answered: {text}")
         sess.pop("breakdown_pending", None)
         if d.get("changed_topic") is True or d.get("breakdown") is False:
-            return None  # "never mind, take me to Reno" / "find a truck stop": the normal agent handles it
+            # "never mind, take me to Reno" / "find a truck stop": the normal agent handles it. Should it read
+            # the breakdown again, from_intent knows the question was just asked.
+            sess["breakdown_asked"] = pending.get("question")
+            return None
         # The answer only fills in how/which; the problem itself stays what the driver said first.
         d["kind"] = pending["kind"]
         d["detail"] = pending.get("detail") or d.get("detail")

@@ -5,7 +5,7 @@ Keys written to the session anywhere (services/agent.py, services/nudges.py, ser
 all declared below: history, places, city, pending, via, alternatives, rejected, dest_declined, rejected_chains,
 confirmed_once, facts, past, past_loaded, n, turns, driver, nudge_break_done, nudge_parking_done,
 nudge_chains_done, hos_cache, breakdown_pending, breakdown, providers, providers_at, near, say_learned,
-last_offer, replies, name_at.
+last_offer, replies, name_at, breakdown_asked.
 Rules that make it serializable: the former sets (rejected, dest_declined) are lists; the pending question's
 "yes" is a pattern NAME (YES_PATTERNS in agent.py), not a compiled regex; the memory read that used to live on
 as an asyncio.Task (past_task) is gone, past_loaded says whether it has landed; clocks are epoch seconds
@@ -54,6 +54,7 @@ class DialogState(BaseModel):
     nudge_chains_done: bool = False
     hos_cache: Optional[list] = None  # [epoch seconds, hos dict]
     breakdown_pending: Optional[dict] = None
+    breakdown_asked: Optional[str] = None  # the question asked last turn and not answered (never asked twice in a row)
     breakdown: Optional[dict] = None
     providers: list[Provider] = []
     providers_at: float = 0.0  # epoch seconds
