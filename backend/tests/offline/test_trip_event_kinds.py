@@ -5,7 +5,7 @@ from services.trip_events import KNOWN_KINDS
 
 APP_KINDS = {
     "reroute", "turn_unknown_action", "turn_failed", "stop_removed", "speech_dropped", "route_started",
-    "route_restored", "route_replaced", "route_ended", "maneuver_said", "alternative_picked",
+    "route_restored", "route_replaced", "route_ended", "maneuver_said", "alternative_picked", "position",
 }
 
 

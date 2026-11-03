@@ -43,7 +43,7 @@ FUTURE_LIMIT = timedelta(minutes=5)
 # kinds on its own schedule).
 KNOWN_KINDS = frozenset({
     "route_started", "reroute", "alternative_picked", "stop_added", "stops_cleared", "stop_removed", "route_ended",
-    "route_restored", "route_replaced", "turn_unknown_action",
+    "route_restored", "route_replaced", "turn_unknown_action", "position",
     "maneuver_said", "speech_dropped", "turn_failed",
     "stop_guard", "dest_check", "stt_confirm", "not_understood", "turn_error", "route_failed", "reroute_requested",
 })

@@ -466,3 +466,13 @@ def test_a_fleet_token_without_its_device_row_is_401(client):
     tenancy._devices.pop(sub, None)
     r = client.get("/api/trips", headers=f["a_drv"])
     assert r.status_code == 401 and r.json()["detail"] == "This device is no longer registered"
+
+
+def test_a_position_event_moves_the_truck_on_the_dashboard(client):
+    # Bug 13: the app now logs "position" every 5 minutes while driving; the dashboard takes it like any event.
+    f = _two_fleets(client)
+    client.post("/api/trips/events", headers=f["a_drv"], json=[
+        _ev("route_started", place_id="p1", lat=38.58, lng=-121.49, t="2026-11-02T17:00:00Z"),
+        _ev("position", speed_mps=29.1, lat=39.1, lng=-120.9, t="2026-11-02T17:55:00Z")])
+    truck = next(v for v in client.get("/api/fleet/vehicles", headers=f["a_disp"]).json()["vehicles"] if v["id"] == f["t1"])
+    assert truck["position"]["lat"] == 39.1 and truck["last_kind"] == "position"
