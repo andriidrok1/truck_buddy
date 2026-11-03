@@ -160,7 +160,8 @@ def test_the_second_one_is_the_second_card_on_the_screen(agent_sandbox, fake_htt
     first = run(prov.handle(_req("where can I park tonight", sid="h4h"), None))
     ctx = prov._context(_req("x", active=first.place), agent._SESSIONS["h4h"])
     on_screen = [p.name for p in first.options]
-    assert f"1={on_screen[0]} (truck_stop)" in ctx and f"2={on_screen[1]} (truck_stop)" in ctx
-    assert f"{len(on_screen) + 1}={first.place.name} (truck_stop)" in ctx and "[current route]" in ctx
+    # the town may follow the name ("Roady's Truck Stop in West Sacramento, CA (truck_stop)")
+    assert f"1={on_screen[0]}" in ctx and f"2={on_screen[1]}" in ctx
+    assert f"{len(on_screen) + 1}={first.place.name}" in ctx and "[current route]" in ctx
     res = run(prov.handle(_req("the second one", active=first.place, sid="h4h"), None))
     assert res.status == "route_set" and res.place.id == first.options[1].id, res.reply

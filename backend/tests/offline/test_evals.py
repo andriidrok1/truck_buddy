@@ -82,7 +82,7 @@ def test_preset_contexts_carry_their_state(agent_sandbox):
     assert "Current route: Pilot Travel Center" in route and "4.7 miles, about 9 minutes" in route
     options = build_context("options_shown")[1]
     # numbered as the app's cards: the other options first, the current route last (QA 2026-11-02, bug 6)
-    assert "3=Pilot Travel Center (truck_stop)" in options and "diesel $5.39" in options
+    assert "3=Pilot Travel Center in West Sacramento, CA (truck_stop)" in options and "diesel $5.39" in options
     assert "1=Love's Travel Stop" in options and "2=Flying J Travel Center" in options
     assert "[current route]" in options and "Driver: find me a truck stop" in options
     assert "Stops on the way: Love's Travel Stop" in build_context("stops")[1]

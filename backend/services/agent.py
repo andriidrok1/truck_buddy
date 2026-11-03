@@ -292,6 +292,25 @@ def _background(coro) -> None:
     _background_task(asyncio.create_task(coro))
 
 
+_COUNTRY = re.compile(r"^(?:USA|US|United States(?: of America)?)$", re.I)
+
+
+def _town(address: Optional[str]) -> str:
+    """"3645 W Capitol Ave, West Sacramento, CA 95691, USA" -> "West Sacramento, CA"; "Reno, NV, USA" -> "Reno, NV"."""
+    parts = [x.strip() for x in (address or "").split(",") if x.strip() and not _COUNTRY.match(x.strip())]
+    if len(parts) < 2:
+        return ""
+    state = parts[-1].split()[0] if parts[-1].split() else ""
+    if not re.fullmatch(r"[A-Z]{2}", state):
+        return ""
+    return f"{parts[-2]}, {state}"
+
+
+def _in_town(p: Place) -> str:
+    town = _town(p.address)
+    return f" in {town}" if town and town.split(",")[0].lower() not in p.name.lower() else ""
+
+
 def _street(address: Optional[str]) -> str:
     """Landmark for speech: the street/exit without the house number, or ''."""
     if not address:
@@ -1002,7 +1021,8 @@ class LlmAgentProvider:
             context += " Conversation so far: " + " | ".join(sess["history"][-MAX_HISTORY:]) + "."
         if sess["places"]:
             context += " Places found earlier: " + "; ".join(
-                f"{i}={p.name} ({p.category}) {p.distance_mi or 0:.1f} mi{_diesel_note(p)}{_rating_note(p)}: "
+                # the town: drivers name a place by it ("the one in Reno"), and the name alone doesn't say (eval 2026-11-02)
+                f"{i}={p.name}{_in_town(p)} ({p.category}) {p.distance_mi or 0:.1f} mi{_diesel_note(p)}{_rating_note(p)}: "
                 f"{approach.note(p)}"
                 + (" [current route]" if req.active_place and p.id == req.active_place.id else "")
                 for i, p in enumerate(numbered(sess["places"], _id(req.active_place), req.ui.option_ids), 1)) + "."
