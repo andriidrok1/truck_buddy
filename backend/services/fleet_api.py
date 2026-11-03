@@ -17,6 +17,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
+from models import TruckProfile
 from services import auth, secrets, tenancy, trip_events
 
 logger = logging.getLogger("truckbuddy.fleet")
@@ -117,6 +118,15 @@ SUMMARY_COUNTS = ("routes", "reroutes", "guard_questions", "failed_turns", "rout
 
 def _zero_row(vehicle_id: Optional[str], label: Optional[str]) -> dict:
     return {"vehicle_id": vehicle_id, "label": label, **dict.fromkeys(SUMMARY_COUNTS, 0)}
+
+
+@router.put("/vehicles/{vehicle_id}/profile", response_model=TruckProfile)
+async def vehicle_profile(profile: TruckProfile, vehicle_id: str = Path(max_length=64), principal: auth.Principal = Depends(reader)):
+    """The truck's sizes, which every driver of it routes with: the owner's and the dispatcher's to set (a driver
+    changes only the trip, from the phone). 404 for a truck that is not the caller's."""
+    if not await _guarded(tenancy.vehicle_profile_put(principal.org_id, vehicle_id, profile)):
+        raise HTTPException(status_code=404, detail="No such vehicle")
+    return profile.model_copy(update={"driver_name": None})
 
 
 @router.get("/summary")

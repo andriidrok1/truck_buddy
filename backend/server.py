@@ -115,9 +115,13 @@ async def auth_fleet_code(req: FleetCodeRequest, principal: auth.Principal = Dep
 
 
 @api.get("/me/profile", response_model=TruckProfile)
-async def me_profile(principal: auth.Principal = Depends(auth.require_driver)):
+async def me_profile(response: Response, principal: auth.Principal = Depends(auth.require_driver)):
     """The truck profile the server routes for when the app sends none: the vehicle's when the device is bound to
-    one, else the driver's. 404 when nothing is stored yet (the app keeps its local copy)."""
+    one, else the driver's. 404 when nothing is stored yet (the app keeps its local copy). X-Profile-Source says
+    which: "vehicle" is the fleet's truck, which a driver's own change does not overwrite (it holds for the trip
+    on the phone), "driver" is the driver's own copy."""
+    fleet_truck = bool(principal.vehicle_id) and principal.role == "driver"
+    response.headers["X-Profile-Source"] = "vehicle" if fleet_truck else "driver"
     try:
         profile = await tenancy.profile_get(principal.sub)
     except Exception as e:  # noqa: BLE001

@@ -476,3 +476,43 @@ def test_a_position_event_moves_the_truck_on_the_dashboard(client):
         _ev("position", speed_mps=29.1, lat=39.1, lng=-120.9, t="2026-11-02T17:55:00Z")])
     truck = next(v for v in client.get("/api/fleet/vehicles", headers=f["a_disp"]).json()["vehicles"] if v["id"] == f["t1"])
     assert truck["position"]["lat"] == 39.1 and truck["last_kind"] == "position"
+
+
+def test_a_fleet_driver_changes_the_trip_not_the_truck(client):
+    # Bug 2 (decision 2026-11-02): a fleet driver's PUT /me/profile rewrote the truck every driver of it uses,
+    # driver_name included, and the name stayed on the truck after "Delete my data". The truck's sizes are the
+    # owner's and the dispatcher's; the driver's name goes to the driver's own row; the trip's own sizes stay
+    # on the phone (the app sends them with every request).
+    f = _two_fleets(client)
+    other = _device(client, run(tenancy.create_fleet_code(f["acme"], f["t1"])))  # a second driver of Unit 1
+    r = client.put("/api/me/profile", json=TruckProfile(height_in=150, trailer_ft=48, driver_name="Sam").model_dump(),
+                   headers=f["a_drv"])
+    assert r.status_code == 200
+    tenancy.reset_caches()
+    r = client.get("/api/me/profile", headers=f["a_drv"])
+    mine = r.json()
+    assert mine["height_in"] == 162 and mine["driver_name"] == "Sam"  # the truck's sizes, the driver's own name
+    assert r.headers["x-profile-source"] == "vehicle"  # the app keeps its own sizes for the trip
+    theirs = client.get("/api/me/profile", headers=other).json()
+    assert theirs["height_in"] == 162 and theirs["driver_name"] is None
+    drivers = client.get("/api/fleet/drivers", headers=f["a_owner"]).json()["drivers"]
+    assert any(d["display_name"] == "Sam" for d in drivers)
+    # "Delete my data" takes the name with it
+    client.delete("/api/memory", headers=f["a_drv"])
+    tenancy.reset_caches()
+    assert client.get("/api/me/profile", headers=f["a_drv"]).json()["driver_name"] is None
+
+
+def test_the_owner_and_the_dispatcher_set_the_trucks_sizes(client):
+    f = _two_fleets(client)
+    url = f"/api/fleet/vehicles/{f['t1']}/profile"
+    body = TruckProfile(height_in=168, trailer_ft=53, driver_name="ignored").model_dump()
+    assert client.put(url, json=body, headers=f["a_drv"]).status_code == 403
+    assert client.put(url, json=body, headers=f["b_disp"]).status_code == 404  # another fleet's truck
+    r = client.put(url, json=body, headers=f["a_disp"])
+    assert r.status_code == 200 and r.json()["height_in"] == 168 and r.json()["driver_name"] is None
+    tenancy.reset_caches()
+    assert client.get("/api/me/profile", headers=f["a_drv"]).json()["height_in"] == 168
+    assert client.put(url, json=body, headers=f["a_owner"]).status_code == 200
+    client.put("/api/me/profile", json=TruckProfile(height_in=150).model_dump(), headers=f["solo"])
+    assert client.get("/api/me/profile", headers=f["solo"]).headers["x-profile-source"] == "driver"

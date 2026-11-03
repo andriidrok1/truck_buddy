@@ -1,4 +1,5 @@
 """Schema migrations: numbered SQL files applied once each, recorded in schema_version, idempotent."""
+import json
 import os
 import sqlite3
 
@@ -152,3 +153,18 @@ def test_postgres_motive_index_stops_on_duplicates(monkeypatch):
         run(scenario())
     finally:
         db._pool, db._pool_lock = None, None
+
+
+def test_sqlite_0007_takes_the_drivers_name_off_the_trucks(tmp_path, monkeypatch):
+    files = db.migration_files("sqlite")
+    monkeypatch.setattr(db, "migration_files", lambda dialect: [f for f in files if f[0] <= 6])
+    con = sqlite3.connect(str(tmp_path / "names.sqlite"), isolation_level=None)
+    db._migrate_sqlite(con)
+    con.execute("INSERT INTO orgs (id, name, solo, created_at) VALUES ('o1', 'Acme', 0, '2026-10-01T00:00:00+00:00')")
+    con.execute("INSERT INTO vehicles (id, org_id, label, profile, created_at) VALUES "
+                "('v1', 'o1', 'Unit 1', '{\"height_in\": 162, \"driver_name\": \"Solo QA\"}', '2026-10-01T00:00:00+00:00')")
+    monkeypatch.setattr(db, "migration_files", lambda dialect: files)
+    assert 7 in db._migrate_sqlite(con)
+    profile = json.loads(con.execute("SELECT profile FROM vehicles WHERE id = 'v1'").fetchone()[0])
+    assert profile == {"height_in": 162}
+    con.close()

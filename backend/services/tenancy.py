@@ -363,8 +363,14 @@ def _profile_target(dev: Device) -> tuple[str, str]:
     return ("vehicles", dev.vehicle_id) if dev.vehicle_id else ("drivers", dev.driver_id)
 
 
+def _drives_a_fleet_truck(dev: Device) -> bool:
+    """A fleet driver on a fleet truck: the truck's sizes are the owner's and the dispatcher's, not theirs."""
+    return bool(dev.vehicle_id) and (dev.role or "driver") == "driver"
+
+
 async def profile_get(sub: str) -> Optional[TruckProfile]:
-    """The stored truck profile for this device (the vehicle's when bound to one), or None."""
+    """The stored truck profile for this device (the vehicle's when bound to one, with the driver's own name from
+    the drivers row), or None."""
     hit = _profiles.get(sub)
     if hit and time.monotonic() - hit[1] < PROFILE_CACHE_S:
         return hit[0]
@@ -374,38 +380,77 @@ async def profile_get(sub: str) -> Optional[TruckProfile]:
     table, row_id = _profile_target(dev)
     k = db.store()
     if k == "sqlite":
-        row = await db._sq_run(lambda con: con.execute(f"SELECT profile FROM {table} WHERE id = ?", (row_id,)).fetchone())
-        text = row[0] if row else None
+        def _read(con):
+            row = con.execute(f"SELECT profile FROM {table} WHERE id = ?", (row_id,)).fetchone()
+            name = con.execute("SELECT display_name FROM drivers WHERE id = ?", (dev.driver_id,)).fetchone()
+            return (row[0] if row else None), (name[0] if name else None)
+        text, name = await db._sq_run(_read)
     else:
         pool = await db._db()
         text = await pool.fetchval(f"SELECT profile::text FROM {table} WHERE id = $1", row_id)
+        name = await pool.fetchval("SELECT display_name FROM drivers WHERE id = $1", dev.driver_id)
     profile = None
     if text:
         try:
             profile = TruckProfile(**json.loads(text))
         except Exception as e:  # noqa: BLE001 - a bad row must not break every request
             logger.warning("stored profile for %s unreadable: %s", sub, e)
+    if profile is not None and table == "vehicles":
+        profile = profile.model_copy(update={"driver_name": name})  # a truck has no driver's name of its own
     _profiles[sub] = (profile, time.monotonic())
     return profile
 
 
 async def profile_put(sub: str, profile: TruckProfile) -> None:
+    """The app's profile. A fleet driver's sizes are not written anywhere: they change the trip, which the phone
+    carries (decision 2026-11-02, bug 2: one driver's trailer and name were written onto the truck for all of
+    its drivers). Their name goes to their own drivers row."""
     dev = await ensure_solo_org(sub)
     if dev is None:
         raise RuntimeError("store is off")
+    k = db.store()
+    if _drives_a_fleet_truck(dev):
+        name = profile.driver_name
+        if k == "sqlite":
+            await db._sq_run(lambda con: con.execute("UPDATE drivers SET display_name = ? WHERE id = ?", (name, dev.driver_id)))
+        else:
+            pool = await db._db()
+            await pool.execute("UPDATE drivers SET display_name = $1 WHERE id = $2", name, dev.driver_id)
+        _profiles.pop(sub, None)
+        return
     table, row_id = _profile_target(dev)
     text = profile.model_dump_json()
-    k = db.store()
     if k == "sqlite":
         await db._sq_run(lambda con: con.execute(f"UPDATE {table} SET profile = ? WHERE id = ?", (text, row_id)))
     else:
         pool = await db._db()
         await pool.execute(f"UPDATE {table} SET profile = $1::jsonb WHERE id = $2", text, row_id)
-    _profiles[sub] = (profile, time.monotonic())
+    if table == "vehicles":
+        _profiles.clear()  # every device on this truck
+    else:
+        _profiles[sub] = (profile, time.monotonic())
+
+
+async def vehicle_profile_put(org_id: str, vehicle_id: str, profile: TruckProfile) -> bool:
+    """The truck's sizes, set by its fleet's owner or dispatcher; no driver's name. False for a truck that is not
+    the org's."""
+    text = profile.model_copy(update={"driver_name": None}).model_dump_json()
+    k = db.store()
+    if k == "off":
+        raise RuntimeError("store is off")
+    if k == "sqlite":
+        n = await db._sq_run(lambda con: con.execute(
+            "UPDATE vehicles SET profile = ? WHERE id = ? AND org_id = ?", (text, vehicle_id, org_id)).rowcount)
+    else:
+        pool = await db._db()
+        status = await pool.execute("UPDATE vehicles SET profile = $1::jsonb WHERE id = $2 AND org_id = $3", text, vehicle_id, org_id)
+        n = int(status.split()[-1])
+    _profiles.clear()  # every device on this truck reads it again
+    return n > 0
 
 
 async def profile_clear(sub: str) -> bool:
-    """"Delete my data": the driver's own stored profile goes; a fleet truck's profile is the fleet's and stays.
+    """"Delete my data": the driver's own stored profile and name go; a fleet truck's profile is the fleet's and stays.
     True when there was one."""
     dev = await device_of(sub)
     _profiles.pop(sub, None)
@@ -413,11 +458,15 @@ async def profile_clear(sub: str) -> bool:
         return False
     k = db.store()
     if k == "sqlite":
-        n = await db._sq_run(lambda con: con.execute(
-            "UPDATE drivers SET profile = NULL WHERE id = ? AND profile IS NOT NULL", (dev.driver_id,)).rowcount)
+        def _clear(con):
+            n = con.execute("UPDATE drivers SET profile = NULL WHERE id = ? AND profile IS NOT NULL", (dev.driver_id,)).rowcount
+            con.execute("UPDATE drivers SET display_name = NULL WHERE id = ?", (dev.driver_id,))  # the name goes too
+            return n
+        n = await db._sq_run(_clear)
     else:
         pool = await db._db()
         status = await pool.execute("UPDATE drivers SET profile = NULL WHERE id = $1 AND profile IS NOT NULL", dev.driver_id)
+        await pool.execute("UPDATE drivers SET display_name = NULL WHERE id = $1", dev.driver_id)  # the name goes too
         n = int(status.split()[-1])
     return n > 0
 
