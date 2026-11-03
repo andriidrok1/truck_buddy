@@ -204,6 +204,30 @@ async def landmarks(tip: str) -> str:
     return out
 
 
+_ROAD_WORDS = {"n", "s", "e", "w", "north", "south", "east", "west", "ave", "avenue", "st", "street", "rd", "road",
+               "blvd", "boulevard", "dr", "drive", "hwy", "highway", "way", "ln", "lane", "pkwy", "parkway", "ct", "the"}
+_BARE_ROAD = re.compile(r"\s*\b(?:off|from|on|along)\s+(?:the\s+)?(?:(?:frontage|access|main|service)\s+)?road$", re.I)
+
+
+def _marks(marks: str, street: Optional[str]) -> str:
+    """The landmark phrase without what "off <street>" said already: "the wide driveway off the road" read as
+    "On your left, off West Capitol Ave, the wide driveway off the road" (QA 2026-11-02). A clause's bare "off the
+    (frontage) road" tail and a clause about the same street go; the rest of the landmark stays."""
+    if not marks or not street:
+        return marks
+    core = [w for w in re.findall(r"[a-z0-9-]+", street.lower()) if w not in _ROAD_WORDS]
+    same = re.compile(r"\s*\b(?:off|from|on|onto|along|at)\s+[^,]*\b(?:" + "|".join(map(re.escape, core)) + r")\b.*$",
+                      re.I) if core else None
+    kept = []
+    for clause in (c.strip() for c in marks.split(",")):
+        clause = _BARE_ROAD.sub("", clause)
+        if same is not None:
+            clause = same.sub("", clause)
+        if clause.strip():
+            kept.append(clause.strip())
+    return ", ".join(kept)
+
+
 def _phrase(base: ParkingCheck, ap: Approach, marks: str) -> ParkingCheck:
     e = _entry(base)
     s = side(ap, e.lat, e.lng) if e else None
@@ -212,6 +236,7 @@ def _phrase(base: ParkingCheck, ap: Approach, marks: str) -> ParkingCheck:
     parts = [f"On your {s}"]
     if ap.street:
         parts.append(f"off {ap.street}")
+    marks = _marks(marks, ap.street)
     if marks:
         parts.append(marks)
     return base.model_copy(update={"entry_tip": ", ".join(parts), "relative": True})
