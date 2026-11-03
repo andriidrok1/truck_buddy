@@ -277,8 +277,10 @@ def stt_confirm_below() -> float:
 
 
 def _facts(req: AgentRequest) -> Optional[dict]:
-    sess = _SESSIONS.get(req.session_id or "")
-    return sess.get("facts") if sess else None
+    """The learned facts of this dialog, from the state the turn loaded: with the database store the in-process
+    dialogs are empty, and a learned "avoid Pilot" was ignored on every worker (review 2026-11-02, item 16)."""
+    sess = _session_if(req.session_id)
+    return sess.get("facts") if sess is not None else None
 
 
 def _background_task(t: asyncio.Task) -> None:

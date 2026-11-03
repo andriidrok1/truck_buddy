@@ -154,3 +154,29 @@ def test_nudges_pending_goes_through_the_store(api_client, sqlite_store, monkeyp
     con = sqlite3.connect(str(sqlite_store))
     assert con.execute("SELECT count(*) FROM dialog_sessions").fetchone()[0] == 0
     con.close()
+
+
+def test_a_learned_avoid_holds_with_the_database_store_on_any_worker(agent_sandbox, fake_http, sqlite_store, monkeypatch):
+    """Review 2026-11-02, item 16: with SESSION_STORE=db the place choice read the learned facts from the
+    in-process dialogs only. Three "not that one" on Pilot, "I'll stop suggesting Pilot", and Pilot again;
+    a new dialog on another worker picked Pilot as well."""
+    monkeypatch.setenv("SESSION_STORE", "db")
+    fake_http.add("router.hereapi.com", "/v8/routes", json=DATA)
+    fake_http.add("api.weather.gov", "/alerts/active", json={"features": []})
+    fake_http.add("cwwp2.dot.ca.gov", "/data/", json={"data": []})
+    pilots = [Place(id=f"p{i}", name=f"Pilot Travel Center #{i}", category="truck_stop", lat=38.5, lng=-121.4,
+                    address="1 Main St, Lodi, CA", distance_mi=2.0 + i) for i in range(4)]
+    loves = Place(id="l", name="Love's Travel Stop", category="truck_stop", lat=38.5, lng=-121.4,
+                  address="1 Main St, Lodi, CA", distance_mi=9.0)
+    agent_sandbox.places_provider.places = pilots + [loves]
+    agent_sandbox.llm.on(r"truck stop", {"intent": "find", "category": "truck_stop"})
+    agent_sandbox.llm.on(r"not that one", {"intent": "pick", "place_index": None, "category": "truck_stop"})
+    worker_a, worker_b = agent_sandbox.provider(), agent.LlmAgentProvider()
+    res = run(worker_a.handle(AgentRequest(text="find a truck stop", session_id="drv_av:d1", **SAC), "drv_av"))
+    for _ in range(3):
+        res = run(worker_a.handle(AgentRequest(text="not that one", session_id="drv_av:d1", active_place=res.place, **SAC), "drv_av"))
+    assert res.reply.endswith("Got it, I'll stop suggesting Pilot.") and res.place.id == "l"
+    assert not agent._SESSIONS  # every dialog lives in the database
+    agent._past_tasks.clear()
+    fresh = run(worker_b.handle(AgentRequest(text="find a truck stop", session_id="drv_av:d2", **SAC), "drv_av"))
+    assert fresh.place.id == "l"
