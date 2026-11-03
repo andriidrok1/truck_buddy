@@ -15,7 +15,7 @@ from starlette.middleware.cors import CORSMiddleware
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-from models import AgentRequest, AgentResponse, Category, NudgeRequest, NudgeResponse, ParkingCheck, ParkingRequest, Place, PlacesResponse, RerouteRequest, RouteRequest, RouteResponse, TruckProfile  # noqa: E402,E501
+from models import AgentRequest, AgentResponse, Category, NudgeRequest, NudgeResponse, ParkingCheck, ParkingRequest, Place, PlacesResponse, RerouteRequest, RouteInfo, RouteRequest, RouteResponse, TruckProfile  # noqa: E402,E501
 from services.agent import get_agent_provider  # noqa: E402
 from services import breakdown, flags, nudges  # noqa: E402
 from services.speech_text import split_reply  # noqa: E402
@@ -145,12 +145,7 @@ async def build_route(req: RouteRequest):
         raise HTTPException(status_code=503, detail="Truck routing is unavailable right now")
     # NWS alerts and Caltrans chain controls along the way; slow or down sources cost at most WEATHER_BUDGET_S
     # and never the route itself.
-    try:
-        route.weather, route.chain_controls = await asyncio.wait_for(
-            asyncio.gather(weather.alerts_along(route.geometry), chains.for_route(route.geometry)), WEATHER_BUDGET_S)
-    except Exception as e:  # noqa: BLE001
-        logger.info("route weather/chains skipped: %s", e)
-        route.weather, route.chain_controls = [], []
+    await _advisories(route, WEATHER_BUDGET_S, WEATHER_BUDGET_S)
     if req.skip_parking:  # breakdown providers: the driver needs the shop, no parking check at all
         return RouteResponse(place=place, route=route, parking=None)
     approach.background(check_parking(place, route.approach))  # don't wait for the satellite; app re-asks /parking
@@ -175,6 +170,9 @@ async def nudges_endpoint(req: NudgeRequest, request: Request, driver: str = Dep
     return NudgeResponse(nudges=out)
 
 
+REROUTE_ADVISORY_BUDGET_S = 1.0
+
+
 @api.post("/reroute", response_model=RouteResponse)
 async def reroute(req: RerouteRequest):
     """The app detected the driver left the route: a new route from the current position to the same place.
@@ -192,7 +190,26 @@ async def reroute(req: RerouteRequest):
                                                      via=req.via)
     except RoutingUnavailable:
         raise HTTPException(status_code=503, detail="Truck routing is unavailable right now")
+    # The new route needs its own alerts and chain controls, or the advisories vanish after a reroute; the
+    # driver is off the route while this runs, so the budget is shorter.
+    await _advisories(route, REROUTE_ADVISORY_BUDGET_S, 0)
     return RouteResponse(place=req.place, route=route, parking=cached_parking(req.place))
+
+
+async def _advisories(route: RouteInfo, budget_s: float, alt_budget_s: float) -> None:
+    """NWS alerts (route and alternatives) and Caltrans chain controls, each bounded, never an error."""
+    async def chain_controls():
+        try:
+            return await asyncio.wait_for(chains.for_route(route.geometry), budget_s)
+        except Exception as e:  # noqa: BLE001
+            logger.info("route chains skipped: %s", type(e).__name__)
+            return []
+
+    try:
+        _, route.chain_controls = await asyncio.gather(weather.for_route(route, budget_s, alt_budget_s), chain_controls())
+    except Exception as e:  # noqa: BLE001
+        logger.info("route advisories failed: %s", e)
+        route.weather, route.chain_controls = [], []
 
 
 @api.post("/parking", response_model=ParkingCheck)
@@ -505,6 +522,7 @@ app.include_router(parking_warm.router)
 @app.on_event("startup")
 async def _memory_up():
     _bg(memory.warm())
+    _bg(weather.warm())  # the NWS alert feed and its zone polygons, so the first route pays nothing
     await chains.start()  # Caltrans chain-control poller (CHAIN_CONTROLS=0 to skip)
     await tpims.start()  # live truck parking counts (TPIMS_ENABLED=0 to skip)
 

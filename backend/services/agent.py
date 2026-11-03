@@ -7,6 +7,7 @@ Route answers are templated (one sentence) and parking directions follow from th
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 from collections import OrderedDict
@@ -22,6 +23,7 @@ from services.geocode import is_street, geocode
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
 from services.parking import cached_parking, check_parking, is_town, listed_in_data
 from services.places import get_places_provider
+from services.errors import NoTruckRoute
 from services.routing import VIA_STOP_S, get_routing_provider
 from services.flags import on
 from services.speech_text import fit_reply
@@ -31,6 +33,8 @@ logger = logging.getLogger("truckbuddy.agent")
 
 NOT_UNDERSTOOD = "Sorry, I didn't catch that. Try again."
 ROUTE_DOWN = "I couldn't build a truck route there right now. Try again in a minute."
+NO_TRUCK_ROUTE = ("I can't find a truck route there from here. Try another destination, or an address on a main "
+                  "road nearby.")
 PLACES_DOWN = "Place search is down right now. Give me an address instead."
 LLM_DOWN = "Give me a second, I lost my train of thought. Say that again."
 SOMETHING_BROKE = "Something went wrong on my end. Try again in a minute."
@@ -44,6 +48,28 @@ class RouteFailed(Exception):
 def _error(text: str, reply: str, source: str) -> "AgentResponse":
     """Infrastructure trouble: a distinct spoken line + a toast, never "didn't catch that"."""
     return AgentResponse(status="error", transcript=text, reply=reply, message=reply, source=source)
+
+
+def _route_failed(text: str, e: "RouteFailed", source: str) -> "AgentResponse":
+    """Routing is down -> "try again in a minute"; the router found no truck route -> say so, retrying won't help."""
+    logger.warning("agent routing failed: %s", e)
+    return _error(text, NO_TRUCK_ROUTE if isinstance(e.__cause__, NoTruckRoute) else ROUTE_DOWN, source)
+
+
+def _nearest_index(geometry: list, lat: float, lng: float) -> int:
+    """Vertex of the route closest to a point (planar, good enough to order stops along the way)."""
+    kx = max(0.2, abs(math.cos(math.radians(lat))))
+    best, at = float("inf"), 0
+    for i, p in enumerate(geometry):
+        d = (p[0] - lat) ** 2 + ((p[1] - lng) * kx) ** 2
+        if d < best:
+            best, at = d, i
+    return at
+
+
+def _profile_key(t: TruckProfile) -> tuple:
+    """What changes the truck route: alternatives planned for another truck are not offered."""
+    return (t.height_in, t.trailer_ft, t.weight_lb, t.hazmat, t.avoid_tolls, t.avoid_ferries_tunnels)
 
 
 # Control phrases the model sometimes returns as a destination (or only as a reply).
@@ -114,7 +140,11 @@ def city_of(query: str, place: Place) -> Optional[str]:
 MODEL = ("openai", "gpt-5.4-mini")
 MAX_OPTIONS = 4
 ALTERNATIVES_FRESH = 2  # when "another way?" comes with no cached alternatives: ask HERE for this many
+ALT_ORIGIN_KM = 8.0  # cached alternatives were planned from here; further on, "another way" plans from the truck
+PASSED_KM = 1.6  # a stop this close to the truck is being approached, never counted as passed
+REACHED_KM = 0.15  # ...unless the truck is at it (parked in its lot): then it is made, and the next plan leaves it out
 WEATHER_BUDGET_S = 2.0  # NWS lookups on a new route may add at most this much to the reply
+DETOUR_BUDGET_S = 3.5  # the alternatives' weather, measured from the start; past it the detour line is skipped
 PRECHECK = 1  # nearest candidates satellite-checked in the background (each = one vision call)
 FAVORITE_EXTRA_MI = 5.0
 TRUCK_TAGS = ("truck parking", "53 ft", "truck lot", "hgv")
@@ -152,7 +182,7 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
   (never rest_area or parking for these).
 - go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV". Write numbers as digits ("2828 El Centro Rd, Sacramento"). If the driver gives only a street address and named a town earlier in the conversation, add that town to query.
 - pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something else", "another one", "something closer", "the cheapest diesel": lowest "diesel $" in the list). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. These are about PLACES even while a route is active and alternative routes exist: "not that one" / "something else" / "the second one" are never alternative and never go ("nothing else" / "that's all" / "I'm good" are bye, not pick). If no earlier place fits, use find with the same category instead.
-- alternative: a different ROAD to the SAME destination, only when the driver talks about the road, way or route itself ("another way", "different route", "is there a faster way", "can we skip the grade", "go around that"). Never a new place; a rejected place ("not that one") is pick. Only meaningful while a route is active; otherwise answer as chat.
+- alternative: a different ROAD to the SAME destination, only when the driver talks about the road, way or route itself ("another way", "take the other way", "different route", "is there a faster way", "can we skip the grade", "go around that", "go around the storm"). Never a new place; a rejected place ("not that one") is pick. Only meaningful while a route is active; otherwise answer as chat.
 - add_stop: a stop ON THE WAY to the current destination, keeping that destination ("stop at the Pilot in Fernley on the way", "swing by Love's first", "add a fuel stop", "cheapest diesel on my route", "fuel on the way", "I need a rest area before that"). query = the place or address named (digits for numbers), else category = the kind of stop (truck_stop for fuel/food/showers, rest_area, hotel); never both null. Only while a route is active; with no route it's a plain find or go.
 - clear_stops: drop the stops added on the way ("skip the stops", "forget the stop", "no stops, straight there").
 - reviews: what other drivers say about a place ("what do drivers say about it", "is it any good", "reviews for the Pilot", "how are the showers there"). place_index = the place asked about from "Places found earlier", or null for the current route / the last one mentioned.
@@ -328,6 +358,7 @@ NOTICES = (
 CLOSURE = "Heads up, there's a road closure on this route: {description}."
 ALT_REPLY = "Here's another way{via}, {time}, {mi} miles{tolls}."
 NO_ALT = "That's the only truck route I've got."
+TILL_SAID = ", in effect till "  # the warning line already names the end: the detour line must not repeat it
 CHAIN_QUESTION = re.compile(r"\bchain[ -]?(?:control|law|requirement|restriction)s?\b|\bchains?\s+(?:ahead|required|needed|on the (?:pass|route|way)|up ahead)\b|\b(?:any|are there|is there|do I need)\b.*\bchains?\b", re.I)
 CHAINS_NO_ROUTE = "Set a route and I'll check Caltrans chain controls along it."
 CHAINS_OUTSIDE = "I only have chain controls for California, and this route doesn't go through it."
@@ -341,6 +372,13 @@ VIA_DUPLICATE = "{name} is already one of your stops."
 VIA_IS_DESTINATION = "That's where we're headed, {name}."
 VIA_CLEARED = "Stops cleared. Straight there, {time}, {mi} miles."
 VIA_NONE = "There are no stops on this route."
+# A stop that is nowhere near the way (the geocoder put "the Pilot in Fernley" in Wells, 300 miles past Reno,
+# and the dialog added it without a word, 2026-11-01): ask before the route changes.
+VIA_FAR = "{name} is about {extra} out of the way; from here that's {new} instead of {old}. Add it anyway?"
+VIA_FAR_NO = "Okay, no stop added."
+VIA_FAR_YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|add it|go ahead|do it|please do|fine)\b", re.I)
+STOP_DETOUR_MIN_S = 45 * 60  # a stop costing more than this beyond its own 30 minutes...
+STOP_DETOUR_FRACTION = 0.5  # ...and more than half the trip so far is asked about first
 WHICH_PLACE = "Which place? Find one or set a route first."
 # Low-confidence transcripts of a destination or a place name get one "Did you say ...?" before anything is acted on.
 CONFIRM = "Did you say {what}?"
@@ -364,6 +402,15 @@ def _alt_reply(route: RouteInfo, current: Optional[RouteInfo] = None) -> str:
         d = route.duration_min - current.duration_min
         if abs(d) >= 5:
             diff = f", about {_minutes_said(abs(d))} {'longer' if d > 0 else 'faster'}"
+        # The weather is why most drivers ask: say when the other way misses it, or runs into it. Only
+        # a completed lookup counts as clear; an unknown road gets no claim of being clear. Weather the new
+        # road is known to have is said whatever we know about the old one (QA review 2026-11-01).
+        on_current = {a.id for a in current.weather}
+        new_weather = [a for a in route.weather if a.id not in on_current]
+        if current.weather and route.weather_known and not route.weather:
+            diff += f", and it misses the {current.weather[0].event}"
+        elif new_weather:
+            diff += f", but it runs into a {new_weather[0].event}"
     return ALT_REPLY.format(via=via, time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi), tolls=tolls + diff)
 _turns: dict = {"n": 0}  # rotation when there's no dialog session
 
@@ -639,7 +686,7 @@ def _parse(raw: str) -> dict:
 # (0.1x input price on the cached prefix, faster first token). Everything that varies, the truck, the
 # preferences and the conversation context, travels in the user message, in that order.
 SYSTEM_STATIC = SYSTEM.format(controls=controls.PROMPT, parking=approach.PROMPT, breakdown=breakdown.PROMPT)
-PROMPT_VERSION = 4  # bump when SYSTEM changes, so the cache key and the eval baseline move together
+PROMPT_VERSION = 5  # bump when SYSTEM changes, so the cache key and the eval baseline move together
 PROMPT_CACHE_KEY = f"agent-v{PROMPT_VERSION}"
 
 
@@ -815,7 +862,8 @@ class LlmAgentProvider:
         counter["n"] = n + 1
         self._remember_alternatives(req, place, route)
         regional, weather_line, chain_line = await asyncio.gather(
-            self._regional_note(place), self._route_weather(route), self._route_chains(route))
+            self._regional_note(place), self._route_weather(route, _SESSIONS.get(req.session_id or "")),
+            self._route_chains(route))
         reply = _route_reply(place, route, n, req.truck_profile.driver_name, regional) + price_caveat(text, place)
         sess_now = _SESSIONS.get(req.session_id or "")
         learned = sess_now.pop("say_learned", None) if sess_now else None
@@ -848,14 +896,33 @@ class LlmAgentProvider:
         return chains.speech(route.chain_controls)
 
     @staticmethod
-    async def _route_weather(route: RouteInfo) -> str:
-        """NWS alerts along a new route, attached to it and spoken once; bounded so it never delays the reply."""
+    async def _route_weather(route: RouteInfo, sess: Optional[dict] = None) -> str:
+        """NWS alerts along a new route and its alternatives, attached to each and spoken once, timed against the
+        ETA ("you'd hit it around 4 pm"); bounded so it never delays the reply. When another truck route misses
+        the weather, it is offered and moved to the front of "another way", so "take the other way" gets it."""
         try:
-            route.weather = await asyncio.wait_for(weather.alerts_along(route.geometry), WEATHER_BUDGET_S)
-        except Exception as e:  # noqa: BLE001 - incl. timeout
-            logger.info("route weather skipped: %s", e)
+            alts_known = await weather.for_route(route, WEATHER_BUDGET_S, DETOUR_BUDGET_S)
+        except Exception as e:  # noqa: BLE001 - never the route itself
+            logger.info("route weather failed: %s", e)
+            alts_known = False
             route.weather = []
-        return weather.speech(route.weather)
+            for alt in route.alternatives:
+                alt.weather = []
+        line = weather.speech(route.weather, route)
+        if not line:
+            return weather.later_speech(route)  # nothing on the way now; a storm after the truck is through still gets a word
+        detour = weather.detour_speech(route, alts_known=alts_known, said_till=TILL_SAID in line)
+        best = weather.better_route(route) if alts_known else None
+        cached = (sess or {}).get("alternatives")
+        if cached and cached.get("current") is not None:
+            cur = cached["current"]  # the copy was taken before the lookup
+            cur.weather, cur.weather_known, cur.weather_later = list(route.weather), route.weather_known, list(route.weather_later)
+        if best is not None and cached and any(r is best for r in cached.get("routes", [])):
+            cached["routes"] = [best] + [r for r in cached["routes"] if r is not best]
+            # The Routes sheet shows route.alternatives: its first row is the one "take the other way" picks.
+            route.alternatives = [best] + [r for r in route.alternatives if r is not best]
+            logger.info("route weather: %s misses it, offered first", " and ".join(best.labels) or "alternative")
+        return f"{line} {detour}" if detour else line
 
     async def _weather(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
         """"Weather in Reno at 3 pm" / "what's the weather like ahead": hourly forecast at a place and time."""
@@ -966,15 +1033,64 @@ class LlmAgentProvider:
         if req.session_id in _SESSIONS:
             sess = _SESSIONS[req.session_id]
             sess["alternatives"] = {"place": place.id, "routes": list(route.alternatives), "i": 0,
-                                    "current": route.model_copy(update={"alternatives": []})}
+                                    "current": route.model_copy(update={"alternatives": []}),
+                                    "origin": (req.lat, req.lng), "profile": _profile_key(req.truck_profile)}
             sess.pop("via", None)
 
+    @staticmethod
+    def _alternatives_stale(cached: Optional[dict], req: AgentRequest, place: Place) -> bool:
+        """The cached alternatives are for this destination, this truck, from near here and for the stops as they
+        are; otherwise "another way" plans afresh from where the truck is (QA 2026-11-01: a cached route from
+        Sacramento was offered near Reno, with Sacramento's miles; alternatives for 13 ft 6 in after "set height
+        to 14 ft"; the no-stop alternatives after a stop was added)."""
+        if not cached or cached.get("place") != place.id or cached.get("refetch"):
+            return True
+        if cached.get("profile") is not None and cached["profile"] != _profile_key(req.truck_profile):
+            return True
+        origin = cached.get("origin")
+        return bool(origin) and haversine_km(origin[0], origin[1], req.lat, req.lng) > ALT_ORIGIN_KM
+
+    @staticmethod
+    def _current_geometry(req: AgentRequest, sess: dict) -> list:
+        """The line of the route being driven (the dialog's copy), or [] when this dialog did not set it."""
+        cached = sess.get("alternatives")
+        if not cached or not req.active_place or cached.get("place") != req.active_place.id:
+            return []
+        cur = cached.get("current")
+        return list(cur.geometry) if cur is not None else []
+
     def _stops(self, req: AgentRequest, sess: dict) -> list[Place]:
-        """Stops added on the way to the active destination in this dialog (empty for any other route)."""
+        """Stops still ahead on the way to the active destination in this dialog (empty for any other route). A
+        stop the truck has driven past is dropped: re-planning through it sent the driver back to it."""
         via = sess.get("via")
         if not via or not req.active_place or via.get("place") != req.active_place.id:
             return []
-        return list(via["stops"])
+        stops = list(via["stops"])
+        geometry = self._current_geometry(req, sess)
+        if stops and geometry:
+            here = _nearest_index(geometry, req.lat, req.lng)
+
+            def still_ahead(s: Place) -> bool:
+                d = haversine_km(s.lat, s.lng, req.lat, req.lng)
+                if d < REACHED_KM:  # parked at the stop: "add the TA too" must not route through this lot again
+                    return False
+                return _nearest_index(geometry, s.lat, s.lng) >= here or d < PASSED_KM
+
+            ahead = [s for s in stops if still_ahead(s)]
+            if len(ahead) != len(stops):
+                logger.info("stops passed: %s", ", ".join(s.name for s in stops if s not in ahead))
+                via["stops"] = ahead
+                stops = ahead
+        return stops
+
+    def _order_stops(self, req: AgentRequest, sess: dict, stops: list[Place]) -> list[Place]:
+        """Stops in the order the road meets them (by the nearest vertex of the current line, else by distance
+        from the truck): "swing by Love's first" after a Fernley stop used to drive to Fernley and back."""
+        geometry = self._current_geometry(req, sess)
+        if geometry:
+            return sorted(stops, key=lambda s: (_nearest_index(geometry, s.lat, s.lng),
+                                                haversine_km(s.lat, s.lng, req.lat, req.lng)))
+        return sorted(stops, key=lambda s: haversine_km(s.lat, s.lng, req.lat, req.lng))
 
     async def _resolve_stop(self, req: AgentRequest, d: dict, sess: dict, text: str = "") -> Optional[Place]:
         """The place the driver wants to stop at: a place offered earlier (nudges), a listed place the driver
@@ -1001,6 +1117,12 @@ class LlmAgentProvider:
             logger.info("add_stop query %r names a listed place -> %s", query, named.name)
             return named
         if query:
+            if TRUCK_STOP_NAME.search(query) and not re.search(r"\d", query):
+                # "the Pilot", "Love's in Auburn": a chain name is a truck stop near the driver before it is an
+                # address (the geocoder once answered with the hamlet of Pilot, NV, 300 miles past the destination)
+                stop = await self._truck_stop_named(req, query)
+                if stop:
+                    return stop
             with stage("tools"):
                 matches = await geocode(with_city(query, sess.get("city")), req.lat, req.lng)
             if not matches or is_street(matches[0]):
@@ -1031,6 +1153,45 @@ class LlmAgentProvider:
                 raise RouteFailed(f"{type(e).__name__}: {e}") from e
         route.alternatives = []
         return route
+
+    @staticmethod
+    def _remember_driven(req: AgentRequest, sess: dict, route: RouteInfo) -> None:
+        """A route with the stops as they are now is the line being driven; the alternatives cached for the
+        no-stop route would lose the stops, so "another way" plans afresh through them."""
+        if req.active_place:
+            sess["alternatives"] = {"place": req.active_place.id, "routes": [], "i": 0, "refetch": True,
+                                    "current": route.model_copy(update={"alternatives": []}),
+                                    "origin": (req.lat, req.lng), "profile": _profile_key(req.truck_profile)}
+
+    @staticmethod
+    def _remaining_s(cur: RouteInfo, lat: float, lng: float) -> float:
+        """Seconds left on the driven route from the truck's nearest vertex, the time spread by distance (the same
+        maths the app's ETA uses)."""
+        g = cur.geometry
+        if len(g) < 2:
+            return float(cur.duration_s)
+        here = _nearest_index(g, lat, lng)
+        legs = [haversine_km(g[i - 1][0], g[i - 1][1], g[i][0], g[i][1]) for i in range(1, len(g))]
+        total = sum(legs) or 1.0
+        return float(cur.duration_s) * (sum(legs[here:]) / total)
+
+    def _stop_detour(self, req: AgentRequest, sess: dict, added: int, route: RouteInfo) -> Optional[tuple[float, float]]:
+        """(extra seconds beyond the stop's own time, the rest of the trip before the stop) when a stop takes the
+        trip far out of the way; None when it is a reasonable stop or when the trip before is unknown. The new
+        route starts where the truck is, so it is compared with what was left of the old one from here, not
+        with the whole trip as planned."""
+        cached = sess.get("alternatives") or {}
+        cur = cached.get("current") if req.active_place and cached.get("place") == req.active_place.id else None
+        if cur is not None:
+            old = self._remaining_s(cur, req.lat, req.lng)
+        elif req.active_duration_min:
+            old = req.active_duration_min * 60.0  # the planned total: understates the detour, so asks less, never more
+        else:
+            return None
+        if old <= 0:
+            return None
+        extra = float(route.duration_s) - old - VIA_STOP_S * max(0, added)
+        return (extra, old) if extra > max(STOP_DETOUR_MIN_S, STOP_DETOUR_FRACTION * old) else None
 
     async def _add_stop(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
         place = req.active_place
@@ -1064,8 +1225,21 @@ class LlmAgentProvider:
         if any(s.id == stop.id for s in stops):  # "stop at the 49er" when it already is one (QA 2026-10-31, H9)
             return AgentResponse(status="chat", transcript=text, source=self.source,
                                  reply=VIA_DUPLICATE.format(name=stop.name.split(",")[0]))
-        stops = stops + [stop]
+        before = len(stops)
+        stops = self._order_stops(req, sess, stops + [stop])
         route = await self._route_with_stops(req, stops)
+        if not d.get("_confirmed"):
+            far = self._stop_detour(req, sess, len(stops) - before, route)
+            if far:
+                extra, old = far
+                # "yes" re-runs this turn with the resolved stop (no second geocode); "no" adds nothing.
+                sess["pending"] = {"text": text, "d": {**d, "_confirmed": True, "place": stop.model_dump()},
+                                   "no": {"reply": VIA_FAR_NO}, "yes": VIA_FAR_YES}
+                logger.info("add_stop %s is %.0f min out of the way: asking first", stop.name, extra / 60)
+                return AgentResponse(status="confirm", transcript=text, source=self.source,
+                                     reply=VIA_FAR.format(name=stop.name.split(",")[0], extra=_minutes_said(round(extra / 60)),
+                                                          new=route.summary.split(" · ")[0], old=_minutes_said(round(old / 60))))
+        self._remember_driven(req, sess, route)
         sess["via"] = {"place": place.id, "stops": stops}
         ahead = f", about {_miles(stop.distance_mi)} miles ahead" if stop.distance_mi else ""
         dwell = VIA_DWELL.format(minutes=VIA_STOP_S // 60, each="the stop" if len(stops) == 1 else "each stop")
@@ -1078,8 +1252,9 @@ class LlmAgentProvider:
         place = req.active_place
         if not place or not self._stops(req, sess):
             return AgentResponse(status="chat", transcript=text, reply=VIA_NONE, source=self.source)
-        sess.pop("via", None)
         route = await self._route_with_stops(req, [])
+        self._remember_driven(req, sess, route)
+        sess.pop("via", None)  # after the route: a failed call must not forget stops the app still shows
         reply = VIA_CLEARED.format(time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi))
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
                              route=route, parking=approach.best(place), source=self.source)
@@ -1090,14 +1265,19 @@ class LlmAgentProvider:
         if not place:
             return AgentResponse(status="chat", transcript=text, reply=ALT_NO_ROUTE, source=self.source)
         cached = sess.get("alternatives")
-        if not cached or cached.get("place") != place.id:
+        if self._alternatives_stale(cached, req, place):
+            stops = self._stops(req, sess)
             with stage("tools"):
                 try:
                     fresh = await get_routing_provider().route(req.lat, req.lng, *approach.target(place),
-                                                               req.truck_profile, alternatives=ALTERNATIVES_FRESH)
+                                                               req.truck_profile, alternatives=ALTERNATIVES_FRESH,
+                                                               via=[[s.lat, s.lng] for s in stops])
                 except Exception as e:  # noqa: BLE001
                     raise RouteFailed(f"{type(e).__name__}: {e}") from e
-            cached = sess["alternatives"] = {"place": place.id, "routes": list(fresh.alternatives), "i": 0}
+            # The fastest way from here is the one to come back to; the diff is spoken against it.
+            cached = sess["alternatives"] = {"place": place.id, "routes": list(fresh.alternatives), "i": 0,
+                                             "current": fresh.model_copy(update={"alternatives": []}),
+                                             "origin": (req.lat, req.lng), "profile": _profile_key(req.truck_profile)}
         i = cached["i"]
         if i >= len(cached["routes"]):
             return AgentResponse(status="chat", transcript=text, reply=NO_ALT, source=self.source)
@@ -1111,8 +1291,12 @@ class LlmAgentProvider:
             cached["routes"].append(prev)
         cached["current"] = route
         route.alternatives = [r.model_copy(update={"alternatives": []}) for r in cached["routes"] if r is not route]
+        reply = _alt_reply(route, prev)
+        warning = _route_warning(route)  # a closure or a restriction on the other way was never said before
+        if warning:
+            reply = f"{reply} {warning}"
         return AgentResponse(status="route_set", transcript=text, category=place.category,
-                             reply=_alt_reply(route, prev), place=place, route=route, parking=approach.best(place),
+                             reply=reply, place=place, route=route, parking=approach.best(place),
                              source=self.source)
 
     def _parking(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
@@ -1222,7 +1406,7 @@ class LlmAgentProvider:
             return bd
         pending = sess.pop("pending", None)
         if pending:  # "Did you say Reno?" was asked last turn
-            if YES.match(text):
+            if YES.match(text) or (pending.get("yes") is not None and pending["yes"].match(text)):
                 d = pending["d"]
                 timing.note("intent", str(d.get("intent")))
                 return await self._dispatch(req, sess, pending["text"], d, confirmed=True)
@@ -1381,8 +1565,7 @@ class LlmAgentProvider:
                 sess["city"] = city_of(query, matches[0]) or sess.get("city")
                 return await self._route_to(req, matches[0], [], text)
         except RouteFailed as e:
-            logger.warning("agent routing failed: %s", e)
-            return _error(text, ROUTE_DOWN, self.source)
+            return _route_failed(text, e, self.source)
         except (PlacesUnavailable, httpx.HTTPError) as e:
             logger.warning("agent places/geocode failed: %s: %s", type(e).__name__, e)
             return _error(text, PLACES_DOWN, self.source)
@@ -1394,8 +1577,7 @@ class LlmAgentProvider:
                 try:
                     return await self._find_near(req, "truck_stop", str(d["near"]).strip(), text, exclude, sess)
                 except RouteFailed as e:
-                    logger.warning("agent routing failed: %s", e)
-                    return _error(text, ROUTE_DOWN, self.source)
+                    return _route_failed(text, e, self.source)
                 except (PlacesUnavailable, httpx.HTTPError) as e:
                     logger.warning("agent places/geocode failed: %s: %s", type(e).__name__, e)
                     return _error(text, PLACES_DOWN, self.source)

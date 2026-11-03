@@ -160,3 +160,64 @@ def test_route_endpoint_carries_alternatives(api_client, fake_http):
     assert route["labels"] == ["I-80"] and route["tolls_usd"] is None
     assert [a["labels"] for a in route["alternatives"]] == [["I-80", "CA-89"], ["I-80", "I-580"]]
     assert all(a["maneuvers"] and a["geometry"] for a in route["alternatives"])
+
+
+TRUCKEE = {"lat": 39.3280, "lng": -120.1833}
+
+
+def _go_then(agent_sandbox, fake_http, sid):
+    fake_http.add("router.hereapi.com", "/v8/routes", json=DATA)
+    agent_sandbox.llm.on(r"take me to reno", {"intent": "go", "query": "Reno, NV"})
+    agent_sandbox.llm.on(r"another way", {"intent": "alternative"})
+    agent_sandbox.geocode["reno"] = [RENO]
+    prov = agent_sandbox.provider()
+    run(prov.handle(_req("take me to Reno", sid=sid), None))
+    return prov
+
+
+def test_another_way_far_from_the_origin_plans_from_the_truck(agent_sandbox, fake_http):
+    prov = _go_then(agent_sandbox, fake_http, "far")
+    res = run(prov.handle(AgentRequest(text="another way", session_id="far", active_place=RENO, **TRUCKEE), None))
+    assert res.status == "route_set"
+    calls = fake_http.calls_to("router.hereapi.com")
+    assert len(calls) == 2 and dict(params_of(calls[1]))["origin"] == f"{TRUCKEE['lat']},{TRUCKEE['lng']}"
+    # the next one comes from the new cache, no call
+    run(prov.handle(AgentRequest(text="another way", session_id="far", active_place=RENO, **TRUCKEE), None))
+    assert len(fake_http.calls_to("router.hereapi.com")) == 2
+
+
+def test_another_way_for_a_changed_truck_plans_again(agent_sandbox, fake_http):
+    prov = _go_then(agent_sandbox, fake_http, "tall")
+    tall = TruckProfile(height_in=169)
+    res = run(prov.handle(AgentRequest(text="another way", session_id="tall", active_place=RENO, truck_profile=tall, **SAC), None))
+    assert res.status == "route_set"
+    calls = fake_http.calls_to("router.hereapi.com")
+    heights = [dict(params_of(c))["vehicle[height]"] for c in calls]
+    assert len(calls) == 2 and heights[1] != heights[0]  # planned again, for the taller truck
+
+
+def test_no_truck_route_is_said_as_such(agent_sandbox, fake_http, monkeypatch):
+    from services.errors import NoTruckRoute
+    agent_sandbox.llm.on(r"another way", {"intent": "alternative"})
+
+    async def nope(*a, **k):
+        raise NoTruckRoute("Couldn't match destination")
+    monkeypatch.setattr(routing.get_routing_provider(), "route", nope)
+    res = run(agent_sandbox.provider().handle(_req("another way", sid="none", active=RENO), None))
+    assert res.status == "error" and res.reply == agent.NO_TRUCK_ROUTE
+
+
+def test_a_closed_alternative_says_so(agent_sandbox, fake_http):
+    import copy
+    data = copy.deepcopy(DATA)
+    data["routes"][1]["sections"][0]["incidents"] = [
+        {"type": "roadClosure", "criticality": "critical", "description": "CA-89 closed at Sierraville."}]
+    fake_http.add("router.hereapi.com", "/v8/routes", json=data)
+    agent_sandbox.llm.on(r"take me to reno", {"intent": "go", "query": "Reno, NV"})
+    agent_sandbox.llm.on(r"another way", {"intent": "alternative"})
+    agent_sandbox.geocode["reno"] = [RENO]
+    prov = agent_sandbox.provider()
+    run(prov.handle(_req("take me to Reno", sid="closed"), None))
+    res = run(prov.handle(_req("another way", sid="closed", active=RENO), None))
+    assert res.route.labels == ["I-80", "CA-89"]
+    assert "CA-89 closed at Sierraville" in res.reply and res.reply.startswith("Here's another way via I-80 and CA-89,")

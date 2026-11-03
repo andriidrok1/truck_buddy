@@ -28,10 +28,18 @@ def setup_function():
     weather._forecast_cache.clear()
 
 
-def _alert(event, area="Greater Lake Tahoe Area; Donner Pass", aid=None, **extra):
+def box(lat0, lat1, lng0=-123.0, lng1=-118.0):
+    """A GeoJSON polygon covering a band of latitude (the whole Sacramento-Reno route by default)."""
+    return {"type": "Polygon", "coordinates": [[[lng0, lat0], [lng1, lat0], [lng1, lat1], [lng0, lat1], [lng0, lat0]]]}
+
+
+def _alert(event, area="Greater Lake Tahoe Area; Donner Pass", aid=None, geometry="all", **extra):
+    """An NWS alert feature. `geometry`: "all" = a polygon over the whole test route (so the feed path places
+    it), a GeoJSON dict, or None (zone-based: the feed path needs `affectedZones` then)."""
     p = {"id": aid or f"urn:{event}:{area}", "event": event, "severity": "Severe", "status": "Actual",
          "messageType": "Alert", "headline": f"{event} issued", "areaDesc": area, **extra}
-    return {"type": "Feature", "properties": p}
+    g = box(37.0, 41.0) if geometry == "all" else geometry
+    return {"type": "Feature", "properties": p, "geometry": g}
 
 
 def _geometry():
@@ -47,7 +55,7 @@ def test_sample_points_every_40km_with_ends():
     assert pts[0][0] == 0 and pts[-1][0] == len(g) - 1
     idx = [p[0] for p in pts]
     assert idx == sorted(idx) and len(set(idx)) == len(idx)
-    assert 4 <= len(pts) <= 8  # 212 km / 40 km + ends
+    assert 10 <= len(pts) <= 14  # 212 km / 20 km + ends
     assert sample_points([[38.5, -121.4]]) == [(0, 38.5, -121.4)]
     assert sample_points([]) == []
     two = [[38.5, -121.4], [38.6, -121.3]]
@@ -57,10 +65,27 @@ def test_sample_points_every_40km_with_ends():
 def test_sample_points_capped():
     long = [[30.0 + i * 0.5, -100.0] for i in range(200)]  # ~55 km apart: 200 candidates
     pts = sample_points(long)
-    assert len(pts) == weather.MAX_SAMPLES and pts[-1][0] == 199
+    assert weather.MAX_SAMPLES - 6 <= len(pts) <= weather.MAX_SAMPLES and pts[-1][0] == 199  # the step widens
+    assert len(sample_points(long, every_km=40.0)) == weather.MAX_SAMPLES  # a fixed step hits the cap
 
 
 # ---- alerts ----
+
+def test_area_is_trimmed_for_speech():
+    for raw, said in [("Sierra Nevada of Sierra-Nevada-Placer Counties Above 5000 ft Including Donner; Mono", "Sierra Nevada"),
+                      ("Eastern San Juan Mountains Above 10000 Ft", "Eastern San Juan Mountains"),
+                      ("Greater Lake Tahoe Area; Greater Lake Tahoe Area", "Greater Lake Tahoe Area"),
+                      ("Ruby Mountains and East Humboldt Range", "Ruby Mountains and East Humboldt Range"),
+                      ("Clark, NV", "Clark, NV"), ("", "the route")]:
+        assert weather._area({"areaDesc": raw}) == said
+
+
+def test_cyclones_count_as_truck_weather():
+    feats = [_alert("Hurricane Warning"), _alert("Tropical Storm Watch"), _alert("Storm Surge Warning"),
+             _alert("Rip Current Statement")]
+    assert [p["event"] for p in parse_alerts({"features": feats})] == \
+        ["Hurricane Warning", "Tropical Storm Watch", "Storm Surge Warning"]
+
 
 def test_parse_alerts_keeps_truck_events_only():
     feats = [_alert("High Wind Warning"), _alert("Coastal Flood Advisory"), _alert("Small Craft Advisory"),
@@ -127,8 +152,12 @@ def test_speech_lines():
     b = WeatherAlert(id="2", event="Winter Storm Warning", severity="Severe", headline="h", area="Sierra", index=9)
     assert weather.speech([]) == ""
     assert weather.speech([a]) == "Weather warning: High Wind Warning ahead near Donner Pass."
+    c = WeatherAlert(id="3", event="Dense Fog Advisory", severity="Moderate", headline="h", area="Valley", index=12)
     assert weather.speech([a, b]) == "High Wind Warning and 1 more weather alert along the route."
-    assert weather.speech([a, b, b]) == "High Wind Warning and 2 more weather alerts along the route."
+    assert weather.speech([a, b, c]) == "High Wind Warning and 2 more weather alerts along the route."
+    # Two warnings of one kind for one area (NWS issues flood warnings per wash) are one thing to hear.
+    assert weather.speech([a, b, b]) == "High Wind Warning and 1 more weather alert along the route."
+    assert weather.speech([b, b]) == "Weather warning: Winter Storm Warning ahead near Sierra."
 
 
 # ---- forecast ----
@@ -251,7 +280,10 @@ def test_new_route_speaks_the_alert_and_carries_it(agent_sandbox, fake_http):
     agent_sandbox.geocode["reno"] = [RENO]
     res = run(agent_sandbox.provider().handle(AgentRequest(text="take me to Reno", session_id="wr", **SAC), None))
     assert res.status == "route_set"
-    assert res.reply.endswith(" Weather warning: Winter Storm Warning ahead near Greater Lake Tahoe Area.")
+    # The alert covers every point, so the truck is in it now ("ahead near", no clock) and no other way misses it.
+    assert res.reply.endswith(" Weather warning: Winter Storm Warning ahead near Greater Lake Tahoe Area. "
+                              "No truck route around it.")
+    assert all(alt.weather and alt.weather[0].event == "Winter Storm Warning" for alt in res.route.alternatives)
     assert len(res.route.weather) == 1 and res.route.weather[0].event == "Winter Storm Warning"
 
 
@@ -266,7 +298,7 @@ def test_route_endpoint_survives_nws_down(api_client, fake_http):
     fake_http.add("api.weather.gov", "/alerts/active", json={"features": [_alert("High Wind Warning")]})
     r = api_client.post("/api/route", json={**SAC, "place": RENO.model_dump(), "skip_parking": True})
     w = r.json()["route"]["weather"]
-    assert len(w) == 1 and set(w[0]) == {"id", "event", "severity", "headline", "area", "index", "ends"}
+    assert len(w) == 1 and set(w[0]) == {"id", "event", "severity", "headline", "area", "index", "ends", "onset", "index_end"}
 
 
 def test_slow_nws_is_cut_off(agent_sandbox, fake_http, monkeypatch):
