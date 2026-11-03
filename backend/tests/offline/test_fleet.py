@@ -455,3 +455,14 @@ def test_vehicle_events_say_when_the_day_is_cut(client):
     cut = client.get(url + "&limit=2", headers=f["a_disp"]).json()
     assert [e["data"]["index"] for e in cut["events"]] == [0, 1] and cut["truncated"] is True
     assert client.get(url + "&limit=3", headers=f["a_disp"]).json()["truncated"] is False
+
+
+def test_a_fleet_token_without_its_device_row_is_401(client):
+    # Bug 6: a token carrying org_id kept authorising after its devices row was gone.
+    f = _two_fleets(client)
+    sub = _sub(f["a_drv"])
+    assert client.get("/api/fleet/vehicles", headers=f["a_owner"]).status_code == 200
+    run(db._sq_run(lambda con: con.execute("DELETE FROM devices WHERE sub = ?", (sub,))))
+    tenancy._devices.pop(sub, None)
+    r = client.get("/api/trips", headers=f["a_drv"])
+    assert r.status_code == 401 and r.json()["detail"] == "This device is no longer registered"
