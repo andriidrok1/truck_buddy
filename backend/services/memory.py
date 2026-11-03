@@ -174,9 +174,10 @@ async def clear_facts(driver: str) -> int:
 MAX_VISITS = 30  # places kept per driver, the most recently visited
 
 
-async def add_visits(driver: str, visits: list[tuple[str, str | None, str | None, datetime]]) -> None:
-    """One more visit to each (place_id, name, category, at); the latest name and time win. Beyond MAX_VISITS
-    places the least recently visited go."""
+async def add_visits(driver: str, visits: list[tuple[str, str | None, str | None, datetime, str | None]]) -> None:
+    """One more visit to each (place_id, name, category, at, trip_id); the latest name and time win. The same trip
+    again is not another visit: the app sends a batch again when an upload failed after it had landed. Beyond
+    MAX_VISITS places the least recently visited go."""
     if not visits:
         return
     kind = store()
@@ -184,27 +185,32 @@ async def add_visits(driver: str, visits: list[tuple[str, str | None, str | None
         _off()
     if kind == "sqlite":
         def _count(con):
-            for place_id, name, category, at in visits:
+            for place_id, name, category, at, trip in visits:
                 con.execute(
-                    "INSERT INTO driver_visits (driver, place_id, name, category, count, last_at) VALUES (?, ?, ?, ?, 1, ?) "
-                    "ON CONFLICT (driver, place_id) DO UPDATE SET count = count + 1, "
+                    "INSERT INTO driver_visits (driver, place_id, name, category, count, last_at, last_trip) "
+                    "VALUES (?, ?, ?, ?, 1, ?, ?) ON CONFLICT (driver, place_id) DO UPDATE SET "
+                    "count = count + (CASE WHEN excluded.last_trip IS NOT NULL AND excluded.last_trip IS last_trip "
+                    "THEN 0 ELSE 1 END), "
                     "name = coalesce(excluded.name, name), category = coalesce(excluded.category, category), "
-                    "last_at = max(last_at, excluded.last_at)",
-                    (driver, place_id, name, category, at.astimezone(timezone.utc).isoformat()))
+                    "last_at = max(last_at, excluded.last_at), last_trip = coalesce(excluded.last_trip, last_trip)",
+                    (driver, place_id, name, category, at.astimezone(timezone.utc).isoformat(), trip))
             con.execute("DELETE FROM driver_visits WHERE driver = ? AND place_id NOT IN (SELECT place_id FROM "
                         "driver_visits WHERE driver = ? ORDER BY last_at DESC LIMIT ?)", (driver, driver, MAX_VISITS))
         await _sq_run(_count)
         return
     pool = await _db()
     async with pool.acquire() as con, con.transaction():
-        for place_id, name, category, at in visits:
+        for place_id, name, category, at, trip in visits:
             await con.execute(
-                "INSERT INTO driver_visits (driver, place_id, name, category, count, last_at) VALUES ($1, $2, $3, $4, 1, $5) "
-                "ON CONFLICT (driver, place_id) DO UPDATE SET count = driver_visits.count + 1, "
+                "INSERT INTO driver_visits (driver, place_id, name, category, count, last_at, last_trip) "
+                "VALUES ($1, $2, $3, $4, 1, $5, $6) ON CONFLICT (driver, place_id) DO UPDATE SET "
+                "count = driver_visits.count + (CASE WHEN EXCLUDED.last_trip IS NOT NULL "
+                "AND EXCLUDED.last_trip = driver_visits.last_trip THEN 0 ELSE 1 END), "
                 "name = coalesce(EXCLUDED.name, driver_visits.name), "
                 "category = coalesce(EXCLUDED.category, driver_visits.category), "
-                "last_at = greatest(driver_visits.last_at, EXCLUDED.last_at)",
-                driver, place_id, name, category, at)
+                "last_at = greatest(driver_visits.last_at, EXCLUDED.last_at), "
+                "last_trip = coalesce(EXCLUDED.last_trip, driver_visits.last_trip)",
+                driver, place_id, name, category, at, trip)
         await con.execute("DELETE FROM driver_visits WHERE driver = $1 AND place_id NOT IN (SELECT place_id FROM "
                           "driver_visits WHERE driver = $1 ORDER BY last_at DESC LIMIT $2)", driver, MAX_VISITS)
 

@@ -229,7 +229,7 @@ async def _count_visits(driver: str, rows: list[tuple]) -> None:
             continue
         name, category = data.get("name"), data.get("category")
         visits.append((place_id.strip(), name[:120] if isinstance(name, str) and name.strip() else None,
-                       category[:40] if isinstance(category, str) and category.strip() else None, r[3]))
+                       category[:40] if isinstance(category, str) and category.strip() else None, r[3], r[1]))
     if not visits:
         return
     try:

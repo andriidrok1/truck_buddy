@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS driver_visits (
     category TEXT,
     count INTEGER NOT NULL DEFAULT 0,
     last_at TIMESTAMPTZ NOT NULL,
+    last_trip TEXT, -- a batch the app sends again counts once: one visit per place per trip
     PRIMARY KEY (driver, place_id)
 );
 CREATE INDEX IF NOT EXISTS driver_visits_driver_last ON driver_visits (driver, last_at);

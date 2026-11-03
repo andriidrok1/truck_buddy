@@ -47,6 +47,17 @@ def test_arrivals_from_the_app_are_counted_per_place(sqlite_store):
     assert run(memory.get_facts("dv1")) is None
 
 
+def test_a_resent_batch_counts_a_visit_once_per_trip(sqlite_store):
+    # The app keeps a batch when the upload fails and sends it again; if the first one did land, the same
+    # arrival came in twice. A visit is one per place per trip (the app logs arrived once per trip per place).
+    batch = [_arrived("g-pilot", trip="t1")]
+    run(trip_events.add("dv9", batch))
+    run(trip_events.add("dv9", batch))
+    assert run(memory.visits("dv9"))[0]["count"] == 1
+    run(trip_events.add("dv9", [_arrived("g-pilot", trip="t2")]))
+    assert run(memory.visits("dv9"))[0]["count"] == 2
+
+
 def test_visits_keep_the_most_recent_places(sqlite_store):
     events = [_arrived(f"p{i}", f"Stop {i}", t=_ago(3600 - i * 60)) for i in range(memory.MAX_VISITS + 5)]
     run(trip_events.add("dv2", events))
