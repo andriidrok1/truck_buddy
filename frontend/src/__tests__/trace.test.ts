@@ -116,9 +116,10 @@ describe("replay through projectOnRoute + tracker", () => {
     const verdicts = replay(g, trace);
     const offs = verdicts.map((v, i) => (v === "off" ? i : -1)).filter((i) => i >= 0);
     expect(offs).toHaveLength(1);
-    // The first detour fix is a jump (skipped), the next three count.
+    // The first detour fix is a jump (skipped), the next ones count; "off" needs 4 s since the first of them
+    // (a fix a second here), so one fix later than three in a row would have been.
     expect(offs[0]).toBeGreaterThanOrEqual(detourAt + 3);
-    expect(offs[0]).toBeLessThanOrEqual(detourAt + 4);
+    expect(offs[0]).toBeLessThanOrEqual(detourAt + 5);
     // Back on the line afterwards, and nothing before the detour.
     expect(verdicts.slice(0, detourAt).every((v) => v === "on")).toBe(true);
     expect(verdicts[detourAt + 30]).toBe("on");

@@ -22,6 +22,12 @@ const isRefused = (e: unknown) => e instanceof ApiError && e.status >= 400 && e.
  *  leaves it behind and the next start sends the profile instead of pulling the older server copy over it. */
 export const UNSYNCED_KEY = "profile_unsynced_v1";
 
+let midTrip = () => false;
+/** The map screen says whether a trip is on (this module does not reach into the trip store). */
+export const setMidTripCheck = (check: () => boolean) => {
+  midTrip = check;
+};
+
 let edits = 0; // bumped by every local save: a server read that started before an edit must not undo it
 
 const stamp = (p: TruckProfile) => JSON.stringify(p);
@@ -50,8 +56,11 @@ export async function fetchProfile(): Promise<TruckProfile> {
       return getTruckProfile();
     }
     const before = edits;
-    const remote = await api.profile();
+    const { profile: remote, source } = await api.profile();
     if (edits !== before) return getTruckProfile(); // the driver saved while this was in flight: theirs is newer
+    // A fleet's truck: mid-trip the phone's sizes are the trip's (a swapped trailer) and the truck's stored sizes
+    // must not undo them; between trips the truck's come back (decision 2026-11-02, bug 2).
+    if (source === "vehicle" && midTrip()) return getTruckProfile();
     const cur = getTruckProfile();
     const merged = { ...cur, ...remote };
     if (stamp(merged) !== stamp(cur)) await saveTruckProfile(merged);

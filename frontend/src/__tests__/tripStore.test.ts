@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { ACTIVE_ROUTE_KEY, decodeSaved } from "../state/routeStore";
-import { restoreSavedTrip, selectPlaces, startTripPersistence, useTripStore, viaOf } from "../state/tripStore";
+import { restoreSavedTrip, selectPlaces, startTripPersistence, stopsAhead, useTripStore, viaOf } from "../state/tripStore";
 import type { ActiveRoute, Place, RouteInfo } from "../types";
 
 const T0 = 1_700_000_000_000;
@@ -46,6 +46,17 @@ describe("tripStore", () => {
     expect(s.applyRoute(gen, route("stale"))).toBe(false);
     expect(useTripStore.getState().active?.route.summary).toBe("US-50");
     expect(viaOf(useTripStore.getState().active?.stops)).toEqual([[38.55, -121.42]]);
+  });
+
+  test("applyRoute takes the entry tip phrased for the new route, and keeps the old one when none came", () => {
+    const s = useTripStore.getState();
+    s.startRoute({ ...active, parking: { verdict: "likely", label: "x", reason: "x", source: "satellite", entry_tip: "On your right, off El Centro Rd", relative: true } as never });
+    let gen = useTripStore.getState().routeGen;
+    s.applyRoute(gen, route("to E"), undefined, { verdict: "likely", label: "x", reason: "x", source: "satellite", entry_tip: "On your left, off W El Camino Ave", relative: true } as never);
+    expect(useTripStore.getState().active?.parking?.entry_tip).toBe("On your left, off W El Camino Ave");
+    gen = useTripStore.getState().routeGen;
+    s.applyRoute(gen, route("reroute"), undefined, null);
+    expect(useTripStore.getState().active?.parking?.entry_tip).toBe("On your left, off W El Camino Ave");
   });
 
   test("pickAlternative swaps the primary and keeps the old one in the list", () => {
@@ -126,5 +137,24 @@ describe("tripStore", () => {
     const b = selectPlaces(useTripStore.getState());
     expect(a).toBe(b);
     expect(a[0]).toMatchObject({ id: "a", category: "service" });
+  });
+});
+
+describe("stopsAhead", () => {
+  // Three sections along a straight east-bound line: start -> s1 -> s2 -> destination.
+  const geometry: [number, number][] = [[38.58, -121.6], [38.58, -121.55], [38.58, -121.5], [38.58, -121.45], [38.58, -121.4]];
+  const r = { geometry, section_starts: [0, 1, 3] };
+  const stops = [place("s1"), place("s2")];
+  test("before the first stop both are ahead", () => {
+    expect(stopsAhead(r, stops, { lat: 38.58, lng: -121.58 }).map((p) => p.id)).toEqual(["s1", "s2"]);
+  });
+  test("past the first stop only the second is", () => {
+    expect(stopsAhead(r, stops, { lat: 38.58, lng: -121.52 }).map((p) => p.id)).toEqual(["s2"]);
+  });
+  test("past both, none", () => {
+    expect(stopsAhead(r, stops, { lat: 38.58, lng: -121.42 })).toEqual([]);
+  });
+  test("a route without sections keeps every stop", () => {
+    expect(stopsAhead({ geometry, section_starts: undefined }, stops, { lat: 38.58, lng: -121.42 })).toHaveLength(2);
   });
 });

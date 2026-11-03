@@ -18,17 +18,9 @@ import { requestTruckReroute, setHandsFree, setSpeedAlerts, useHandsFree, useSpe
 import { Chip, PrefsForm, type Prefs } from "@/src/components/PrefsForm";
 import { formatBytes } from "@/src/map/bounds";
 import { setSim } from "@/src/sim";
+import { truckErrors, truckFromInputs } from "@/src/truck/validate";
 import { fonts, radius, spacing, useTheme, setThemePref, useThemePref, type ThemePref } from "@/src/theme";
 
-const LIMITS = {
-  feet: [5, 16],
-  inches: [0, 11],
-  trailer: [10, 65],
-  weight: [5000, 200000],
-} as const;
-
-const toInt = (s: string) => parseInt(s.replace(/[^0-9]/g, ""), 10);
-const inRange = (v: number, [lo, hi]: readonly [number, number]) => Number.isFinite(v) && v >= lo && v <= hi;
 
 function Field({
   label,
@@ -142,24 +134,19 @@ export default function TruckProfileScreen() {
 
   const close = () => (router.canGoBack() ? router.back() : router.replace("/"));
 
-  const v = { feet: toInt(feet), inches: toInt(inches || "0"), trailer: toInt(trailer), weight: toInt(weight) };
-  const bad = {
-    feet: !inRange(v.feet, LIMITS.feet),
-    inches: !inRange(v.inches, LIMITS.inches),
-    trailer: !inRange(v.trailer, LIMITS.trailer),
-    weight: !inRange(v.weight, LIMITS.weight),
-  };
-  const valid = !Object.values(bad).some(Boolean);
+  // The server's limits, one message per field (src/truck/validate.ts, shared with onboarding).
+  const errors = truckErrors({ feet, inches, trailer, weight });
+  const sizes = truckFromInputs({ feet, inches, trailer, weight });
+  const bad = { feet: !!errors.height, inches: !!errors.height, trailer: !!errors.trailer, weight: !!errors.weight };
+  const valid = sizes !== null;
 
   const onSave = async () => {
-    if (!valid) return;
+    if (!sizes) return;
     await saveProfile({
       ...truck,
       ...prefs,
       driver_name: name.trim() || null,
-      height_in: v.feet * 12 + v.inches,
-      trailer_ft: v.trailer,
-      weight_lb: v.weight,
+      ...sizes,
       hazmat,
     });
     requestTruckReroute(); // the map reroutes an active route for the new size (silently)
@@ -379,7 +366,7 @@ export default function TruckProfileScreen() {
 
         {!valid && (
           <Text testID="truck-profile-error" style={[styles.error, { color: colors.error }]}>
-            Check the highlighted values: height 5–16 ft, trailer 10–65 ft, weight 5,000–200,000 lb.
+            {[errors.height, errors.trailer, errors.weight].filter(Boolean).join(" ")}
           </Text>
         )}
 

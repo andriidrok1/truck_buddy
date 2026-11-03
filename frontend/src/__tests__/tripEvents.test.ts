@@ -1,4 +1,4 @@
-import { createTripLog, MAX_BATCH, MAX_FAILURES, MAX_PENDING, newTripId, type TripEvent } from "../net/tripEvents";
+import { createTripLog, MAX_BATCH, MAX_FAILURES, MAX_PENDING, newTripId, POSITION_EVERY_MS, startPositionHeartbeat, type TripEvent } from "../net/tripEvents";
 
 class Refused extends Error {}
 
@@ -144,4 +144,22 @@ test("events carry the truck's GPS position unless they bring their own; no fix,
     { lat: 39.5, lng: -119.8 },
     {},
   ]);
+});
+
+describe("startPositionHeartbeat", () => {
+  test("one position event every 5 minutes until stopped", () => {
+    jest.useFakeTimers();
+    const log = { log: jest.fn() };
+    const stop = startPositionHeartbeat(log, () => ({ tripId: "t1", speedMps: 26.84 }));
+    jest.advanceTimersByTime(POSITION_EVERY_MS - 1);
+    expect(log.log).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1);
+    expect(log.log).toHaveBeenCalledWith("position", { speed_mps: 26.8 }, "t1");
+    jest.advanceTimersByTime(POSITION_EVERY_MS);
+    expect(log.log).toHaveBeenCalledTimes(2);
+    stop();
+    jest.advanceTimersByTime(3 * POSITION_EVERY_MS);
+    expect(log.log).toHaveBeenCalledTimes(2);
+    jest.useRealTimers();
+  });
 });

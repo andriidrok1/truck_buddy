@@ -12,7 +12,8 @@
 
 import { create } from "zustand";
 
-import type { ActiveRoute, ParkingCheck, ParkingState, Place, ProvidersResult, RouteInfo } from "../types";
+import type { ActiveRoute, LatLng, ParkingCheck, ParkingState, Place, ProvidersResult, RouteInfo } from "../types";
+import { cumulativeMeters, projectOnRoute } from "../geo/guidance";
 import { swapAlternative } from "../geo/routeChoice";
 import { clearSavedRoute, loadActiveRoute, saveActiveRoute, type SavedRoute } from "./routeStore";
 
@@ -50,7 +51,9 @@ export type TripActions = {
    *  dropped when it lands, and returns the value this request owns. */
   claimRoute: () => number;
   /** Same destination, a new line (reroute, re-plan, copilot's stop change): only when `gen` is still current. */
-  applyRoute: (gen: number, route: RouteInfo, stops?: Place[]) => boolean;
+  /** `parking`: the entry tip phrased for this route's approach (the backend sends it with every route), so
+   *  the card names the same side and street as the voice. */
+  applyRoute: (gen: number, route: RouteInfo, stops?: Place[], parking?: ParkingCheck | null) => boolean;
   /** The sheet's alternative tapped: swaps the primary, keeps the old one in the list. */
   pickAlternative: (i: number) => RouteInfo | null;
   setActiveParking: (placeId: string, parking: ParkingCheck) => void;
@@ -79,6 +82,22 @@ export const newTripId = () => `trip-${Date.now().toString(36)}-${Math.random().
 /** `route.via` as the engine wants it, from the stops (the stops are the source of truth). */
 export const viaOf = (stops: readonly Place[] | undefined): [number, number][] => (stops ?? []).map((s) => [s.lat, s.lng]);
 
+/**
+ * The stops the truck has not reached yet. Section k of the route ends at stop k, so with the truck matched in
+ * section s the first s stops are behind it. A fresh /route (new truck size, the entrance, Resume) sent them
+ * all and would have led the truck back to a stop it already made; only the off-route /reroute, which gets
+ * the section index, dropped them on the server.
+ */
+export function stopsAhead(route: Pick<RouteInfo, "geometry" | "section_starts">, stops: readonly Place[] | undefined, at: LatLng): Place[] {
+  const all = [...(stops ?? [])];
+  const starts = route.section_starts ?? [];
+  if (!all.length || starts.length < 2 || !route.geometry.length) return all;
+  const { index } = projectOnRoute(route.geometry, cumulativeMeters(route.geometry), at, null);
+  let section = 0;
+  for (let i = 0; i < starts.length; i++) if (starts[i] <= index) section = i;
+  return all.slice(Math.min(section, all.length));
+}
+
 const INITIAL: TripState = {
   active: null, driving: false, restoredId: null, restoredDriving: false, routeStart: null, drivingSince: null,
   options: [], providers: null, agentPlaces: [], startPins: [], parking: {}, sheet: "ready", routeGen: 0,
@@ -97,10 +116,10 @@ export const useTripStore = create<TripState & TripActions>()((set, get) => ({
     set({ routeGen: gen });
     return gen;
   },
-  applyRoute: (gen, route, stops) => {
+  applyRoute: (gen, route, stops, parking) => {
     const cur = get();
     if (!cur.active || cur.routeGen !== gen) return false;
-    set({ active: { ...cur.active, route, ...(stops ? { stops } : {}) }, routeGen: gen + 1 });
+    set({ active: { ...cur.active, route, ...(stops ? { stops } : {}), ...(parking ? { parking } : {}) }, routeGen: gen + 1 });
     return true;
   },
   pickAlternative: (i) => {

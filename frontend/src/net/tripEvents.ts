@@ -209,6 +209,23 @@ export function stopTripLog(): void {
   ticker = null;
 }
 
+/** While driving, one "position" event this often: the fleet dashboard placed a truck only where some other
+ *  event happened, and an hour of interstate with no turn or question left it an hour behind (bug 13). */
+export const POSITION_EVERY_MS = 5 * 60_000;
+
+/** Logs a position every `every` ms through `log` (which stamps lat/lng) until the returned stop is called. */
+export function startPositionHeartbeat(
+  log: Pick<TripLog, "log">,
+  current: () => { tripId: string | null; speedMps: number | null },
+  every = POSITION_EVERY_MS,
+): () => void {
+  const t = setInterval(() => {
+    const { tripId, speedMps } = current();
+    log.log("position", speedMps == null ? {} : { speed_mps: Math.round(speedMps * 10) / 10 }, tripId);
+  }, every);
+  return () => clearInterval(t);
+}
+
 const snapshot = () => `${tripLog.size()}:${tripLog.lastFlushAt() ?? ""}`;
 
 /** Pending count and the last accepted flush, for the tester card. */

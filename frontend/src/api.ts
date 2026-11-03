@@ -3,6 +3,7 @@ import { AgentResponseSchema, checkContract, RouteResultSchema } from "./api/sch
 import { eldHeader } from "./eld";
 import { ensureTruckProfile, type TruckProfile } from "./hooks/useTruckProfile";
 import { isNetworkError, offlineHint } from "./net/offlineHint";
+import { stopsAhead, viaOf } from "./state/tripStore";
 import { uploadForm } from "./utils/upload";
 import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, Nudge, NudgeRequest, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
 import { BASE } from "./url";
@@ -218,7 +219,19 @@ export const api = {
   tripEventsOf: (tripId: string) =>
     request<{ events: TripEventRow[] }>(`/trips/${encodeURIComponent(tripId)}/events`).then((r) => r.events),
   /** The driver's truck profile on the server (fleet-managed later); 404 until the backend has the endpoint. */
-  profile: () => request<TruckProfile>(`/me/profile`),
+  /** The stored profile and whose it is: "vehicle" = a fleet's truck (a driver's change holds only for the trip,
+   *  on the phone), "driver" = the driver's own copy. Older servers send no header: "driver". */
+  profile: async (): Promise<{ profile: TruckProfile; source: "vehicle" | "driver" }> => {
+    const d = deadline(DEFAULT_TIMEOUT_MS);
+    try {
+      const res = await fetchTracked(`${BASE}/me/profile`, { signal: d.signal, headers: { "Content-Type": "application/json", ...authHeader() } });
+      await check(res, "/me/profile");
+      const source = res.headers.get("x-profile-source") === "vehicle" ? "vehicle" : "driver";
+      return { profile: await json<TruckProfile>(res, "/me/profile"), source };
+    } finally {
+      d.done();
+    }
+  },
   saveProfile: (profile: TruckProfile) => request<TruckProfile>(`/me/profile`, { method: "PUT", body: JSON.stringify(profile) }),
   /**
    * Off-route reroute: the engine resumes the server-side plan (`handle`, section, metres into it)
@@ -302,6 +315,13 @@ export const api = {
         truck_profile: await ensureTruckProfile(),
         session_id: sessionId,
         active_place: active?.place,
+        // The route as it is, so the copilot can check chains or other ways on it after a restart (its session
+        // cache is gone then): HERE handle and the stops still ahead.
+        route_handle: active?.route.handle ?? null,
+        route_via: active ? viaOf(stopsAhead(active.route, active.stops, at)) : [],
+        // The same stops as places: the trip lives on the phone, and the copilot names, adds and drops stops by
+        // what they are (after a restart its session knew only coordinates).
+        route_stops: active ? stopsAhead(active.route, active.stops, at) : [],
         active_distance_mi: active?.route.distance_mi,
         active_duration_min: active?.route.duration_min,
         trip_id: active?.trip_id,
