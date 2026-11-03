@@ -22,6 +22,7 @@ from services.speech_text import split_reply  # noqa: E402
 from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import cached_parking, check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
+from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
 from services import approach, approach_api, auth, chains, memory, onboarding, parking_store, parking_warm, timing, tpims, voice, weather  # noqa: E402,E501
 from services.speech_text import SENTENCE_END  # noqa: E402
@@ -141,6 +142,8 @@ async def build_route(req: RouteRequest):
     try:
         route = await get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile,
                                                    via=req.via)
+    except NoTruckRoute:
+        raise HTTPException(status_code=422, detail="No truck route to this place from here")
     except RoutingUnavailable:
         raise HTTPException(status_code=503, detail="Truck routing is unavailable right now")
     # NWS alerts and Caltrans chain controls along the way; slow or down sources cost at most WEATHER_BUDGET_S
@@ -190,6 +193,8 @@ async def reroute(req: RerouteRequest):
                                                      *approach.target(req.place), req.truck_profile,
                                                      section_index=req.section_index, traveled_m=req.traveled_m,
                                                      via=req.via)
+    except NoTruckRoute:
+        raise HTTPException(status_code=422, detail="No truck route to this place from here")
     except RoutingUnavailable:
         raise HTTPException(status_code=503, detail="Truck routing is unavailable right now")
     return RouteResponse(place=req.place, route=route, parking=cached_parking(req.place))
