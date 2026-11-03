@@ -20,7 +20,6 @@ import { useTripEvents } from "@/src/data/profile";
 import { savedAgeLabel, useSavedRouteAt } from "@/src/state/routeStore";
 import { fonts, radius, shadow, spacing, useTheme } from "@/src/theme";
 import type { RouteInfo } from "@/src/types";
-import { api } from "@/src/api";
 
 /** Replay speed clamps: a 65 mph highway trace, or the route's own average when it is slower. */
 const MAX_MPS = 29;

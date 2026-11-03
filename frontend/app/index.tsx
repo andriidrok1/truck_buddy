@@ -99,6 +99,10 @@ const nearbyLine = (pk: ParkingCheck) => {
   const look = pk.nearby.kind === "unclear" ? "" : `, looks like a ${pk.nearby.kind}`;
   return ` There's a lot with trailers to the ${pk.nearby.direction}${look}.`;
 };
+// The trip (route, driving, stops, options, providers, parking, sheet) lives in src/state/tripStore.ts;
+// async handlers read `trip()` at the moment they need a value instead of a ref mirror of a render.
+const trip = useTripStore.getState;
+
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
@@ -117,9 +121,6 @@ export default function MapScreen() {
   // (no camera refit on a drag) but the chrome above the sheet moves down into the freed room.
   const [peekH, setPeekH] = useState<number | null>(null);
   const chromeBottom = (peekH ?? sheetH) + spacing.lg;
-  // The trip (route, driving, stops, options, providers, parking, sheet) lives in src/state/tripStore.ts;
-  // async handlers read `trip()` at the moment they need a value instead of a ref mirror of a render.
-  const trip = useTripStore.getState;
   const active = useTripStore((s) => s.active);
   const driving = useTripStore((s) => s.driving);
   const options = useTripStore((s) => s.options);
@@ -1045,11 +1046,12 @@ export default function MapScreen() {
 
   // A position for the fleet dashboard every few minutes while driving (lat/lng are stamped by the log).
   const speedRef = useRef<number | null>(null);
-  speedRef.current = loc.speed;
+  useEffect(() => {
+    speedRef.current = loc.speed;
+  });
   useEffect(() => {
     if (!driving) return;
     return startPositionHeartbeat(tripLog, () => ({ tripId: trip().active?.trip_id ?? null, speedMps: speedRef.current }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driving]);
 
   // Arrival at a stop or the destination: one trip event each (the server counts visits, the fleet reads the time).
