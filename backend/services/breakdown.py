@@ -492,9 +492,10 @@ async def followup(req: AgentRequest, sess: dict, text: str, source: str) -> Opt
         with stage("tools"):
             route = await get_routing_provider().route(req.lat, req.lng, place.lat, place.lng, req.truck_profile)
         others = [_place(p) for p in providers if p.id != chosen.id]
+        from services.agent import _with_warnings  # agent imports this module; the warnings are the route answers' own
         return AgentResponse(status="route_set", transcript=text, category="service", place=place, route=route,
                              options=others, source=source,
-                             reply=f"Okay, route to {chosen.name} is set, {route.summary.split(' · ')[0]}.")
+                             reply=_with_warnings(f"Okay, route to {chosen.name} is set, {route.summary.split(' · ')[0]}.", route))
     if action == "more":
         return AgentResponse(status="chat", transcript=text, source=source,
                              reply="That's everyone I found who works on trucks around here. Want me to look for a tow instead?")

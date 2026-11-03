@@ -10,7 +10,7 @@ import logging
 import math
 import os
 import re
-from typing import Optional
+from typing import Callable, Optional
 
 import httpx
 
@@ -568,6 +568,14 @@ def _route_warning(route: RouteInfo) -> str:
     return _notice(route.notices[0]) if route.notices else ""
 
 
+def _with_warnings(reply: str, route: RouteInfo, *lines: Optional[str]) -> str:
+    """A route answer followed by what the driver must hear about that route: the restriction / closure / router
+    notice warning, then any further lines (chain controls, weather, a preference just learned). Every answer that
+    builds a route ends through here: "park near my delivery in Stockton" said only the name and the miles over a
+    route under a low bridge, and the stop answers said nothing either (review 2026-11-02, bug 14)."""
+    return " ".join(p.strip() for p in (reply, _route_warning(route), *lines) if p and p.strip())
+
+
 def _diesel_note(p: Place) -> str:
     """Price tag for the model's place list, so "the cheapest diesel" resolves to a place_index."""
     if p.diesel_price is None:
@@ -609,8 +617,13 @@ def _rating_note(p: Place) -> str:
 
 def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[str] = None,
                  regional: str = "") -> str:
-    """Conversational intro + one line with the place, a landmark and the distance; then a notice, if any.
-    The driver's name is used about every third answer. `regional` = EIA comparison for the diesel price."""
+    """Conversational intro + one line with the place, a landmark and the distance; then a notice, if any."""
+    return _with_warnings(_route_head(place, route, n, driver, regional), route)
+
+
+def _route_head(place: Place, route: RouteInfo, n: int = 0, driver: Optional[str] = None, regional: str = "") -> str:
+    """Conversational intro + one line with the place, a landmark and the distance. The driver's name is used
+    about every third answer. `regional` = EIA comparison for the diesel price."""
     kind = "fuel_stop" if is_fuel_stop(place) else place.category
     intro, body = TEMPLATES[kind][n % len(TEMPLATES[kind])]
     street = arrival_street(place, route)
@@ -625,9 +638,7 @@ def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[st
     intro = intro.format(**vals)
     first_name = (driver or "").split(" ")[0]
     out = f"{intro}, {first_name}. " if first_name and n % 3 == 2 else f"{intro}. "
-    out += body.format(**vals) + _diesel_sentence(place, regional) + tpims.sentence(place)
-    warning = _route_warning(route)
-    return f"{out} {warning}" if warning else out
+    return out + body.format(**vals) + _diesel_sentence(place, regional) + tpims.sentence(place)
 
 
 # "Not that one" and friends: the driver turns a PLACE down. With a route active the classifier sometimes
@@ -1014,7 +1025,10 @@ class LlmAgentProvider:
         logger.info("agent pick %s with no diesel prices in the list -> the closest, %s", said(text), nearest.name)
         return await self._route_to(req, nearest, sess["places"], text)
 
-    async def _route_to(self, req: AgentRequest, place: Place, found: list[Place], text: str) -> AgentResponse:
+    async def _route_to(self, req: AgentRequest, place: Place, found: list[Place], text: str,
+                        head: Optional[Callable[[RouteInfo], str]] = None) -> AgentResponse:
+        """Route to a place and the answer about it; `head` words the first line instead of the templates (a place
+        near a point the driver named), the warnings after it stay the same."""
         with stage("tools"):
             try:
                 route = await get_routing_provider().route(req.lat, req.lng, *approach.target(place), req.truck_profile)
@@ -1030,12 +1044,11 @@ class LlmAgentProvider:
         regional, weather_line, chain_line = await asyncio.gather(
             self._regional_note(place), self._route_weather(route, _session_if(req.session_id)),
             self._route_chains(route))
-        reply = _route_reply(place, route, n, req.truck_profile.driver_name, regional) + price_caveat(text, place)
+        first = head(route) if head else (_route_head(place, route, n, req.truck_profile.driver_name, regional)
+                                          + price_caveat(text, place))
         sess_now = _session_if(req.session_id)
         learned = sess_now.pop("say_learned", None) if sess_now is not None else None
-        for line in (chain_line, weather_line, learned):
-            if line:
-                reply = f"{reply} {line}"
+        reply = _with_warnings(first, route, chain_line, weather_line, learned)
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply,
                              place=place, route=route, parking=approach.for_route(place, route),
                              options=others, source=self.source)
@@ -1347,7 +1360,7 @@ class LlmAgentProvider:
         sess.pop("last_offer", None)
         time_, mi = route.summary.split(" · ")[0], _miles(route.distance_mi)
         rest = (VIA_LEFT if kept else VIA_STRAIGHT).format(time=time_, mi=mi)
-        reply = VIA_DROPPED.format(name=name, what=CATEGORY_WORD.get(stop.category, "stop")) + rest
+        reply = _with_warnings(VIA_DROPPED.format(name=name, what=CATEGORY_WORD.get(stop.category, "stop")) + rest, route)
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
                              route=route, parking=approach.for_route(place, route), options=kept, source=self.source)
 
@@ -1455,8 +1468,8 @@ class LlmAgentProvider:
         sess["last_offer"] = {"kind": "stop", "id": stop.id, "place": place.id}
         ahead = f", about {_miles(stop.distance_mi)} miles ahead" if stop.distance_mi else ""
         dwell = VIA_DWELL.format(minutes=VIA_STOP_S // 60, each="the stop" if len(stops) == 1 else "each stop")
-        reply = VIA_ADDED.format(name=stop.name.split(",")[0], ahead=ahead, time=route.summary.split(" · ")[0],
-                                 mi=_miles(route.distance_mi), dwell=dwell) + price_caveat(text, stop)
+        reply = _with_warnings(VIA_ADDED.format(name=stop.name.split(",")[0], ahead=ahead, time=route.summary.split(" · ")[0],
+                                                mi=_miles(route.distance_mi), dwell=dwell) + price_caveat(text, stop), route)
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
                              route=route, parking=approach.for_route(place, route), options=stops, source=self.source)
 
@@ -1467,7 +1480,7 @@ class LlmAgentProvider:
         route = await self._route_with_stops(req, [])
         self._remember_driven(req, sess, route)
         sess.pop("via", None)  # after the route: a failed call must not forget stops the app still shows
-        reply = VIA_CLEARED.format(time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi))
+        reply = _with_warnings(VIA_CLEARED.format(time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi)), route)
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
                              route=route, parking=approach.for_route(place, route), source=self.source)
 
@@ -1504,10 +1517,7 @@ class LlmAgentProvider:
         cached["current"] = route
         sess.pop("last_offer", None)  # the last thing offered is this road now, not a stop
         route.alternatives = [r.model_copy(update={"alternatives": []}) for r in cached["routes"] if r is not route]
-        reply = _alt_reply(route, prev)
-        warning = _route_warning(route)  # a closure or a restriction on the other way was never said before
-        if warning:
-            reply = f"{reply} {warning}"
+        reply = _with_warnings(_alt_reply(route, prev), route)  # a closure or a restriction on the other way is new
         return AgentResponse(status="route_set", transcript=text, category=place.category,
                              reply=reply, place=place, route=route, parking=approach.for_route(place, route),
                              source=self.source)
@@ -1578,14 +1588,14 @@ class LlmAgentProvider:
         for p in found:
             km = haversine_km(req.lat, req.lng, p.lat, p.lng)
             p.distance_km, p.distance_mi = round(km, 2), round(km_to_mi(km), 1)
-        res = await self._route_to(req, chosen, found, text)
         where = "your delivery" if re.search(r"\b(?:deliver|drop|consignee|receiver)", text, re.I) else (
             "the shipper" if re.search(r"\bshipper\b", text, re.I) else query.split(",")[0])
         away = "right at" if from_point < 0.3 else f"{_miles(from_point)} miles from"
-        res.reply = f"{chosen.name}, {away} {where}, {_miles(res.route.distance_mi)} miles from you."
-        if swapped:
-            res.reply = f"No rest area near {query.split(',')[0]}, so here's a truck stop. {res.reply}"
-        return res
+        swap = f"No rest area near {query.split(',')[0]}, so here's a truck stop. " if swapped else ""
+
+        def head(route: RouteInfo) -> str:
+            return f"{swap}{chosen.name}, {away} {where}, {_miles(route.distance_mi)} miles from you."
+        return await self._route_to(req, chosen, found, text, head)
 
     async def _find(self, req: AgentRequest, category: str, text: str, exclude: set[str]) -> AgentResponse:
         if category not in enabled_categories():
