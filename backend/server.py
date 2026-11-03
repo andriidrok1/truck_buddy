@@ -440,7 +440,7 @@ def _finish(res: AgentResponse, extra: Optional[dict] = None, driver: Optional[s
             trip_id: Optional[str] = None, sid: Optional[str] = None,
             pos: Optional[tuple[float, float]] = None) -> AgentResponse:
     """Timings onto the response, one `turn {json}` log line per copilot turn (scripts/turn_stats.py reads it:
-    request id, driver, the app's session id, org, status, intent, notes, timings; never the transcript), and
+    request id, device, driver, the app's session id, org, status, intent, notes, timings; never the transcript), and
     the turn's trip events when the driver is known (services/trip_events.from_turn)."""
     res.timings = {**(extra or {}), **timing.current()}
     res.timings["total"] = sum(v for k, v in res.timings.items() if k != "total" and not timing.is_counter(k))
@@ -448,8 +448,11 @@ def _finish(res: AgentResponse, extra: Optional[dict] = None, driver: Optional[s
     res.timings["first_audio"] = sum(res.timings.get(k, 0) for k in TURN_STAGES)
     notes = timing.notes()
     res.intent = notes.get("intent") or res.intent
-    fields = {"req": reqid.current(), "driver": str(driver) if driver else None, "sid": sid,
-              "org": getattr(driver, "org_id", None), "status": res.status, "intent": res.intent or "-",
+    # device = the phone's sub, driver = drivers.id (the row the fleet tables use); both look like drv_…, and
+    # "driver" used to be the sub, which no fleet table could be joined on (review 2026-11-02, bug 11).
+    fields = {"req": reqid.current(), "device": str(driver) if driver else None,
+              "driver": getattr(driver, "driver_id", None), "sid": sid, "org": getattr(driver, "org_id", None),
+              "status": res.status, "intent": res.intent or "-",
               **{k: v for k, v in notes.items() if k != "intent"}, **res.timings}
     logger.info("turn %s", json.dumps(fields, separators=(",", ":"), default=str))
     trip_events.from_turn(driver, trip_id, res.status, res.intent, notes, res.transcript or "", pos=pos)

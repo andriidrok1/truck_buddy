@@ -277,8 +277,9 @@ def test_turn_line_is_json_without_the_transcript(client, agent_sandbox, monkeyp
     assert "Elm St" not in caplog.text
     line = next(rec.getMessage() for rec in caplog.records if rec.getMessage().startswith("turn "))
     fields = json.loads(line[len("turn "):])
-    org = run(tenancy.device_of(_sub(h))).org_id
-    assert fields["req"] == "req-from-app-1" and fields["driver"] == _sub(h) and fields["sid"] == "s-7" and fields["org"] == org
+    dev = run(tenancy.device_of(_sub(h)))
+    assert fields["req"] == "req-from-app-1" and fields["sid"] == "s-7" and fields["org"] == dev.org_id
+    assert fields["device"] == _sub(h) and fields["driver"] == dev.driver_id != _sub(h)  # bug 11
     assert fields["status"] == "not_understood" and "text" not in fields and "transcript" not in fields
     assert all(getattr(rec, "req", None) == "req-from-app-1" for rec in caplog.records if rec.getMessage().startswith("turn "))
     # the trip log still has the words, and the request id to join them
@@ -430,6 +431,8 @@ def test_turn_stats_reads_old_and_new_lines():
     assert s["stages"]["stt"]["n"] == 4 and s["status"]["route_set"] == 3
     # pairs: drv_a s1 (go -> not_understood: a re-ask) and drv_b alone; the old line is its own dialog
     assert s["reask_rate"] == 1.0
+    # from 2026-11-02 the sub is "device" and "driver" is drivers.id (bug 11): the dialog still keys on the phone
+    assert turn_stats._dialog({"device": "drv_a", "driver": "dr_1", "sid": "s1"}) == turn_stats._dialog({"driver": "drv_a", "sid": "s1"})
 
 
 def test_device_cache_expires(monkeypatch):

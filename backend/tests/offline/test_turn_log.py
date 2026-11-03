@@ -49,7 +49,7 @@ def test_turn_line_through_the_api(api_client, agent_sandbox, fake_http, caplog)
     fields = json.loads(line[len("turn "):])
     assert fields["status"] == "route_set" and fields["intent"] == "go" and fields["stt"] == 820
     assert fields["n_cached_tokens"] == 1536 and fields["req"] == r.headers["x-request-id"]
-    assert fields["driver"] and "sid" in fields and "org" in fields
+    assert fields["device"] and "driver" in fields and "sid" in fields and "org" in fields  # driver: drivers.id, None with the store off
     parsed = turn_stats.parse_line(line)
     assert parsed["status"] == "route_set" and parsed["intent"] == "go" and parsed["n_cached_tokens"] == 1536
 
