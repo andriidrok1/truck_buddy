@@ -153,3 +153,67 @@ def test_an_order_about_the_stop_drops_it_whatever_the_model_read(agent_sandbox,
     agent_sandbox.llm.rules.insert(0, (re.compile(re.escape(text), re.I), {"intent": "pick", "place_index": None}))
     res = run(prov.handle(_fresh(text, "rs13", [LOVES, PILOT]), None))
     assert res.status == "route_set" and [o.id for o in res.options] == [LOVES.id], res.reply
+
+
+# Review 2026-11-02: the model's query for clear_stops is often not a stop's name ("truck stop", "my stops", "the
+# last stop"), and every one of those got "X isn't one of your stops".
+REST = LOVES.model_copy(update={"id": "g-rest-donner", "name": "Donner Summit Rest Area", "category": "rest_area",
+                                "address": "I-80, CA", "distance_mi": 60.0})
+
+
+def _skip(agent_sandbox, fake_http, query, stops, sid, text=None):
+    prov = _sandbox(agent_sandbox, fake_http)
+    agent_sandbox.llm.rules.insert(0, (re.compile(r"^skip|^no stops", re.I), {"intent": "clear_stops", "query": query}))
+    return run(prov.handle(_fresh(text or "skip the " + query, sid, stops), None))
+
+
+@pytest.mark.parametrize("query", ["my stops", "both stops", "the stops", "all", "straight there"])
+def test_all_of_the_stops(agent_sandbox, fake_http, query):
+    res = _skip(agent_sandbox, fake_http, query, [LOVES, PILOT], "rs20")
+    assert res.status == "route_set" and res.reply.startswith("Stops cleared."), res.reply
+
+
+def test_no_stops_straight_to_the_destination_with_its_name_as_the_query(agent_sandbox, fake_http):
+    res = _skip(agent_sandbox, fake_http, "Reno", [LOVES, PILOT], "rs21", text="no stops, straight to Reno")
+    assert res.status == "route_set" and res.reply.startswith("Stops cleared."), res.reply
+
+
+def test_the_destination_is_not_a_stop(agent_sandbox, fake_http):
+    res = _skip(agent_sandbox, fake_http, "Reno", [LOVES, PILOT], "rs22", text="skip Reno")
+    assert res.status == "chat" and res.reply == agent.VIA_DEST_NOT_A_STOP.format(name="Reno"), res.reply
+    assert fake_http.calls_to("router.hereapi.com") == []
+
+
+@pytest.mark.parametrize("query, dropped", [("the last stop", LOVES), ("the first stop", PILOT)])
+def test_a_stop_by_its_order(agent_sandbox, fake_http, query, dropped):
+    stops = [PILOT, LOVES]
+    res = _skip(agent_sandbox, fake_http, query, stops, "rs23")
+    assert res.status == "route_set" and [o.id for o in res.options] == [s.id for s in stops if s is not dropped], res.reply
+
+
+@pytest.mark.parametrize("query", ["truck stop", "fuel stop"])
+def test_a_stop_by_its_kind(agent_sandbox, fake_http, query):
+    res = _skip(agent_sandbox, fake_http, query, [LOVES, REST], "rs24")
+    assert res.status == "route_set" and [o.id for o in res.options] == [REST.id], res.reply
+
+
+def test_two_stops_of_the_kind_ask_which(agent_sandbox, fake_http):
+    res = _skip(agent_sandbox, fake_http, "truck stop", [LOVES, PILOT], "rs25")
+    assert res.status == "chat" and res.reply == "Which one, Love's Travel Stop or Pilot Travel Center?", res.reply
+    assert fake_http.calls_to("router.hereapi.com") == []
+
+
+def test_that_stop_is_the_one_just_added(agent_sandbox, fake_http):
+    prov = _sandbox(agent_sandbox, fake_http)
+    run(prov.handle(AgentRequest(text="take me to Reno", session_id="rs26", **SAC), None))
+    run(prov.handle(AgentRequest(text="stop at the Pilot in Fernley", session_id="rs26", active_place=RENO, **SAC), None))
+    added = run(prov.handle(AgentRequest(text="swing by Love's", session_id="rs26", active_place=RENO, **SAC), None))
+    assert {o.id for o in added.options} == {LOVES.id, PILOT.id}
+    agent_sandbox.llm.rules.insert(0, (re.compile(r"^skip", re.I), {"intent": "clear_stops", "query": "that stop"}))
+    res = run(prov.handle(AgentRequest(text="skip that stop", session_id="rs26", active_place=RENO, **SAC), None))
+    assert res.status == "route_set" and [o.id for o in res.options] == [PILOT.id], res.reply
+
+
+def test_a_name_that_matches_nothing_is_still_said(agent_sandbox, fake_http):
+    res = _skip(agent_sandbox, fake_http, "Narnia", [LOVES, PILOT], "rs27")
+    assert res.status == "chat" and res.reply == agent.VIA_NOT_A_STOP.format(name="Narnia"), res.reply

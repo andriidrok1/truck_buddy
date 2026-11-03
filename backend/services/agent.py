@@ -494,6 +494,8 @@ VIA_DROPPED = "Okay, no stop at {name}. I couldn't find another {what} on the wa
 VIA_LEFT = "New total {time}, {mi} miles."
 VIA_SKIPPED = "Okay, no stop at {name}. "
 VIA_NOT_A_STOP = "{name} isn't one of your stops."
+VIA_DEST_NOT_A_STOP = "{name} is where we're headed, not a stop. Your stops stay."
+VIA_WHICH = "Which one, {names}?"
 # A stop that is nowhere near the way (the geocoder put "the Pilot in Fernley" in Wells, 300 miles past Reno,
 # and the dialog added it without a word, 2026-11-01): ask before the route changes.
 VIA_FAR = "{name} is about {extra} out of the way; from here that's {new} instead of {old}. Add it anyway?"
@@ -778,7 +780,19 @@ DROP_ORDER = re.compile(
 TAKE_OFF = re.compile(r"^\s+off\b(?!\s+from)|\boff(?:\s+(?:the|my)\s+(?:route|list|trip))?\s*$", re.I)
 NOT_A_STOP_OBJECT = re.compile(r"\b(?:trailers?|loads?|freight|cargo|reefer|pallets?|time)\b"
                                r"|\b\d{1,2}(?::\d\d)?\s*(?:am|pm|a\.m\.|p\.m\.|o'?clock)\b|\b(?:noon|midnight)\b", re.I)
-STOPS_WORD = re.compile(r"^(?:the |all )*(?:stops?|all)$", re.I)  # "the stops" as the model's query means all of them
+# What the model puts in clear_stops' query besides a name (review 2026-11-02: "truck stop", "my stops", "the last
+# stop", "straight there" were each "X isn't one of your stops"). All of them:
+ALL_STOPS = re.compile(r"^(?:the |all |both |my |of |these |those )*(?:stops?|all|both|everything|them)$"
+                       r"|\b(?:all|both|my|the|these|those|no|any) (?:of (?:the |my )?)?stops\b|\bstraight (?:there|through|to)\b",
+                       re.I)
+STOP_ORDER = re.compile(r"^(?:the )?(?P<ord>first|last|next|second|third)(?: one| stop)?$", re.I)
+THAT_STOP = re.compile(r"^(?:that|this|it|the one you (?:just )?added)(?: one| stop)?$", re.I)
+STOP_KIND = ((re.compile(r"\b(?:truck|fuel|gas|diesel) stop\b|\btravel (?:center|plaza)\b|^fuel$", re.I), "truck_stop"),
+             (re.compile(r"\brest (?:area|stop)\b", re.I), "rest_area"),
+             (re.compile(r"\b(?:hotel|motel)\b", re.I), "hotel"),
+             (re.compile(r"\b(?:cat )?scale\b", re.I), "cat_scale"),
+             (re.compile(r"\btruck wash\b", re.I), "truck_wash"),
+             (re.compile(r"\bwalmart\b", re.I), "walmart"))
 ROAD_WORDS = re.compile(r"\b(?:way|road|route|highway|freeway|interstate|detour|grade|pass|toll)s?\b", re.I)
 # "The second one", "number two", "the last one": a reference into the list, never something to geocode
 # (HERE once turned "the second one" into W 21st Pl, The Dalles, OR, 598 miles out).
@@ -1896,7 +1910,18 @@ class LlmAgentProvider:
         named = stop_named(text, query, stops, place)
         if named:
             return await self._drop_stop(req, sess, named, stops, text)
-        if query and not STOPS_WORD.search(query):  # a place that is not one of the stops: keep them all
+        if query and not ALL_STOPS.search(query) and not ALL_STOPS.search(text):
+            which = self._stop_meant(req, sess, query, stops)
+            if isinstance(which, Place):
+                return await self._drop_stop(req, sess, which, stops, text)
+            if which:  # more than one could be meant: the names, never a guess
+                names = [s.name.split(",")[0] for s in which]
+                return AgentResponse(status="chat", transcript=text, source=self.source,
+                                     reply=VIA_WHICH.format(names=", ".join(names[:-1]) + " or " + names[-1]))
+            if any(len(w) >= 3 for w in _name_tokens(query) & _name_tokens(place.name) - GENERIC_NAME_WORDS):  # "skip Reno"
+                return AgentResponse(status="chat", transcript=text, source=self.source,
+                                     reply=VIA_DEST_NOT_A_STOP.format(name=place.name.split(",")[0]))
+            # a place that is not one of the stops: keep them all
             return AgentResponse(status="chat", transcript=text, reply=VIA_NOT_A_STOP.format(name=query),
                                  source=self.source)
         route = await self._route_with_stops(req, [])
@@ -1905,6 +1930,25 @@ class LlmAgentProvider:
         reply = _with_warnings(VIA_CLEARED.format(time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi)), route)
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
                              route=route, parking=approach.for_route(place, route), source=self.source)
+
+    def _stop_meant(self, req: AgentRequest, sess: dict, query: str,
+                    stops: list[Place]) -> Optional[Place | list[Place]]:
+        """The stop a query that is no name means: by its order ("the last stop"), as the one just added ("that
+        stop"), or by its kind ("the truck stop"); a list when several could be meant, None when it means none."""
+        q = re.sub(r"^(?:the|my|our)\s+", "", query.strip().rstrip(".!?"), flags=re.I)
+        m = STOP_ORDER.match(q) or STOP_ORDER.match(query.strip())
+        if m:
+            n = {"first": 0, "next": 0, "second": 1, "third": 2, "last": len(stops) - 1}[m.group("ord").lower()]
+            return stops[n] if n < len(stops) else None
+        if THAT_STOP.match(q) or THAT_STOP.match(query.strip()):
+            return self._offered_stop(req, sess) or (stops[0] if len(stops) == 1 else stops)
+        for pattern, category in STOP_KIND:
+            if pattern.search(query):
+                of_kind = [s for s in stops if s.category == category]
+                if len(of_kind) == 1:
+                    return of_kind[0]
+                return of_kind or stops
+        return None
 
     async def _drop_stop(self, req: AgentRequest, sess: dict, stop: Place, stops: list[Place],
                          text: str) -> AgentResponse:
