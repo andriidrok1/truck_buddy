@@ -21,8 +21,8 @@ NOT_UNDERSTOOD = "didn't catch"
 
 
 def call(text, active=False, speak=False, truck=None, **ui):
-    body = {"text": text, "lat": LAT, "lng": LNG, "ui": {"driving": False, "voice_guidance": True,
-                                                          "hands_free": True, "options_count": 0, **ui}}
+    body = {"text": text, "lat": LAT, "lng": LNG,
+            "ui": {"driving": False, "voice_guidance": True, "hands_free": True, "options_count": 0, **ui}}
     if active:
         body["active_place"] = PLACE
     if truck:

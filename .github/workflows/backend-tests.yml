@@ -24,9 +24,10 @@ jobs:
       - name: offline tests (no keys, no network)
         env:
           EXPO_PUBLIC_BACKEND_URL: ""
-        run: python -m pytest -n 0 -m "not live" -q
-      - name: style (advisory)
+        # tests/offline plus the offline files directly in tests/ (OFFLINE_FILES in tests/conftest.py)
+        run: python -m pytest -n 0 -m "not live" -q tests
+      - name: flake8
+        run: flake8 services server.py models.py tests/offline tests/test_*.py scripts
+      - name: black (advisory)
         continue-on-error: true
-        run: |
-          black --check --line-length 120 services server.py models.py tests/offline scripts || true
-          flake8 --max-line-length 120 services server.py models.py tests/offline scripts || true
+        run: black --check --line-length 140 services server.py models.py tests/offline scripts || true

@@ -1,0 +1,15 @@
+[flake8]
+# Blocking in CI (backend-tests.yml). 140 columns: the code is written wide on purpose; the files below carry
+# the model prompts and spoken templates as long literals and are exempt from the length rule only.
+max-line-length = 140
+exclude = .venv,venv,__pycache__,data,.parking_cache,.tts_cache
+per-file-ignores =
+    services/agent.py:E501
+    services/breakdown.py:E501
+    services/controls.py:E501
+    services/providers_search.py:E501
+    services/approach.py:E501
+    services/geocode.py:E501
+    services/weather.py:E501
+    scripts/trip_stats.py:E501
+    tests/*:E501

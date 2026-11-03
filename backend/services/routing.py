@@ -8,10 +8,12 @@ line that isn't a road.
 The truck profile (height, length, weight, hazmat) is sent to the real providers so
 the route avoids low bridges and weight/length/hazmat restrictions.
 """
+import bisect
 import logging
 import math
 import os
 import re
+from datetime import datetime
 from typing import List, Optional, Sequence
 
 import flexpolyline
@@ -19,6 +21,7 @@ from services.http import client
 
 from models import Incident, Maneuver, RouteInfo, SpeedLimit, TrafficSegment, TruckProfile
 from services.approach import from_route
+from services.errors import NoTruckRoute
 from services.flags import on
 from services.geo import haversine_km, km_to_mi
 
@@ -27,7 +30,11 @@ logger = logging.getLogger("truckbuddy.routing")
 ROAD_FACTOR = 1.3
 AVG_SPEED_MPH = 32.0
 POINTS = 32
-MAX_POINTS = 1500  # keep the payload small for long trips
+MAX_POINTS = 6000  # hard cap on the points sent to the app; the tolerance below is doubled until the line fits
+# The line the app gets stays within this of the road. A plain stride (every 10th point on a 1,000-mile trip)
+# cut corners by 200 m and pulled maneuvers 800 m off their turns: the app spoke "turn now" early and
+# called the truck off route on every bend (2026-11-01).
+THIN_TOL_M = 5.0
 HERE_URL = "https://router.hereapi.com/v8/routes"
 ORS_URL = "https://api.openrouteservice.org/v2/directions/driving-hgv/geojson"
 HERE_HAZMAT = "explosive,gas,flammable,combustible,poison,corrosive"
@@ -43,25 +50,75 @@ def format_summary(duration_min: int, distance_mi: float) -> str:
     return f"{time} · {dist}"
 
 
+def _simplify(points: Sequence[Sequence[float]], tol_m: float, keep: Sequence[int] = ()) -> List[int]:
+    """Indices of the points to keep: Douglas-Peucker within `tol_m` metres, with the first, the last and every
+    `keep` offset kept as they are (a maneuver, a limit change or an incident must stay an exact vertex)."""
+    n = len(points)
+    if n <= 2:
+        return list(range(n))
+    kept = bytearray(n)
+    kept[0] = kept[-1] = 1
+    for k in keep:
+        if 0 <= k < n:
+            kept[k] = 1
+    # One local plane for the whole line: metres east/north of the first point. The scale error over a
+    # 6-degree spread of latitude is a few percent of a 5 m tolerance.
+    ky = 111_320.0
+    kx = ky * math.cos(math.radians(sum(p[0] for p in points) / n))
+    xs = [(p[1] - points[0][1]) * kx for p in points]
+    ys = [(p[0] - points[0][0]) * ky for p in points]
+    anchors = [i for i in range(n) if kept[i]]
+    stack = list(zip(anchors, anchors[1:]))
+    while stack:
+        a, b = stack.pop()
+        if b <= a + 1:
+            continue
+        ax, ay, dx, dy = xs[a], ys[a], xs[b] - xs[a], ys[b] - ys[a]
+        l2 = dx * dx + dy * dy
+        far, at = 0.0, -1
+        for i in range(a + 1, b):
+            px, py = xs[i] - ax, ys[i] - ay
+            if l2 == 0:
+                d = math.hypot(px, py)
+            else:
+                t = min(1.0, max(0.0, (px * dx + py * dy) / l2))
+                d = math.hypot(px - t * dx, py - t * dy)
+            if d > far:
+                far, at = d, i
+        if far > tol_m:
+            kept[at] = 1
+            stack.append((a, at))
+            stack.append((at, b))
+    return [i for i in range(n) if kept[i]]
+
+
+def _thin_indices(points: Sequence[Sequence[float]], keep: Sequence[int] = ()) -> List[int]:
+    """_simplify at THIN_TOL_M, the tolerance doubled until the line fits MAX_POINTS (the anchors always stay)."""
+    tol = THIN_TOL_M
+    kept = _simplify(points, tol, keep)
+    while len(kept) > MAX_POINTS and tol < 1000:
+        tol *= 2
+        kept = _simplify(points, tol, keep)
+    return kept
+
+
 def _thin(points: List[List[float]]) -> List[List[float]]:
-    if len(points) <= MAX_POINTS:
+    """The simplified line (no anchors): ORS and mock routes, traffic segments."""
+    if len(points) <= 2:
         return points
-    step = math.ceil(len(points) / MAX_POINTS)
-    return points[::step] + [points[-1]]
+    return [points[i] for i in _thin_indices(points)]
 
 
-def _thin_index(off: int, n: int) -> int:
-    """Index into _thin(points) of the point at offset `off` in the original n points.
+class _Index:
+    """Original offset -> index into the thinned geometry: the kept vertex at or before the offset (exact for
+    every anchor offset, since those are kept)."""
 
-    Mirrors _thin exactly: with step > 1 the thinned list is points[::step] + [points[-1]], so the
-    last original point lands at a dedicated final slot; anything else maps to off // step.
-    """
-    if n <= 0:
-        return 0
-    off = max(0, min(off, n - 1))
-    step = math.ceil(n / MAX_POINTS) if n > MAX_POINTS else 1
-    last = (n - 1) // step + (1 if step > 1 else 0)
-    return last if off == n - 1 else min(off // step, last)
+    def __init__(self, kept: Sequence[int]):
+        self.kept = list(kept) or [0]
+
+    def __call__(self, off: int) -> int:
+        off = max(0, min(int(off), self.kept[-1]))
+        return max(0, bisect.bisect_right(self.kept, off) - 1)
 
 
 def _span_ranges(spans: List[dict], n_points: int):
@@ -77,12 +134,14 @@ def _span_ranges(spans: List[dict], n_points: int):
 
 
 def _info(geometry: List[List[float]], meters: float, seconds: float, source: str, notices: List[str],
-          truck_aware: bool, traffic: Optional[List[TrafficSegment]] = None) -> RouteInfo:
+          truck_aware: bool, traffic: Optional[List[TrafficSegment]] = None,
+          restricted: Optional[str] = None, thinned: bool = False) -> RouteInfo:
     mi = km_to_mi(meters / 1000)
     minutes = max(1, round(seconds / 60))
-    return RouteInfo(geometry=_thin(geometry), distance_m=round(meters), duration_s=round(seconds),
+    return RouteInfo(geometry=geometry if thinned else _thin(geometry), distance_m=round(meters), duration_s=round(seconds),
                      distance_mi=round(mi, 1), duration_min=minutes, summary=format_summary(minutes, mi),
-                     source=source, notices=notices, truck_aware=truck_aware, traffic=traffic or [])
+                     source=source, notices=notices, truck_aware=truck_aware, traffic=traffic or [],
+                     restricted=restricted)
 
 
 def _traffic_level(span: dict) -> Optional[str]:
@@ -150,9 +209,14 @@ def _here_params(t: TruckProfile, origin: tuple[float, float], dest: tuple[float
         ("lang", "en-US"),
         ("units", "imperial"),
         ("spans", ",".join(spans)),
-        ("vehicle[height]", str(round(t.height_in * 2.54))),  # cm
-        ("vehicle[length]", str(round(t.total_length_ft * 30.48))),  # cm
-        ("vehicle[grossWeight]", str(round(t.weight_lb * 0.4536))),  # kg
+        # Rounded up, never down: a 13 ft 6 in rig is 411.48 cm, and the router must plan for 412.
+        ("vehicle[height]", str(math.ceil(t.height_in * 2.54))),  # cm
+        ("vehicle[length]", str(math.ceil(t.total_length_ft * 30.48))),  # cm
+        ("vehicle[grossWeight]", str(math.ceil(t.weight_lb * 0.45359237))),  # kg
+        # A tractor with one trailer: HERE then applies the "no trailers" and trailer-length rules too,
+        # which a plain straight truck of the same length would sail past.
+        ("vehicle[type]", "tractor"),
+        ("vehicle[trailerCount]", "1"),
     ]
     for stop in via:
         params.append(("via", f"{stop[0]},{stop[1]}!stopDuration={VIA_STOP_S}"))
@@ -194,13 +258,14 @@ def _tolls_usd(sections: List[dict]) -> Optional[float]:
     return round(total, 2) if seen else None
 
 
-def _parse_route(route: dict) -> RouteInfo:
-    """One HERE route object -> RouteInfo (pure; no I/O). Sections are concatenated in order."""
+def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo:
+    """One HERE route object -> RouteInfo (pure; no I/O). Sections are concatenated in order; `truck` only
+    puts the driver's own numbers into a restriction line."""
     sections = route.get("sections") or []
     if not sections:
         raise RuntimeError("HERE route has no sections")
     geometry, meters, seconds, raw, traffic, actions = [], 0.0, 0.0, [], [], []
-    limits: list[tuple[int, int]] = []  # (global offset, mph)
+    limits: list[tuple[int, Optional[int]]] = []  # (global offset, mph; None = no posted limit known)
     incidents: list[tuple[int, dict]] = []  # (global offset, incident)
     bases: list[int] = []
     for s in sections:
@@ -210,24 +275,48 @@ def _parse_route(route: dict) -> RouteInfo:
         spans = s.get("spans") or []
         for a in s.get("actions") or []:
             actions.append((base + int(a.get("offset", 0)), a))
-        limits += _speed_limits(spans, base)
+        limits += _speed_limits(spans, base, limits[-1][1] if limits else None)
         incidents += _incidents(s, spans, base)
         geometry += pts
         traffic += _traffic(pts, spans)
         meters += s["summary"]["length"]
         seconds += s["summary"]["duration"]
-        raw += [str(n.get("code") or n.get("title") or "") for n in s.get("notices", [])]
-    info = _info(geometry, meters, seconds, "here", _friendly(raw), True, traffic)
-    info.maneuvers = _maneuvers(geometry, actions)
+        raw += [n for n in (s.get("notices") or []) if isinstance(n, dict)]
+    stops_s = _stops_s(sections)
+    if not geometry:
+        raise RuntimeError("HERE route has no geometry")
+    notices, restricted = _notices(raw, truck or TruckProfile())
     n = len(geometry)
-    info.speed_limits = _remap_limits(limits, n)
-    info.incidents = [_incident(_thin_index(off, n), inc) for off, inc in incidents]
+    anchors = [min(off, n - 1) for off, _ in actions] + [off for off, _ in limits] + [off for off, _ in incidents] + bases
+    idx = _Index(_thin_indices(geometry, anchors))
+    info = _info([geometry[i] for i in idx.kept], meters, seconds, "here", notices, True, traffic, restricted,
+                 thinned=True)
+    info.stops_s = stops_s
+    info.maneuvers = _maneuvers(geometry, actions, idx)
+    info.speed_limits = _remap_limits(limits, idx)
+    info.incidents = [_incident(idx(off), inc) for off, inc in incidents]
     info.labels = _labels(route)
     info.tolls_usd = _tolls_usd(sections)
-    info.section_starts = [_thin_index(b, n) for b in bases]
+    info.section_starts = [idx(b) for b in bases]
     handle = route.get("routeHandle")
     info.handle = handle if isinstance(handle, str) and handle else None
     return info
+
+
+def _stops_s(sections: List[dict]) -> float:
+    """Seconds the truck stands at the via stops: the gap between one section's arrival and the next one's
+    departure. Informational only: HERE already adds a via's stopDuration to the `duration` of the section that
+    ends there (checked live 2026-11-02: 910 s -> 2710 s with stopDuration=1800), so adding it again put
+    30 extra minutes on the ETA per stop."""
+    total = 0.0
+    for a, b in zip(sections, sections[1:]):
+        try:
+            arrive = datetime.fromisoformat(str(a["arrival"]["time"]))
+            depart = datetime.fromisoformat(str(b["departure"]["time"]))
+            total += max(0.0, (depart - arrive).total_seconds())
+        except (KeyError, TypeError, ValueError):
+            continue
+    return total
 
 
 # Keys the HERE "route by handle" endpoint rejects or that make no sense for a re-route.
@@ -260,31 +349,39 @@ async def _here_by_handle(handle: str, lat: float, lng: float, heading: Optional
     r = await client().get(f"{HERE_URL}/{handle}", params=params, timeout=20)
     if r.is_error:
         raise RuntimeError(f"HERE handle {r.status_code}: {r.text[:200]}")
-    return _here_parse(r.json())
+    return _here_parse(r.json(), t)
 
 
-def _speed_limits(spans: List[dict], base: int) -> list[tuple[int, int]]:
-    """(section-global offset, mph) for every span whose posted limit differs from the previous one."""
-    out: list[tuple[int, int]] = []
+def _speed_limits(spans: List[dict], base: int, prev: Optional[int] = None) -> list[tuple[int, Optional[int]]]:
+    """(section-global offset, mph) for every span whose posted limit differs from the previous one; None where
+    HERE has no limit for the stretch, so the app shows nothing there instead of the freeway's 65 on the ramp.
+    `prev` is the limit in force at the end of the previous section, so a stretch without one right after a
+    via stop ends it too."""
+    out: list[tuple[int, Optional[int]]] = []
+    last: Optional[int] = prev
     for sp in spans:
         ms = sp.get("maxSpeed")
         if not isinstance(ms, (int, float)) or ms <= 0:  # missing, or "unlimited"
+            if last is not None:
+                out.append((base + int(sp.get("offset", 0)), None))
+                last = None
             continue
         mph = int(round(ms * MPH_PER_MS))
-        if out and out[-1][1] == mph:
+        if mph == last:
             continue
+        last = mph
         out.append((base + int(sp.get("offset", 0)), mph))
     return out
 
 
-def _remap_limits(limits: list[tuple[int, int]], n: int) -> List[SpeedLimit]:
+def _remap_limits(limits: list[tuple[int, Optional[int]]], idx: "_Index") -> List[SpeedLimit]:
     """Offsets -> thinned indices; one entry per index (the first), consecutive equal limits merged."""
     out: List[SpeedLimit] = []
     for off, mph in limits:
-        idx = _thin_index(off, n)
-        if out and (out[-1].index == idx or out[-1].mph == mph):
+        i = idx(off)
+        if out and (out[-1].index == i or out[-1].mph == mph):
             continue
-        out.append(SpeedLimit(index=idx, mph=mph))
+        out.append(SpeedLimit(index=i, mph=mph))
     return out
 
 
@@ -320,16 +417,19 @@ def _incident(index: int, inc: dict) -> Incident:
                     index=index, criticality=crit)
 
 
-def _here_parse(data: dict) -> RouteInfo:
+def _here_parse(data: dict, truck: Optional[TruckProfile] = None) -> RouteInfo:
     """HERE Routing v8 response body -> the primary route, with the other routes as .alternatives
     (pure; no I/O). An alternative HERE can't fully parse is dropped, never the primary."""
     routes = (data or {}).get("routes") or []
     if not routes or not routes[0].get("sections"):
-        raise RuntimeError("HERE returned no truck route")
-    primary = _parse_route(routes[0])
+        # A 200 with no route is HERE's answer, not a hiccup: "couldNotMatchOrigin", "noRouteFound"...
+        why = "; ".join(str(n.get("title") or n.get("code") or "") for n in (data or {}).get("notices") or []
+                        if isinstance(n, dict)) or "no truck route"
+        raise NoTruckRoute(why)
+    primary = _parse_route(routes[0], truck)
     for alt in routes[1:]:
         try:
-            primary.alternatives.append(_parse_route(alt))
+            primary.alternatives.append(_parse_route(alt, truck))
         except Exception as e:  # noqa: BLE001
             logger.warning("HERE alternative skipped: %s", e)
     return primary
@@ -342,14 +442,15 @@ async def _here(fl: float, fg: float, tl: float, tg: float, t: TruckProfile, alt
     r = await client().get(HERE_URL, params=params, timeout=20)
     if r.is_error:
         raise RuntimeError(f"HERE {r.status_code}: {r.text[:200]}")
-    return _here_parse(r.json())
+    return _here_parse(r.json(), t)
 
 
 _GO_FOR = re.compile(r"\s+Go for .*$")
 
 
-def _maneuvers(geometry: List[List[float]], actions: list) -> List[Maneuver]:
-    """HERE actions -> maneuvers whose index points into the thinned geometry."""
+def _maneuvers(geometry: List[List[float]], actions: list, idx: "_Index") -> List[Maneuver]:
+    """HERE actions -> maneuvers whose index points into the thinned geometry (an exact vertex: every action
+    offset is an anchor of the thinning)."""
     n = len(geometry)
     out = []
     for off, a in actions:
@@ -360,28 +461,123 @@ def _maneuvers(geometry: List[List[float]], actions: list) -> List[Maneuver]:
         if not text:
             continue
         out.append(Maneuver(action=str(a.get("action")), direction=a.get("direction"), instruction=text,
-                            lat=geometry[off][0], lng=geometry[off][1], index=_thin_index(off, n)))
+                            lat=geometry[off][0], lng=geometry[off][1], index=idx(off)))
     return out
 
 
-def _friendly(codes: List[str]) -> List[str]:
-    """HERE notice codes -> one short, deduplicated line a driver can act on."""
-    out = []
-    for c in codes:
-        lc = c.lower()
-        if lc == "tollroad" or "toll" in lc:
-            msg = "Tolls couldn't be fully avoided on this route."
-        elif "restriction" in lc or "violated" in lc:
-            msg = "Part of the route may be restricted for your truck. Watch posted signs."
-        elif "ferry" in lc:
-            msg = "Route includes a ferry."
-        elif lc:
-            msg = "Check the route for restrictions."
-        else:
+# HERE notice codes that are about the request, not the road (a re-route may start against the course,
+# a polyline may be simplified): never a word to the driver.
+_NOTICE_IGNORE = {"violatedstartdirection", "simplepolyline", "tollsdataunavailable", "mainlanguagenotfound",
+                  "potentialtimedependentviolations", "nothroughrestrictions"}
+RESTRICTED_LINE = {
+    "height": "This route goes under a {limit} clearance; your truck is {truck}.",
+    "weight": "This route crosses a {limit} weight limit; your truck is {truck}.",
+    "length": "This route has a {limit} length limit; your truck is {truck}.",
+    "width": "This route has a {limit} width limit.",
+    "blocked": "Part of this route is on a road closed to trucks.",
+    # HERE's `cause` is vendor text ("Violated access restriction for this type of vehicle"), spoken as is
+    # (QA 2026-11-02): it goes to the log, the driver hears plain words.
+    "other": "Part of this route is on a road with a truck restriction.",
+}
+LEGAL_LINE = "Your truck is over the legal {what} limit in {where} ({limit}); that takes a permit."
+
+
+def _ft_in(cm: float) -> str:
+    inches = int(cm / 2.54 + 1e-6)  # the limit rounded down: the conservative side for a clearance
+    return _inches_text(inches)
+
+
+def _inches_text(inches: int) -> str:
+    return f"{inches // 12} ft {inches % 12} in" if inches % 12 else f"{inches // 12} ft"
+
+
+def _lb(kg: float) -> str:
+    return f"{int(kg / 0.45359237):,} lb"
+
+
+def _restriction(detail: dict) -> tuple[str, str]:
+    """(kind, limit text) from a HERE restriction detail: maxHeight / maxWeight / maxLength / maxWidth in cm or kg."""
+    if isinstance(detail.get("maxHeight"), (int, float)):
+        return "height", _ft_in(detail["maxHeight"])
+    if isinstance(detail.get("maxWeight"), (int, float)) or isinstance(detail.get("maxGrossWeight"), (int, float)):
+        return "weight", _lb(detail.get("maxWeight") or detail.get("maxGrossWeight"))
+    if isinstance(detail.get("maxLength"), (int, float)):
+        return "length", _ft_in(detail["maxLength"])
+    if isinstance(detail.get("maxWidth"), (int, float)):
+        return "width", _ft_in(detail["maxWidth"])
+    return "other", ""
+
+
+def _notices(raw: List[dict], t: TruckProfile) -> tuple[List[str], Optional[str]]:
+    """HERE section notices -> (lines for the driver, the kind of truck restriction the route breaks or None).
+    A violated vehicle restriction (critical: HERE found no compliant route and returned this one anyway) is
+    named with its limit and comes first; the state's legal maximum (admin-wide, one line for all states and
+    limits) says a permit is needed; avoid[] preferences that could not be honoured keep their one-liners;
+    request-level codes are dropped."""
+    physical: List[str] = []
+    other: List[str] = []
+    legal: dict[str, tuple[list[str], float]] = {}  # kind -> (states, highest limit)
+    restricted: Optional[str] = None
+    for n in raw:
+        code = str(n.get("code") or "").lower()
+        details = [d for d in (n.get("details") or []) if isinstance(d, dict)]
+        if code in _NOTICE_IGNORE or not code:
             continue
-        if msg not in out:
-            out.append(msg)
-    return out
+        if code in ("violatedvehiclerestriction", "violatedtruckroadtype", "truckroadtype"):
+            for d in details or [{}]:  # every detail: a notice can carry a height and a weight at once
+                kind, limit = _restriction(d)
+                cause = str(d.get("cause") or "").rstrip(".")
+                if kind == "other" and cause:
+                    logger.info("restriction without a known limit: %s", cause)
+                if kind == "other" and code != "violatedvehiclerestriction":
+                    msg = "Part of this route uses roads not approved for trucks."
+                else:
+                    truck = {"height": _inches_text(t.height_in), "weight": f"{t.weight_lb:,} lb",
+                             "length": f"{t.total_length_ft} ft"}.get(kind, "")
+                    msg = RESTRICTED_LINE[kind].format(limit=limit, truck=truck, cause=cause or "see the signs")
+                restricted = restricted if restricted and restricted != "legal" else kind
+                if msg not in physical:
+                    physical.append(msg)
+        elif code == "violatedblockedroad":
+            restricted = restricted if restricted and restricted != "legal" else "blocked"
+            if RESTRICTED_LINE["blocked"] not in physical:
+                physical.append(RESTRICTED_LINE["blocked"])
+        elif code == "violatedadminwidevehiclerestriction":
+            d = details[0] if details else {}
+            kind, _ = _restriction(d)
+            value = d.get("maxHeight") or d.get("maxWeight") or d.get("maxGrossWeight") or d.get("maxLength") or d.get("maxWidth") or 0
+            states, top = legal.get(kind, ([], 0.0))
+            state = str(d.get("state") or d.get("country") or "").strip()
+            if state and state not in states:
+                states.append(state)
+            legal[kind] = (states, max(top, float(value) if isinstance(value, (int, float)) else 0.0))
+            restricted = restricted or "legal"
+        elif "toll" in code:
+            msg = "Tolls couldn't be fully avoided on this route."
+            if msg not in other:
+                other.append(msg)
+        elif "ferry" in code:
+            msg = "Route includes a ferry."
+            if msg not in other:
+                other.append(msg)
+        elif "tunnel" in code:  # violatedAvoidTunnel: the driver asked to avoid tunnels and there is no way around one
+            msg = "A tunnel couldn't be avoided on this route."
+            if msg not in other:
+                other.append(msg)
+        elif code.startswith("violated") or str(n.get("severity") or "").lower() == "critical":
+            msg = "Check the route for restrictions."
+            if msg not in other:
+                other.append(msg)
+    legal_lines = []
+    for kind, (states, top) in legal.items():
+        what = kind if kind in ("height", "weight", "length", "width") else "size"
+        limit = (_lb(top) if kind == "weight" else _ft_in(top)) if top else "the posted value"
+        where = " and ".join(states) if states else "this state"
+        legal_lines.append(LEGAL_LINE.format(what=what, where=where, limit=limit))
+    return physical + legal_lines + other, restricted
+
+
+NO_TURNS_NOTICE = "The truck router is down, so this is a backup route: no turn prompts, follow the line on the map."
 
 
 async def _ors(fl: float, fg: float, tl: float, tg: float, t: TruckProfile, via: Via = ()) -> RouteInfo:
@@ -390,10 +586,10 @@ async def _ors(fl: float, fg: float, tl: float, tg: float, t: TruckProfile, via:
         "instructions": False,
         "options": {
             "vehicle_type": "hgv",
-            "profile_params": {"restrictions": {
-                "height": round(t.height_in * 0.0254, 2),  # m
-                "length": round(t.total_length_ft * 0.3048, 2),  # m
-                "weight": round(t.weight_lb * 0.0004536, 1),  # metric tons
+            "profile_params": {"restrictions": {  # rounded up, like HERE's
+                "height": math.ceil(t.height_in * 2.54) / 100,  # m
+                "length": math.ceil(t.total_length_ft * 30.48) / 100,  # m
+                "weight": math.ceil(t.weight_lb * 0.45359237 / 100) / 10,  # metric tons
                 "hazmat": t.hazmat,
             }},
         },
@@ -452,6 +648,7 @@ class TruckRoutingProvider:
         n_alt = default_alternatives() if alternatives is None else max(0, alternatives)
         via = [[float(v[0]), float(v[1])] for v in via]
         failed: list[str] = []
+        no_route: Optional[NoTruckRoute] = None
         for key, fn in (("HERE_API_KEY", _here), ("ORS_API_KEY", _ors)):
             if not os.environ.get(key):
                 continue
@@ -460,13 +657,23 @@ class TruckRoutingProvider:
                     else await fn(from_lat, from_lng, to_lat, to_lng, t, via)
                 info.approach = from_route(info)
                 info.via = via
+                if fn is _ors and failed:  # HERE is down: a line to follow, but no turn prompts
+                    info.notices.append(NO_TURNS_NOTICE)
                 for alt in info.alternatives:
                     alt.approach = from_route(alt)
                     alt.via = via
                 return info
+            except NoTruckRoute as e:
+                # HERE knows the truck's restrictions; ORS asked after its "no" found a way HERE had ruled
+                # out and handed it over without turns (review 2026-11-02, bug 20). The "no" is final.
+                logger.warning("%s found no truck route: %s", fn.__name__, e)
+                no_route = e
+                break
             except Exception as e:  # noqa: BLE001 - fall through to the next provider
                 logger.warning("%s routing failed: %s", fn.__name__, e)
                 failed.append(f"{fn.__name__}: {type(e).__name__}")
+        if no_route is not None:  # "no route" beats "down": the driver should pick another place, not wait
+            raise no_route
         if failed:  # a real provider is configured: never hand the driver a made-up line
             raise RoutingUnavailable("; ".join(failed))
         info = _mock(from_lat, from_lng, to_lat, to_lng)
@@ -490,7 +697,10 @@ class TruckRoutingProvider:
                 return info
             except Exception as e:  # noqa: BLE001 - expired/invalid handle, HERE hiccup: fall back
                 logger.warning("re-route by handle failed, routing fresh: %s", e)
-        info = await self.route(lat, lng, to_lat, to_lng, t, alternatives=0, via=via)
+        # A via stop ends a section: on section k the first k stops are behind the truck. Routing fresh
+        # through all of them sent the driver back to a stop already made.
+        ahead = list(via)[max(0, int(section_index)):]
+        info = await self.route(lat, lng, to_lat, to_lng, t, alternatives=0, via=ahead)
         info.alternatives = []  # a re-route swaps the line under the driver; no chooser mid-drive
         return info
 

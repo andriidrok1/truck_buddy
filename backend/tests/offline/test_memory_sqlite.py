@@ -6,15 +6,6 @@ from conftest import run
 from services import memory
 
 
-@pytest.fixture
-def sqlite_store(tmp_path, monkeypatch):
-    monkeypatch.setenv("MEMORY_STORE", "sqlite")
-    monkeypatch.setenv("MEMORY_SQLITE_PATH", str(tmp_path / "mem.sqlite"))
-    run(memory.close())
-    yield tmp_path / "mem.sqlite"
-    run(memory.close())
-
-
 def test_store_selection(monkeypatch):
     monkeypatch.delenv("MEMORY_STORE", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)

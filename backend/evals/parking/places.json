@@ -1,0 +1,961 @@
+[
+ {
+  "id": "ts-49er",
+  "name": "Sacramento 49er Travel Plaza",
+  "category": "truck_stop",
+  "lat": 38.61736,
+  "lng": -121.53861,
+  "tags": [
+   "53 ft parking",
+   "Truck access",
+   "Diesel",
+   "Showers"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     38.618213,
+     -121.539329
+    ],
+    [
+     38.617427,
+     -121.539271
+    ],
+    [
+     38.616574,
+     -121.539185
+    ],
+    [
+     38.616552,
+     -121.53769
+    ]
+   ],
+   "park": [
+    [
+     38.618124,
+     -121.53723
+    ],
+    [
+     38.617809,
+     -121.536598
+    ],
+    [
+     38.617764,
+     -121.537805
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "ts-westsac",
+  "name": "West Sac Truck Stop",
+  "category": "truck_stop",
+  "lat": 38.57602,
+  "lng": -121.57636,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     38.575526,
+     -121.575699
+    ],
+    [
+     38.575706,
+     -121.575326
+    ]
+   ],
+   "park": [
+    [
+     38.576514,
+     -121.575556
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "ts-roadys-westsac",
+  "name": "Roady's Truck Stop",
+  "category": "truck_stop",
+  "lat": 38.57955,
+  "lng": -121.54827,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     38.579415,
+     -121.548442
+    ],
+    [
+     38.579415,
+     -121.547868
+    ],
+    [
+     38.579415,
+     -121.547351
+    ],
+    [
+     38.579864,
+     -121.548557
+    ]
+   ],
+   "park": [
+    [
+     38.580134,
+     -121.547695
+    ],
+    [
+     38.579864,
+     -121.547006
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "ts-sacvalley",
+  "name": "Sac Valley Truck Stop",
+  "category": "truck_stop",
+  "lat": 38.4713,
+  "lng": -121.41726,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     38.471839,
+     -121.417547
+    ],
+    [
+     38.471614,
+     -121.417375
+    ],
+    [
+     38.47112,
+     -121.417289
+    ]
+   ],
+   "park": [
+    [
+     38.4713,
+     -121.415424
+    ],
+    [
+     38.471614,
+     -121.416113
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "ts-flyingj-lodi",
+  "name": "Flying J Travel Center",
+  "category": "truck_stop",
+  "lat": 38.11716,
+  "lng": -121.39385,
+  "tags": [
+   "53 ft parking",
+   "Diesel",
+   "24/7"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     38.117519,
+     -121.393051
+    ],
+    [
+     38.116846,
+     -121.392965
+    ]
+   ],
+   "park": [
+    [
+     38.118373,
+     -121.395277
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "ts-petro-corning",
+  "name": "Petro Stopping Center",
+  "category": "truck_stop",
+  "lat": 39.90611,
+  "lng": -122.19623,
+  "tags": [
+   "53 ft parking",
+   "Truck access",
+   "Diesel",
+   "Showers"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     39.906424,
+     -122.196816
+    ],
+    [
+     39.906424,
+     -122.195762
+    ],
+    [
+     39.906424,
+     -122.194942
+    ],
+    [
+     39.905391,
+     -122.197401
+    ]
+   ],
+   "park": [
+    [
+     39.905122,
+     -122.195937
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "ts-loves-williams",
+  "name": "Love's Travel Stop",
+  "category": "truck_stop",
+  "lat": 39.16765,
+  "lng": -122.14382,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     39.167605,
+     -122.14298
+    ],
+    [
+     39.167201,
+     -122.142661
+    ],
+    [
+     39.168414,
+     -122.143588
+    ]
+   ],
+   "park": [
+    [
+     39.167111,
+     -122.145442
+    ],
+    [
+     39.166931,
+     -122.143704
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "ts-sfoakland",
+  "name": "SF Oakland Truck Stop",
+  "category": "truck_stop",
+  "lat": 37.74891,
+  "lng": -122.19173,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "unclear",
+   "entries": [],
+   "park": [],
+   "note": "small fuel stop under I-880"
+  }
+ },
+ {
+  "id": "ts-valleyoil-mv",
+  "name": "Valley Oil",
+  "category": "truck_stop",
+  "lat": 37.3815,
+  "lng": -122.06982,
+  "tags": [
+   "Diesel",
+   "Truck access"
+  ],
+  "truth": {
+   "fits": "unclear",
+   "entries": [],
+   "park": [],
+   "note": "small fuel yard"
+  }
+ },
+ {
+  "id": "ts-western-sanleandro",
+  "name": "Western States Oil",
+  "category": "truck_stop",
+  "lat": 37.70687,
+  "lng": -122.1594,
+  "tags": [
+   "Diesel",
+   "Truck access"
+  ],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": "small station by the freeway"
+  }
+ },
+ {
+  "id": "ts-fairfield",
+  "name": "Fairfield Travel Center",
+  "category": "truck_stop",
+  "lat": 38.25706,
+  "lng": -122.06737,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": "mock point sits on a shopping center"
+  }
+ },
+ {
+  "id": "ht-baybreeze",
+  "name": "Bay Breeze Inn",
+  "category": "hotel",
+  "lat": 37.76387,
+  "lng": -122.21577,
+  "tags": [
+   "Truck parking nearby"
+  ],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": ""
+  }
+ },
+ {
+  "id": "ht-coliseum",
+  "name": "Coliseum Motel",
+  "category": "hotel",
+  "lat": 37.7658,
+  "lng": -122.2171,
+  "tags": [
+   "Truck parking nearby"
+  ],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": ""
+  }
+ },
+ {
+  "id": "ht-motel6-fairfield",
+  "name": "Motel 6 Fairfield",
+  "category": "hotel",
+  "lat": 38.25943,
+  "lng": -122.06578,
+  "tags": [
+   "Truck parking nearby"
+  ],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": ""
+  }
+ },
+ {
+  "id": "ht-motel6-vacaville",
+  "name": "Motel 6 Vacaville",
+  "category": "hotel",
+  "lat": 38.3721,
+  "lng": -121.95126,
+  "tags": [
+   "Parking"
+  ],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": ""
+  }
+ },
+ {
+  "id": "ht-crest-westsac",
+  "name": "Crest Motel",
+  "category": "hotel",
+  "lat": 38.5827,
+  "lng": -121.51999,
+  "tags": [
+   "Parking"
+  ],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": ""
+  }
+ },
+ {
+  "id": "ht-crossroads",
+  "name": "Crossroads Inn",
+  "category": "hotel",
+  "lat": 38.59582,
+  "lng": -121.50509,
+  "tags": [
+   "Parking"
+  ],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": ""
+  }
+ },
+ {
+  "id": "ra-hunterhill",
+  "name": "Hunter Hill Rest Area",
+  "category": "rest_area",
+  "lat": 38.15428,
+  "lng": -122.21707,
+  "tags": [
+   "Truck parking",
+   "Restrooms"
+  ],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": "mock point sits in an empty field"
+  }
+ },
+ {
+  "id": "ra-crystalsprings",
+  "name": "Crystal Springs Rest Area",
+  "category": "rest_area",
+  "lat": 37.53937,
+  "lng": -122.36464,
+  "tags": [
+   "Restrooms"
+  ],
+  "truth": {
+   "fits": "unclear",
+   "entries": [
+    [
+     37.539864,
+     -122.364952
+    ]
+   ],
+   "park": [],
+   "note": "car rest area, few truck bays"
+  }
+ },
+ {
+  "id": "ra-elkhorn-s",
+  "name": "Elkhorn Rest Area (southbound)",
+  "category": "rest_area",
+  "lat": 38.67183,
+  "lng": -121.61215,
+  "tags": [
+   "Truck parking",
+   "Restrooms"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     38.672189,
+     -121.613531
+    ]
+   ],
+   "park": [
+    [
+     38.67201,
+     -121.611402
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "ra-elkhorn-n",
+  "name": "Elkhorn Rest Area (northbound)",
+  "category": "rest_area",
+  "lat": 38.67148,
+  "lng": -121.61224,
+  "tags": [
+   "Truck parking",
+   "Restrooms"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     38.672189,
+     -121.613531
+    ]
+   ],
+   "park": [
+    [
+     38.67201,
+     -121.611402
+    ]
+   ],
+   "note": "same place as 19, entries copied below"
+  }
+ },
+ {
+  "id": "ra-dunnigan",
+  "name": "Dunnigan Rest Area",
+  "category": "rest_area",
+  "lat": 38.89275,
+  "lng": -121.97813,
+  "tags": [
+   "Truck parking",
+   "Restrooms"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [],
+   "park": [],
+   "note": "lot hidden by trees"
+  }
+ },
+ {
+  "id": "ntad-150",
+  "name": "Lakehead Rest Area",
+  "category": "rest_area",
+  "lat": 40.917495,
+  "lng": -122.398353,
+  "tags": [
+   "18 truck spots"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     40.918483,
+     -122.398591
+    ]
+   ],
+   "park": [
+    [
+     40.916934,
+     -122.397521
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "ntad-120",
+  "name": "Westley Southbound",
+  "category": "rest_area",
+  "lat": 37.58263,
+  "lng": -121.32284,
+  "tags": [
+   "16 truck spots"
+  ],
+  "truth": {
+   "fits": "unclear",
+   "entries": [],
+   "park": [],
+   "note": ""
+  }
+ },
+ {
+  "id": "ntad-126",
+  "name": "Gold Run Eastbound",
+  "category": "rest_area",
+  "lat": 39.17545,
+  "lng": -120.85773,
+  "tags": [
+   "24 truck spots"
+  ],
+  "truth": {
+   "fits": "unclear",
+   "entries": [],
+   "park": [],
+   "note": ""
+  }
+ },
+ {
+  "id": "ntad-99",
+  "name": "Clyde V. Kane Northbound",
+  "category": "rest_area",
+  "lat": 35.031967,
+  "lng": -116.470264,
+  "tags": [
+   "23 truck spots"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     35.031877,
+     -116.472129
+    ]
+   ],
+   "park": [
+    [
+     35.032102,
+     -116.470374
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "ntad-103",
+  "name": "Valley Wells Northbound",
+  "category": "rest_area",
+  "lat": 35.43275,
+  "lng": -115.70648,
+  "tags": [
+   "17 truck spots"
+  ],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": "point on the freeway, no lot"
+  }
+ },
+ {
+  "id": "ntad-104",
+  "name": "Valley Wells Southbound",
+  "category": "rest_area",
+  "lat": 35.43275,
+  "lng": -115.70648,
+  "tags": [
+   "17 truck spots"
+  ],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": "point on the freeway, no lot"
+  }
+ },
+ {
+  "id": "cat-857",
+  "name": "CAT Scale at Flying J Travel Plaza",
+  "category": "cat_scale",
+  "lat": 40.352651,
+  "lng": -76.728345,
+  "tags": [
+   "CAT Scale",
+   "717-545-5517"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     40.3531,
+     -76.728316
+    ],
+    [
+     40.35319,
+     -76.727402
+    ]
+   ],
+   "park": [
+    [
+     40.351573,
+     -76.727756
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "cat-1431",
+  "name": "CAT Scale at Love's Travel Stop",
+  "category": "cat_scale",
+  "lat": 41.613203,
+  "lng": -93.779607,
+  "tags": [
+   "CAT Scale",
+   "515-276-5200"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     41.614034,
+     -93.780268
+    ],
+    [
+     41.614101,
+     -93.778646
+    ]
+   ],
+   "park": [
+    [
+     41.612978,
+     -93.779307
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "cat-3340",
+  "name": "CAT Scale at Love's Country Store",
+  "category": "cat_scale",
+  "lat": 47.103578,
+  "lng": -119.340711,
+  "tags": [
+   "CAT Scale",
+   "509-761-5419"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     47.102208,
+     -119.340513
+    ],
+    [
+     47.102231,
+     -119.339226
+    ],
+    [
+     47.103264,
+     -119.342295
+    ]
+   ],
+   "park": [
+    [
+     47.102455,
+     -119.338797
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "cat-1268",
+  "name": "CAT Scale at The Outpost",
+  "category": "cat_scale",
+  "lat": 46.30918,
+  "lng": -119.980115,
+  "tags": [
+   "CAT Scale",
+   "509-839-5300"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     46.308731,
+     -119.978815
+    ],
+    [
+     46.309674,
+     -119.980765
+    ],
+    [
+     46.309674,
+     -119.979335
+    ]
+   ],
+   "park": [
+    [
+     46.308866,
+     -119.979985
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "cat-717",
+  "name": "CAT Scale at Love's Travel Stop",
+  "category": "cat_scale",
+  "lat": 32.387903,
+  "lng": -91.197148,
+  "tags": [
+   "CAT Scale",
+   "318-574-6413"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     32.388622,
+     -91.19768
+    ],
+    [
+     32.387993,
+     -91.198478
+    ]
+   ],
+   "park": [
+    [
+     32.388217,
+     -91.19651
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "cat-1996",
+  "name": "CAT Scale at Casey's General Store",
+  "category": "cat_scale",
+  "lat": 38.145376,
+  "lng": -97.421062,
+  "tags": [
+   "CAT Scale",
+   "620-327-2479"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     38.144837,
+     -97.42129
+    ],
+    [
+     38.144859,
+     -97.420262
+    ],
+    [
+     38.144859,
+     -97.42209
+    ]
+   ],
+   "park": [
+    [
+     38.146544,
+     -97.420776
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "osm-node-5305816197",
+  "name": "Krispy Krunchy Chicken",
+  "category": "fast_food",
+  "lat": 38.647826,
+  "lng": -121.42992,
+  "tags": [],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": ""
+  }
+ },
+ {
+  "id": "osm-node-12328225967",
+  "name": "Costco Food Court",
+  "category": "fast_food",
+  "lat": 38.640498,
+  "lng": -121.522669,
+  "tags": [],
+  "truth": {
+   "fits": "unclear",
+   "entries": [],
+   "park": [],
+   "note": "big retail car lot"
+  }
+ },
+ {
+  "id": "osm-node-11638866098",
+  "name": "Popeyes",
+  "category": "fast_food",
+  "lat": 38.5292,
+  "lng": -121.445129,
+  "tags": [],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": ""
+  }
+ },
+ {
+  "id": "osm-node-5778410512",
+  "name": "SF Supermarket",
+  "category": "supermarket",
+  "lat": 38.520581,
+  "lng": -121.513084,
+  "tags": [],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": ""
+  }
+ },
+ {
+  "id": "osm-node-12191240873",
+  "name": "Sunrise Halal Market",
+  "category": "supermarket",
+  "lat": 38.500528,
+  "lng": -121.436879,
+  "tags": [],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": ""
+  }
+ },
+ {
+  "id": "osm-way-551222934",
+  "name": "Walmart Supercenter",
+  "category": "walmart",
+  "lat": 38.704259,
+  "lng": -121.331936,
+  "tags": [],
+  "truth": {
+   "fits": "unclear",
+   "entries": [],
+   "park": [],
+   "note": "big retail lot"
+  }
+ },
+ {
+  "id": "osm-way-326375689",
+  "name": "Walmart Neighborhood Market",
+  "category": "walmart",
+  "lat": 38.675729,
+  "lng": -121.273372,
+  "tags": [],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": ""
+  }
+ }
+]
