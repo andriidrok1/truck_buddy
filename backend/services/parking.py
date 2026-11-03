@@ -3,6 +3,11 @@
 1. If the place data already lists truck parking -> verdict "listed".
 2. Always fetch an Esri World Imagery satellite tile around the place and ask
    GPT 5.5 (vision) whether a 53 ft tractor-trailer can park there.
+3. The verdict comes from the grounded check (services.parking_ground: ringed place, grid, OSM driveways, two
+   samples), and so does the entry when OSM driveways were on the frame; without them there is no entry point
+   (the route goes to the place). The parking spot comes from the bare-image call. Eval 2026-11-02, 41 + 34
+   hand-labelled places: grounded verdict 60/67 right, 3 confident mistakes (bare 58/67, 7); entry points more
+   than 60 m off: grounded 7/43, bare 16/43; parking spot within 60 m: bare 37/44, grounded 33/44.
 Results and images are cached in memory (keyed by rounded coordinates).
 """
 import asyncio
@@ -17,7 +22,7 @@ from typing import Optional
 from services.http import client
 
 from models import NearbyLot, ParkingCheck, ParkingSpot, Place
-from services import llm, parking_store
+from services import llm, osm_access, parking_ground, parking_store
 
 logger = logging.getLogger("truckbuddy.parking")
 
@@ -25,6 +30,8 @@ ESRI_EXPORT = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imager
 HALF_SPAN_M = 150.0  # 300 m x 300 m view around the place
 IMG_PX = 640
 LLM_TIMEOUT_S = 35
+GROUNDED_TIMEOUT_S = 32  # inside LLM_TIMEOUT_S: a slow grounded check falls back to the bare verdict
+OSM_WAIT_S = 10  # Overpass often takes ~40 s; then the frame goes without driveway markers
 
 SYSTEM = (
     "You are an expert at reading satellite imagery for US truck drivers. "
@@ -147,7 +154,44 @@ def _nearby(v) -> Optional[NearbyLot]:
 
 
 async def _ask_vision(img: bytes, place: Place) -> dict:
-    # Image only: the place name/type must not bias the verdict.
+    """Both checks at once: verdict and entry from the grounded one, the parking spot from the bare one; either
+    alone if the other fails."""
+    bare, grounded = await asyncio.gather(_ask_bare(img, place),
+                                          asyncio.wait_for(_ask_grounded(place), GROUNDED_TIMEOUT_S),
+                                          return_exceptions=True)
+    if isinstance(grounded, BaseException):
+        if isinstance(bare, BaseException):
+            raise bare
+        logger.warning("grounded check failed for %s: %r", place.name, grounded)
+        return _without_entry(bare)
+    if not grounded["markers"]:
+        grounded = _without_entry(grounded)
+    if isinstance(bare, BaseException):
+        logger.warning("bare vision check failed for %s: %r", place.name, bare)
+        return {**grounded, "nearby": None}
+    return {**bare, "fits": grounded["fits"], "reason": grounded["reason"] or bare["reason"],
+            "entry_tip": grounded["entry_tip"],
+            "spots": [s for s in grounded["spots"] if s.kind == "entry"] + [s for s in bare["spots"] if s.kind == "park"],
+            "nearby": bare["nearby"] if grounded["fits"] == "unlikely" else None}
+
+
+def _without_entry(v: dict) -> dict:
+    """An entry not taken from a map driveway was more than 60 m off in 16 of 43 places (eval 2026-11-02): no
+    point, the route goes to the place itself; the one re-check (no entry) usually has the OSM markers by then."""
+    return {**v, "entry_tip": None, "spots": [s for s in v["spots"] if s.kind != "entry"]}
+
+
+async def _ask_grounded(place: Place) -> dict:
+    access, img = await asyncio.gather(osm_access.around(place.lat, place.lng, OSM_WAIT_S),
+                                       parking_ground.fetch_image(place.lat, place.lng))
+    v = {**await parking_ground.check(place, access, img), "markers": len(access)}
+    logger.info("grounded %s: %s, %d markers, samples %s", place.name, v["fits"], len(access),
+                [(s["fits"], s["entries"]) for s in v["samples"]])
+    return v
+
+
+async def _ask_bare(img: bytes, place: Place) -> dict:
+    # Image only: the old prompt, kept for its entry/park directions.
     out = await llm.complete(
         SYSTEM,
         "Judge ONLY from what is visible in this image. Can a 53 ft semi park at the center point? "

@@ -111,3 +111,41 @@ def test_no_question_when_confident_or_no_name_or_flag_off(agent_sandbox, fake_h
     monkeypatch.setenv("STT_CONFIRM_BELOW", "0.95")
     assert run(prov.handle(AgentRequest(text="take me to Rina", session_id="c8", stt_confidence=0.9, **SAC),
                            None)).status == "confirm"
+
+
+FRESNO = Place(id="here-fresno", name="Fresno, CA", category="destination", lat=36.7378, lng=-119.7871)
+PILOT = Place(id="g-pilot", name="Pilot Travel Center", category="truck_stop", lat=38.59, lng=-121.50, distance_mi=1.0,
+              address="1 A St, West Sacramento, CA")
+
+
+def test_no_with_a_new_request_is_that_request(agent_sandbox, fake_http):
+    """Review 2026-11-02, bug 17: "No, take me to Fresno" after "Did you say Reno?" got "Okay, say it again";
+    the correction never reached the classifier."""
+    prov = _setup(agent_sandbox, fake_http)
+    agent_sandbox.llm.on(r"fresno", {"intent": "go", "query": "Fresno, CA"})
+    agent_sandbox.geocode["fresno"] = [FRESNO]
+    run(prov.handle(AgentRequest(text="take me to Rina", session_id="c9", stt_confidence=0.3, **SAC), None))
+    res = run(prov.handle(AgentRequest(text="No, take me to Fresno", session_id="c9", stt_confidence=0.9, **SAC), None))
+    assert res.status == "route_set" and res.place.id == FRESNO.id
+    assert agent_sandbox.llm.calls[-1][1].endswith("Driver said: No, take me to Fresno")
+
+
+def test_yes_with_a_new_request_is_not_a_yes(agent_sandbox, fake_http):
+    """Review 2026-11-02, bug 17: "Right, actually find me a truck stop" was a YES and drove to Reno."""
+    prov = _setup(agent_sandbox, fake_http)
+    agent_sandbox.llm.on(r"truck stop", {"intent": "find", "category": "truck_stop"})
+    agent_sandbox.places_provider.places = [PILOT]
+    run(prov.handle(AgentRequest(text="take me to Rina", session_id="c10", stt_confidence=0.3, **SAC), None))
+    res = run(prov.handle(AgentRequest(text="Right, actually find me a truck stop", session_id="c10", **SAC), None))
+    assert res.status == "route_set" and res.place.id == PILOT.id
+
+
+def test_bare_answers_with_filler_stay_answers():
+    for text in ("yes", "yeah, that's it", "Yes please.", "yep, take me there", "right, that's the one", "sure, go ahead",
+                 "yeah go ahead and add it"):
+        assert agent.bare_answer(text, agent.YES) or agent.bare_answer(text, agent.DEST_YES), text
+    for text in ("no", "No.", "nope, not that one", "no thanks", "nah, wrong one"):
+        assert agent.bare_answer(text, agent.NO), text
+    for text in ("No, take me to Fresno", "Right, actually find me a truck stop", "yes and find me a hotel there",
+                 "no, I said Reno"):
+        assert not agent.bare_answer(text, agent.YES) and not agent.bare_answer(text, agent.NO), text
