@@ -1028,14 +1028,19 @@ export default function MapScreen() {
 
   // Resume of a restored route: the first real fix after it decides whether the truck is still near the line.
   // A parked truck never trips the off-route tracker, so far from it the plan is redone right away.
+  // Checked at once when a real fix is already there (the truck parked: no new fix may come for a while),
+  // else on the first one that arrives.
   const replanOnFix = useRef(false);
-  useEffect(() => {
+  const replanIfFar = () => {
     if (!replanOnFix.current || loc.isDemo) return;
     replanOnFix.current = false;
     const cur = trip().active;
     if (!cur || !trip().driving || !farFromRoute(cur.route.geometry, loc.coords)) return;
     say("Rerouting.", { priority: PRIORITY.MANEUVER, kind: "system", key: "reroute", ttlMs: 20000 });
     reroute("resume");
+  };
+  useEffect(() => {
+    replanIfFar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loc.ts, loc.isDemo]);
 
@@ -1292,6 +1297,7 @@ export default function MapScreen() {
             trip().dismissRestored();
             onGo();
             replanOnFix.current = true;
+            replanIfFar();
           }}
           onDismiss={clearRoute}
         />

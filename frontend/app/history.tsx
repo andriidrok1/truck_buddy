@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api, type MemoryTurn } from "@/src/api";
 import { Icon } from "@/src/components/Icon";
 import { PressableScale } from "@/src/components/PressableScale";
+import { historyRows } from "@/src/utils/historyRows";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
 
 const confirm = (msg: string, onYes: () => void) => {
@@ -20,7 +21,6 @@ const confirm = (msg: string, onYes: () => void) => {
 };
 
 /** Everything the copilot remembers from past conversations, with a "clear" button. */
-const dayKey = (iso: string) => new Date(iso).toDateString();
 
 /** "Today", "Yesterday", else "Oct 28": one separator per day instead of a date under every bubble. */
 function dayLabel(iso: string): string {
@@ -66,7 +66,7 @@ export default function HistoryScreen() {
     }, [load]),
   );
 
-  const newestFirst = useMemo(() => (turns ? [...turns].reverse() : []), [turns]);
+  const rows = useMemo(() => historyRows(turns ?? []), [turns]);
 
   const clear = () =>
     confirm("Your copilot will forget everything you've talked about.", async () => {
@@ -96,8 +96,8 @@ export default function HistoryScreen() {
         <FlatList
           inverted
           testID="history-list"
-          data={newestFirst}
-          keyExtractor={(t, i) => `${t.at}-${i}`}
+          data={rows}
+          keyExtractor={(r) => r.key}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
           contentContainerStyle={[styles.list, { paddingTop: footerH + spacing.md }]}
           ListEmptyComponent={
@@ -108,24 +108,23 @@ export default function HistoryScreen() {
               </Text>
             </View>
           }
-          renderItem={({ item, index }) => {
+          renderItem={({ item: row }) => {
+            if (row.kind === "day") {
+              return (
+                <Text testID="history-day" style={[styles.day, { color: colors.muted }]}>
+                  {dayLabel(row.at)}
+                </Text>
+              );
+            }
+            const item = row.turn;
             const me = item.role === "driver";
-            const prev = newestFirst[index + 1] ?? null; // the turn above this one
-            const newDay = !prev || dayKey(prev.at) !== dayKey(item.at);
             return (
-              <>
-                {newDay && (
-                  <Text testID="history-day" style={[styles.day, { color: colors.muted }]}>
-                    {dayLabel(item.at)}
-                  </Text>
-                )}
-                <View style={[styles.bubble, me ? styles.mine : styles.theirs, { backgroundColor: me ? colors.brandPrimary : colors.surfaceSecondary }]}>
-                  <Text style={[styles.text, { color: me ? colors.onBrandPrimary : colors.onSurface }]}>{item.text}</Text>
-                  <Text style={[styles.time, { color: me ? colors.onBrandPrimary : colors.muted }]}>
-                    {new Date(item.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                  </Text>
-                </View>
-              </>
+              <View style={[styles.bubble, me ? styles.mine : styles.theirs, { backgroundColor: me ? colors.brandPrimary : colors.surfaceSecondary }]}>
+                <Text style={[styles.text, { color: me ? colors.onBrandPrimary : colors.onSurface }]}>{item.text}</Text>
+                <Text style={[styles.time, { color: me ? colors.onBrandPrimary : colors.muted }]}>
+                  {new Date(item.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                </Text>
+              </View>
             );
           }}
         />
