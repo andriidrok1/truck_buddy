@@ -661,6 +661,13 @@ ORDINALS = {"first": 1, "1st": 1, "one": 1, "1": 1, "second": 2, "2nd": 2, "two"
             "three": 3, "3": 3, "fourth": 4, "4th": 4, "four": 4, "4": 4, "fifth": 5, "5th": 5, "five": 5, "5": 5}
 # A bare pronoun or deictic the model turned into a destination: nothing to geocode either.
 NOT_A_PLACE = re.compile(r"^(?:that|this|it|there|here|that one|this one|the other one|other one)\.?$", re.I)
+# "Remember I like Pilot", "keep in mind I hate tolls": the driver's own word for a like or a dislike.
+REMEMBER = re.compile(r"\b(?:remember|keep in mind|make a note|note that|don'?t forget)\b", re.I)
+# Road preferences said in words: (pattern, how it is remembered, the profile switch it also sets).
+ROAD_PREFS = ((re.compile(r"\btolls?\b|\btoll ?roads?\b", re.I), "tolls", "avoid_tolls"),
+              (re.compile(r"\bferr(?:y|ies)\b|\btunnels?\b", re.I), "ferries and tunnels", "avoid_ferries_tunnels"),
+              (re.compile(r"\bdowntown\b|\bcity driving\b", re.I), "downtown", None),
+              (re.compile(r"\bnight driving\b|\bdriving at night\b", re.I), "night driving", None))
 # "Nothing else" is the end of the conversation; next to "something else" the model can read it as a pick.
 BYE_PHRASE = re.compile(r"^(?:no,? )?(?:nothing else|that'?s (?:all|it)|i'?m (?:good|all set)|all set|no thanks?)[.!]?$", re.I)
 
@@ -820,6 +827,11 @@ def _chain_of(name: str) -> Optional[str]:
     return CHAIN_SPELLING.get(raw, raw.title())
 
 
+def _short_name(p: Place) -> str:
+    """"Sacramento 49er Travel Plaza, Sacramento, CA" -> "Sacramento 49er Travel Plaza": how a place is remembered."""
+    return p.name.split(",")[0].strip()
+
+
 CHAIN_SPELLING = {"love's": "Love's", "loves": "Love's", "ta": "TA", "flying j": "Flying J", "sapp bros": "Sapp Bros",
                   "roady's": "Roady's", "roadys": "Roady's"}
 
@@ -833,14 +845,17 @@ def choose_place(found: list[Place], truck: TruckProfile, exclude: set[str],
     if not pool:
         return None
     avoided = [c.lower() for c in (facts or {}).get("chains_avoided") or []]
-    if avoided:
-        kept = [p for p in pool if (_chain_of(p.name) or "").lower() not in avoided]
+    skipped = {n.lower() for n in (facts or {}).get("places_avoided") or []}  # turned down in an earlier dialog
+    if avoided or skipped:
+        kept = [p for p in pool if (_chain_of(p.name) or "").lower() not in avoided
+                and _short_name(p).lower() not in skipped]
         pool = kept or pool
     ok = [p for p in pool if not is_fuel_stop(p) and _verdict(p) != "unlikely"] or \
         [p for p in pool if not is_fuel_stop(p)] or pool
     dist = lambda p: p.distance_mi or 0.0  # noqa: E731
     nearest = min(dist(p) for p in ok)
-    liked = list(truck.favorite_chains) + list((facts or {}).get("chains_liked") or [])
+    liked = list(truck.favorite_chains) + list((facts or {}).get("chains_liked") or []) + \
+        list((facts or {}).get("places_liked") or [])
     chains = [re.compile(rf"\b{re.escape(c)}\b", re.I) for c in liked if c.strip()]
     fav = [p for p in ok if any(rx.search(p.name) for rx in chains) and dist(p) <= nearest + FAVORITE_EXTRA_MI]
     if fav:
@@ -965,7 +980,7 @@ class LlmAgentProvider:
         if isinstance(past, list):
             out["past"] = [t["text"][:200] for t in past if t["role"] == "driver"]
         if isinstance(stored, dict) and not profile_learn.is_empty(stored.get("facts")):
-            out["facts"] = stored["facts"]
+            out["facts"] = profile_learn.tidy(stored["facts"])
         return out
 
     def _context(self, req: AgentRequest, sess: dict) -> str:
@@ -1185,16 +1200,71 @@ class LlmAgentProvider:
 
     @staticmethod
     async def _note_rejection(sess: dict, place: Place) -> None:
-        """Three "not that one" on the same chain in one dialog: remember to steer clear of it."""
+        """A place turned down is a dislike the next dialogs know about (it was read back as a "like", QA
+        2026-11-02, bug 5); three "not that one" on the same chain in one dialog: steer clear of the chain."""
+        if not on("PROFILE_LEARN"):
+            return
+        facts = sess.get("facts") or {}
+        if place.category != "destination" and _short_name(place).lower() not in \
+                [n.lower() for n in facts.get("places_avoided") or []]:
+            facts = sess["facts"] = profile_learn.add(facts, avoid_places=[_short_name(place)])
+            await profile_learn.save(sess.get("driver"), facts)
         chain = _chain_of(place.name)
-        if not chain:
+        if not chain or not profile_learn.chain_name(chain):  # "Travel Plaza" is a word of the name, not a chain
             return
         counts = sess.setdefault("rejected_chains", {})
         counts[chain] = counts.get(chain, 0) + 1
-        avoided = [c.lower() for c in (sess.get("facts") or {}).get("chains_avoided") or []]
-        if counts[chain] == REJECTIONS_TO_LEARN and chain.lower() not in avoided and on("PROFILE_LEARN"):
-            sess["facts"] = await profile_learn.learn_avoid(sess.get("driver"), sess.get("facts") or {}, chain)
+        avoided = [c.lower() for c in facts.get("chains_avoided") or []]
+        if counts[chain] == REJECTIONS_TO_LEARN and chain.lower() not in avoided:
+            sess["facts"] = await profile_learn.learn_avoid(sess.get("driver"), facts, chain)
             sess["say_learned"] = profile_learn.LEARNED_AVOID.format(chain=chain).strip()
+
+    async def _remember(self, req: AgentRequest, d: dict, sess: dict, text: str) -> Optional[AgentResponse]:
+        """"Remember I like Pilot and I hate tolls": into the learned facts (and saved), and what the profile holds
+        (favorite chains, tolls, ferries) into the profile as before. The model calls it a control and only the
+        profile changed (QA 2026-11-02, bug 5). None when the words are not a like or a dislike."""
+        said_ = profile_learn.said_prefs(text)
+        if not said_:
+            return None
+        add: dict = {k: [] for k in ("like_chains", "like_places", "avoid_chains", "avoid_places", "roads",
+                                     "roads_ok", "notes")}
+        actions: list[dict] = []
+        heard = []
+        favorites = {c.lower() for c in req.truck_profile.favorite_chains}
+        for verb, what, liked in said_:
+            road = next(((name, act) for rx, name, act in ROAD_PREFS if rx.search(what)), None)
+            chain = profile_learn.chain_name(what)
+            listed = named_place(what, sess["places"])
+            if road:
+                add["roads_ok" if liked else "roads"].append(road[0])
+                if road[1]:
+                    actions.append({"type": road[1], "value": not liked})
+            elif chain:
+                what = chain
+                add["like_chains" if liked else "avoid_chains"].append(chain)
+                if liked:
+                    actions.append({"type": "add_favorite_chain", "value": chain})
+                elif chain.lower() in favorites:
+                    actions.append({"type": "remove_favorite_chain", "value": chain})
+            elif listed or name_like(what):
+                add["like_places" if liked else "avoid_places"].append(_short_name(listed) if listed else what)
+            else:
+                add["notes"].append(f"you {verb} {what}")
+            heard.append(f"you {verb} {what}")
+        sess["facts"] = profile_learn.add(sess.get("facts"), **add)
+        await profile_learn.save(sess.get("driver"), sess["facts"])
+        # anything else the model read in the same breath ("...and set my height to 14 feet") still applies
+        mine = {a["type"] for a in actions} | {"add_favorite_chain", "remove_favorite_chain"}
+        extra = [a for a in d.get("actions") or [] if isinstance(a, dict) and a.get("type") not in mine] \
+            if d.get("intent") == "control" else []
+        acts, say, _ = controls.apply_actions(extra + actions, req)
+        reply = profile_learn.REMEMBERED.format(what=" and ".join(heard))
+        if extra and say:
+            reply += f" {say}"
+        elif any(a.type == "reroute" for a in acts):
+            reply += " Rerouting for that."
+        logger.info("agent remember %s -> %s", said(text), {k: v for k, v in add.items() if v})
+        return AgentResponse(status="chat", transcript=text, reply=reply, actions=acts, source=self.source)
 
     async def _memory_intent(self, req: AgentRequest, sess: dict, d: dict, text: str) -> AgentResponse:
         """"What do you know about me?" / "forget that"."""
@@ -1209,10 +1279,12 @@ class LlmAgentProvider:
                 except Exception as e:  # noqa: BLE001
                     logger.warning("clear_facts failed: %s", type(e).__name__)
             return AgentResponse(status="chat", transcript=text, reply=profile_learn.FORGOT, source=self.source)
-        line = profile_learn.facts_line(sess.get("facts"))
+        line = profile_learn.speech(sess.get("facts"), req.truck_profile)
         prefs = profile_learn.prefs_line(req.truck_profile)
         if line:
             reply = profile_learn.KNOW.format(facts=line) + (f" {prefs}" if prefs else "")
+        elif not profile_learn.is_empty(sess.get("facts")) and prefs:
+            reply = prefs  # all it knows is in the profile already
         else:
             # No facts yet (they need ~5 turns) but earlier lines exist: "what's my dog's name?" is answered
             # from them, as it was before facts existed (live test test_long_term_recall_across_sessions).
@@ -1799,6 +1871,10 @@ class LlmAgentProvider:
         intent, d = reject_or_reference_guard(intent, d, text, sess["places"], req.active_place)
         if intent == "not_understood":
             return _not_understood(text, self.source)
+        if intent not in ("go", "find", "pick", "add_stop", "alternative") and REMEMBER.search(text):
+            remembered = await self._remember(req, d, sess, text)
+            if remembered:
+                return remembered
         try:
             # "The cheapest diesel" over a list with no prices: the model still names one, and the destination
             # changed for no reason the driver could see (QA 2026-10-31, H8). No prices, no switch.
