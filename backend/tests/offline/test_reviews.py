@@ -1,9 +1,11 @@
 """Google reviews on places and the spoken gist: parsing, attribution, caching, the reviews intent."""
+from datetime import datetime, timezone
+
 import httpx
 from conftest import fixture_json, run
 
 from models import AgentRequest, Place, Review
-from services import agent, reviews
+from services import agent, google_places, reviews
 from services.google_places import GooglePlacesProvider, field_mask, reviews_from
 
 GOOGLE = fixture_json("google/truck_stop_sac")
@@ -34,6 +36,8 @@ def test_field_mask_follows_the_flag(monkeypatch):
 
 def test_provider_puts_reviews_on_the_place(monkeypatch, fake_http):
     monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "test-google")
+    # The fixture's diesel price is dated 2026-10-27; read it a day later so it is never too old to say.
+    monkeypatch.setattr(google_places.time, "time", lambda: datetime(2026, 10, 28, tzinfo=timezone.utc).timestamp())
     fake_http.add("places.googleapis.com", "/v1/places:searchText", json=GOOGLE)
     res = run(GooglePlacesProvider().search("truck_stop", SAC["lat"], SAC["lng"]))
     assert fake_http.calls[0].headers["X-Goog-FieldMask"].endswith(",places.reviews")
