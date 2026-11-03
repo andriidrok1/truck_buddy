@@ -904,6 +904,10 @@ class LlmAgentProvider:
                     logger.warning("dialog state save failed for %s: %s", sid, e)
 
     async def _turn(self, req: AgentRequest, driver: Optional[str], sess: DialogState) -> AgentResponse:
+        if driver and req.session_id:
+            # before the intent: "forget that" as the first turn of a dialog must know whose facts to erase
+            # (QA 2026-11-02, bug 4: the row stayed when the driver was set only after the turn)
+            sess["driver"] = driver
         if driver and req.session_id and not sess.past_loaded:
             await self._adopt_past(driver, req.session_id, sess)
         res = await self._handle(req)
@@ -914,7 +918,6 @@ class LlmAgentProvider:
             memory.add_later(driver, [("driver", (req.text or "").strip()[:500]), ("copilot", res.reply[:500])])
             sess_now = _session(req.session_id) if req.session_id else None
             if sess_now is not None:
-                sess_now["driver"] = driver
                 sess_now["turns"] = sess_now.get("turns", 0) + 1
                 if sess_now["turns"] % FACTS_EVERY_TURNS == 0:
                     _background(self._refresh_facts(driver, sess_now))

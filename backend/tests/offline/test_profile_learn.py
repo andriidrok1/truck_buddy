@@ -238,3 +238,19 @@ def test_profile_preferences_are_part_of_what_i_know(agent_sandbox):
     agent._SESSIONS["pf"]["facts"] = {"chains_liked": ["49er"]}
     res = run(prov.handle(AgentRequest(text="what do you know about me", session_id="pf", truck_profile=truck, **SAC), None))
     assert res.reply.startswith("Here's what I know: ") and res.reply.endswith(" From your profile: you like Pilot, you avoid toll roads.")
+
+
+def test_forget_as_the_first_turn_of_a_dialog_clears_the_stored_facts(agent_sandbox, monkeypatch):
+    """QA 2026-11-02, bug 4 (item 27): a new dialog opened with "forget that" answered "Done, I've forgotten",
+    and the driver_facts row stayed: the dialog learned whose it was only after its first turn."""
+    cleared = []
+
+    async def clear_facts(driver):
+        cleared.append(driver)
+        return 1
+
+    monkeypatch.setattr(memory, "clear_facts", clear_facts)
+    agent_sandbox.llm.on(r"forget", {"intent": "memory", "query": "forget"})
+    prov = agent_sandbox.provider()
+    res = run(prov.handle(AgentRequest(text="forget that", session_id="fresh", **SAC), "drv"))
+    assert res.reply == profile_learn.FORGOT and cleared == ["drv"]
