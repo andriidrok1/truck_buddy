@@ -30,6 +30,10 @@ export type OffRouteVerdict = "on" | "off" | "skip";
 export type OffRouteTrackerOptions = {
   /** Consecutive fixes over the threshold before "off". */
   need?: number;
+  /** ...and at least this long since the first of them: the rate of fixes doesn't decide. The drive task
+   *  (1 s / 5 m) next to the 20 m watch made three fixes ~3 s of city driving, and GPS drift at a turn was
+   *  enough for a reroute (review 2026-11-02). */
+  minOffMs?: number;
   /** After an "off", no second "off" for this long (a reroute in flight, or one that failed). */
   cooldownMs?: number;
   /** Fixes with a worse accuracy radius are ignored. */
@@ -50,8 +54,10 @@ export type OffRouteTracker = {
 };
 
 export function createOffRouteTracker(opts: OffRouteTrackerOptions = {}): OffRouteTracker {
-  const { need = 3, cooldownMs = 30000, maxAccuracyM = 40, minSpeedMps = 2, maxJumpMps = 60, maxGapMs = 15000 } = opts;
+  const { need = 3, minOffMs = 4000, cooldownMs = 30000, maxAccuracyM = 40, minSpeedMps = 2, maxJumpMps = 60, maxGapMs = 15000 } = opts;
   let count = 0;
+  /** Time of the first fix of the current run over the threshold. */
+  let offSince: number | null = null;
   let cooldownUntil = 0;
   /** Last fix of any kind that reached the gap check (proves the receiver is alive). */
   let lastTs: number | null = null;
@@ -70,6 +76,7 @@ export function createOffRouteTracker(opts: OffRouteTrackerOptions = {}): OffRou
     lastTs = fix.ts;
     if (gap) {
       count = 0;
+      offSince = null;
       last = { distM: fix.distM, ts: fix.ts };
       return "skip";
     }
@@ -85,15 +92,18 @@ export function createOffRouteTracker(opts: OffRouteTrackerOptions = {}): OffRou
     last = { distM: fix.distM, ts: fix.ts };
     if (fix.distM <= fix.thresholdM) {
       count = 0;
+      offSince = null;
       return "on";
     }
     count = Math.min(need, count + 1);
-    if (count < need) return "skip";
+    if (offSince === null) offSince = fix.ts;
+    if (count < need || fix.ts - offSince < minOffMs) return "skip";
     // Still off during the cooldown: the count stays saturated, so the first fix after the
     // cooldown fires again without waiting for `need` more.
     if (fix.ts < cooldownUntil) return "skip";
     cooldownUntil = fix.ts + cooldownMs;
     count = 0;
+    offSince = null;
     return "off";
   };
 
@@ -106,10 +116,26 @@ export function createOffRouteTracker(opts: OffRouteTrackerOptions = {}): OffRou
     },
     reset() {
       count = 0;
+      offSince = null;
       cooldownUntil = 0;
       last = null;
       lastTs = null;
       lastPush = null;
+    },
+  };
+}
+
+/**
+ * Off-route reroutes, at most one per `minGapMs` across routes. Each route gets a fresh tracker (and so a
+ * fresh cooldown): a truck on a parallel street went off the new line three fixes after it landed and the
+ * screen rerouted 3-4 times in 20 s (QA 2026-11-02, bug 32). The gap counts from the end of the last one.
+ */
+export function createRerouteGate(minGapMs = 30000) {
+  let lastEnd = -Infinity;
+  return {
+    allow: (now: number) => now - lastEnd >= minGapMs,
+    done: (now: number) => {
+      lastEnd = now;
     },
   };
 }

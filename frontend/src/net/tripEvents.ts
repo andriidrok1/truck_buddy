@@ -8,7 +8,9 @@
 import { useSyncExternalStore } from "react";
 
 import { ApiError, api } from "../api";
+import { getLocation } from "../geo/location";
 import { isOnline } from "../hooks/useOnline";
+import { getSim } from "../sim";
 import { storage } from "../utils/storage";
 
 export type TripEvent = {
@@ -43,6 +45,9 @@ export type TripLogDeps = {
   now: () => number;
   load: () => Promise<TripEvent[]>;
   save: (events: TripEvent[]) => Promise<unknown>;
+  /** Where the truck is (a real GPS fix only); stamped on every event that does not carry its own, so a
+   *  fleet dashboard can show the truck's last position. */
+  position?: () => { lat: number; lng: number } | null;
   /** setTimeout/clearTimeout stand-ins, for tests. */
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (id: unknown) => void;
@@ -94,6 +99,8 @@ export function createTripLog(deps: TripLogDeps): TripLog {
 
   return {
     log(kind, data = {}, tripId) {
+      const at = data.lat === undefined ? deps.position?.() : null;
+      if (at) data = { ...data, lat: Math.round(at.lat * 1e5) / 1e5, lng: Math.round(at.lng * 1e5) / 1e5 };
       const ev: TripEvent = { t: new Date(deps.now()).toISOString(), kind, data };
       if (tripId) ev.trip_id = tripId;
       pending.push(ev);
@@ -173,6 +180,12 @@ export const tripLog: TripLog = createTripLog({
   isRefused: (e) => e instanceof ApiError && e.status >= 400 && e.status < 500,
   online: isOnline,
   now: Date.now,
+  position: () => {
+    const sim = getSim(); // a tester's spot or replayed trace is where the truck is, as useDriverLocation has it
+    if (sim) return sim.coords;
+    const l = getLocation();
+    return l.isDemo ? null : l.coords;
+  },
   load: async () => {
     const raw = await storage.getItem<TripEvent[] | null>(PENDING_KEY, null);
     return isEventList(raw) ? raw : [];
@@ -194,6 +207,23 @@ export function startTripLog(): void {
 export function stopTripLog(): void {
   if (ticker) clearInterval(ticker);
   ticker = null;
+}
+
+/** While driving, one "position" event this often: the fleet dashboard placed a truck only where some other
+ *  event happened, and an hour of interstate with no turn or question left it an hour behind (bug 13). */
+export const POSITION_EVERY_MS = 5 * 60_000;
+
+/** Logs a position every `every` ms through `log` (which stamps lat/lng) until the returned stop is called. */
+export function startPositionHeartbeat(
+  log: Pick<TripLog, "log">,
+  current: () => { tripId: string | null; speedMps: number | null },
+  every = POSITION_EVERY_MS,
+): () => void {
+  const t = setInterval(() => {
+    const { tripId, speedMps } = current();
+    log.log("position", speedMps == null ? {} : { speed_mps: Math.round(speedMps * 10) / 10 }, tripId);
+  }, every);
+  return () => clearInterval(t);
 }
 
 const snapshot = () => `${tripLog.size()}:${tripLog.lastFlushAt() ?? ""}`;

@@ -16,7 +16,7 @@ export type AgentPatch = {
   parking?: Record<string, ParkingState>;
   phase?: Phase;
   /** Same destination, new route ("another way?", a via stop added or cleared): swap it in place. */
-  activeRoute?: { route: RouteInfo; stops: Place[] };
+  activeRoute?: { route: RouteInfo; stops: Place[]; parking: ParkingCheck | null };
 };
 
 export type Effect =
@@ -168,7 +168,7 @@ export function reduceAgentResponse(res: AgentResponse, ctx: AgentContext): Agen
     // backToIdle: the turn is over. Without it the sheet stayed on "Thinking..." after "add a fuel stop"
     // while navigating (QA 2026-10-28).
     effects.push({ type: "backToIdle" }, { type: "speak" });
-    return { patch: { activeRoute: { route: res.route, stops } }, effects };
+    return { patch: { activeRoute: { route: res.route, stops, parking: res.parking ?? null } }, effects };
   }
 
   if (res.status === "route_set" && res.place && res.route) {
