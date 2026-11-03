@@ -119,6 +119,7 @@ PARKING_CATEGORIES = {"truck_stop", "hotel", "rest_area", "walmart", "destinatio
 PARK_WORDS = re.compile(r"\b(park|parking|overnight|shut ?down|lay ?over|sleep in (?:the|my) (?:truck|cab|sleeper))\b", re.I)
 BED_WORDS = re.compile(r"\b(hotel|motel|room|bed|shower|inn|lodge)\b", re.I)
 CATEGORY_OFF = "I can't look up {what}s yet. Ask me for a truck stop, a hotel or a rest area."
+NO_WALMART = "I couldn't find a Walmart nearby. The closest {what} is {name}, {mi} miles. Want to go there?"
 
 
 def enabled_categories() -> tuple[str, ...]:
@@ -1878,6 +1879,28 @@ class LlmAgentProvider:
             return f"{swap}{chosen.name}, {away} {where}, {_miles(route.distance_mi)} miles from you."
         return await self._route_to(req, chosen, found, text, head)
 
+    async def _instead_of_walmart(self, req: AgentRequest, text: str) -> Optional[AgentResponse]:
+        """No Walmart around: the closest truck stop is offered (a rest area too when the driver means the night),
+        "yes" routes there. "Find a Walmart" ended at "I couldn't find one nearby" (QA 2026-11-02). None when there
+        is nothing of those either."""
+        kinds = ("truck_stop", "rest_area") if PARK_WORDS.search(text) else ("truck_stop",)
+        found: list[Place] = []
+        for kind in kinds:
+            if kind in enabled_categories():
+                with stage("tools"):
+                    found += (await get_places_provider().search(kind, req.lat, req.lng)).places
+        if not found:
+            return None
+        nearest = min(found, key=lambda p: p.distance_mi or 0)
+        logger.info("agent no Walmart for %s -> offering %s", said(text), nearest.name)
+        _session(req.session_id)["pending"] = {"text": text, "kind": "walmart_instead", "yes": "dest_yes",
+                                               "no": {"reply": "Okay."},
+                                               "d": {"intent": "go", "place": nearest.model_dump()}}
+        return AgentResponse(status="confirm", transcript=text, category="walmart", source=self.source,
+                             reply=NO_WALMART.format(what=CATEGORY_WORD[nearest.category],
+                                                     name=nearest.name.split(",")[0],
+                                                     mi=_miles(nearest.distance_mi or 0)))
+
     async def _find(self, req: AgentRequest, category: str, text: str, exclude: set[str]) -> AgentResponse:
         if category not in enabled_categories():
             return AgentResponse(status="chat", transcript=text, category=category, source=self.source,
@@ -1885,6 +1908,10 @@ class LlmAgentProvider:
         with stage("tools"):
             res = await get_places_provider().search(category, req.lat, req.lng)
         found = res.places[:MAX_OPTIONS + 2]
+        if not found and category == "walmart":
+            offer = await self._instead_of_walmart(req, text)
+            if offer:
+                return offer
         if not found:
             msg = res.message or NO_PLACES
             return AgentResponse(status="no_results", transcript=text, category=category,
