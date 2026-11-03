@@ -60,8 +60,8 @@ def test_a_price_on_the_list_lets_the_pick_through(agent_sandbox, fake_http):
     first = run(prov.handle(_req("where can I park tonight", "h8c"), None))
     shown = agent._SESSIONS["h8c"]["places"]
     res = run(prov.handle(_req("where's the cheapest diesel", "h8c", active=first.place), None))
-    picked = agent.numbered(shown, first.place.id)[1]  # place_index 2 of the list the model saw
-    assert res.status == "route_set" and res.place.id == picked.id, res.reply  # the model's pick, untouched
+    cheapest = next(p for p in shown if p.diesel_price is not None)
+    assert res.status == "route_set" and res.place.id == cheapest.id, res.reply  # the lowest price, not the model's number
 
 
 def test_no_prices_no_route_and_the_router_down_is_said(agent_sandbox, fake_http):
@@ -98,3 +98,26 @@ def test_cheapest_as_small_talk_names_the_closest_and_offers_it(agent_sandbox, f
     assert res.reply == OFFER
     no = run(prov.handle(_req("no", "h8e"), None))
     assert no.status == "chat" and no.route is None
+
+
+def test_cheapest_as_find_with_a_route_does_not_switch_to_a_place_without_a_price(agent_sandbox, fake_http):
+    # Stand 2026-11-02: with a route to Roady's the model answered "where's the cheapest diesel" with find
+    # ("cheapest diesel"); the stop finder took the next truck stop and said it had no price.
+    prov = _sandbox(agent_sandbox, fake_http, [ROADYS, WESTSAC, FORTYNINER])
+    agent_sandbox.llm.rules.insert(0, (re.compile(r"cheapest diesel", re.I), {"intent": "find", "category": "truck_stop", "query": "cheapest diesel"}))
+    first = run(prov.handle(_req("where can I park tonight", "h8f"), None))
+    res = run(prov.handle(_req("where's the cheapest diesel", "h8f", active=first.place), None))
+    assert res.place is None and res.reply == NO_PRICES_KEEP.format(name=first.place.name), res.reply
+
+
+def test_the_cheapest_is_the_lowest_price_whatever_the_model_named(agent_sandbox, fake_http):
+    cheap = _p("49er", "Sacramento 49er Travel Plaza", 2.7, price=4.89)
+    dear = _p("roadys", "Roady's Truck Stop", 4.2, price=5.39)
+    prov = _sandbox(agent_sandbox, fake_http, [dear, WESTSAC, cheap])
+    agent_sandbox.llm.rules.insert(0, (re.compile(r"cheapest diesel", re.I), {"intent": "find", "category": "truck_stop", "query": "cheapest diesel"}))
+    first = run(prov.handle(_req("where can I park tonight", "h8g"), None))
+    assert first.place.id == WESTSAC.id
+    res = run(prov.handle(_req("where's the cheapest diesel", "h8g", active=first.place), None))
+    assert res.status == "route_set" and res.place.id == cheap.id, res.reply
+    again = run(prov.handle(_req("where's the cheapest diesel", "h8g", active=res.place), None))
+    assert again.place is None and "cheapest" in again.reply and "4.89" in again.reply, again.reply

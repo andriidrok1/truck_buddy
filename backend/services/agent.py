@@ -616,6 +616,8 @@ NO_PRICES = "None of these list a diesel price, so I can't tell which is cheapes
 NO_PRICES_OFFER = NO_PRICES + " The closest is {name}, {mi} miles. Want to go there?"
 NO_PRICES_KEEP = NO_PRICES + " {name} is the closest, and that's where we're headed."
 CHEAPEST = re.compile(r"\bcheap(?:est|er)\b", re.I)
+FUEL_WORDS = re.compile(r"\b(?:diesel|fuel|gas|def)\b", re.I)
+ALREADY_CHEAPEST = "{name} is the cheapest on the list, diesel at ${price:.2f}, and that's where we're headed."
 # A fuel/rest stop asked for "on my route" while a route is active is a stop on the way, never a new destination.
 ON_THE_WAY = re.compile(r"\b(?:on|along) (?:my|the|our) (?:route|way)\b|\ben route\b|\bon the way\b"
                         r"|\bbefore (?:I|we) (?:get|arrive)\b", re.I)
@@ -2043,6 +2045,20 @@ class LlmAgentProvider:
         try:
             # "The cheapest diesel" over a list with no prices: the model still names one, and the destination
             # changed for no reason the driver could see (QA 2026-10-31, H8). No prices, no switch.
+            # "Where's the cheapest diesel" over the list is arithmetic, whatever the model called it: with a route
+            # to Roady's it came back as find and the stop finder went to the next stop, one with no price (stand
+            # 2026-11-02). The lowest price wins; with no prices the closest is offered (below).
+            if (sess["places"] and intent in ("find", "pick", "chat") and CHEAPEST.search(text) and FUEL_WORDS.search(text)
+                    and not (req.active_place and ON_THE_WAY.search(text))):
+                priced = [p for p in sess["places"] if p.diesel_price is not None]
+                if priced:
+                    best = min(priced, key=lambda p: p.diesel_price or 0)
+                    if req.active_place and best.id == req.active_place.id:
+                        return AgentResponse(status="chat", transcript=text, source=self.source,
+                                             reply=ALREADY_CHEAPEST.format(name=best.name.split(",")[0], price=best.diesel_price))
+                    logger.info("agent cheapest %s -> %s at %.2f", said(text), best.name, best.diesel_price)
+                    return await self._route_to(req, best, sess["places"], text)
+                intent = "pick" if intent == "find" else intent
             no_prices = bool(sess["places"]) and all(p.category == "truck_stop" and p.diesel_price is None
                                                      for p in sess["places"])
             if no_prices and ((intent == "pick" and d.get("place_index") is not None and PRICE_WORDS.search(text))
