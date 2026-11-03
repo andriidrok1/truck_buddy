@@ -242,6 +242,17 @@ def _brief(providers: list[dict]) -> str:
     return "\n".join(rows)
 
 
+SHOP_ONLY_NOTE = "None of them say they come out to you, so you'd have to get to them."
+
+
+def shop_only_note(providers: list[dict], mode: str) -> str:
+    """The driver can't roll and nobody nearby is known to do road calls: said up front, not left to a
+    "Shop only" badge on the card (QA 2026-10-31, H21). Empty when the top pick comes out, or the truck can move."""
+    if mode != "mobile_needed" or not providers or not providers[0].get("shop_only"):
+        return ""
+    return SHOP_ONLY_NOTE
+
+
 def fallback_spoken(providers: list[dict]) -> str:
     best = providers[0]
     mobile = " and they come out to you" if best["facts"]["mobile_service"] is True else ""
@@ -273,6 +284,9 @@ async def summarize(d: dict, mode: str, providers: list[dict]) -> tuple[str, str
         spoken = summary = ""
     if not spoken:
         spoken = fallback_spoken(providers)
+    note = shop_only_note(providers, mode)
+    if note and "come out" not in spoken.lower():
+        spoken = f"{note} {spoken}"
     if priced == 0 and "nobody posts prices" not in spoken.lower():
         spoken = spoken.replace("Tap one to call", "Nobody posts prices, you'll have to ask. Tap one to call")
     spoken = fit_spoken(no_false_24_7(spoken, providers))

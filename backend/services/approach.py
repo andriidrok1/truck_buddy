@@ -214,22 +214,48 @@ async def relative(place: Place, base: ParkingCheck, ap: Approach) -> ParkingChe
     return res
 
 
-def speech(c: ParkingCheck) -> str:
+ENTRY_QUESTION = re.compile(r"\b(?:get in|get into|entrance|entry|turn in|pull in|drive in|driveway|which side|how do I (?:get|go) in)\b", re.I)
+PARK_QUESTION = re.compile(r"\bwhere (?:do|should|can) I park\b|\bwhere to park\b|\bpark(?:ing)? (?:spot|space|the rig|the truck)\b", re.I)
+
+
+def asked(text: str) -> str:
+    """"entry" for "how do I get in", "park" for "where do I park", "all" for anything else. The two got the
+    same three-sentence answer (QA 2026-10-31, H6)."""
+    if ENTRY_QUESTION.search(text or "") and not PARK_QUESTION.search(text or ""):
+        return "entry"
+    if PARK_QUESTION.search(text or "") and not ENTRY_QUESTION.search(text or ""):
+        return "park"
+    return "all"
+
+
+def speech(c: ParkingCheck, ask: str = "all") -> str:
+    """The spoken answer. `ask` narrows it: "entry" = the way in (and the fit only when it is a warning),
+    "park" = where to stand; "all" = verdict, entrance, where to park."""
     verdict = {
         "listed": "They list truck parking there.",
         "likely": "From the satellite, it looks like your rig will fit.",
         "unlikely": "Heads up, from the satellite it looks tight for a rig.",
         "unclear": "I can't tell for sure from the satellite if a rig fits.",
     }[c.verdict]
-    parts = [verdict]
-    if c.verdict == "unlikely" and c.nearby:
-        p = c.nearby.phrase
-        parts.append(f"{p[0].upper()}{p[1:]}.")
+    entry = park = None
     if c.entry_tip:
         tip = c.entry_tip.rstrip(".")
-        parts.append(f"The truck entrance is {tip[0].lower()}{tip[1:]}." if c.relative else f"To get in: {tip}.")
+        entry = f"The truck entrance is {tip[0].lower()}{tip[1:]}." if c.relative else f"To get in: {tip}."
     if c.park_tip:
-        parts.append(f"{c.park_tip.rstrip('.')}.")
+        park = f"{c.park_tip.rstrip('.')}."
+    if ask == "entry" and entry:
+        parts = [entry] if c.verdict in ("listed", "likely") else [verdict, entry]
+    elif ask == "park" and park:
+        parts = [park] if c.verdict in ("listed", "likely") else [verdict, park]
+    else:
+        parts = [verdict]
+        if c.verdict == "unlikely" and c.nearby:
+            p = c.nearby.phrase
+            parts.append(f"{p[0].upper()}{p[1:]}.")
+        if entry:
+            parts.append(entry)
+        if park:
+            parts.append(park)
     return " ".join(parts)
 
 

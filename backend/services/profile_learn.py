@@ -31,6 +31,22 @@ PROMPT = (
     "10 words). Only what the driver actually said; empty lists and nulls when unsure. No names of people."
 )
 KNOW = "Here's what I know: {facts}."
+PREFS = "From your profile: {prefs}."
+
+
+def prefs_line(truck) -> str:
+    """"you like Pilot and Love's, you avoid toll roads": what the driver set in the profile (or said and the
+    app saved there). "Remember I like Pilot and I hate tolls" lands in the profile, not in the learned facts,
+    and "what do you know about me" never mentioned it (QA 2026-10-31, H19)."""
+    parts = []
+    chains = [c for c in (getattr(truck, "favorite_chains", None) or []) if c]
+    if chains:
+        parts.append("you like " + (" and ".join(chains) if len(chains) <= 2 else ", ".join(chains[:-1]) + f" and {chains[-1]}"))
+    if getattr(truck, "avoid_tolls", False):
+        parts.append("you avoid toll roads")
+    if getattr(truck, "avoid_ferries_tunnels", False):
+        parts.append("you avoid ferries and tunnels")
+    return PREFS.format(prefs=", ".join(parts)) if parts else ""
 KNOW_NOTHING = "I don't know anything about you yet. Tell me what you like and I'll remember."
 # Before the facts exist (fewer than 5 turns), a memory question is answered from the raw lines instead.
 RECALL_PROMPT = (

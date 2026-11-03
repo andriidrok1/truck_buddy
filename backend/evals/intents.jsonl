@@ -165,3 +165,6 @@
 {"id": "h_pick_second_one_alts", "text": "the second one", "context_preset": "route_active_alts", "expected": {"intent": "pick", "place_index": [2, 3]}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_alt_another_way_alts", "text": "is there another way", "context_preset": "route_active_alts", "expected": {"intent": "alternative"}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_alt_faster_alts", "text": "is there a faster way", "context_preset": "route_active_alts", "expected": {"intent": "alternative"}, "tags": ["core", "follow_up"], "source": "hand"}
+{"id": "h_alt_take_other_way_alts", "text": "take the other way", "context_preset": "route_active_alts", "expected": {"intent": "alternative"}, "tags": ["core", "follow_up"], "source": "hand"}
+{"id": "h_alt_around_storm_alts", "text": "go around the storm", "context_preset": "route_active_alts", "expected": {"intent": "alternative"}, "tags": ["follow_up"], "source": "hand"}
+{"id": "h_alt_other_way_idle", "text": "take the other way", "context_preset": "idle", "expected": {"intent": "chat"}, "tags": [], "source": "hand"}
