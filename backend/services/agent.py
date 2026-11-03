@@ -670,6 +670,46 @@ def _route_head(place: Place, route: RouteInfo, n: int = 0, driver: Optional[str
     return out + body.format(**vals) + _diesel_sentence(place, regional) + tpims.sentence(place)
 
 
+# The driver's name: the profile line asks the model for "now and then" and it said "Mike" in three replies of four
+# (QA 2026-11-02). The turn decides: at most once in NAME_EVERY replies of a dialog, never in a short reply, and
+# every other direct address ("Mike, ...", "..., Mike.", "Thanks Mike!") is cut out of whatever was written.
+NAME_EVERY = 4
+NAME_MIN_WORDS = 6
+
+
+def _address(name: str) -> re.Pattern:
+    n = re.escape(name)
+    return re.compile(rf"(?P<lead>(?:^|(?<=[.!?])\s+)(?:(?:hey|hi)\s+)?{n}\s*[,!.]\s*)"  # "Mike, you've got..."
+                      rf"|\s*,\s*{n}\b(?!['’])(?=\s*(?:[,.!?;]|$))"  # "Sure thing, Mike." / "safe, Mike, and"
+                      rf"|(?<=\w)\s+{n}\b(?!['’])(?=\s*(?:[,.!?;]|$))", re.I)  # "Thanks Mike!" ("Mike's" stays)
+
+
+def _cut(text: str, spans: list[re.Match]) -> str:
+    for m in reversed(spans):
+        rest = text[m.end():]
+        if m.group("lead") is not None:  # the sentence now starts with what followed the name
+            rest = rest[:1].upper() + rest[1:]
+            text = text[:m.start()] + (" " if m.start() > 0 else "") + rest
+        else:
+            text = text[:m.start()] + rest
+    return text
+
+
+def without_name(text: str, name: str) -> str:
+    """The reply with no direct address to the driver."""
+    return _cut(text, list(_address(name).finditer(text))) if name else text
+
+
+def name_policy(text: str, name: str, allowed: bool) -> tuple[str, bool]:
+    """(the reply, whether it still addresses the driver): the first address is kept only when the dialog is due
+    one and the reply is long enough to carry it; the rest go."""
+    spans = list(_address(name).finditer(text)) if name and text else []
+    if not spans:
+        return text, False
+    keep = allowed and len(without_name(text, name).split()) >= NAME_MIN_WORDS
+    return _cut(text, spans[1:] if keep else spans), keep
+
+
 # "Not that one" and friends: the driver turns a PLACE down. With a route active the classifier sometimes
 # reads it as "another road" (it sees "N alternative routes not yet offered"); the words decide instead.
 REJECT_PLACE = re.compile(
@@ -960,6 +1000,7 @@ class LlmAgentProvider:
         if driver and req.session_id and not sess.past_loaded:
             await self._adopt_past(driver, req.session_id, sess)
         res = await self._handle(req)
+        self._name_once_in_a_while(req, res)
         _fit_for_speed(req, res)
         if res.status == "chat" and GOODBYE.search(req.text or ""):
             res.end_conversation = True
@@ -979,6 +1020,20 @@ class LlmAgentProvider:
             if res.place:
                 sess["places"] = ([res.place] + list(res.options))[:MAX_OPTIONS + 1]
         return res
+
+    @staticmethod
+    def _name_once_in_a_while(req: AgentRequest, res: AgentResponse) -> None:
+        """The driver's first name at most once in NAME_EVERY replies of the dialog (name_policy)."""
+        name = (req.truck_profile.driver_name or "").split(" ")[0]
+        sess = _session_if(req.session_id)
+        n = sess.get("replies", 0) if sess is not None else 0
+        last = sess.get("name_at") if sess is not None else None
+        if name and res.reply:
+            res.reply, used = name_policy(res.reply, name, last is None or n - last >= NAME_EVERY)
+            if used and sess is not None:
+                sess["name_at"] = n
+        if sess is not None:
+            sess["replies"] = n + 1
 
     async def _adopt_past(self, driver: str, sid: str, sess: DialogState) -> None:
         """A new dialog starts with what the driver told the copilot in earlier ones. A warm database answers well
