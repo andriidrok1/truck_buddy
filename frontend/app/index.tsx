@@ -44,7 +44,10 @@ import { PRIORITY } from "@/src/voice/queue";
 import { buildSttHint, streetFromInstruction } from "@/src/voice/sttHint";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
+import { RECORD_DRIVES, recorder } from "@/src/geo/driveRecorder";
+import { subscribeReplay, takeReplayRequest } from "@/src/geo/replayRequest";
 import { newTripId, startTripLog, stopTripLog, tripLog } from "@/src/net/tripEvents";
+import { playTrace } from "@/src/sim";
 
 /** Toast for a failed /route: the router's "no truck route" is a destination problem, not a retry. */
 function routeFailText(e: unknown): string {
@@ -223,16 +226,53 @@ export default function MapScreen() {
   const { say, clear: clearSpeech } = useSpeechQueue(
     voice,
     () => phaseRef.current === "listening" || phaseRef.current === "thinking",
-    (item) => showLine(item.text),
+    (item) => {
+      showLine(item.text);
+      recorder.mark("said", item.text);
+    },
     (item) => {
       if (item.key?.startsWith(NUDGE_KEY_PREFIX)) nudgeAnswer.current();
     },
     (item, why) => tripLog.log("speech_dropped", { key: item.key ?? null, priority: item.priority, kind: item.kind, why }, activeRef.current?.trip_id),
   );
-  // The trip log mirrors its backlog to storage and flushes once a minute while the screen lives.
+  // The trip log mirrors its backlog to storage and flushes once a minute while the screen lives; the
+  // drive recorder marks every logged event on its timeline.
   useEffect(() => {
     startTripLog();
-    return stopTripLog;
+    const off = tripLog.onEvent((e) => recorder.mark(e.kind, JSON.stringify(e.data)));
+    return () => {
+      off();
+      stopTripLog();
+    };
+  }, []);
+  // The recorder follows the active route: a reroute, an alternative or a stop lands on its timeline.
+  useEffect(() => {
+    if (active?.route) recorder.routeChanged(active.route);
+  }, [active?.route]);
+  // A build for a day on the road records every drive from Go to End route.
+  useEffect(() => {
+    if (RECORD_DRIVES && driving && active && !recorder.isRecording()) {
+      recorder.start({ tripId: active.trip_id ?? null, place: active.place, route: active.route });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driving]);
+  // The tester picked a recorded drive: its own route goes on the map, then its fixes drive the truck.
+  useEffect(() => {
+    const apply = () => {
+      const req = takeReplayRequest();
+      if (!req) return;
+      const { trace, speedFactor, name } = req;
+      if (trace.place && trace.route) {
+        clearSpeech();
+        setActive({ place: trace.place, route: trace.route, trip_id: trace.trip_id ?? undefined });
+        setPhase("navigating");
+        setDriving(true);
+      }
+      playTrace(trace.fixes, speedFactor, { id: `trace-${name}`, label: `Replay: ${name} (${speedFactor}x)` });
+    };
+    apply();
+    return subscribeReplay(apply);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -1137,6 +1177,7 @@ export default function MapScreen() {
   /** Route state reset without touching audio (used by the copilot so its reply isn't cut). */
   const clearRoute = () => {
     const ended = activeRef.current;
+    if (recorder.isRecording()) recorder.stop().catch(() => {});
     if (ended) {
       const since = drivingSince.current;
       tripLog.log("route_ended", {
