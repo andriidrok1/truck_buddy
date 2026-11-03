@@ -1,0 +1,68 @@
+name: iOS unsigned IPA
+
+# A test build for one iPhone without a Mac or a paid Apple account: the unsigned IPA from here is signed with
+# a free Apple ID and installed over USB by scripts/install-ios.sh (plumesign). The backend URL is the
+# IOS_TEST_BACKEND_URL secret, so a stand behind a temporary tunnel never lands in the repo.
+on:
+  push:
+    branches: [claude/app-ios-ipa]
+
+jobs:
+  ipa:
+    runs-on: macos-26
+    timeout-minutes: 75
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      EXPO_PUBLIC_BACKEND_URL: ${{ secrets.IOS_TEST_BACKEND_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode 26
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - run: yarn install --frozen-lockfile
+
+      - name: Generate the native project
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Pods
+        run: cd ios && pod install
+
+      - name: Build (Release, unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -workspace ios/TruckBuddy.xcworkspace -scheme TruckBuddy -configuration Release \
+            -sdk iphoneos -destination generic/platform=iOS -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > ../build-ios.log 2>&1 \
+            || { grep -E "error:" ../build-ios.log | head -40; exit 1; }
+          test -d build/Build/Products/Release-iphoneos/TruckBuddy.app
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/TruckBuddy.app Payload/
+          zip -qry ../TruckBuddy.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TruckBuddy-ipa
+          path: TruckBuddy.ipa
+          retention-days: 7
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build-ios.log
