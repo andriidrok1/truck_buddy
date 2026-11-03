@@ -112,10 +112,21 @@ class FakeHttp:
 
 @pytest.fixture
 def fake_http(monkeypatch) -> FakeHttp:
+    from services import weather
     router = FakeHttp()
     monkeypatch.setattr(http, "_client", httpx.AsyncClient(transport=httpx.MockTransport(router)))
+    _clear_weather_caches(weather)  # the NWS feed and zone polygons are process-wide; never across tests
     yield router
     http._client = None
+    _clear_weather_caches(weather)
+
+
+def _clear_weather_caches(weather) -> None:
+    weather._feed_cache.clear()
+    weather._zone_cache.clear()
+    weather._alert_cache.clear()
+    weather._zone_fail.clear()
+    weather._feed_refresh = None
 
 
 def params_of(request: httpx.Request) -> list[tuple[str, str]]:

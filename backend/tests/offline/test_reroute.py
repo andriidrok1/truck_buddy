@@ -3,7 +3,7 @@ import httpx
 import pytest
 from conftest import fixture_json, params_of, run
 
-from models import Place, TruckProfile
+from models import Place, RerouteRequest, TruckProfile
 from services import routing
 from services.routing import _here_parse, _reroute_params
 
@@ -115,7 +115,7 @@ def test_reroute_endpoint_falls_back_and_fails_honestly(api_client, fake_http):
 
 def test_reroute_endpoint_validation(api_client, fake_http):
     assert api_client.post("/api/reroute", json=_body(lat=48.86, lng=2.35)).status_code == 422  # Paris
-    assert api_client.post("/api/reroute", json=_body(heading=400)).status_code == 422
+    assert RerouteRequest(**_body(heading=400)).heading is None  # nonsense heading is dropped, not a 422 (H14)
     assert api_client.post("/api/reroute", json=_body(traveled_m=-1)).status_code == 422
     assert api_client.post("/api/reroute", json={"lat": 1}).status_code == 422
     assert fake_http.calls == []

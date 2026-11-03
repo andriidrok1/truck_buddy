@@ -221,3 +221,20 @@ def test_facts_load_with_the_past(agent_sandbox, monkeypatch):
     run(prov.handle(AgentRequest(text="hi", session_id="lf", **SAC), "drv"))
     assert agent._SESSIONS["lf"]["facts"] == FACTS and agent._SESSIONS["lf"]["past"] == ["hello"]
     assert "likes Pilot" in agent_sandbox.llm.calls[-1][1]
+
+
+def test_profile_preferences_are_part_of_what_i_know(agent_sandbox):
+    """QA 2026-10-31, H19: "remember I like Pilot and I hate tolls" is saved in the profile; asked "what do
+    you know about me" the copilot listed learned facts only, or nothing, and never the profile."""
+    from models import TruckProfile
+    agent_sandbox.llm.on(r"know about me", {"intent": "memory", "query": "show"})
+    prov = agent_sandbox.provider()
+    truck = TruckProfile(favorite_chains=["Pilot"], avoid_tolls=True)
+    res = run(prov.handle(AgentRequest(text="what do you know about me", session_id="pf", truck_profile=truck, **SAC), None))
+    assert res.reply == "From your profile: you like Pilot, you avoid toll roads."
+    assert profile_learn.prefs_line(TruckProfile()) == ""
+    assert profile_learn.prefs_line(TruckProfile(favorite_chains=["Pilot", "Love's", "TA"], avoid_ferries_tunnels=True)) == \
+        "From your profile: you like Pilot, Love's and TA, you avoid ferries and tunnels."
+    agent._SESSIONS["pf"]["facts"] = {"chains_liked": ["49er"]}
+    res = run(prov.handle(AgentRequest(text="what do you know about me", session_id="pf", truck_profile=truck, **SAC), None))
+    assert res.reply.startswith("Here's what I know: ") and res.reply.endswith(" From your profile: you like Pilot, you avoid toll roads.")

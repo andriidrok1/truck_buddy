@@ -109,7 +109,9 @@ def _here_item(it: dict, at: tuple[float, float]) -> Optional[Place]:
         return None
     addr = (it.get("address") or {}).get("label")
     town = it.get("resultType") in AREA_TYPES  # a whole town: no satellite parking check
-    return _place(f"here-{'town-' if town else ''}{it.get('id')}", it.get("title") or addr or "Destination",
+    street = it.get("resultType") == "street"  # a bare street: "49er" became 49ER Trl, Placerville (H9/H23)
+    kind = "town-" if town else "street-" if street else ""
+    return _place(f"here-{kind}{it.get('id')}", it.get("title") or addr or "Destination",
                   pos["lat"], pos["lng"], addr, at)
 
 
@@ -212,3 +214,8 @@ async def geocode(q: str, lat: float, lng: float) -> list[Place]:
     if errors:  # every geocoder that was tried errored: a service problem, not "address not found"
         raise PlacesUnavailable(f"all geocoders failed for {q!r}")
     return []
+
+
+def is_street(place) -> bool:
+    """A bare street from HERE (no house number): what a short business name geocodes to when nothing better matches."""
+    return str(getattr(place, "id", "")).startswith("here-street-")
