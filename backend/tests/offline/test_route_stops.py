@@ -217,3 +217,28 @@ def test_that_stop_is_the_one_just_added(agent_sandbox, fake_http):
 def test_a_name_that_matches_nothing_is_still_said(agent_sandbox, fake_http):
     res = _skip(agent_sandbox, fake_http, "Narnia", [LOVES, PILOT], "rs27")
     assert res.status == "chat" and res.reply == agent.VIA_NOT_A_STOP.format(name="Narnia"), res.reply
+
+
+@pytest.mark.parametrize("text, kept", [("skip the truck stop", [REST]), ("skip the last stop", [LOVES]),
+                                        ("drop the rest area", [LOVES])])
+def test_the_drivers_words_decide_when_the_model_sent_no_query(agent_sandbox, fake_http, text, kept):
+    # A clear_stops with no query used to clear every stop: "skip the truck stop" dropped the rest area too.
+    prov = _sandbox(agent_sandbox, fake_http)
+    agent_sandbox.llm.rules.insert(0, (re.compile(r"^(skip|drop)", re.I), {"intent": "clear_stops"}))
+    res = run(prov.handle(_fresh(text, "rs30", [LOVES, REST]), None))
+    assert res.status == "route_set" and [o.id for o in res.options] == [s.id for s in kept], res.reply
+
+
+def test_no_query_and_all_the_stops_still_clears_them(agent_sandbox, fake_http):
+    prov = _sandbox(agent_sandbox, fake_http)
+    agent_sandbox.llm.rules.insert(0, (re.compile(r"^no stops", re.I), {"intent": "clear_stops"}))
+    res = run(prov.handle(_fresh("no stops, straight there", "rs31", [LOVES, REST]), None))
+    assert res.status == "route_set" and res.reply.startswith("Stops cleared."), res.reply
+
+
+@pytest.mark.parametrize("text", ["skip it", "skip that", "skip that one"])
+def test_skip_it_without_a_query_is_not_a_place_named_it(agent_sandbox, fake_http, text):
+    prov = _sandbox(agent_sandbox, fake_http)
+    agent_sandbox.llm.rules.insert(0, (re.compile(r"^skip", re.I), {"intent": "clear_stops"}))
+    res = run(prov.handle(_fresh(text, "rs32", [LOVES]), None))
+    assert res.status == "route_set" and res.options in ([], None), res.reply

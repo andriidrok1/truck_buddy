@@ -1084,6 +1084,10 @@ async def classify(text: str, context: str, truck: TruckProfile) -> dict:
 _past_tasks: dict[str, asyncio.Task] = {}
 
 
+# "skip / drop / cancel ..." at the start of the driver's words, for reading the stop meant from what follows.
+ORDER_VERB = re.compile(r"^\s*(?:please\s+|let'?s\s+|just\s+|go ahead and\s+)?(?:skip|drop|cancel|remove|ditch|lose)\s+", re.I)
+
+
 class LlmAgentProvider:
     source = MODEL[1]
 
@@ -1911,6 +1915,12 @@ class LlmAgentProvider:
         if not place or not stops:
             return AgentResponse(status="chat", transcript=text, reply=VIA_NONE, source=self.source)
         query = str((d or {}).get("query") or "").strip()
+        if not query and not ALL_STOPS.search(text):
+            # No query from the model: the driver's own object decides ("skip the truck stop" cleared every stop,
+            # the rest area too). Only what follows the order verb; "no stops" and the like clear them all below.
+            obj = ORDER_VERB.sub("", text, count=1)
+            if obj != text:
+                query = obj.strip()
         named = stop_named(text, query, stops, place)
         if named:
             return await self._drop_stop(req, sess, named, stops, text)
