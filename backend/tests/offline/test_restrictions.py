@@ -6,7 +6,7 @@ import copy
 
 from conftest import fixture_json, params_of, run
 
-from models import Place, RouteInfo, TruckProfile
+from models import Place, TruckProfile
 from services import agent, routing
 from services.routing import _here_parse, _notices
 
@@ -20,10 +20,10 @@ VIOLATED_HEIGHT = {"title": "Violated vehicle restriction.", "code": "violatedVe
 VIOLATED_WEIGHT = {"title": "Violated vehicle restriction.", "code": "violatedVehicleRestriction", "severity": "critical",
                    "details": [{"type": "restriction", "cause": "Route violates vehicle restriction: weight limit of 20000 kg",
                                 "maxWeight": 20000}]}
-ADMIN_WIDE = {"title": "Violated admin-wide vehicle restriction.", "code": "violatedAdminWideVehicleRestriction",
-              "severity": "info", "details": [{"type": "adminWideRestriction", "country": "USA", "state": "CA",
-                                                "cause": "Route violates admin-wide vehicle restriction: height limit of 428 cm",
-                                                "maxHeight": 428}]}
+ADMIN_WIDE = {
+    "title": "Violated admin-wide vehicle restriction.", "code": "violatedAdminWideVehicleRestriction", "severity": "info",
+    "details": [{"type": "adminWideRestriction", "country": "USA", "state": "CA", "maxHeight": 428,
+                 "cause": "Route violates admin-wide vehicle restriction: height limit of 428 cm"}]}
 START_DIRECTION = {"title": "Violated start direction.", "code": "violatedStartDirection", "severity": "info"}
 TOLL = {"title": "Violated avoid toll road preference.", "code": "violatedAvoidTollRoad", "severity": "info"}
 BLOCKED = {"title": "Violated blocked road.", "code": "violatedBlockedRoad", "severity": "critical"}
@@ -149,3 +149,12 @@ def test_ors_rounds_up_too(fake_http, monkeypatch):
 def test_avoid_tunnel_violation_is_named():
     lines, restricted = _notices([{"code": "violatedAvoidTunnel", "severity": "info"}], TruckProfile())
     assert lines == ["A tunnel couldn't be avoided on this route."] and restricted is None
+
+
+def test_a_restriction_without_a_limit_is_said_in_plain_words():
+    # QA 2026-11-02: the driver heard HERE's own "Violated access restriction for this type of vehicle".
+    lines, restricted = _notices([{"code": "violatedVehicleRestriction", "severity": "critical",
+                                   "details": [{"type": "restriction", "cause": "Violated access restriction for this type of vehicle"}]}],
+                                 TruckProfile())
+    assert restricted == "other"
+    assert lines == ["Part of this route is on a road with a truck restriction."]

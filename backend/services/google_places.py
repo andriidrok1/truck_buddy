@@ -20,6 +20,7 @@ from services.places import DATA_ONLY, search_data
 logger = logging.getLogger("truckbuddy.google")
 
 URL = "https://places.googleapis.com/v1/places:searchText"
+DETAILS_URL = "https://places.googleapis.com/v1/places/{id}"
 FIELD_MASK = (
     "places.id,places.displayName,places.rating,places.userRatingCount,"
     "places.editorialSummary,places.formattedAddress,places.location,places.types,places.primaryType,"
@@ -116,6 +117,17 @@ def diesel_from_fuel_options(fuel: Optional[dict], now: Optional[float] = None) 
                 continue
             return round(price, 3), kind, updated
     return None
+
+
+def _category_of(p: dict) -> Category:
+    """The category a Place Details body belongs to, by its Google types (the search knew it from the query)."""
+    types = set(p.get("types") or []) | {p.get("primaryType") or ""}
+    for cat, gtype in INCLUDED_TYPE.items():
+        if gtype in types:
+            return cat  # type: ignore[return-value]
+    if "gas_station" in types:
+        return "truck_stop"  # type: ignore[return-value]
+    return "destination"  # type: ignore[return-value]
 
 
 def truck_stop_reject(name: str, types: list[str], primary: str = "") -> Optional[str]:
@@ -254,4 +266,51 @@ class GooglePlacesProvider:
         return res
 
     async def get(self, place_id: str, lat: float, lng: float) -> Optional[Place]:
-        return self._seen.get(place_id)
+        """A place by id: the one this worker saw in a search, else Place Details (another worker or a restart
+        answered the search), else the curated/demo list for a non-Google id."""
+        hit = self._seen.get(place_id)
+        if hit is not None:
+            return hit
+        if not place_id or not re.fullmatch(r"[A-Za-z0-9_-]{10,}", place_id) or place_id.startswith(("here-", "osm-", "ts-")):
+            from services.places import _mock
+            return await _mock.get(place_id, lat, lng)
+        headers = {"X-Goog-Api-Key": os.environ["GOOGLE_MAPS_API_KEY"],
+                   "X-Goog-FieldMask": field_mask().replace("places.", "")}
+        try:
+            r = await client().get(DETAILS_URL.format(id=place_id), headers=headers, timeout=10)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Google Place Details failed: %s", e)
+            return None
+        if r.is_error:
+            logger.warning("Google Place Details %s: %s", r.status_code, r.text[:200])
+            return None
+        p = r.json() or {}
+        place = self._to_place(p, _category_of(p), lat, lng)
+        if place is not None:
+            self._remember(place)
+        return place
+
+    def _to_place(self, p: dict, category: Category, lat: float, lng: float) -> Optional[Place]:
+        """One Google place object (search item or Place Details body) -> Place; None without a location."""
+        loc = p.get("location") or {}
+        if "latitude" not in loc:
+            return None
+        km = haversine_km(lat, lng, loc["latitude"], loc["longitude"])
+        diesel = diesel_from_fuel_options(p.get("fuelOptions"))
+        return Place(
+            id=p["id"],
+            name=(p.get("displayName") or {}).get("text") or "Unnamed place",
+            category=category,
+            lat=loc["latitude"],
+            lng=loc["longitude"],
+            address=p.get("formattedAddress"),
+            rating=p.get("rating"),
+            rating_count=p.get("userRatingCount"),
+            summary=(p.get("editorialSummary") or {}).get("text"),
+            diesel_price=diesel[0] if diesel else None,
+            diesel_kind=diesel[1] if diesel else None,
+            diesel_updated=diesel[2] if diesel else None,
+            distance_km=round(km, 2),
+            distance_mi=round(km_to_mi(km), 1),
+            reviews=reviews_from(p.get("reviews")),
+        )

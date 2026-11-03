@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from models import Place
 from services.flags import on
 from services.geo import haversine_km
+from services import kv, leader
 from services.http import client
 
 logger = logging.getLogger("truckbuddy.tpims")
@@ -182,10 +183,38 @@ async def refresh(now: Optional[float] = None) -> None:
             logger.warning("TPIMS dynamic %s failed: %s", state, e)
 
 
+FEED_NAME = "tpims"
+
+
+async def share() -> None:
+    """The leader's sites and live counts into feed_cache for the other workers."""
+    await kv.feed_put(FEED_NAME, {"sites": {k: v.model_dump(mode="json") for k, v in _sites.items()},
+                                  "live": {k: v.model_dump(mode="json") for k, v in _live.items()}})
+
+
+async def take_shared() -> bool:
+    """A follower: the leader's copy from feed_cache. False when there is none yet."""
+    row = await kv.feed_get(FEED_NAME)
+    if not row:
+        return False
+    payload, _fetched = row
+    try:
+        _sites.update({k: Site(**v) for k, v in (payload.get("sites") or {}).items()})
+        _live.update({k: Live(**v) for k, v in (payload.get("live") or {}).items()})
+    except Exception as e:  # noqa: BLE001
+        logger.warning("shared TPIMS payload unreadable: %s", e)
+        return False
+    return True
+
+
 async def _poll() -> None:
     while True:
         try:
-            await refresh()
+            if await leader.try_lead(FEED_NAME):
+                await refresh()
+                await share()
+            elif not await take_shared():
+                await refresh()  # no leader copy yet: fetch once ourselves
         except Exception as e:  # noqa: BLE001
             logger.warning("TPIMS poll failed: %s", e)
         await asyncio.sleep(POLL_S)

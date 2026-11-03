@@ -16,7 +16,7 @@ BASE = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "").rstrip("/")
 def _lufs(mp3: bytes) -> tuple[float, float]:
     out = subprocess.run([FF, "-hide_banner", "-i", "pipe:0", "-af", "loudnorm=print_format=summary", "-f", "null", "-"],
                          input=mp3, capture_output=True).stderr.decode()
-    val = lambda k: float(next(l for l in out.splitlines() if k in l).split(":")[1].split()[0])  # noqa: E731
+    val = lambda k: float(next(line for line in out.splitlines() if k in line).split(":")[1].split()[0])  # noqa: E731
     return val("Input Integrated"), val("Input True Peak")
 
 

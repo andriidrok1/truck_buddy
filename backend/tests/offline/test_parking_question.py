@@ -1,7 +1,6 @@
 """QA 2026-10-31, H6: "how do I get in" and "where do I park" got the same three sentences (fit verdict,
 entrance, where to park). The answer now follows the question; a warning verdict is always said."""
 from models import ParkingCheck
-from services import approach
 from services.approach import asked, speech
 
 

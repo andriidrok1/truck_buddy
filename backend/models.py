@@ -123,6 +123,8 @@ class Approach(BaseModel):
     street: Optional[str] = None
     lat: Optional[float] = None  # approach point: route point 100 m before the finish
     lng: Optional[float] = None
+    # the side the route turns off `street` to get in ("Keep right" into a rest area), when it does so near the end
+    exit_side: Optional[Literal["right", "left"]] = None
 
 
 class RouteInfo(BaseModel):
@@ -150,7 +152,7 @@ class RouteInfo(BaseModel):
     handle: Optional[str] = None  # HERE routeHandle: lets the app re-route back onto this route after a deviation
     via: List[List[float]] = Field(default_factory=list)  # stops on the way, [[lat, lng], ...], in order
     section_starts: List[int] = Field(default_factory=list)  # geometry index where each HERE section begins
-    stops_s: float = 0  # seconds standing at the via stops (HERE stopDuration), already counted in duration_s
+    stops_s: float = 0  # seconds standing at the via stops (HERE stopDuration), already inside duration_s
     weather: List[WeatherAlert] = Field(default_factory=list)  # active NWS alerts along the route
     weather_known: bool = False  # the NWS lookup for this route completed; only then does an empty list mean clear
     weather_later: List[WeatherAlert] = Field(default_factory=list)  # alerts on the route that start after the truck is through
@@ -241,6 +243,7 @@ class TruckProfile(BaseModel):
 
 
 MAX_VIA = 3  # stops the driver can add on the way (each is one more HERE section)
+MAX_ROUTE_STOPS = 10  # stops ahead the app may send with a copilot turn (it adds at most MAX_VIA; this keeps the request small)
 
 
 class RouteRequest(BaseModel):
@@ -251,6 +254,7 @@ class RouteRequest(BaseModel):
     skip_parking: bool = False  # breakdown providers: the driver needs the shop, not a parking check
     truck_profile: TruckProfile = Field(default_factory=lambda: TruckProfile())
     via: List[List[float]] = Field(default_factory=list, max_length=MAX_VIA)  # stops on the way, [[lat, lng], ...]
+    trip_id: Optional[str] = Field(None, max_length=64)  # the app's id of the drive, so trip events line up
 
 
 class NudgeRequest(BaseModel):
@@ -267,6 +271,7 @@ class NudgeRequest(BaseModel):
     truck_profile: TruckProfile = Field(default_factory=TruckProfile)
     chain_control_ahead: Optional["ChainAhead"] = None  # first active Caltrans control on the route ahead
     motive_key: Optional[str] = Field(None, max_length=200, exclude=True, repr=False)
+    motive_user: Optional[str] = Field(None, max_length=40, exclude=True, repr=False)  # with a fleet's key
 
 
 class ChainAhead(BaseModel):
@@ -315,6 +320,7 @@ class RerouteRequest(BaseModel):
     traveled_m: float = Field(0.0, ge=0)  # metres driven along that section
     truck_profile: TruckProfile = Field(default_factory=TruckProfile)
     via: List[List[float]] = Field(default_factory=list, max_length=MAX_VIA)  # kept when routing fresh
+    trip_id: Optional[str] = Field(None, max_length=64)
 
 
 class ParkingRequest(BaseModel):
@@ -339,6 +345,8 @@ class UiState(BaseModel):
     voice_guidance: bool = True
     hands_free: bool = True
     options_count: int = Field(0, ge=0)
+    # the place ids of the option cards on screen, in screen order: "the second one" is the second of these
+    option_ids: List[str] = Field(default_factory=list, max_length=20)
 
 
 class AppAction(BaseModel):
@@ -358,11 +366,51 @@ class AgentRequest(BaseModel):
     active_duration_min: Optional[int] = Field(None, ge=0)
     active_speed_limit_mph: Optional[int] = Field(None, ge=0, le=100)  # posted limit where the driver is now
     ui: UiState = Field(default_factory=UiState)
-    # Set by the server from the X-Motive-Key header (never stored, never logged, never echoed back).
+    # Set by the server from the X-Motive-Key header, or the fleet's stored key plus the driver's Motive user id
+    # (never logged, never echoed back).
     motive_key: Optional[str] = Field(None, max_length=200, exclude=True, repr=False)
+    motive_user: Optional[str] = Field(None, max_length=40, exclude=True, repr=False)
     stt_ms: Optional[int] = Field(None, ge=0, le=60000)  # how long /voice/transcribe took, for the turn log
     stt_confidence: Optional[float] = Field(None, ge=0, le=1)  # from /voice/transcribe; low = ask before acting
     speed_mps: Optional[float] = Field(None, ge=0, le=60)  # GPS speed; at highway speed replies get shorter
+    trip_id: Optional[str] = Field(None, max_length=64)  # the app's id of the current drive (trip events)
+    # The active route as the app drives it: HERE's handle and the stops on the way ([[lat, lng], ...], those still
+    # ahead). A dialog that starts after a restart has no route of its own; these rebuild the real one.
+    route_handle: Optional[str] = Field(None, max_length=8192)
+    route_via: List[List[float]] = Field(default_factory=list, max_length=MAX_VIA)
+    # The same stops as places, in route order (2026-11-02: the trip lives on the phone). When the app sends it, it is
+    # the truth for the route's stops, also in a dialog that starts after a restart; an older app sends none.
+    route_stops: List[Place] = Field(default_factory=list, max_length=MAX_ROUTE_STOPS)
+
+    @field_validator("route_via", mode="before")
+    @classmethod
+    def _usable_stops(cls, v):
+        """A broken stop is left out, never a failed turn: the copilot only reads the route, the app drives it."""
+        if not isinstance(v, list):
+            return []
+        out = []
+        for s in v:
+            try:
+                lat, lng = (float(x) for x in s)
+            except (TypeError, ValueError):
+                continue
+            if -90 <= lat <= 90 and -180 <= lng <= 180:
+                out.append([lat, lng])
+        return out
+
+    @field_validator("route_stops", mode="before")
+    @classmethod
+    def _usable_stop_places(cls, v):
+        """As with route_via: a stop that is not a place is left out."""
+        if not isinstance(v, list):
+            return []
+        out = []
+        for s in v:
+            try:
+                out.append(s if isinstance(s, Place) else Place.model_validate(s))
+            except ValueError:
+                continue
+        return out
 
 
 AgentStatus = Literal["options", "route_set", "chat", "confirm", "no_results", "not_understood", "researching",

@@ -1,5 +1,4 @@
 """Posted speed limits from HERE spans=maxSpeed: conversion, merging, index remap, flag, API shape."""
-import math
 
 import pytest
 from conftest import fixture_json, params_of, run

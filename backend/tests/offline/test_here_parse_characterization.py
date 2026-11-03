@@ -122,10 +122,14 @@ def test_maneuvers_limits_and_incidents_sit_on_their_raw_points():
     assert len(info.geometry) < len(raw) // 2  # a real simplification, not a copy
 
 
-def test_via_stop_time_counts_in_the_eta():
+def test_via_stop_time_counts_in_the_eta_once():
+    # Shape of a live HERE answer: the stop's 1800 s sit in the first section's duration AND in the gap
+    # before the second section departs. The ETA counts them once.
     two = copy.deepcopy(DATA)
     s = two["routes"][0]["sections"][0]
     second = copy.deepcopy(s)
+    s = copy.deepcopy(s)
+    s["summary"]["duration"] += 1800
     second["departure"]["time"] = "2026-10-27T18:11:50-07:00"  # 30 min after the first section's 17:41:50 arrival
     two["routes"][0]["sections"] = [s, second]
     info = _here_parse(two)
