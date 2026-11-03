@@ -4,7 +4,7 @@ Motive user each driver is).
 Every route needs an owner or dispatcher of an organisation (auth.require_org_member), and the two settings
 need the owner; a driver's token, a solo driver's included, gets 403. Every query is filtered by the caller's
 org_id, so a truck id from another fleet is a 404 and another fleet's events never show up. Transcripts stay
-on the server: whatever a driver said (`text`, `transcript` in an event's data) is removed here, on the way out
+on the server: an event's data leaves with numbers, flags and known code fields only (public_event), on the way out
 (decision 2026-10-30: the owner sees what happened, not what was said). The tester route /api/trips/recent is unchanged.
 
 Days are UTC calendar days (?day=YYYY-MM-DD, default today).
@@ -27,6 +27,9 @@ owner = auth.require_org_member("owner")
 WAIT_S = 8.0
 UNAVAILABLE = "Fleet data is unavailable right now"
 TRANSCRIPT_KEYS = frozenset({"text", "transcript"})
+# String fields a fleet may read besides the dashboard models' own: codes and ids the app and the server set,
+# never words the driver said.
+PUBLIC_TEXT_KEYS = frozenset({"place_id", "category", "cause", "status", "error", "result", "intent", "action", "by", "where"})
 DAY_RE = r"^\d{4}-\d{2}-\d{2}$"
 
 # What the summary counts, per truck. reroute_requested is the server's record of every /reroute call (the app's
@@ -35,9 +38,23 @@ FAILED_TURN_KINDS = ("not_understood", "turn_error", "turn_failed")
 SUMMARY_KINDS = ("reroute_requested", "stop_guard", "route_started", "route_failed", *FAILED_TURN_KINDS)
 
 
+def _public_value(kind: str, key: str, value) -> bool:
+    if key in TRANSCRIPT_KEYS:
+        return False
+    if value is None or isinstance(value, (bool, int, float)):
+        return True  # counts, metres, seconds, flags: nothing a driver said fits in a number
+    model = trip_events.DASHBOARD_MODELS.get(kind)
+    if isinstance(value, str):
+        return key in PUBLIC_TEXT_KEYS or (model is not None and key in model.model_fields)
+    return key == "labels" and isinstance(value, list) and all(isinstance(x, str) for x in value)  # road names
+
+
 def public_event(e: dict) -> dict:
-    """An event as a fleet may see it: no transcript."""
-    return {**e, "data": {k: v for k, v in (e.get("data") or {}).items() if k not in TRANSCRIPT_KEYS}}
+    """An event as a fleet may see it. Event data takes any field, so a deny list of transcript keys let any new
+    free-text field through to the owner (review 2026-11-02, bug 7): numbers and flags pass, text only for the
+    fields known to hold codes and ids."""
+    kind = str(e.get("kind") or "")
+    return {**e, "data": {k: v for k, v in (e.get("data") or {}).items() if _public_value(kind, k, v)}}
 
 
 def _day(day: Optional[str]) -> tuple[datetime, datetime, str]:

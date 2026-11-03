@@ -179,6 +179,20 @@ def test_fleet_events_never_carry_the_transcript(client):
     assert client.get(f"/api/fleet/vehicles/{f['t1']}/events?day=2026-11-01", headers=f["a_disp"]).json()["events"] == []
 
 
+def test_fleet_events_pass_only_known_fields(client):
+    # Bug 7: the transcript was cut by a deny list while event data takes any field; a new free-text field
+    # ("query", "heard") would have reached the owner. Strings now pass only for known fields.
+    f = _two_fleets(client)
+    client.post("/api/trips/events", headers=f["a_drv"], json=[
+        _ev("stop_added", stops=2, query="the Walmart by my ex's place", heard="the walmart", t="2026-11-02T17:00:00Z"),
+        _ev("route_replaced", by="copilot", duration_s=3600, labels=["I-80", "US-50"], note="call mom", t="2026-11-02T17:01:00Z"),
+        _ev("reroute", cause="off_route", ok=True, applied=True, dist_m=180, said="rerouting you", t="2026-11-02T17:02:00Z")])
+    events = client.get(f"/api/fleet/vehicles/{f['t1']}/events?day=2026-11-02", headers=f["a_disp"]).json()["events"]
+    assert events[0]["data"] == {"stops": 2}
+    assert events[1]["data"] == {"by": "copilot", "duration_s": 3600, "labels": ["I-80", "US-50"]}
+    assert events[2]["data"] == {"cause": "off_route", "ok": True, "applied": True, "dist_m": 180}
+
+
 def test_fleet_summary_counts_per_truck(client):
     f = _two_fleets(client)
     client.post("/api/trips/events", headers=f["a_drv"], json=[
