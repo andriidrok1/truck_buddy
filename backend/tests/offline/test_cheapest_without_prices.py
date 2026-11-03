@@ -4,6 +4,8 @@ no place on the list had a diesel price. Without prices there is nothing to pick
 stays, or, with no current stop, the closest one is routed with the usual "no price" caveat."""
 import re
 
+import pytest
+
 from conftest import fixture_json, run
 
 from models import AgentRequest, Place
@@ -121,3 +123,64 @@ def test_the_cheapest_is_the_lowest_price_whatever_the_model_named(agent_sandbox
     assert res.status == "route_set" and res.place.id == cheap.id, res.reply
     again = run(prov.handle(_req("where's the cheapest diesel", "h8g", active=res.place), None))
     assert again.place is None and "cheapest" in again.reply and "4.89" in again.reply, again.reply
+
+
+# Review 2026-11-02: any "cheap" and a fuel word in any intent was taken for "route me to the cheapest on the list".
+# "Is diesel cheaper in Oregon" changed the destination, "fuel was cheaper yesterday huh" got "...that's where we're
+# headed", and a list searched in Sacramento answered the question in Reno.
+RENO_POS = {"lat": 39.5296, "lng": -119.8138}
+RENO_TS = Place(id="reno-ts", name="Reno Truck Stop", category="truck_stop", lat=39.53, lng=-119.81, distance_mi=1.0,
+                diesel_price=4.1, diesel_kind="truck")
+OREGON = "Usually not, Oregon taxes are about the same."
+YESTERDAY = "Prices move every day."
+
+
+def _talk_sandbox(agent_sandbox, fake_http, places):
+    prov = _sandbox(agent_sandbox, fake_http, places)
+    agent_sandbox.llm.rules.insert(0, (re.compile(r"oregon", re.I), {"intent": "chat", "reply": OREGON}))
+    agent_sandbox.llm.rules.insert(0, (re.compile(r"yesterday", re.I), {"intent": "chat", "reply": YESTERDAY}))
+    return prov
+
+
+def test_talk_about_cheaper_fuel_is_not_a_pick(agent_sandbox, fake_http):
+    priced = [ROADYS, WESTSAC, _p("49er", "Sacramento 49er Travel Plaza", 2.7, price=4.89)]
+    prov = _talk_sandbox(agent_sandbox, fake_http, priced)
+    first = run(prov.handle(_req("find a truck stop", "cz1"), None))
+    res = run(prov.handle(_req("is diesel cheaper in Oregon", "cz1", active=first.place), None))
+    assert res.place is None and res.reply == OREGON, res.reply
+    res = run(prov.handle(_req("fuel was cheaper yesterday huh", "cz1", active=first.place), None))
+    assert res.place is None and res.reply == YESTERDAY, res.reply
+
+
+def test_talk_about_cheaper_fuel_with_no_prices_is_not_an_offer(agent_sandbox, fake_http):
+    prov = _talk_sandbox(agent_sandbox, fake_http, [ROADYS, WESTSAC])
+    first = run(prov.handle(_req("find a truck stop", "cz2"), None))
+    res = run(prov.handle(_req("is diesel cheaper in Oregon", "cz2", active=first.place), None))
+    assert res.status == "chat" and res.reply == OREGON, res.reply
+
+
+def test_a_list_left_behind_does_not_answer_the_cheapest(agent_sandbox, fake_http):
+    priced = [ROADYS, _p("49er", "Sacramento 49er Travel Plaza", 2.7, price=4.89)]
+    prov = _sandbox(agent_sandbox, fake_http, priced)
+    agent_sandbox.llm.rules.insert(0, (re.compile(r"cheapest diesel", re.I), {"intent": "find", "category": "truck_stop"}))
+    run(prov.handle(_req("find a truck stop", "cz3"), None))
+    agent_sandbox.places_provider.places = [RENO_TS]  # 130 miles on, no route
+    res = run(prov.handle(AgentRequest(text="where's the cheapest diesel", session_id="cz3", **RENO_POS), None))
+    assert res.place is not None and res.place.id == RENO_TS.id, res.reply
+
+
+@pytest.mark.parametrize("text, asks", [
+    ("where's the cheapest diesel", True),
+    ("which one is cheapest", True),
+    ("what's the cheapest fuel around here", True),
+    ("take me to the cheapest one", True),
+    ("cheapest diesel", True),
+    ("the cheapest one", True),
+    ("is diesel cheaper in Oregon", False),
+    ("fuel was cheaper yesterday huh", False),
+    ("where's the cheapest diesel in Reno", False),
+    ("what's the cheapest fuel near Fernley", False),
+    ("diesel is always cheapest at home", False),
+])
+def test_asks_for_the_cheapest(text, asks):
+    assert agent.asks_cheapest(text, [ROADYS, WESTSAC]) is asks

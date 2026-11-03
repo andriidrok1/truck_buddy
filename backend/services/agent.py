@@ -620,6 +620,34 @@ NO_PRICES_KEEP = NO_PRICES + " {name} is the closest, and that's where we're hea
 CHEAPEST = re.compile(r"\bcheap(?:est|er)\b", re.I)
 FUEL_WORDS = re.compile(r"\b(?:diesel|fuel|gas|def)\b", re.I)
 ALREADY_CHEAPEST = "{name} is the cheapest on the list, diesel at ${price:.2f}, and that's where we're headed."
+# "Where's the cheapest diesel" asks which listed place is cheapest; "is diesel cheaper in Oregon" and "fuel was
+# cheaper yesterday huh" are talk, and the list answered them by moving the route (review 2026-11-02).
+CHEAPEST_ASK = re.compile(
+    r"\b(?:where|which|what|who)(?:'?s|'?re| is| are| one| has| place)?\b[^.!?]*\bcheapest\b"  # a question
+    r"|^(?:(?:ok(?:ay)?|so|and|just|please|alright)[, ]+)*(?:(?:take|get|route) me to |go to |find (?:me )?|"
+    r"give me |show me |let'?s (?:go to |do )?|i (?:want|need) )?(?:the )?cheapest\b"  # "cheapest diesel", "take me to the cheapest"
+    r"|\bthe cheapest (?:one|place|stop)\b", re.I)
+# "the cheapest diesel in Reno": another place than the list's, the model's search is the answer
+ELSEWHERE = re.compile(r"\b(?:in|near|around|at|by|toward|towards|outside|across)\s+(?:the\s+)?(?P<w>[a-z0-9']+)", re.I)
+NOT_ELSEWHERE = {"here", "there", "list", "area", "town", "city", "one", "ones", "place", "places", "stop", "stops",
+                 "them", "it", "these", "those", "this", "that", "moment", "minute", "least", "all", "my", "our"}
+CHEAPEST_NEAR_MI = 30.0  # a list whose nearest place is farther than this from the truck was searched somewhere else
+
+
+def asks_cheapest(text: str, places: list[Place]) -> bool:
+    """The driver asks which listed place is cheapest and names no other place or region."""
+    if not CHEAPEST_ASK.search(text or ""):
+        return False
+    listed = set().union(*(_name_tokens(p.name) for p in places)) if places else set()
+    return not any(m.group("w").lower() not in NOT_ELSEWHERE and not (_name_tokens(m.group("w")) & listed)
+                   for m in ELSEWHERE.finditer(text))
+
+
+def list_is_near(lat: float, lng: float, places: list[Place]) -> bool:
+    """The list was found around where the truck is now (it is not a list from 150 miles back)."""
+    return bool(places) and km_to_mi(min(haversine_km(lat, lng, p.lat, p.lng) for p in places)) <= CHEAPEST_NEAR_MI
+
+
 # A fuel/rest stop asked for "on my route" while a route is active is a stop on the way, never a new destination.
 ON_THE_WAY = re.compile(r"\b(?:on|along) (?:my|the|our) (?:route|way)\b|\ben route\b|\bon the way\b"
                         r"|\bbefore (?:I|we) (?:get|arrive)\b", re.I)
@@ -2155,7 +2183,12 @@ class LlmAgentProvider:
             # "Where's the cheapest diesel" over the list is arithmetic, whatever the model called it: with a route
             # to Roady's it came back as find and the stop finder went to the next stop, one with no price (stand
             # 2026-11-02). The lowest price wins; with no prices the closest is offered (below).
-            if (sess["places"] and intent in ("find", "pick", "chat") and CHEAPEST.search(text) and FUEL_WORDS.search(text)
+            # Only a pick, or a find/chat that asks for the cheapest of the list, over a list around the truck
+            # (review 2026-11-02): "is diesel cheaper in Oregon" is talk, and a Sacramento list is no answer in Reno.
+            cheapest = (bool(sess["places"]) and list_is_near(req.lat, req.lng, sess["places"])
+                        and (intent == "pick" and CHEAPEST.search(text)
+                             or intent in ("find", "chat") and asks_cheapest(text, sess["places"])))
+            if (cheapest and (FUEL_WORDS.search(text) or all(p.category == "truck_stop" for p in sess["places"]))
                     and not (req.active_place and ON_THE_WAY.search(text))):
                 priced = [p for p in sess["places"] if p.diesel_price is not None]
                 if priced:
@@ -2169,7 +2202,7 @@ class LlmAgentProvider:
             no_prices = bool(sess["places"]) and all(p.category == "truck_stop" and p.diesel_price is None
                                                      for p in sess["places"])
             if no_prices and ((intent == "pick" and d.get("place_index") is not None and PRICE_WORDS.search(text))
-                              or (intent in ("pick", "chat") and CHEAPEST.search(text))):
+                              or (intent in ("pick", "chat") and cheapest)):
                 # inside the try: with no route to keep, routing to the closest one can fail (review 2026-11-02, bug 18)
                 return await self._cheapest_without_prices(req, sess, text, ask=intent == "chat")
             # "Not that one" just after a stop was added is about the stop (review 2026-11-02, bug 15).
