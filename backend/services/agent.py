@@ -372,6 +372,13 @@ VIA_DUPLICATE = "{name} is already one of your stops."
 VIA_IS_DESTINATION = "That's where we're headed, {name}."
 VIA_CLEARED = "Stops cleared. Straight there, {time}, {mi} miles."
 VIA_NONE = "There are no stops on this route."
+# A stop that is nowhere near the way (the geocoder put "the Pilot in Fernley" in Wells, 300 miles past Reno,
+# and the dialog added it without a word, 2026-11-01): ask before the route changes.
+VIA_FAR = "{name} is about {extra} out of the way; from here that's {new} instead of {old}. Add it anyway?"
+VIA_FAR_NO = "Okay, no stop added."
+VIA_FAR_YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|add it|go ahead|do it|please do|fine)\b", re.I)
+STOP_DETOUR_MIN_S = 45 * 60  # a stop costing more than this beyond its own 30 minutes...
+STOP_DETOUR_FRACTION = 0.5  # ...and more than half the trip so far is asked about first
 WHICH_PLACE = "Which place? Find one or set a route first."
 # Low-confidence transcripts of a destination or a place name get one "Did you say ...?" before anything is acted on.
 CONFIRM = "Did you say {what}?"
@@ -1110,6 +1117,12 @@ class LlmAgentProvider:
             logger.info("add_stop query %r names a listed place -> %s", query, named.name)
             return named
         if query:
+            if TRUCK_STOP_NAME.search(query) and not re.search(r"\d", query):
+                # "the Pilot", "Love's in Auburn": a chain name is a truck stop near the driver before it is an
+                # address (the geocoder once answered with the hamlet of Pilot, NV, 300 miles past the destination)
+                stop = await self._truck_stop_named(req, query)
+                if stop:
+                    return stop
             with stage("tools"):
                 matches = await geocode(with_city(query, sess.get("city")), req.lat, req.lng)
             if not matches or is_street(matches[0]):
@@ -1130,7 +1143,7 @@ class LlmAgentProvider:
         return choose_place(found, req.truck_profile, {req.active_place.id} if req.active_place else set(),
                             sess.get("facts"))
 
-    async def _route_with_stops(self, req: AgentRequest, stops: list[Place], sess: Optional[dict] = None) -> RouteInfo:
+    async def _route_with_stops(self, req: AgentRequest, stops: list[Place]) -> RouteInfo:
         with stage("tools"):
             try:
                 route = await get_routing_provider().route(req.lat, req.lng, *approach.target(req.active_place),
@@ -1139,13 +1152,46 @@ class LlmAgentProvider:
             except Exception as e:  # noqa: BLE001
                 raise RouteFailed(f"{type(e).__name__}: {e}") from e
         route.alternatives = []
-        if sess is not None and req.active_place:
-            # This is the line being driven now; the alternatives cached for the no-stop route would lose the
-            # stops, so "another way" plans afresh through them.
+        return route
+
+    @staticmethod
+    def _remember_driven(req: AgentRequest, sess: dict, route: RouteInfo) -> None:
+        """A route with the stops as they are now is the line being driven; the alternatives cached for the
+        no-stop route would lose the stops, so "another way" plans afresh through them."""
+        if req.active_place:
             sess["alternatives"] = {"place": req.active_place.id, "routes": [], "i": 0, "refetch": True,
                                     "current": route.model_copy(update={"alternatives": []}),
                                     "origin": (req.lat, req.lng), "profile": _profile_key(req.truck_profile)}
-        return route
+
+    @staticmethod
+    def _remaining_s(cur: RouteInfo, lat: float, lng: float) -> float:
+        """Seconds left on the driven route from the truck's nearest vertex, the time spread by distance (the same
+        maths the app's ETA uses)."""
+        g = cur.geometry
+        if len(g) < 2:
+            return float(cur.duration_s)
+        here = _nearest_index(g, lat, lng)
+        legs = [haversine_km(g[i - 1][0], g[i - 1][1], g[i][0], g[i][1]) for i in range(1, len(g))]
+        total = sum(legs) or 1.0
+        return float(cur.duration_s) * (sum(legs[here:]) / total)
+
+    def _stop_detour(self, req: AgentRequest, sess: dict, added: int, route: RouteInfo) -> Optional[tuple[float, float]]:
+        """(extra seconds beyond the stop's own time, the rest of the trip before the stop) when a stop takes the
+        trip far out of the way; None when it is a reasonable stop or when the trip before is unknown. The new
+        route starts where the truck is, so it is compared with what was left of the old one from here, not
+        with the whole trip as planned."""
+        cached = sess.get("alternatives") or {}
+        cur = cached.get("current") if req.active_place and cached.get("place") == req.active_place.id else None
+        if cur is not None:
+            old = self._remaining_s(cur, req.lat, req.lng)
+        elif req.active_duration_min:
+            old = req.active_duration_min * 60.0  # the planned total: understates the detour, so asks less, never more
+        else:
+            return None
+        if old <= 0:
+            return None
+        extra = float(route.duration_s) - old - VIA_STOP_S * max(0, added)
+        return (extra, old) if extra > max(STOP_DETOUR_MIN_S, STOP_DETOUR_FRACTION * old) else None
 
     async def _add_stop(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
         place = req.active_place
@@ -1179,8 +1225,21 @@ class LlmAgentProvider:
         if any(s.id == stop.id for s in stops):  # "stop at the 49er" when it already is one (QA 2026-10-31, H9)
             return AgentResponse(status="chat", transcript=text, source=self.source,
                                  reply=VIA_DUPLICATE.format(name=stop.name.split(",")[0]))
+        before = len(stops)
         stops = self._order_stops(req, sess, stops + [stop])
-        route = await self._route_with_stops(req, stops, sess)
+        route = await self._route_with_stops(req, stops)
+        if not d.get("_confirmed"):
+            far = self._stop_detour(req, sess, len(stops) - before, route)
+            if far:
+                extra, old = far
+                # "yes" re-runs this turn with the resolved stop (no second geocode); "no" adds nothing.
+                sess["pending"] = {"text": text, "d": {**d, "_confirmed": True, "place": stop.model_dump()},
+                                   "no": {"reply": VIA_FAR_NO}, "yes": VIA_FAR_YES}
+                logger.info("add_stop %s is %.0f min out of the way: asking first", stop.name, extra / 60)
+                return AgentResponse(status="confirm", transcript=text, source=self.source,
+                                     reply=VIA_FAR.format(name=stop.name.split(",")[0], extra=_minutes_said(round(extra / 60)),
+                                                          new=route.summary.split(" · ")[0], old=_minutes_said(round(old / 60))))
+        self._remember_driven(req, sess, route)
         sess["via"] = {"place": place.id, "stops": stops}
         ahead = f", about {_miles(stop.distance_mi)} miles ahead" if stop.distance_mi else ""
         dwell = VIA_DWELL.format(minutes=VIA_STOP_S // 60, each="the stop" if len(stops) == 1 else "each stop")
@@ -1193,7 +1252,8 @@ class LlmAgentProvider:
         place = req.active_place
         if not place or not self._stops(req, sess):
             return AgentResponse(status="chat", transcript=text, reply=VIA_NONE, source=self.source)
-        route = await self._route_with_stops(req, [], sess)
+        route = await self._route_with_stops(req, [])
+        self._remember_driven(req, sess, route)
         sess.pop("via", None)  # after the route: a failed call must not forget stops the app still shows
         reply = VIA_CLEARED.format(time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi))
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
@@ -1346,7 +1406,7 @@ class LlmAgentProvider:
             return bd
         pending = sess.pop("pending", None)
         if pending:  # "Did you say Reno?" was asked last turn
-            if YES.match(text):
+            if YES.match(text) or (pending.get("yes") is not None and pending["yes"].match(text)):
                 d = pending["d"]
                 timing.note("intent", str(d.get("intent")))
                 return await self._dispatch(req, sess, pending["text"], d, confirmed=True)
