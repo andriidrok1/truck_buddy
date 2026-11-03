@@ -12,7 +12,7 @@
 import { isRunningInExpoGo } from "expo";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 
 import { publishFix } from "./location";
 
@@ -31,12 +31,17 @@ if (supported) {
 }
 
 
+let runningTo: string | null = null; // the destination the running task's notification names
+
 /** Starts the drive task; false when this build can't (Expo Go, web) or the OS refused (the caller keeps the
- *  screen awake instead). Safe to call again: one task. */
+ *  screen awake instead). Safe to call again: one task. A new destination while it runs re-registers it, so the
+ *  notification doesn't keep naming the old one (review 2026-11-02); only with the app open, since Android
+ *  refuses to start the service from the background and a stale label beats losing the fixes. */
 export async function startDriveTracking(destination: string): Promise<boolean> {
   if (!supported) return false;
   try {
-    if (await Location.hasStartedLocationUpdatesAsync(DRIVE_TASK)) return true;
+    const running = await Location.hasStartedLocationUpdatesAsync(DRIVE_TASK);
+    if (running && (runningTo === destination || AppState.currentState !== "active")) return true;
     await Location.startLocationUpdatesAsync(DRIVE_TASK, {
       accuracy: Location.Accuracy.BestForNavigation,
       timeInterval: 1000,
@@ -50,6 +55,7 @@ export async function startDriveTracking(destination: string): Promise<boolean> 
         killServiceOnDestroy: true,
       },
     });
+    runningTo = destination;
     return true;
   } catch (e) {
     console.warn("[drive] background location unavailable", e);
@@ -60,6 +66,7 @@ export async function startDriveTracking(destination: string): Promise<boolean> 
 export async function stopDriveTracking(): Promise<void> {
   if (!supported) return;
   try {
+    runningTo = null;
     if (await Location.hasStartedLocationUpdatesAsync(DRIVE_TASK)) await Location.stopLocationUpdatesAsync(DRIVE_TASK);
   } catch {
     // not running
