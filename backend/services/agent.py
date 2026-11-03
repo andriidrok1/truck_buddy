@@ -204,7 +204,7 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
 - pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something else", "another one", "something closer", "the cheapest diesel": lowest "diesel $" in the list). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. These are about PLACES even while a route is active and alternative routes exist: "not that one" / "something else" / "the second one" are never alternative and never go ("nothing else" / "that's all" / "I'm good" are bye, not pick). If no earlier place fits, use find with the same category instead.
 - alternative: a different ROAD to the SAME destination, only when the driver talks about the road, way or route itself ("another way", "take the other way", "different route", "is there a faster way", "can we skip the grade", "go around that", "go around the storm"). Never a new place; a rejected place ("not that one") is pick. Only meaningful while a route is active; otherwise answer as chat.
 - add_stop: a stop ON THE WAY to the current destination, keeping that destination ("stop at the Pilot in Fernley on the way", "swing by Love's first", "add a fuel stop", "cheapest diesel on my route", "fuel on the way", "I need a rest area before that"). query = the place or address named (digits for numbers), else category = the kind of stop (truck_stop for fuel/food/showers, rest_area, hotel); never both null. Only while a route is active; with no route it's a plain find or go.
-- clear_stops: drop the stops added on the way ("skip the stops", "forget the stop", "no stops, straight there").
+- clear_stops: drop the stops added on the way ("skip the stops", "forget the stop", "no stops, straight there"). For one stop named ("skip the Pilot", "drop the Love's stop"), query = that stop's name; null for all of them.
 - reviews: what other drivers say about a place ("what do drivers say about it", "is it any good", "reviews for the Pilot", "how are the showers there"). place_index = the place asked about from "Places found earlier", or null for the current route / the last one mentioned.
 - memory: what the copilot remembers about the driver ("what do you know about me", "what have you learned about me") -> query = "show"; or erasing it ("forget that", "forget what you know about me", "stop remembering") -> query = "forget".
 - hos: the driver's hours of service ("how many hours do I have", "how much drive time is left", "when do I have to stop", "where's my clock at", "how long till my break"). No other fields.
@@ -492,6 +492,8 @@ VIA_NO_OTHER = "I couldn't find another {what} ahead on your route."
 VIA_REJECTED = "Okay, not {name}. "
 VIA_DROPPED = "Okay, no stop at {name}. I couldn't find another {what} on the way. "
 VIA_LEFT = "New total {time}, {mi} miles."
+VIA_SKIPPED = "Okay, no stop at {name}. "
+VIA_NOT_A_STOP = "{name} isn't one of your stops."
 # A stop that is nowhere near the way (the geocoder put "the Pilot in Fernley" in Wells, 300 miles past Reno,
 # and the dialog added it without a word, 2026-11-01): ask before the route changes.
 VIA_FAR = "{name} is about {extra} out of the way; from here that's {new} instead of {old}. Add it anyway?"
@@ -718,6 +720,9 @@ def name_policy(text: str, name: str, allowed: bool) -> tuple[str, bool]:
 REJECT_PLACE = re.compile(
     r"\b(?:not (?:that|this) one|something else|somewhere else|another one|a different one|different one|"
     r"(?:the )?next one|not there|no,? not that)\b", re.I)
+# "Skip the Pilot", "drop the Love's stop": one of the route's stops left out (with the stop's own word in the text).
+DROP_STOP = re.compile(r"\b(?:skip|drop|remove|cancel|take off|no stop at|don'?t stop at|not stopping at)\b", re.I)
+STOPS_WORD = re.compile(r"^(?:the |all )*(?:stops?|all)$", re.I)  # "the stops" as the model's query means all of them
 ROAD_WORDS = re.compile(r"\b(?:way|road|route|highway|freeway|interstate|detour|grade|pass|toll)s?\b", re.I)
 # "The second one", "number two", "the last one": a reference into the list, never something to geocode
 # (HERE once turned "the second one" into W 21st Pl, The Dalles, OR, 598 miles out).
@@ -828,6 +833,21 @@ def named_in_text(text: str, places: list[Place]) -> Optional[Place]:
         if own & said:
             return p
     return None
+
+
+def stop_named(text: str, query: str, stops: list[Place], dest: Optional[Place] = None) -> Optional[Place]:
+    """The route's stop the driver named ("skip the Pilot", "drop the Fernley stop"), or None. Only the stops are
+    candidates, so the town counts too (named_in_text leaves out words of the address: "Pilot" is a word of
+    "100 Pilot Rd"), except the destination's words ("no stops, straight to Reno" keeps no Reno stop); the stop
+    with the most words said wins, the first in route order on a tie."""
+    said_words = (_name_tokens(text) | _name_tokens(query)) - (_name_tokens(dest.name) if dest else set())
+    best, hits = None, 0
+    for s in stops:
+        own = {w for w in _name_tokens(s.name) - GENERIC_NAME_WORDS if len(w) >= 3}
+        n = len(own & said_words)
+        if n > hits:
+            best, hits = s, n
+    return best
 
 
 def reject_or_reference_guard(intent: str, d: dict, text: str, places: list[Place],
@@ -1448,9 +1468,22 @@ class LlmAgentProvider:
         cur = cached.get("current")
         return list(cur.geometry) if cur is not None else []
 
+    @staticmethod
+    def _apps_stops(req: AgentRequest) -> bool:
+        """The app sent the route's stops (route_stops, an empty list included): they are the truth, the dialog's
+        copy in sess["via"] only a cache of what it last set. An older app sends none."""
+        return "route_stops" in req.model_fields_set
+
     def _stops(self, req: AgentRequest, sess: dict) -> list[Place]:
-        """Stops still ahead on the way to the active destination in this dialog (empty for any other route). A
-        stop the truck has driven past is dropped: re-planning through it sent the driver back to it."""
+        """Stops still ahead on the way to the active destination (empty for any other route); every reader of the
+        route's stops goes through here. The app's when it sends them: a dialog that starts after a restart knows
+        nothing of them (2026-11-02). Else the dialog's own, where a stop the truck has driven past is dropped:
+        re-planning through it sent the driver back to it."""
+        if not req.active_place:
+            return []
+        if self._apps_stops(req):
+            # the app cuts the stops behind; one the truck is parked at is made, as below
+            return [s for s in req.route_stops if haversine_km(s.lat, s.lng, req.lat, req.lng) >= REACHED_KM]
         via = sess.get("via")
         if not via or not req.active_place or via.get("place") != req.active_place.id:
             return []
@@ -1473,13 +1506,20 @@ class LlmAgentProvider:
         return stops
 
     def _order_stops(self, req: AgentRequest, sess: dict, stops: list[Place]) -> list[Place]:
-        """Stops in the order the road meets them (by the nearest vertex of the current line, else by distance
-        from the truck): "swing by Love's first" after a Fernley stop used to drive to Fernley and back."""
+        """Stops in the order the road meets them (by the nearest vertex of the current line): "swing by Love's
+        first" after a Fernley stop used to drive to Fernley and back. Without the line (a dialog started after a
+        restart) the stops keep the order they have and the new one, last, goes before the first stop farther
+        from the truck than it is."""
         geometry = self._current_geometry(req, sess)
         if geometry:
             return sorted(stops, key=lambda s: (_nearest_index(geometry, s.lat, s.lng),
                                                 haversine_km(s.lat, s.lng, req.lat, req.lng)))
-        return sorted(stops, key=lambda s: haversine_km(s.lat, s.lng, req.lat, req.lng))
+        if not stops:
+            return []
+        *kept, new = stops
+        far = haversine_km(new.lat, new.lng, req.lat, req.lng)
+        i = next((i for i, s in enumerate(kept) if haversine_km(s.lat, s.lng, req.lat, req.lng) > far), len(kept))
+        return kept[:i] + [new] + kept[i:]
 
     async def _resolve_stop(self, req: AgentRequest, d: dict, sess: dict, text: str = "") -> Optional[Place]:
         """The place the driver wants to stop at: a place offered earlier (nudges), a listed place the driver
@@ -1611,10 +1651,11 @@ class LlmAgentProvider:
                              route=route, parking=approach.for_route(place, route), options=kept, source=self.source)
 
     def _via_now(self, req: AgentRequest, sess: dict) -> list[list[float]]:
-        """The stops on the way as [[lat, lng], ...]: the dialog's own when it set the stops for this destination,
-        else the app's (route_via; a dialog that starts after a restart knows nothing of them)."""
+        """The stops on the way as [[lat, lng], ...]: the route's stops (_stops) when the app sent them or the
+        dialog set them for this destination, else the app's coordinates (route_via, from an app that sends no
+        route_stops; a dialog that starts after a restart knows nothing of them)."""
         via = sess.get("via")
-        if via and req.active_place and via.get("place") == req.active_place.id:
+        if self._apps_stops(req) or (via and req.active_place and via.get("place") == req.active_place.id):
             return [[s.lat, s.lng] for s in self._stops(req, sess)]
         return [list(v) for v in req.route_via]
 
@@ -1758,16 +1799,43 @@ class LlmAgentProvider:
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
                              route=route, parking=approach.for_route(place, route), options=stops, source=self.source)
 
-    async def _clear_stops(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
+    async def _clear_stops(self, req: AgentRequest, sess: dict, text: str, d: Optional[dict] = None) -> AgentResponse:
+        """"No stops, straight there" drops them all; "skip the Pilot" only the stop named."""
         place = req.active_place
-        if not place or not self._stops(req, sess):
+        stops = self._stops(req, sess)
+        if not place or not stops:
             return AgentResponse(status="chat", transcript=text, reply=VIA_NONE, source=self.source)
+        query = str((d or {}).get("query") or "").strip()
+        named = stop_named(text, query, stops, place)
+        if named:
+            return await self._drop_stop(req, sess, named, stops, text)
+        if query and not STOPS_WORD.search(query):  # a place that is not one of the stops: keep them all
+            return AgentResponse(status="chat", transcript=text, reply=VIA_NOT_A_STOP.format(name=query),
+                                 source=self.source)
         route = await self._route_with_stops(req, [])
         self._remember_driven(req, sess, route)
         sess.pop("via", None)  # after the route: a failed call must not forget stops the app still shows
         reply = _with_warnings(VIA_CLEARED.format(time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi)), route)
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
                              route=route, parking=approach.for_route(place, route), source=self.source)
+
+    async def _drop_stop(self, req: AgentRequest, sess: dict, stop: Place, stops: list[Place],
+                         text: str) -> AgentResponse:
+        """One stop off the route, the others kept in their order."""
+        place = req.active_place
+        kept = [s for s in stops if s.id != stop.id]
+        route = await self._route_with_stops(req, kept)
+        self._remember_driven(req, sess, route)
+        if kept:  # after the route: a failed call must not forget stops the app still shows
+            sess["via"] = {"place": place.id, "stops": kept}
+        else:
+            sess.pop("via", None)
+        sess.pop("last_offer", None)
+        time_, mi = route.summary.split(" · ")[0], _miles(route.distance_mi)
+        rest = (VIA_LEFT if kept else VIA_STRAIGHT).format(time=time_, mi=mi)
+        reply = _with_warnings(VIA_SKIPPED.format(name=stop.name.split(",")[0]) + rest, route)
+        return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
+                             route=route, parking=approach.for_route(place, route), options=kept, source=self.source)
 
     async def _alternative(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
         """Next unused alternative route to the active destination; fetched fresh when the dialog has none."""
@@ -2038,6 +2106,10 @@ class LlmAgentProvider:
                                               req.ui.option_ids)
         if intent == "not_understood":
             return _not_understood(text, self.source)
+        if intent not in ("add_stop", "clear_stops") and DROP_STOP.search(text) and stop_named(text, "", self._stops(req, sess), req.active_place):
+            # "drop the Pilot stop" read as a pick of the Pilot: the driver named one of the route's stops to leave out
+            logger.info("agent %s %s names a stop to drop -> clear_stops", intent, said(text))
+            intent = "clear_stops"
         if intent not in ("go", "find", "pick", "add_stop", "alternative") and REMEMBER.search(text):
             remembered = await self._remember(req, d, sess, text)
             if remembered:
@@ -2088,7 +2160,7 @@ class LlmAgentProvider:
             if intent == "add_stop":
                 return await self._add_stop(req, d, sess, text)
             if intent == "clear_stops":
-                return await self._clear_stops(req, sess, text)
+                return await self._clear_stops(req, sess, text, d)
             if intent == "reviews":
                 return await self._reviews(req, d, sess, text)
             if intent == "weather":
