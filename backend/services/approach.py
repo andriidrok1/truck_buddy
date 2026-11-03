@@ -3,7 +3,8 @@ answers to "how do I get in / where do I park / will I fit", and routing to the 
 
 - from_route(): heading over the last 300 m, the route point 100 m before the finish and the
   street of the last HERE maneuver.
-- side(): right/left of the entrance E by geometry (sign of the 2D cross product), no vision call.
+- side(): right/left of the entrance E by geometry (sign of the 2D cross product), no vision call; the side the
+  route turns off the named street near the end (Approach.exit_side) wins over it.
 - relative(): "On your {side}, off {street}, {landmarks}"; landmarks = the base entry tip
   reworded by a small text model (compass and left/right words removed). < 1 s, cached.
 - answer(): spoken parking answer, waiting up to WAIT_S for a check in flight.
@@ -23,6 +24,8 @@ logger = logging.getLogger("truckbuddy.approach")
 
 SPAN_M = 300.0  # heading is measured over the last 300 m
 POINT_M = 100.0  # approach point: 100 m before the finish
+EXIT_M = 600.0  # a turn off the named street this close to the finish is the way in
+SIDE_MIN_M = 5.0  # E closer than this to the heading line is ahead, not on a side
 WAIT_S = 15.0
 LANDMARK_TIMEOUT_S = 3.0
 CACHE_MAX = 500
@@ -91,16 +94,22 @@ def from_route(route: RouteInfo) -> Optional[Approach]:
         return None
     b = _bearing(g[i], g[-1])
     p = g[_back(g, POINT_M)[0]]
-    street = None
-    for m in reversed(route.maneuvers):
-        if m.action == "arrive":
-            continue
-        hit = _STREET.search(m.instruction)
+    street, exit_side = None, None
+    moves = [m for m in route.maneuvers if m.action != "arrive"]
+    for k in range(len(moves) - 1, -1, -1):
+        hit = _STREET.search(moves[k].instruction)
         if hit:
             street = hit.group(1).strip()[:60]
+            # The route leaves the street without a name of its own ("Keep right" into the rest area): that turn
+            # is the way in, the side to say. The heading below is the last 300 m, often that very ramp, with the
+            # lot nearly dead ahead of it (Elkhorn, QA 2026-11-02: "On your left, off I-5 S", it is on the right).
+            leave = moves[k + 1] if k + 1 < len(moves) else None
+            if leave is not None and leave.direction in ("right", "left") and \
+                    sum(_m(g[j - 1], g[j]) for j in range(max(1, leave.index + 1), len(g))) <= EXIT_M:
+                exit_side = leave.direction
             break
     return Approach(bearing=round(b) % 360, compass=COMPASS[round(((b + 180) % 360) / 45) % 8], street=street,
-                    lat=p[0], lng=p[1])
+                    lat=p[0], lng=p[1], exit_side=exit_side)
 
 
 def side(ap: Approach, e_lat: float, e_lng: float) -> Optional[Literal["right", "left"]]:
@@ -115,8 +124,8 @@ def side(ap: Approach, e_lat: float, e_lng: float) -> Optional[Literal["right", 
     hx, hy = math.sin(b), math.cos(b)
     vx = (e_lng - ap.lng) * 111320 * math.cos(math.radians(ap.lat))
     vy = (e_lat - ap.lat) * 111320
-    cross = hx * vy - hy * vx
-    if abs(cross) < 1.0:  # dead ahead: don't guess
+    cross = hx * vy - hy * vx  # meters to the side of the heading line
+    if abs(cross) < SIDE_MIN_M:  # (nearly) dead ahead: a few meters of noise must not pick a side
         return None
     return "right" if cross < 0 else "left"
 
@@ -230,7 +239,7 @@ def _marks(marks: str, street: Optional[str]) -> str:
 
 def _phrase(base: ParkingCheck, ap: Approach, marks: str) -> ParkingCheck:
     e = _entry(base)
-    s = side(ap, e.lat, e.lng) if e else None
+    s = (ap.exit_side or side(ap, e.lat, e.lng)) if e else None
     if not s:
         return base  # no E (or straight ahead): keep the base tip, don't name a side
     parts = [f"On your {s}"]

@@ -123,6 +123,8 @@ class Approach(BaseModel):
     street: Optional[str] = None
     lat: Optional[float] = None  # approach point: route point 100 m before the finish
     lng: Optional[float] = None
+    # the side the route turns off `street` to get in ("Keep right" into a rest area), when it does so near the end
+    exit_side: Optional[Literal["right", "left"]] = None
 
 
 class RouteInfo(BaseModel):
