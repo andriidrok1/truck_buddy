@@ -263,6 +263,17 @@ def shop_only_note(providers: list[dict], mode: str) -> str:
     return SHOP_ONLY_NOTE
 
 
+NO_MOBILE = ("I couldn't find anyone nearby who comes out to you. The closest shop is {name}, about {mi} miles, but "
+             "you'd need a tow to get there. Tap it to call, or ask me to look for a tow.")
+NO_MOBILE_SUMMARY = "Nobody nearby says they come out. Closest shop: {name}, {mi} mi, needs a tow."
+
+
+def nobody_comes_out(d: dict, mode: str, providers: list[dict]) -> bool:
+    """The truck can't move and none of the providers is known to come out (a tow company is the one that comes)."""
+    return mode == "mobile_needed" and d.get("kind") != "tow" and bool(providers) and \
+        not any(p["facts"]["mobile_service"] is True for p in providers)
+
+
 def fallback_spoken(providers: list[dict]) -> str:
     best = providers[0]
     mobile = " and they come out to you" if best["facts"]["mobile_service"] is True else ""
@@ -354,7 +365,13 @@ async def _run(d: dict, req: AgentRequest, sess: dict, source: str) -> AgentResp
         return AgentResponse(status="chat", transcript="", reply=NO_ONE, call_card=card,
                              research_stats=res["stats"], source=source)
     t = time.perf_counter()
-    if res["source"] == "here":
+    if nobody_comes_out(d, mode, ranked):
+        # "I can't roll on it" and only shops found: the top pick read as the answer, its "Shop only" badge the
+        # one hint (QA 2026-11-02). Said plainly, with the closest shop first and the tow it takes to get there.
+        ranked = sorted(ranked, key=lambda p: p.get("distance_mi") or 0)
+        spoken = NO_MOBILE.format(name=ranked[0]["name"], mi=ranked[0]["distance_mi"])
+        summary = NO_MOBILE_SUMMARY.format(name=ranked[0]["name"], mi=ranked[0]["distance_mi"])
+    elif res["source"] == "here":
         spoken, summary = f"{NO_REVIEWS} The closest is {ranked[0]['name']}, about {ranked[0]['distance_mi']} miles.", NO_REVIEWS
     else:
         spoken, summary = await summarize(d, mode, ranked)
