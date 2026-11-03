@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { absoluteUrl, api } from "@/src/api";
+import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
 import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
 import { Icon } from "@/src/components/Icon";
@@ -36,7 +36,7 @@ import { setActiveRoute } from "@/src/state/activeRoute";
 import { reduceAgentResponse } from "@/src/state/agentReducer";
 import { offlineTurn } from "@/src/state/offlineTurn";
 import { clearSavedRoute, loadActiveRoute, saveActiveRoute } from "@/src/state/routeStore";
-import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult } from "@/src/types";
+import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, ParkingState, Phase, Place, Provider, ProvidersResult, RouteInfo } from "@/src/types";
 import { storage } from "@/src/utils/storage";
 import { backAction } from "@/src/utils/backAction";
 import { planFiller, type FillerPlan } from "@/src/voice/fillers";
@@ -44,6 +44,11 @@ import { PRIORITY } from "@/src/voice/queue";
 import { buildSttHint, streetFromInstruction } from "@/src/voice/sttHint";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
+
+/** Toast for a failed /route: the router's "no truck route" is a destination problem, not a retry. */
+function routeFailText(e: unknown): string {
+  return isNoTruckRoute(e) ? "No truck route there from here. Try another destination or an address on a main road." : "Couldn't build a route. Try again.";
+}
 
 // Below this much visible map (layout units) the bubble would cover the route; the sheet shows the text.
 // The route card leaves about 220 at the default font, about 120 at 130 %.
@@ -137,6 +142,7 @@ export default function MapScreen() {
   useLayoutEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+  const drivingRef = useRef(false);
   const [active, setActive] = useState<ActiveRoute | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -151,6 +157,9 @@ export default function MapScreen() {
   const [options, setOptions] = useState<Place[]>([]);
   const [parking, setParking] = useState<Record<string, ParkingState>>({});
   const [driving, setDriving] = useState(false);
+  useLayoutEffect(() => {
+    drivingRef.current = driving;
+  }, [driving]);
   const [overview, setOverview] = useState(false);
   // The list of the other routes the engine offered (the "Routes (N)" chip, before "Go").
   const [routesOpen, setRoutesOpen] = useState(false);
@@ -415,7 +424,14 @@ export default function MapScreen() {
       // The card always takes the result if it's still the same destination.
       setActive((a) => (a && a.place.id === place.id ? { ...a, parking: pk } : a));
       const e = entrySpot(pk);
-      if (e && activeRef.current?.place.id === place.id && !routeEndsAt(activeRef.current.route, e)) reroute(myTurn); // route to E
+      if (e && activeRef.current?.place.id === place.id && !routeEndsAt(activeRef.current.route, e)) {
+        // Route to E. An off-route reroute landing meanwhile makes this plan stale and it is dropped; one
+        // more try against the route that replaced it, so the truck is still guided to the entrance.
+        reroute(myTurn).then((applied) => {
+          const now = activeRef.current;
+          if (!applied && now?.place.id === place.id && !routeEndsAt(now.route, e)) reroute(myTurn);
+        });
+      }
       if (myTurn !== turn.current || activeRef.current?.place.id !== place.id) return;
       // Spoken right after the answer: the verdict only. The entry and parking tips stay on the card and
       // are said when the truck is within half a mile (approachTips below) or on "how do I get in".
@@ -483,7 +499,9 @@ export default function MapScreen() {
     if (!activeRef.current) routeStart.current = Date.now();
     setActive(next);
     setPhase("navigating");
-    setFit({ key: `route-${next.place.id}-${Date.now()}`, points: [loc.coords, next.place] });
+    // Not while driving: the follow camera stays on the truck (the whole-route fit flashed for a second
+    // and snapped back on the next fix).
+    if (!drivingRef.current) setFit({ key: `route-${next.place.id}-${Date.now()}`, points: [loc.coords, next.place] });
   };
 
   const clearTimers = () => {
@@ -541,9 +559,10 @@ export default function MapScreen() {
       setActive(saved.active);
       setPhase("navigating");
       setRestoredId(saved.active.place.id);
-      setFit({ key: `restored-${saved.active.place.id}`, points: [loc.coords, saved.active.place] });
+      // The whole saved line: the GPS fix is not in yet, and the demo point would span half the country.
+      const line = saved.active.route.geometry.filter((_, i) => i % 25 === 0).map(([lat, lng]) => ({ lat, lng }));
+      setFit({ key: `restored-${saved.active.place.id}`, points: [...line, saved.active.place] });
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const restored = restoredId !== null && active?.place.id === restoredId && !driving;
   useEffect(() => {
@@ -559,6 +578,20 @@ export default function MapScreen() {
    * One at a time; the new route only lands if the destination is still the same.
    * Not for a tester parked on a fake spot (no trace = nothing moves) and not before "Go".
    */
+  /**
+   * A route that landed while driving and breaks a truck restriction (or needs a permit) is said out loud:
+   * the card with the red banner is not on screen then, and the turn calls would otherwise just carry on.
+   */
+  const warnRestricted = (route: RouteInfo) => {
+    if (!route.restricted || !drivingRef.current) return;
+    const line = route.notices?.[0] ?? "";
+    const text =
+      route.restricted === "legal"
+        ? `Heads up: ${line || "this route needs a permit for your truck."}`
+        : `Heads up, the new route isn't cleared for your truck. ${line} Watch the signs.`;
+    say(text.replace(/\s+/g, " ").trim(), { priority: PRIORITY.MANEUVER, kind: "system", key: "route-restricted", ttlMs: 30000 });
+  };
+
   const rerouting = useRef(false);
   const offlineRef = useRef<OfflineGuidance | null>(null);
   const rerouteOffRoute = async (g: Guidance) => {
@@ -594,10 +627,12 @@ export default function MapScreen() {
         });
       } catch (e) {
         console.log(`[reroute] /reroute failed (${String(e)}), planning from scratch`);
-        res = await api.route(loc.coords, cur.place);
+        res = await api.route(loc.coords, cur.place, false, route.via ?? []);
       }
-      if (activeRef.current?.place.id === cur.place.id) {
+      // Only onto the route the truck left: a stop added or a route picked while this ran is newer.
+      if (activeRef.current?.place.id === cur.place.id && activeRef.current.route === route) {
         setActive((a) => (a ? { ...a, route: res.route } : a));
+        warnRestricted(res.route);
       }
       g.resetOffRoute();
     } catch {
@@ -785,7 +820,7 @@ export default function MapScreen() {
       if (transcript) setCaption({ reply: "…", heard: transcript });
       const res = await api.agentSpeak(
         transcript,
-        loc.coords,
+        coordsRef.current, // the truck moved while the driver talked and the words were transcribed
         activeRef.current,
         ctrl.signal,
         dialog.current ?? undefined,
@@ -1146,18 +1181,25 @@ export default function MapScreen() {
     return () => sub.remove();
   }, []);
 
-  /** Re-plans the active route with the current truck profile (after a voice change). */
-  const reroute = async (myTurn: number, failMsg = "Couldn't update the route. Try again.") => {
+  /** Re-plans the active route with the current truck profile (after a voice change) or to the entrance;
+   * the stops on the way stay (they used to vanish from the line while their chips stayed on screen). */
+  const reroute = async (myTurn: number, failMsg = "Couldn't update the route. Try again."): Promise<boolean> => {
     const cur = activeRef.current;
-    if (!cur) return;
+    if (!cur) return false;
     try {
-      const res = await api.route(loc.coords, cur.place);
-      // Only the destination must still match: a newer turn shouldn't keep the old route on screen.
-      if (activeRef.current?.place.id === cur.place.id) {
+      // From where the truck is now, not where it was when the driver tapped the mic.
+      const res = await api.route(coordsRef.current, cur.place, false, cur.route.via ?? []);
+      // The destination and the route must still be the ones this started from: a stop added or an
+      // off-route reroute that landed meanwhile is newer than this plan. The caller learns whether it landed.
+      if (activeRef.current?.place.id === cur.place.id && activeRef.current.route === cur.route) {
         setActive((a) => (a ? { ...a, route: res.route } : a));
+        warnRestricted(res.route);
+        return true;
       }
-    } catch {
-      if (myTurn === turn.current) showToast(failMsg);
+      return false;
+    } catch (e) {
+      if (myTurn === turn.current) showToast(isNoTruckRoute(e) ? routeFailText(e) : failMsg);
+      return false;
     }
   };
 
@@ -1179,8 +1221,8 @@ export default function MapScreen() {
             traveled_m: 0,
             via,
           })
-        : await api.route(loc.coords, cur.place);
-      if (activeRef.current?.place.id === cur.place.id) {
+        : await api.route(coordsRef.current, cur.place);
+      if (activeRef.current?.place.id === cur.place.id && activeRef.current.route === cur.route) {
         setActive((a) => (a ? { ...a, route: res.route, stops } : a));
       }
     } catch {
@@ -1336,15 +1378,15 @@ export default function MapScreen() {
     try {
       // Breakdown providers: the driver needs the shop, not a satellite parking check (faster route).
       const isProvider = p.category === "service" || !!providersRef.current?.providers.some((x) => x.id === p.id);
-      const res = await api.route(loc.coords, p, isProvider);
+      const res = await api.route(coordsRef.current, p, isProvider);
       if (myTurn !== turn.current) return;
       // Keep the previous destination among the alternatives.
       setOptions((list) => [...(prev ? [prev.place] : []), ...list].filter((o) => o.id !== p.id));
       startRoute(res);
-    } catch {
+    } catch (e) {
       if (myTurn !== turn.current) return;
       backToIdle();
-      showToast("Couldn't build a route. Try again.");
+      showToast(routeFailText(e));
     }
   };
 
@@ -1363,7 +1405,11 @@ export default function MapScreen() {
         fitKey={fit.key}
         fitPoints={fit.points}
         onCenterChange={(c) => (center.current = c)}
-        onPlacePress={onPlacePress}
+        // Pins stay on the map while driving; a stray touch on one must not swap the destination mid-drive.
+        // (The Route buttons in the options and providers lists still work: those are deliberate taps.)
+        onPlacePress={(p) => {
+          if (!drivingRef.current) onPlacePress(p);
+        }}
         follow={following}
         onUserPan={() => {
           setTracking(false);

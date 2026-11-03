@@ -29,10 +29,35 @@ export type RerouteBody = {
   via?: [number, number][];
 };
 
+/** A non-2xx answer, with the status and the backend's `detail`, so a caller can tell one 422 from another. */
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    path: string,
+    public readonly detail: string | null = null,
+  ) {
+    super(`${path} failed: ${status}${detail ? ` (${detail})` : ""}`);
+    this.name = "ApiError";
+  }
+}
+
+/** /route or /reroute said the router found no truck route between these points (a 422 with that detail; other
+ * 422s are "outside the US" or a malformed request, and those keep the generic toast). */
+export const isNoTruckRoute = (e: unknown): boolean =>
+  e instanceof ApiError && e.status === 422 && /no truck route/i.test(e.detail ?? "");
+
 /** A rejected token (expired / code changed) sends the driver back to the access-code screen. */
-function check(res: Response, path: string) {
+async function check(res: Response, path: string): Promise<void> {
   if (res.status === 401) setToken(null);
-  if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
+  if (res.ok) return;
+  let detail: string | null = null;
+  try {
+    const body = (await res.json()) as { detail?: unknown };
+    if (typeof body?.detail === "string") detail = body.detail;
+  } catch {
+    // not JSON: the status is all we know
+  }
+  throw new ApiError(res.status, path, detail);
 }
 
 /**
@@ -102,7 +127,7 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
       signal: d.signal,
       headers: { "Content-Type": "application/json", ...authHeader(), ...(rest.headers ?? {}) },
     });
-    check(res, path);
+    await check(res, path);
     return json<T>(res, path);
   } finally {
     d.done();
@@ -158,10 +183,12 @@ export const api = {
   clearMemory: () => request<{ deleted: number }>(`/memory`, { method: "DELETE" }),
   places: (category: Category, at: LatLng) =>
     request<PlacesResponse>(`/places?category=${category}&lat=${at.lat}&lng=${at.lng}`),
-  route: async (from: LatLng, place: Place, skipParking = false) =>
+  /** POST /api/route; `via` = the stops already on the way, so a re-plan (new truck size, entrance,
+   * off-route fallback) keeps them instead of silently routing straight to the destination. */
+  route: async (from: LatLng, place: Place, skipParking = false, via: [number, number][] = []) =>
     request<RouteResult>(`/route`, {
       method: "POST",
-      body: JSON.stringify({ lat: from.lat, lng: from.lng, place, skip_parking: skipParking, truck_profile: await ensureTruckProfile() }),
+      body: JSON.stringify({ lat: from.lat, lng: from.lng, place, skip_parking: skipParking, via, truck_profile: await ensureTruckProfile() }),
     }),
   /**
    * Off-route reroute: the engine resumes the server-side plan (`handle`, section, metres into it)
@@ -210,7 +237,7 @@ export const api = {
         headers: { ...authHeader(), ...eldHeader() },
         signal: d.signal,
       });
-      check(res as Response, "/voice/transcribe");
+      await check(res as Response, "/voice/transcribe");
       const out = await json<{ transcript: string; timings?: Record<string, number>; stt_confidence?: number | null }>(res, "/voice/transcribe");
       return { ...out, stt_ms: out.timings?.stt ?? Date.now() - t0, stt_confidence: out.stt_confidence ?? null };
     } finally {
@@ -278,7 +305,7 @@ export const api = {
         headers: authHeader(),
         signal: d.signal,
       });
-      check(res as Response, "/onboarding/parse");
+      await check(res as Response, "/onboarding/parse");
       return json<{ transcript: string; updates: Record<string, unknown> }>(res, "/onboarding/parse");
     } finally {
       d.done();

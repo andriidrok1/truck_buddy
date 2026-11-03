@@ -144,20 +144,44 @@ export function markSpoken(spoken: Set<string>, maneuverIndex: number, stage: St
   STAGES.slice(0, upto + 1).forEach((s) => spoken.add(spokenKey(maneuverIndex, s.key)));
 }
 
-/** Spoken lead-in before the maneuver: "In half a mile", "In 500 feet". */
+/** Spoken lead-in before the maneuver: "In half a mile", "In a quarter mile", "In 500 feet". */
 export function spokenDistance(m: number) {
   if (m > 1200) return "In about a mile";
   if (m > 600) return "In half a mile";
+  if (m > 300) return "In a quarter mile"; // the "near" call can come anywhere in 120..900 m; 600 m is not 500 ft
   return "In 500 feet";
 }
 
-/** The sentence to say for a stage: arrivals and "now" use the raw instruction, the rest get a lead-in. */
+/**
+ * The sentence to say for a stage: "now" is the raw instruction; the far and near calls get a lead-in, and an
+ * arrival becomes "In half a mile, you'll arrive at…" (the raw "Arrive at X" a mile out sounded like the end).
+ */
 export function announcement(next: Pick<Maneuver, "action" | "instruction">, stage: StageKey, toNextM: number) {
-  const text =
-    next.action === "arrive" || stage === "now"
-      ? next.instruction
-      : `${spokenDistance(toNextM)}, ${next.instruction.charAt(0).toLowerCase()}${next.instruction.slice(1)}`;
-  return `${text}.`;
+  if (stage === "now") return `${next.instruction}.`;
+  const body =
+    next.action === "arrive" && /^arrive\b/i.test(next.instruction)
+      ? next.instruction.replace(/^arrive\b/i, "you'll arrive")
+      : `${next.instruction.charAt(0).toLowerCase()}${next.instruction.slice(1)}`;
+  return `${spokenDistance(toNextM)}, ${body}.`;
+}
+
+/**
+ * Seconds to the destination. The driving time is spread over the remaining distance; the time standing at
+ * the stops still ahead (a section start past the matched segment is a stop still to make) is added whole,
+ * so a 30-minute stop neither inflates the first miles nor lingers in the ETA once it is behind the truck.
+ */
+export function remainingSeconds(
+  route: Pick<RouteInfo, "duration_s" | "stops_s" | "section_starts">,
+  remainingM: number,
+  totalM: number,
+  matchedIndex: number,
+): number {
+  const starts = route.section_starts ?? [];
+  const stops = Math.max(0, starts.length - 1);
+  const stopsS = route.stops_s ?? 0;
+  const driving = Math.max(0, route.duration_s - stopsS);
+  const ahead = stops ? starts.filter((i, k) => k > 0 && i > matchedIndex).length : 0;
+  return (driving * remainingM) / (totalM || 1) + (stops ? (stopsS / stops) * ahead : 0);
 }
 
 /** "0.4 mi" / "500 ft" for the banner. */
