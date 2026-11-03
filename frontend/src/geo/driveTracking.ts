@@ -9,7 +9,7 @@
 //
 // Expo Go has no task manager: there the app keeps the screen awake while driving and stays foreground-only.
 
-import Constants, { ExecutionEnvironment } from "expo-constants";
+import { isRunningInExpoGo } from "expo";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { Platform } from "react-native";
@@ -18,7 +18,9 @@ import { publishFix } from "./location";
 
 export const DRIVE_TASK = "truckbuddy-drive";
 
-const supported = Platform.OS !== "web" && Constants.executionEnvironment !== ExecutionEnvironment.StoreClient;
+// Not Constants.executionEnvironment: Expo Go 58 reports "bare" like a dev build (checked on the emulator
+// 2026-11-02); the ExpoGo native module exists only in Expo Go.
+const supported = Platform.OS !== "web" && !isRunningInExpoGo();
 
 if (supported) {
   // Must be defined at module scope, before the app registers anything (imported by the root layout).
@@ -28,7 +30,6 @@ if (supported) {
   });
 }
 
-export const driveTrackingSupported = () => supported;
 
 /** Starts the drive task; false when this build can't (Expo Go, web) or the OS refused (the caller keeps the
  *  screen awake instead). Safe to call again: one task. */
