@@ -495,6 +495,22 @@ CONFIRM = "Did you say {what}?"
 CONFIRM_NO = "Okay, say it again."
 YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|correct|right|that's right|that's it|sure|affirmative)\b", re.I)
 NO = re.compile(r"^\s*(?:no|nope|nah|wrong|that's wrong|not that|negative)\b", re.I)
+# Words that may follow a yes or a no and still leave it a plain answer ("yeah, that's it", "nope, not that one").
+# Anything else is a new request in the same breath ("No, take me to Fresno", "Right, actually find me a truck
+# stop") and goes to the classifier: the first was answered "say it again", the second drove to the pending
+# destination (review 2026-11-02, bug 17).
+ANSWER_FILLER = {"yes", "yeah", "yep", "yup", "sure", "ok", "okay", "right", "correct", "exactly", "affirmative", "no",
+                 "nope", "nah", "negative", "not", "wrong", "that", "that's", "thats", "this", "it", "is", "one", "the",
+                 "please", "thanks", "thank", "you", "go", "ahead", "do", "take", "me", "there", "add", "and", "let's",
+                 "lets", "sounds", "good", "great", "fine", "perfect", "cool", "man", "buddy", "sir", "boss"}
+
+
+def bare_answer(text: str, rx: re.Pattern) -> bool:
+    """The pattern answers the question and nothing but filler comes after it."""
+    m = rx.match(text or "")
+    if not m:
+        return False
+    return all(w in ANSWER_FILLER for w in re.findall(r"[a-z']+", text[m.end():].lower()))
 
 
 def _minutes_said(m: int) -> str:
@@ -1606,7 +1622,7 @@ class LlmAgentProvider:
         if pending:  # "Did you say Reno?" was asked last turn
             kind = pending.get("kind")  # confirm | stop_guard | ...: the answer goes to the turn log and trip events
             extra_yes = YES_PATTERNS.get(pending.get("yes") or "")
-            if YES.match(text) or (extra_yes is not None and extra_yes.match(text)):
+            if bare_answer(text, YES) or (extra_yes is not None and bare_answer(text, extra_yes)):
                 d = pending["d"]
                 timing.note("intent", str(d.get("intent")))
                 if kind:
@@ -1620,13 +1636,15 @@ class LlmAgentProvider:
                     declined = sess.setdefault("dest_declined", [])
                     if branch["declined"] not in declined:
                         declined.append(branch["declined"])
-                if branch:  # a question with a real "no" path (e.g. "chains on board?")
-                    if branch.get("then_pending"):
-                        sess["pending"] = branch["then_pending"]
-                    acts = [AppAction(type=a["type"], value=a.get("value")) for a in branch.get("actions") or []]
-                    return AgentResponse(status="chat", transcript=text, reply=branch["reply"], actions=acts,
-                                         source=self.source)
-                return AgentResponse(status="chat", transcript=text, reply=CONFIRM_NO, source=self.source)
+                if bare_answer(text, NO):
+                    if branch:  # a question with a real "no" path (e.g. "chains on board?")
+                        if branch.get("then_pending"):
+                            sess["pending"] = branch["then_pending"]
+                        acts = [AppAction(type=a["type"], value=a.get("value")) for a in branch.get("actions") or []]
+                        return AgentResponse(status="chat", transcript=text, reply=branch["reply"], actions=acts,
+                                             source=self.source)
+                    return AgentResponse(status="chat", transcript=text, reply=CONFIRM_NO, source=self.source)
+                # "no, take me to Fresno": the refusal is noted above, the new request is classified below
             # anything else: the driver moved on, classify it as a fresh utterance
         try:
             d = await asyncio.wait_for(classify(text, self._context(req, sess), req.truck_profile),
