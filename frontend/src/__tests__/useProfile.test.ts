@@ -1,5 +1,5 @@
 import { ApiError, api } from "../api";
-import { fetchProfile, isMissing, resetProfile, saveProfile, UNSYNCED_KEY } from "../data/profile";
+import { fetchProfile, isMissing, resetProfile, saveProfile, setMidTripCheck, UNSYNCED_KEY } from "../data/profile";
 import { DEFAULT_TRUCK, getTruckProfile, saveTruckProfile } from "../hooks/useTruckProfile";
 import { storage } from "../utils/storage";
 
@@ -32,7 +32,7 @@ test("no endpoint yet (404): the local profile stands, a save stays local and le
 });
 
 test("the server's profile wins and refreshes the local copy", async () => {
-  A.profile.mockResolvedValue({ ...DEFAULT_TRUCK, height_in: 158, driver_name: "Ray" });
+  A.profile.mockResolvedValue({ profile: { ...DEFAULT_TRUCK, height_in: 158, driver_name: "Ray" }, source: "driver" });
   expect(await fetchProfile()).toMatchObject({ height_in: 158, driver_name: "Ray" });
   expect(getTruckProfile().height_in).toBe(158);
 });
@@ -48,7 +48,7 @@ test("killed mid-request: the change is marked before the request, and the next 
   await settle();
   expect(await pending()).not.toBeNull();
 
-  A.profile.mockResolvedValue({ ...DEFAULT_TRUCK, trailer_ft: 53 }); // the server still has the old trailer
+  A.profile.mockResolvedValue({ profile: { ...DEFAULT_TRUCK, trailer_ft: 53 }, source: "driver" }); // the server still has the old trailer
   A.saveProfile.mockImplementation(async (p) => p);
   expect((await fetchProfile()).trailer_ft).toBe(48);
   expect(A.profile).not.toHaveBeenCalled();
@@ -63,7 +63,7 @@ test("an edit made while the server read is in flight is not undone by it", asyn
   const read = fetchProfile();
   await settle();
   await saveProfile({ ...DEFAULT_TRUCK, trailer_ft: 48 });
-  answer({ ...DEFAULT_TRUCK, trailer_ft: 53 });
+  answer({ profile: { ...DEFAULT_TRUCK, trailer_ft: 53 }, source: "driver" });
   expect((await read).trailer_ft).toBe(48);
   expect(getTruckProfile().trailer_ft).toBe(48);
 });
@@ -93,4 +93,13 @@ test("delete my data: the default truck, nothing pending", async () => {
   await resetProfile();
   expect(getTruckProfile()).toEqual(DEFAULT_TRUCK);
   expect(await pending()).toBeNull();
+});
+
+test("a fleet truck's stored sizes do not undo a trip's change; between trips they come back", async () => {
+  await saveTruckProfile({ ...DEFAULT_TRUCK, trailer_ft: 48 }); // swapped for this run
+  A.profile.mockResolvedValue({ profile: { ...DEFAULT_TRUCK, trailer_ft: 53, driver_name: "Sam" }, source: "vehicle" });
+  setMidTripCheck(() => true);
+  expect((await fetchProfile()).trailer_ft).toBe(48);
+  setMidTripCheck(() => false);
+  expect((await fetchProfile())).toMatchObject({ trailer_ft: 53, driver_name: "Sam" });
 });

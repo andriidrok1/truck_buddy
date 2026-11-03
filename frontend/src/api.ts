@@ -219,7 +219,19 @@ export const api = {
   tripEventsOf: (tripId: string) =>
     request<{ events: TripEventRow[] }>(`/trips/${encodeURIComponent(tripId)}/events`).then((r) => r.events),
   /** The driver's truck profile on the server (fleet-managed later); 404 until the backend has the endpoint. */
-  profile: () => request<TruckProfile>(`/me/profile`),
+  /** The stored profile and whose it is: "vehicle" = a fleet's truck (a driver's change holds only for the trip,
+   *  on the phone), "driver" = the driver's own copy. Older servers send no header: "driver". */
+  profile: async (): Promise<{ profile: TruckProfile; source: "vehicle" | "driver" }> => {
+    const d = deadline(DEFAULT_TIMEOUT_MS);
+    try {
+      const res = await fetchTracked(`${BASE}/me/profile`, { signal: d.signal, headers: { "Content-Type": "application/json", ...authHeader() } });
+      await check(res, "/me/profile");
+      const source = res.headers.get("x-profile-source") === "vehicle" ? "vehicle" : "driver";
+      return { profile: await json<TruckProfile>(res, "/me/profile"), source };
+    } finally {
+      d.done();
+    }
+  },
   saveProfile: (profile: TruckProfile) => request<TruckProfile>(`/me/profile`, { method: "PUT", body: JSON.stringify(profile) }),
   /**
    * Off-route reroute: the engine resumes the server-side plan (`handle`, section, metres into it)

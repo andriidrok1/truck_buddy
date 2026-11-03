@@ -34,7 +34,7 @@ import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
-import { saveProfile } from "@/src/data/profile";
+import { saveProfile, setMidTripCheck } from "@/src/data/profile";
 import { getTruckProfile, isOnboarded, truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
@@ -1017,6 +1017,9 @@ export default function MapScreen() {
         .catch(() => {});
     }
   };
+
+  // A fleet truck's stored sizes are not pulled over a trip's own change (src/data/profile.ts).
+  useEffect(() => setMidTripCheck(() => !!trip().active), []);
 
   // A position for the fleet dashboard every few minutes while driving (lat/lng are stamped by the log).
   const speedRef = useRef<number | null>(null);
