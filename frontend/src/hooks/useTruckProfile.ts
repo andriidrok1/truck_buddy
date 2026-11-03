@@ -79,18 +79,6 @@ export function ensureTruckProfile(): Promise<TruckProfile> {
   return loading.then(() => current);
 }
 
-// The truck editor saved new dimensions: the map screen reroutes the active route once it is back in focus.
-let rerouteRequested = false;
-export const requestTruckReroute = () => {
-  rerouteRequested = true;
-};
-export const takeTruckReroute = () => {
-  const r = rerouteRequested;
-  rerouteRequested = false;
-  return r;
-};
-
-
 export async function saveTruckProfile(t: TruckProfile) {
   loaded = true; // a save is newer than anything on disk; a late or in-flight load must not overwrite it
   savedSinceLoad = true;
@@ -104,96 +92,9 @@ export function getTruckProfile() {
   return current;
 }
 
-// Hands-free wake word setting (on by default), stored next to the truck profile.
-const HANDS_FREE_KEY = "hands_free_v1";
-let handsFree = true;
-let handsFreeLoaded = false;
-const handsFreeListeners = new Set<(v: boolean) => void>();
-
-export async function setHandsFree(v: boolean) {
-  handsFree = v;
-  handsFreeListeners.forEach((l) => l(v));
-  await storage.setItem(HANDS_FREE_KEY, v);
-}
-
-export function useHandsFree() {
-  const [value, setValue] = useState(handsFree);
-  useEffect(() => {
-    handsFreeListeners.add(setValue);
-    if (!handsFreeLoaded) {
-      handsFreeLoaded = true;
-      storage.getItem(HANDS_FREE_KEY, true as boolean).then((v) => {
-        handsFree = v !== false;
-        handsFreeListeners.forEach((l) => l(handsFree));
-      });
-    }
-    return () => {
-      handsFreeListeners.delete(setValue);
-    };
-  }, []);
-  return value;
-}
-
-// Nudges while driving (on by default): "break coming due", "chains ahead", parking offers.
-// The copilot's set_nudges action and a future settings switch share this.
-const NUDGES_KEY = "nudges_v1";
-let nudgesEnabled = true;
-let nudgesLoaded = false;
-const nudgesListeners = new Set<(v: boolean) => void>();
-
-export async function setNudgesEnabled(v: boolean) {
-  nudgesEnabled = v;
-  nudgesListeners.forEach((l) => l(v));
-  await storage.setItem(NUDGES_KEY, v);
-}
-
-export function useNudgesEnabled() {
-  const [value, setValue] = useState(nudgesEnabled);
-  useEffect(() => {
-    nudgesListeners.add(setValue);
-    if (!nudgesLoaded) {
-      nudgesLoaded = true;
-      storage.getItem(NUDGES_KEY, true as boolean).then((v) => {
-        nudgesEnabled = v !== false;
-        nudgesListeners.forEach((l) => l(nudgesEnabled));
-      });
-    }
-    return () => {
-      nudgesListeners.delete(setValue);
-    };
-  }, []);
-  return value;
-}
-
-// Speed limit alerts (off by default: posted limits come from map data and can be stale).
-const SPEED_ALERTS_KEY = "speed_alerts_v1";
-let speedAlerts = false;
-let speedAlertsLoaded = false;
-const speedAlertsListeners = new Set<(v: boolean) => void>();
-
-export async function setSpeedAlerts(v: boolean) {
-  speedAlerts = v;
-  speedAlertsListeners.forEach((l) => l(v));
-  await storage.setItem(SPEED_ALERTS_KEY, v);
-}
-
-export function useSpeedAlerts() {
-  const [value, setValue] = useState(speedAlerts);
-  useEffect(() => {
-    speedAlertsListeners.add(setValue);
-    if (!speedAlertsLoaded) {
-      speedAlertsLoaded = true;
-      storage.getItem(SPEED_ALERTS_KEY, false as boolean).then((v) => {
-        speedAlerts = v === true;
-        speedAlertsListeners.forEach((l) => l(speedAlerts));
-      });
-    }
-    return () => {
-      speedAlertsListeners.delete(setValue);
-    };
-  }, []);
-  return value;
-}
+// Settings (hands-free, nudges, speed alerts, voice guidance, the truck editor's reroute flag) moved to
+// src/state/settingsStore.ts; these names stay for the call sites.
+export { requestTruckReroute, setHandsFree, setNudgesEnabled, setSpeedAlerts, takeTruckReroute, useHandsFree, useNudgesEnabled, useSpeedAlerts } from "../state/settingsStore";
 
 export function useTruckProfile() {
   const [truck, setTruck] = useState<TruckProfile>(current);

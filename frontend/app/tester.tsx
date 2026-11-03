@@ -15,11 +15,11 @@ import { requestReplay } from "@/src/geo/replayRequest";
 import { listTraces, readTrace, shareTrace } from "@/src/geo/traceFiles";
 import { tripLog, useTripLog } from "@/src/net/tripEvents";
 import { isTracePlaying, playTrace, SCENARIOS, setSim, stopTrace, useSim } from "@/src/sim";
-import { useActiveRoute } from "@/src/state/activeRoute";
+import { useTripStore } from "@/src/state/tripStore";
+import { useTripEvents } from "@/src/data/profile";
 import { savedAgeLabel, useSavedRouteAt } from "@/src/state/routeStore";
 import { fonts, radius, shadow, spacing, useTheme } from "@/src/theme";
 import type { RouteInfo } from "@/src/types";
-import { api, type TripEventRow } from "@/src/api";
 
 /** Replay speed clamps: a 65 mph highway trace, or the route's own average when it is slower. */
 const MAX_MPS = 29;
@@ -90,7 +90,7 @@ export default function TesterScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const sim = useSim();
-  const active = useActiveRoute();
+  const active = useTripStore((s) => s.active);
   const announcements = useAnnouncements();
   const savedAt = useSavedRouteAt();
   const { online } = useOnline();
@@ -127,19 +127,17 @@ export default function TesterScreen() {
     requestReplay({ trace, speedFactor, name });
     router.back();
   };
-  const [tripRows, setTripRows] = useState<TripEventRow[] | null>(null);
-  const [tripNote, setTripNote] = useState<string | null>(null);
+  // The trip log rows the backend holds for this drive, through react-query (the flush goes first, so the
+  // rows include what the app just sent).
+  const [tripAsked, setTripAsked] = useState(false);
+  const tripQuery = useTripEvents(active?.trip_id, tripAsked);
+  const tripRows = tripAsked ? (tripQuery.data ?? null) : null;
+  const tripNote = !tripAsked ? null : tripQuery.isFetching ? "Loading…" : tripQuery.error ? `Couldn't load: ${String(tripQuery.error)}` : null;
   const loadTrip = async () => {
-    const id = active?.trip_id;
-    if (!id) return;
-    setTripNote("Loading…");
-    try {
-      await tripLog.flush();
-      setTripRows(await api.tripEventsOf(id));
-      setTripNote(null);
-    } catch (e) {
-      setTripNote(`Couldn't load: ${String(e)}`);
-    }
+    if (!active?.trip_id) return;
+    await tripLog.flush().catch(() => {});
+    if (tripAsked) tripQuery.refetch();
+    else setTripAsked(true); // enabling the query fetches it
   };
   // Drivers can reach this route by deep link (truckbuddy://tester); the simulated locations are for testers only.
   if (!isTester()) return <Redirect href="/" />;

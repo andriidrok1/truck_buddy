@@ -5,7 +5,7 @@ import type { ActiveRoute } from "../types";
 import { PRIORITY } from "../voice/queue";
 import type { Guidance } from "./useGuidance";
 import type { SayOptions } from "./useSpeechQueue";
-import { useSpeedAlerts } from "./useTruckProfile";
+import { useSpeedAlerts } from "../state/settingsStore";
 
 /** Advisories within this distance are spoken (and shown). */
 const SPEAK_WITHIN_M = 16000;

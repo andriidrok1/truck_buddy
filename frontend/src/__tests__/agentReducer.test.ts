@@ -41,7 +41,7 @@ describe("reduceAgentResponse", () => {
     const res: AgentResponse = { ...routeSetRes, route, options: [stop] };
     const { patch, effects } = reduceAgentResponse(res, onRoute);
     expect(types(effects)).toEqual(["backToIdle", "speak"]); // no startRoute, no followParking, no pauseDialog
-    expect(patch).toEqual({ activeRoute: { route, stops: [stop] } });
+    expect(patch).toEqual({ activeRoute: { route, stops: [stop], parking: routeSetRes.parking } });
     expect(patch.options).toBeUndefined(); // the options sheet is left alone
     expect(patch.parking).toBeUndefined();
   });
@@ -52,7 +52,7 @@ describe("reduceAgentResponse", () => {
     const res: AgentResponse = { ...routeSetRes, route, options: [optionsRes.options![0]] };
     const { patch, effects } = reduceAgentResponse(res, onRoute);
     expect(types(effects)).toEqual(["backToIdle", "speak"]);
-    expect(patch.activeRoute).toEqual({ route, stops: [] });
+    expect(patch.activeRoute).toEqual({ route, stops: [], parking: routeSetRes.parking });
     // "another way?": no via field at all is the same thing.
     const other = reduceAgentResponse({ ...routeSetRes, options: [] }, onRoute);
     expect(other.patch.activeRoute?.stops).toEqual([]);

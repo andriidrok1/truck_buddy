@@ -49,7 +49,11 @@ export type TurnEvent =
   | { type: "tap" }
   | { type: "wake" }
   | { type: "text"; text: string }
-  | { type: "sttDone"; transcript: string; cancelled?: boolean }
+  /** `heard`: the recogniser ran on real speech but returned no words; the agent still gets the (empty) turn,
+   *  as it did before, and answers "didn't catch that". Without it an empty transcript is silence. */
+  | { type: "sttDone"; transcript: string; cancelled?: boolean; heard?: boolean }
+  /** A nudge offer landed in `dialogId` (the poller's session): adopt it, or just stamp the time when it is ours. */
+  | { type: "adopt"; dialogId: string }
   | { type: "agentDone"; status: string; endConversation?: boolean }
   | { type: "speakDone" }
   | { type: "error" }
@@ -128,7 +132,7 @@ export function reduce(s: TurnState, e: TurnEvent, now: number, newId: () => str
     case "sttDone": {
       if (s.mode !== "listening") return { state: s, commands: [] };
       if (e.cancelled) return { state: { ...s, mode: "idle" }, commands: [] };
-      if (!e.transcript) {
+      if (!e.transcript && !e.heard) {
         // Silence stops listening; on the very first miss tell the driver nothing was heard.
         const commands: Command[] = s.misses === 0 ? [{ type: "sayNotUnderstood" }] : [];
         return { state: { ...s, mode: "idle", live: false, pendingConfirm: false }, commands };
@@ -162,6 +166,12 @@ export function reduce(s: TurnState, e: TurnEvent, now: number, newId: () => str
     }
     case "pause":
       return { state: { ...s, live: false }, commands: [] };
+    case "adopt":
+      // The nudge poller made its offer in a session: a stale or missing one is replaced (misses reset), a
+      // live one is only stamped so the "yes" does not start a fresh session (index.tsx L795-800).
+      if (s.dialogId === e.dialogId) return { state: { ...s, lastTurnAt: now }, commands: [] };
+      if (!isStale(s, now)) return { state: s, commands: [] };
+      return { state: { ...s, dialogId: e.dialogId, misses: 0, lastTurnAt: now }, commands: [{ type: "newDialog", dialogId: e.dialogId }] };
     case "routeSet":
       // A route stops the hands-free loop but keeps the session (follow-ups land on the same places).
       return { state: { ...s, live: false }, commands: [] };
