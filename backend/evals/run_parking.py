@@ -2,6 +2,7 @@
 
     python evals/run_parking.py --arms old,new        # live, costs money (~$0.03 old, ~$0.07 new per place)
     python evals/run_parking.py --score results/parking-<stamp>.json
+    python evals/run_parking.py --places holdout.json ...     # the holdout set (rules were tuned on places.json)
 
 Metrics: verdict accuracy and confident mistakes (likely<->unlikely) on places labelled likely/unlikely;
 entry hit = within ENTRY_HIT_M of a real truck driveway, "wrong" = a point placed anywhere else (the route then
@@ -27,6 +28,8 @@ ENTRY_HIT_M_LOOSE = 60.0  # labels are +-15 m and OSM junctions sit on the road 
 PARK_HIT_M = 60.0
 PRICE_IN, PRICE_OUT = 5 / 1e6, 30 / 1e6  # gpt-5.5 $/token
 CONCURRENCY = 4
+SNAP_M = 60.0  # hybrid entry: the old point is moved onto the nearest OSM driveway within this distance
+PLACES = "places.json"
 
 
 def _slow_client() -> None:
@@ -73,7 +76,7 @@ ARMS = {"old": run_old, "new": run_new}
 
 
 async def run(arms: list[str], only: set[str]) -> Path:
-    places = [p for p in json.loads((HERE / "parking" / "places.json").read_text()) if not only or p["id"] in only]
+    places = [p for p in json.loads((HERE / "parking" / PLACES).read_text()) if not only or p["id"] in only]
     _slow_client()
     sem = asyncio.Semaphore(CONCURRENCY)
     out = {a: {} for a in arms}
@@ -99,7 +102,7 @@ def remerge(path: Path, rerun: Path = None) -> Path:
     """Re-apply the current merge/build to saved samples (free), optionally taking some places from a rerun."""
     res = json.loads(path.read_text())
     extra = json.loads(rerun.read_text())["new"] if rerun else {}
-    places = {p["id"]: p for p in json.loads((HERE / "parking" / "places.json").read_text())}
+    places = {p["id"]: p for p in json.loads((HERE / "parking" / PLACES).read_text())}
     rows = {}
     for pid, r in res["new"].items():
         r = extra.get(pid, r)
@@ -116,7 +119,7 @@ def remerge(path: Path, rerun: Path = None) -> Path:
 
 
 def score(path: Path) -> None:
-    places = {p["id"]: p for p in json.loads((HERE / "parking" / "places.json").read_text())}
+    places = {p["id"]: p for p in json.loads((HERE / "parking" / PLACES).read_text())}
     res = json.loads(path.read_text())
     for arm, rows in res.items():
         verdict = confident_wrong = n_v = 0
@@ -159,9 +162,46 @@ def score(path: Path) -> None:
         print(f"park           {p_hit}/{n_p} within {PARK_HIT_M:.0f} m of the truck area")
         print(f"cost           ${cost:.2f} total, ${cost / max(1, len(rows) - errors):.3f} per place; "
               f"median {sorted(secs)[len(secs) // 2] if secs else 0:.0f} s")
+        if arm == "old" and "new" in res:
+            _score_hybrid(places, rows, res["new"])
         a, b = rows.get("ra-elkhorn-s", {}), rows.get("ra-elkhorn-n", {})
         print(f"same place     Elkhorn S/N: {a.get('fits')} / {b.get('fits')}; {a.get('entry_tip')!r} / "
               f"{b.get('entry_tip')!r}")
+
+
+def hybrid_entry(p: dict, old: dict, new: dict):
+    """The old point snapped onto the nearest OSM driveway, kept only when every grounded sample lists that
+    driveway; otherwise no point (the route then goes to the place itself)."""
+    e = next(((s["lat"], s["lng"]) for s in old.get("spots", []) if s["kind"] == "entry"), None)
+    f = HERE / "parking" / "osm" / f"{p['id']}.json"
+    if e is None or not f.exists() or "samples" not in new:
+        return None
+    access = osm_access.points(json.loads(f.read_text()), p["lat"], p["lng"])
+    near = sorted((_m(e, (a.lat, a.lng)), i) for i, a in enumerate(access, 1))
+    if not near or near[0][0] > SNAP_M:
+        return None
+    i = near[0][1]
+    if not all(i in s["entries"] for s in new["samples"]):
+        return None
+    return access[i - 1].lat, access[i - 1].lng
+
+
+def _score_hybrid(places: dict, old_rows: dict, new_rows: dict) -> None:
+    hit = wrong = none = n = 0
+    for pid, r in old_rows.items():
+        t = places[pid]["truth"]
+        if "error" in r or pid not in new_rows or not (t["entries"] and t["fits"] == "likely"):
+            continue
+        n += 1
+        e = hybrid_entry(places[pid], r, new_rows[pid])
+        if e is None:
+            none += 1
+            continue
+        d = min(_m(e, x) for x in t["entries"])
+        hit += d <= ENTRY_HIT_M
+        wrong += d > ENTRY_HIT_M_LOOSE
+    print(f"hybrid entry   {hit}/{n} within {ENTRY_HIT_M:.0f} m, {wrong} wrong (> {ENTRY_HIT_M_LOOSE:.0f} m), "
+          f"{none} no point")
 
 
 if __name__ == "__main__":
@@ -170,7 +210,9 @@ if __name__ == "__main__":
     ap.add_argument("--only", default="")
     ap.add_argument("--score")
     ap.add_argument("--remerge", nargs="+", help="saved run [rerun of some places]")
+    ap.add_argument("--places", default=PLACES, help="labelled set in evals/parking")
     a = ap.parse_args()
+    PLACES = a.places
     if a.remerge:
         out = remerge(Path(a.remerge[0]), Path(a.remerge[1]) if len(a.remerge) > 1 else None)
         print(out)
