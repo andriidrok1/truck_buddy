@@ -4,12 +4,14 @@ import {
   createRouteMatcher,
   cumulativeMeters,
   farFromRoute,
+  formatDistance,
   FULL_SCAN_ABOVE_M,
   haversineM,
   markSpoken,
   nextManeuver,
   projectOnRoute,
   remainingSeconds,
+  spokenDistance,
   stageFor,
 } from "../geo/guidance";
 import type { RouteInfo } from "../types";
@@ -176,24 +178,37 @@ describe("stageFor / markSpoken", () => {
   });
 });
 
+describe("banner and voice", () => {
+  test("say the same distance at every point of the near and far stages (QA 2026-11-02: 600 ft vs 500 feet)", () => {
+    for (let m = 120; m <= 1800; m += 7) {
+      const shown = formatDistance(m);
+      const said = spokenDistance(m);
+      const n = shown.split(" ")[0];
+      const ok = said.includes(`${n} `) || (n === "0.5" && said === "In half a mile") || (n === "1.0" && said === "In a mile");
+      expect([m, ok]).toEqual([m, true]);
+    }
+  });
+});
+
 describe("announcement", () => {
   const turn = { action: "turn", instruction: "Turn right onto US-50 E" };
   const arrive = { action: "arrive", instruction: "Arrive at Pilot Travel Center on the right" };
 
   test("lead-in by distance, instruction lower-cased", () => {
-    expect(announcement(turn, "far", 1500)).toBe("In about a mile, turn right onto US-50 E.");
+    expect(announcement(turn, "far", 1500)).toBe("In 0.9 miles, turn right onto US-50 E.");
+    expect(announcement(turn, "far", 1609)).toBe("In a mile, turn right onto US-50 E.");
     expect(announcement(turn, "near", 800)).toBe("In half a mile, turn right onto US-50 E.");
-    expect(announcement(turn, "near", 550)).toBe("In a quarter mile, turn right onto US-50 E.");
-    expect(announcement(turn, "near", 300)).toBe("In 500 feet, turn right onto US-50 E.");
+    expect(announcement(turn, "near", 550)).toBe("In 0.3 miles, turn right onto US-50 E.");
+    expect(announcement(turn, "near", 183)).toBe("In 600 feet, turn right onto US-50 E.");
     expect(announcement(turn, "now", 40)).toBe("Turn right onto US-50 E.");
   });
 
   test("arrive gets a lead-in before the end, the raw line at the end", () => {
-    expect(announcement(arrive, "far", 1500)).toBe("In about a mile, you'll arrive at Pilot Travel Center on the right.");
-    expect(announcement(arrive, "near", 500)).toBe("In a quarter mile, you'll arrive at Pilot Travel Center on the right.");
+    expect(announcement(arrive, "far", 1500)).toBe("In 0.9 miles, you'll arrive at Pilot Travel Center on the right.");
+    expect(announcement(arrive, "near", 500)).toBe("In 0.3 miles, you'll arrive at Pilot Travel Center on the right.");
     expect(announcement(arrive, "now", 40)).toBe("Arrive at Pilot Travel Center on the right.");
     expect(announcement({ action: "arrive", instruction: "Your destination is on the left" }, "near", 500)).toBe(
-      "In a quarter mile, your destination is on the left.",
+      "In 0.3 miles, your destination is on the left.",
     );
   });
 });
