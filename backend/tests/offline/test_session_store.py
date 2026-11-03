@@ -84,7 +84,7 @@ def test_db_store_saves_loads_sweeps_and_drops(sqlite_store, monkeypatch):
     con.execute("INSERT INTO dialog_sessions (session_id, driver, state, updated_at) VALUES ('drv_z:old', 'drv_z', '{}', ?)", (old,))
     con.commit()
     con.close()
-    store._last_sweep = 0.0
+    store._last_sweep = float("-inf")
     run(store.save("drv_a:dlg-2", DialogState()))
     assert run(store.load("drv_z:old")) == DialogState()
     con = sqlite3.connect(str(sqlite_store))
