@@ -2,7 +2,11 @@
 
 MemorySessionStore: one process, an LRU of 200 DialogState objects (what the copilot did before; dev and tests).
 DbSessionStore: the dialog_sessions table (migration 0002), so a second worker or a restarted one continues
-the dialog, including a question asked on the previous turn; rows older than TTL_H are swept on save.
+the dialog, including a question asked on the previous turn; rows older than TTL_H are swept on save. A save
+writes only the top-level keys the request changed, merged into the row in one atomic step: a turn, a /nudges
+poll and a breakdown research that lands late each load the whole dialog, and the whole-state write of the
+slower one used to put back what the other had just changed (an offer, the places, the stops). Two requests that
+change the same key: the later save wins for that key.
 
 SESSION_STORE=memory|db picks one; by default db when DATABASE_URL is set, else memory.
 
@@ -12,6 +16,7 @@ turn saves it at the end.
 """
 import asyncio
 import contextvars
+import json
 import logging
 import os
 import time
@@ -75,29 +80,51 @@ class DbSessionStore:
         else:
             pool = await db._db()
             text = await pool.fetchval("SELECT state::text FROM dialog_sessions WHERE session_id = $1", sid)
-        if not text:
-            return DialogState()
+        state = DialogState()
         try:
-            return DialogState.from_json(text)
+            if text:
+                state = DialogState.from_json(text)
         except Exception as e:  # noqa: BLE001 - an unreadable row (older schema) is a fresh dialog, never an error
             logger.warning("dialog state for %s unreadable (%s): starting fresh", sid, type(e).__name__)
-            return DialogState()
+            return state  # nothing marked as saved: the first save writes every key over the bad ones
+        state.mark_saved()  # no row: the defaults are what a load would give, only the keys set later are written
+        return state
 
     async def save(self, sid: str, state: DialogState) -> None:
-        text = state.to_json()
+        patch = state.changes()
+        if not patch:
+            return  # a poll that changed nothing does not touch the row
         now = datetime.now(timezone.utc)
         kind = db.store()
         if kind == "sqlite":
-            await db._sq_run(lambda con: con.execute(
-                "INSERT INTO dialog_sessions (session_id, driver, state, updated_at) VALUES (?, ?, ?, ?) "
-                "ON CONFLICT(session_id) DO UPDATE SET driver = excluded.driver, state = excluded.state, "
-                "updated_at = excluded.updated_at", (sid, state.driver, text, now.isoformat())))
+            def merge(con):
+                # one callback on the one connection, and BEGIN IMMEDIATE for another process on the same file
+                con.execute("BEGIN IMMEDIATE")
+                try:
+                    row = con.execute("SELECT state FROM dialog_sessions WHERE session_id = ?", (sid,)).fetchone()
+                    try:
+                        merged = {**(json.loads(row[0]) if row else {}), **patch}
+                    except ValueError:
+                        merged = state.model_dump(mode="json")  # an unreadable row is replaced whole
+                    con.execute(
+                        "INSERT INTO dialog_sessions (session_id, driver, state, updated_at) VALUES (?, ?, ?, ?) "
+                        "ON CONFLICT(session_id) DO UPDATE SET driver = COALESCE(excluded.driver, driver), "
+                        "state = excluded.state, updated_at = excluded.updated_at",
+                        (sid, state.driver, json.dumps(merged, separators=(",", ":")), now.isoformat()))
+                    con.execute("COMMIT")
+                except BaseException:
+                    con.execute("ROLLBACK")
+                    raise
+            await db._sq_run(merge)
         else:
             pool = await db._db()
+            # jsonb || jsonb replaces the top-level keys of the row with the patch's, in one statement
             await pool.execute(
                 "INSERT INTO dialog_sessions (session_id, driver, state, updated_at) VALUES ($1, $2, $3::jsonb, $4) "
-                "ON CONFLICT (session_id) DO UPDATE SET driver = EXCLUDED.driver, state = EXCLUDED.state, "
-                "updated_at = EXCLUDED.updated_at", sid, state.driver, text, now)
+                "ON CONFLICT (session_id) DO UPDATE SET driver = COALESCE(EXCLUDED.driver, dialog_sessions.driver), "
+                "state = dialog_sessions.state || EXCLUDED.state, updated_at = EXCLUDED.updated_at",
+                sid, state.driver, json.dumps(patch, separators=(",", ":")), now)
+        state.mark_saved()
         await self._sweep(now)
 
     async def _sweep(self, now: datetime) -> None:

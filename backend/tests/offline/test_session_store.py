@@ -1,14 +1,17 @@
 """Dialog state that survives JSON and a session store that lets another process (or a restart) continue the
 dialog, including a question asked on the previous turn."""
 import copy
+import os
 import sqlite3
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import httpx
+import pytest
 from conftest import fixture_json, run
 
 from models import AgentRequest, Place, RouteInfo
-from services import agent, session_store
+from services import agent, db, session_store
 from services.dialog_state import DialogState
 from services.routing import _here_parse
 
@@ -180,3 +183,88 @@ def test_a_learned_avoid_holds_with_the_database_store_on_any_worker(agent_sandb
     agent._past_tasks.clear()
     fresh = run(worker_b.handle(AgentRequest(text="find a truck stop", session_id="drv_av:d2", **SAC), "drv_av"))
     assert fresh.place.id == "l"
+
+
+def _concurrent_writes(store, sid):
+    """A turn and a /nudges poll load the same dialog; the poll saves an offer while the turn is still running,
+    then the turn saves its places. Both must be there afterwards (review 2026-11-02, item 21)."""
+    async def scenario():
+        seed = DialogState()
+        seed["history"] = ["Driver: take me to Reno"]
+        await store.save(sid, seed)
+        turn, poll = await store.load(sid), await store.load(sid)
+        turn["places"] = [RENO, PILOT]
+        turn["history"].append("Copilot: Route to Reno is set")
+        poll["pending"] = {"d": {"intent": "go", "place": PILOT.model_dump()}, "text": "go Pilot", "kind": "nudge"}
+        poll["nudge_break_done"] = True
+        await store.save(sid, poll)
+        await store.save(sid, turn)
+        # and a write that changed nothing leaves the row alone
+        await store.save(sid, await store.load(sid))
+        return await store.load(sid)
+    return scenario
+
+
+def _assert_both_kept(back):
+    assert [p.id for p in back["places"]] == [RENO.id, PILOT.id] and back["history"][-1] == "Copilot: Route to Reno is set"
+    assert back["nudge_break_done"] is True and back["pending"]["kind"] == "nudge"
+
+
+def test_a_poll_and_a_turn_at_once_keep_each_others_changes(sqlite_store, monkeypatch):
+    monkeypatch.setenv("SESSION_STORE", "db")
+    store = session_store.DbSessionStore()
+    _assert_both_kept(run(_concurrent_writes(store, "drv_c:dlg")()))
+
+
+def test_an_offer_made_during_a_turn_survives_the_turn(agent_sandbox, fake_http, sqlite_store, monkeypatch):
+    """The real interleaving: /nudges saves an offer while the agent turn waits on the places search; the turn
+    saves after it and used to write the whole dialog it had loaded, offer gone."""
+    import asyncio
+    monkeypatch.setenv("SESSION_STORE", "db")
+    fake_http.add("router.hereapi.com", "/v8/routes", json=DATA)
+    fake_http.add("api.weather.gov", "/alerts/active", json={"features": []})
+    fake_http.add("cwwp2.dot.ca.gov", "/data/", json={"data": []})
+    agent_sandbox.places_provider.places = [PILOT]
+    agent_sandbox.llm.on(r"truck stop", {"intent": "find", "category": "truck_stop"})
+    sid = "drv_d:dlg"
+    store = session_store.get_store()
+
+    async def scenario():
+        gate = asyncio.Event()
+        search = agent_sandbox.places_provider.search
+
+        async def slow_search(category, lat, lng):
+            await gate.wait()
+            return await search(category, lat, lng)
+        agent_sandbox.places_provider.search = slow_search
+        turn = asyncio.create_task(agent_sandbox.provider().handle(
+            AgentRequest(text="find a truck stop", session_id=sid, **SAC), "drv_d"))
+        await asyncio.sleep(0.05)
+        poll = await store.load(sid)
+        poll["pending"] = {"d": {"intent": "go", "place": PILOT.model_dump()}, "text": "go Pilot", "kind": "nudge"}
+        poll["nudge_parking_done"] = True
+        await store.save(sid, poll)
+        gate.set()
+        res = await turn
+        return res, await store.load(sid)
+    res, back = run(scenario())
+    assert res.status == "route_set" and [p.id for p in back["places"]] == [PILOT.id]
+    assert back["pending"]["kind"] == "nudge" and back["nudge_parking_done"] is True
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="needs TEST_DATABASE_URL (a throwaway Postgres)")
+def test_a_poll_and_a_turn_at_once_keep_each_others_changes_on_postgres(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    monkeypatch.setenv("MEMORY_STORE", "pg")
+    monkeypatch.setenv("SESSION_STORE", "db")
+    store = session_store.DbSessionStore()
+    sid = f"drv_pg:{uuid.uuid4().hex[:8]}"
+    scenario = _concurrent_writes(store, sid)
+
+    async def go():
+        try:
+            return await scenario()
+        finally:
+            await store.drop_prefix(sid)
+            await db.close()
+    _assert_both_kept(run(go()))
