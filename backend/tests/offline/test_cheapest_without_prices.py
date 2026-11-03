@@ -58,7 +58,8 @@ def test_a_price_on_the_list_lets_the_pick_through(agent_sandbox, fake_http):
     first = run(prov.handle(_req("where can I park tonight", "h8c"), None))
     shown = agent._SESSIONS["h8c"]["places"]
     res = run(prov.handle(_req("where's the cheapest diesel", "h8c", active=first.place), None))
-    assert res.status == "route_set" and res.place.id == shown[1].id, res.reply  # the model's pick, untouched
+    picked = agent.numbered(shown, first.place.id)[1]  # place_index 2 of the list the model saw
+    assert res.status == "route_set" and res.place.id == picked.id, res.reply  # the model's pick, untouched
 
 
 def test_no_prices_no_route_and_the_router_down_is_said(agent_sandbox, fake_http):
