@@ -1,6 +1,13 @@
 name: frontend
 
 on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build profile
+        default: development
+        type: choice
+        options: [development, staging]
   pull_request:
     paths:
       - "frontend/**"
@@ -30,3 +37,25 @@ jobs:
       - run: yarn typecheck
       - run: yarn lint --max-warnings 0
       - run: yarn test --ci
+
+  # Manual: a dev-client (or staging) Android build on EAS. Needs the EXPO_TOKEN secret (an Expo access
+  # token of the project owner); the APK link is in the job log and on expo.dev.
+  eas-build-dev:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: yarn install --frozen-lockfile
+      - run: eas build --profile ${{ inputs.profile }} --platform android --non-interactive --no-wait

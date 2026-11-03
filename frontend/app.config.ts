@@ -8,6 +8,14 @@
 import type { ExpoConfig } from "expo/config";
 
 const mapLibre = process.env.EXPO_PUBLIC_MAP_PROVIDER?.trim().toLowerCase() === "maplibre";
+// EAS project id (from `eas init`; also in EAS env as EXPO_PUBLIC_EAS_PROJECT_ID). Without it there is no
+// OTA (`updates.url` stays unset) and the config is still valid, so Expo Go and local builds keep working.
+// TODO(owner): run `eas init` once and put the id into EAS env / .env.local.
+const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim() || undefined;
+// Sentry: organization and project slugs for the source-map upload plugin; the DSN is read at runtime
+// (EXPO_PUBLIC_SENTRY_DSN, app/_layout.tsx). No slugs = no plugin, nothing else changes.
+const sentryOrg = process.env.SENTRY_ORG?.trim() || undefined;
+const sentryProject = process.env.SENTRY_PROJECT?.trim() || undefined;
 
 const config: ExpoConfig = {
     "name": "TruckBuddy",
@@ -17,6 +25,12 @@ const config: ExpoConfig = {
     "icon": "./assets/images/icon.png",
     "scheme": "truckbuddy",
     "userInterfaceStyle": "automatic",
+    // OTA: every build with the same app version shares one runtime, so a JS-only fix reaches drivers with
+    // `eas update --branch <channel>` instead of a store release (native changes still need a build).
+    "runtimeVersion": { "policy": "appVersion" },
+    ...(easProjectId
+      ? { "updates": { "url": `https://u.expo.dev/${easProjectId}`, "fallbackToCacheTimeout": 0 }, "extra": { "eas": { "projectId": easProjectId } } }
+      : {}),
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "io.truckbuddy.app",
@@ -27,7 +41,10 @@ const config: ExpoConfig = {
         ],
         "NSLocationWhenInUseUsageDescription": "TruckBuddy uses your location to find truck-friendly parking, fuel and repair shops near you and to plan truck-safe routes.",
         "NSMicrophoneUsageDescription": "TruckBuddy listens after you tap the copilot so you can ask for stops and directions by voice while driving.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        // audio: the copilot keeps speaking with the screen off; location: the drive task keeps guidance going
+        // with the phone locked (src/geo/driveTracking.ts), on the while-in-use permission.
+        "UIBackgroundModes": ["audio", "location"]
       },
       "buildNumber": "1",
       "config": {
@@ -129,19 +146,25 @@ const config: ExpoConfig = {
           "locationWhenInUsePermission": "TruckBuddy uses your location to find truck-friendly parking, fuel and repair shops near you and to plan truck-safe routes.",
           "locationAlwaysAndWhenInUsePermission": false,
           "locationAlwaysPermission": false,
-          "isAndroidBackgroundLocationEnabled": false
+          "isAndroidBackgroundLocationEnabled": false,
+          // Guidance with the screen off runs as a foreground service with a notification, started from the open
+          // app on Go: no ACCESS_BACKGROUND_LOCATION (still blocked below), only the service permissions.
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       [
         "expo-audio",
         {
           "microphonePermission": "TruckBuddy listens after you tap the copilot so you can ask for stops and directions by voice while driving.",
-          "enableBackgroundPlayback": false,
+          "enableBackgroundPlayback": true,
           "enableBackgroundRecording": false
         }
       ],
       "expo-asset",
-      ...(mapLibre ? (["@maplibre/maplibre-react-native"] as const) : [])
+      ...(mapLibre ? (["@maplibre/maplibre-react-native"] as const) : []),
+      ...(sentryOrg && sentryProject
+        ? ([["@sentry/react-native/expo", { organization: sentryOrg, project: sentryProject }]] as [string, Record<string, string>][])
+        : [])
     ],
     "experiments": {
       "typedRoutes": true

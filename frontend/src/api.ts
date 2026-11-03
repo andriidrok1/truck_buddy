@@ -1,7 +1,9 @@
 import { authHeader, requestCode, setToken } from "./auth";
+import { AgentResponseSchema, checkContract, RouteResultSchema } from "./api/schemas";
 import { eldHeader } from "./eld";
-import { ensureTruckProfile } from "./hooks/useTruckProfile";
+import { ensureTruckProfile, type TruckProfile } from "./hooks/useTruckProfile";
 import { isNetworkError, offlineHint } from "./net/offlineHint";
+import { stopsAhead, viaOf } from "./state/tripStore";
 import { uploadForm } from "./utils/upload";
 import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, Nudge, NudgeRequest, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
 import { BASE } from "./url";
@@ -27,6 +29,18 @@ export type RerouteBody = {
   /** Metres driven into that section. */
   traveled_m: number;
   via?: [number, number][];
+  /** The drive this re-plan belongs to (trip events). */
+  trip_id?: string | null;
+};
+
+/** One event of a drive as the backend hands it back (GET /api/trips/{trip_id}/events). */
+export type TripEventRow = {
+  id: number;
+  t: string;
+  trip_id: string | null;
+  kind: string;
+  source: "app" | "server";
+  data: Record<string, unknown>;
 };
 
 /** A non-2xx answer, with the status and the backend's `detail`, so a caller can tell one 422 from another. */
@@ -185,11 +199,40 @@ export const api = {
     request<PlacesResponse>(`/places?category=${category}&lat=${at.lat}&lng=${at.lng}`),
   /** POST /api/route; `via` = the stops already on the way, so a re-plan (new truck size, entrance,
    * off-route fallback) keeps them instead of silently routing straight to the destination. */
-  route: async (from: LatLng, place: Place, skipParking = false, via: [number, number][] = []) =>
+  route: async (from: LatLng, place: Place, skipParking = false, via: [number, number][] = [], tripId: string | null = null) =>
     request<RouteResult>(`/route`, {
       method: "POST",
-      body: JSON.stringify({ lat: from.lat, lng: from.lng, place, skip_parking: skipParking, via, truck_profile: await ensureTruckProfile() }),
-    }),
+      body: JSON.stringify({
+        lat: from.lat,
+        lng: from.lng,
+        place,
+        skip_parking: skipParking,
+        via,
+        trip_id: tripId ?? undefined,
+        truck_profile: await ensureTruckProfile(),
+      }),
+    }).then((r) => checkContract(RouteResultSchema, r, "/route")),
+  /** One batch of trip events (src/net/tripEvents.ts); 15 s is plenty, nothing waits on it. */
+  tripEvents: (events: { t: string; trip_id?: string; kind: string; data: Record<string, unknown> }[]) =>
+    request<{ stored: number }>(`/trips/events`, { method: "POST", body: JSON.stringify(events), timeoutMs: 15000 }),
+  /** The events of one of the driver's own trips, oldest first (tester screen). */
+  tripEventsOf: (tripId: string) =>
+    request<{ events: TripEventRow[] }>(`/trips/${encodeURIComponent(tripId)}/events`).then((r) => r.events),
+  /** The driver's truck profile on the server (fleet-managed later); 404 until the backend has the endpoint. */
+  /** The stored profile and whose it is: "vehicle" = a fleet's truck (a driver's change holds only for the trip,
+   *  on the phone), "driver" = the driver's own copy. Older servers send no header: "driver". */
+  profile: async (): Promise<{ profile: TruckProfile; source: "vehicle" | "driver" }> => {
+    const d = deadline(DEFAULT_TIMEOUT_MS);
+    try {
+      const res = await fetchTracked(`${BASE}/me/profile`, { signal: d.signal, headers: { "Content-Type": "application/json", ...authHeader() } });
+      await check(res, "/me/profile");
+      const source = res.headers.get("x-profile-source") === "vehicle" ? "vehicle" : "driver";
+      return { profile: await json<TruckProfile>(res, "/me/profile"), source };
+    } finally {
+      d.done();
+    }
+  },
+  saveProfile: (profile: TruckProfile) => request<TruckProfile>(`/me/profile`, { method: "PUT", body: JSON.stringify(profile) }),
   /**
    * Off-route reroute: the engine resumes the server-side plan (`handle`, section, metres into it)
    * instead of planning from scratch. Same shape back as /route, with a new `handle`.
@@ -201,7 +244,7 @@ export const api = {
       method: "POST",
       timeoutMs: 15000,
       body: JSON.stringify({ ...body, truck_profile: await ensureTruckProfile() }),
-    }),
+    }).then((r) => checkContract(RouteResultSchema, r, "/reroute")),
   parking: (place: Place, approach?: Approach | null) =>
     request<ParkingCheck>(`/parking`, { method: "POST", body: JSON.stringify({ place, approach }), timeoutMs: 60000 }),
   /** Spoken parking answer; waits up to `waitS` for a satellite check in flight. */
@@ -272,14 +315,22 @@ export const api = {
         truck_profile: await ensureTruckProfile(),
         session_id: sessionId,
         active_place: active?.place,
+        // The route as it is, so the copilot can check chains or other ways on it after a restart (its session
+        // cache is gone then): HERE handle and the stops still ahead.
+        route_handle: active?.route.handle ?? null,
+        route_via: active ? viaOf(stopsAhead(active.route, active.stops, at)) : [],
+        // The same stops as places: the trip lives on the phone, and the copilot names, adds and drops stops by
+        // what they are (after a restart its session knew only coordinates).
+        route_stops: active ? stopsAhead(active.route, active.stops, at) : [],
         active_distance_mi: active?.route.distance_mi,
         active_duration_min: active?.route.duration_min,
+        trip_id: active?.trip_id,
         ui,
         stt_ms: sttMs,
         stt_confidence: sttConfidence,
         speed_mps: speedForAgent(speedMps),
       }),
-    }),
+    }).then((r) => checkContract(AgentResponseSchema, r, "/agent")),
   /**
    * "Anything to say?" while driving (every few minutes): break and parking nudges, spoken as
    * ambient lines. The backend keeps an offer pending for the next turn of the same session.

@@ -6,13 +6,23 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
-    },
-    "preview": {
       "distribution": "internal",
-      "channel": "preview",
+      "channel": "development",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "http://10.0.2.2:8001"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "staging": {
+      "distribution": "internal",
+      "channel": "staging",
       "env": {
         "EXPO_PUBLIC_BACKEND_URL": "https://api.truckbuddy.io"
+      },
+      "android": {
+        "buildType": "apk"
       }
     },
     "production": {

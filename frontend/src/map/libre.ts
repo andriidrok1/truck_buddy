@@ -3,12 +3,13 @@
 // The require runs inside a try, once, and only outside Expo Go / web; everything that needs
 // MapLibre asks here and falls back when it gets null.
 
-import Constants, { ExecutionEnvironment } from "expo-constants";
+import { isRunningInExpoGo } from "expo";
 import { Platform } from "react-native";
 
 export type MapLibre = typeof import("@maplibre/maplibre-react-native");
 
-const inExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+// Expo Go 58 reports executionEnvironment "bare" like a dev build; the ExpoGo native module is the tell.
+const inExpoGo = isRunningInExpoGo();
 
 let cached: MapLibre | null | undefined;
 

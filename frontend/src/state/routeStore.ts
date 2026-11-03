@@ -1,6 +1,6 @@
-// The loaded route on disk, so a restart (or a crash in a dead zone) does not lose it. The map
-// screen saves on every change of `active` and clears on "End route"; on mount it restores a
-// document younger than MAX_AGE_MS. The whole ActiveRoute goes in: geometry, maneuvers, speed
+// The loaded route on disk, so a restart (or a crash in a dead zone) does not lose it. The trip store
+// (src/state/tripStore.ts) writes it on every change of the route or the driving flag and clears it on
+// "End route"; the map screen restores a document younger than MAX_AGE_MS on mount. The whole ActiveRoute goes in: geometry, maneuvers, speed
 // limits, incidents, weather, chain controls, alternatives, via stops and the parking result are
 // everything the guidance and advisories read, so a restored route drives without the network.
 
@@ -9,11 +9,13 @@ import { useSyncExternalStore } from "react";
 import type { ActiveRoute } from "../types";
 import { storage } from "../utils/storage";
 
-export const ACTIVE_ROUTE_KEY = "active_route_v1";
+/** Storage key of the saved trip (schema v2: the route plus whether the truck was driving; src/utils/storageMigrations.ts
+ * moves the v1 document here). */
+export const ACTIVE_ROUTE_KEY = "trip_v2";
 /** Older than this and the trip is over: a saved route is dropped, not restored. */
 export const MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
-export type SavedRoute = { active: ActiveRoute; savedAt: number };
+export type SavedRoute = { active: ActiveRoute; savedAt: number; driving?: boolean };
 
 /** Younger than `maxAgeMs`. A `savedAt` in the future (clock set back) is not fresh either. */
 export function isFresh(savedAt: number, now: number, maxAgeMs = MAX_AGE_MS): boolean {
@@ -22,7 +24,7 @@ export function isFresh(savedAt: number, now: number, maxAgeMs = MAX_AGE_MS): bo
   return age >= 0 && age < maxAgeMs;
 }
 
-export const encodeSaved = (active: ActiveRoute, savedAt: number): SavedRoute => ({ active, savedAt });
+export const encodeSaved = (active: ActiveRoute, savedAt: number, driving = false): SavedRoute => ({ active, savedAt, driving });
 
 /**
  * What `storage.getItem(ACTIVE_ROUTE_KEY)` hands back, checked before it is trusted: a place
@@ -37,12 +39,12 @@ export function decodeSaved(raw: unknown): SavedRoute | null {
     return null;
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const { active, savedAt } = value as { active?: unknown; savedAt?: unknown };
+  const { active, savedAt, driving } = value as { active?: unknown; savedAt?: unknown; driving?: unknown };
   if (typeof savedAt !== "number" || !active || typeof active !== "object") return null;
   const { place, route } = active as { place?: Partial<ActiveRoute["place"]>; route?: Partial<ActiveRoute["route"]> };
   if (!place || typeof place.id !== "string" || typeof place.lat !== "number" || typeof place.lng !== "number") return null;
   if (!route || !Array.isArray(route.geometry)) return null;
-  return { active: active as ActiveRoute, savedAt };
+  return { active: active as ActiveRoute, savedAt, driving: driving === true };
 }
 
 // When the route on disk was saved (null = nothing saved), for the tester screen.
@@ -61,10 +63,10 @@ const queued = <T,>(op: () => Promise<T>): Promise<T> => {
   return next;
 };
 
-export async function saveActiveRoute(active: ActiveRoute, now = Date.now()) {
+export async function saveActiveRoute(active: ActiveRoute, now = Date.now(), driving = false) {
   savedAt = now;
   notify();
-  await queued(() => storage.setItem(ACTIVE_ROUTE_KEY, encodeSaved(active, now) as unknown as Record<string, unknown>));
+  await queued(() => storage.setItem(ACTIVE_ROUTE_KEY, encodeSaved(active, now, driving) as unknown as Record<string, unknown>));
 }
 
 /** The saved route if it is fresh; a stale or unreadable one is cleared and null comes back. */
