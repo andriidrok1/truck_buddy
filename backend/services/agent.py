@@ -464,6 +464,7 @@ VIA_IS_DESTINATION = "That's where we're headed, {name}."
 VIA_STRAIGHT = "Straight there, {time}, {mi} miles."
 VIA_CLEARED = "Stops cleared. " + VIA_STRAIGHT
 VIA_NONE = "There are no stops on this route."
+VIA_NONE_AHEAD = "I couldn't find a {what} ahead on your route."
 VIA_REJECTED = "Okay, not {name}. "
 VIA_DROPPED = "Okay, no stop at {name}. I couldn't find another {what} on the way. "
 VIA_LEFT = "New total {time}, {mi} miles."
@@ -1320,11 +1321,42 @@ class LlmAgentProvider:
                                        {req.active_place.id} if req.active_place else set())
 
     async def _stop_search(self, req: AgentRequest, sess: dict, category: str, exclude: set[str]) -> Optional[Place]:
-        """The best place of a category for a stop on the way, the excluded ones only if nothing else is left."""
+        """The best place of a category for a stop on the way, among those ahead of the truck; the excluded ones
+        only if nothing else is left."""
         with stage("tools"):
             res = await get_places_provider().search(category, req.lat, req.lng)
-        found = sorted(res.places, key=lambda p: p.distance_mi or 0)
+        found = sorted(self._ahead(req, sess, res.places), key=lambda p: p.distance_mi or 0)
         return choose_place(found, req.truck_profile, exclude, sess.get("facts"))
+
+    def _ahead(self, req: AgentRequest, sess: dict, places: list[Place]) -> list[Place]:
+        """The places ahead of the truck on the way to the active destination. The search is around the truck, and
+        the nearest truck stop could be 13 miles back: a U-turn the detour question (45 minutes) never asked about
+        (review 2026-11-02, bug 19). Along the dialog's route line when there is one, else nearer to the
+        destination than the truck is."""
+        dest = req.active_place
+        if not dest:
+            return list(places)
+        geometry = self._current_geometry(req, sess)
+        if len(geometry) >= 2:
+            along = [0.0]
+            for i in range(1, len(geometry)):
+                along.append(along[-1] + haversine_km(*geometry[i - 1], *geometry[i]))
+            here = along[_nearest_index(geometry, req.lat, req.lng)]
+
+            def ahead(p: Place) -> bool:
+                # further along the line than it is off the line: a stop 20 km to the side of where the truck
+                # is (the line passes nearest to it right here) is a detour back, not a stop ahead
+                i = _nearest_index(geometry, p.lat, p.lng)
+                return along[i] - here > haversine_km(p.lat, p.lng, *geometry[i])
+        else:
+            left = haversine_km(req.lat, req.lng, dest.lat, dest.lng)
+
+            def ahead(p: Place) -> bool:
+                return haversine_km(p.lat, p.lng, dest.lat, dest.lng) < left
+        kept = [p for p in places if ahead(p)]
+        if len(kept) != len(places):
+            logger.info("stop search: behind the truck, left out: %s", ", ".join(p.name for p in places if p not in kept))
+        return kept
 
     def _offered_stop(self, req: AgentRequest, sess: dict) -> Optional[Place]:
         """The stop added last on the way to the active destination, while it is still one of the stops."""
@@ -1437,6 +1469,10 @@ class LlmAgentProvider:
             return AgentResponse(status="chat", transcript=text, reply=VIA_FULL, source=self.source)
         stop = await self._resolve_stop(req, d, sess, text)
         if not stop:
+            if not str(d.get("query") or "").strip():  # a category with nothing of it ahead
+                what = CATEGORY_WORD.get(str(d.get("category")), "truck stop")
+                return AgentResponse(status="chat", transcript=text, reply=VIA_NONE_AHEAD.format(what=what),
+                                     source=self.source)
             what = str(d.get("query") or CATEGORY_WORD.get(str(d.get("category")), "a stop")).strip()
             return AgentResponse(status="chat", transcript=text, reply=heard_not_found(what), source=self.source)
         if stop.id == place.id or haversine_km(stop.lat, stop.lng, place.lat, place.lng) < 0.15:

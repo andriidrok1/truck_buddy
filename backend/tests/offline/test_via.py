@@ -343,3 +343,28 @@ def test_not_that_one_after_a_stop_turns_the_stop_down(agent_sandbox, fake_http)
     assert res.status == "route_set" and res.place.id == RENO.id and res.options == []
     assert res.reply.startswith("Okay, no stop at Flying J. I couldn't find another truck stop on the way. Straight there,")
     assert _vias(fake_http.calls_to("router.hereapi.com")[-1]) == [] and "via" not in sess
+
+
+DAVIS = Place(id="g-davis", name="Pilot Travel Center Davis", category="truck_stop", lat=38.55, lng=-121.74,
+              address="Davis, CA", distance_mi=13.0)  # west of Sacramento: behind a truck headed for Reno
+
+
+def test_a_stop_by_category_is_only_ahead_on_the_route(agent_sandbox, fake_http):
+    """Review 2026-11-02, bug 19: "add a fuel stop on the way" took the nearest truck stop around the truck, also
+    one behind it; the detour question only asks past 45 minutes, so a U-turn to a stop 13 miles back was
+    added without a word. Only places ahead along the route are candidates."""
+    prov = _sandbox(agent_sandbox, fake_http)
+    agent_sandbox.places_provider.places = [DAVIS, LOVES]
+    run(prov.handle(_req("take me to Reno", sid="ahead", active=None), None))
+    res = run(prov.handle(_req("add a fuel stop", sid="ahead"), None))
+    assert res.status == "route_set" and [o.id for o in res.options] == [LOVES.id]
+
+    # no route line in this dialog (the app restarted): ahead = nearer to the destination than the truck is
+    res = run(prov.handle(_req("add a fuel stop", sid="ahead-fresh"), None))
+    assert res.status == "route_set" and [o.id for o in res.options] == [LOVES.id]
+
+    agent_sandbox.places_provider.places = [DAVIS]
+    res = run(prov.handle(_req("add a fuel stop", sid="ahead"), None))
+    assert res.status == "chat" and res.reply == "I couldn't find a truck stop ahead on your route."
+    res = run(prov.handle(_req("add a fuel stop", sid="behind-only"), None))
+    assert res.status == "chat" and res.reply == "I couldn't find a truck stop ahead on your route."

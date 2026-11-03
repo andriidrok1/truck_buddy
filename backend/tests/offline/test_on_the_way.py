@@ -11,9 +11,11 @@ from services.routing import _here_parse
 
 DATA = fixture_json("here/route_sac_reno")
 SAC = {"lat": 38.5816, "lng": -121.4944}
-PARK = Place(id="g-49er", name="49er Travel Plaza", category="truck_stop", lat=38.60, lng=-121.55,
+# Both lie on the recorded Sacramento-Reno line, ahead of the truck: a stop on the way is only ever picked
+# ahead (review 2026-11-02, bug 19).
+PARK = Place(id="g-49er", name="49er Travel Plaza", category="truck_stop", lat=38.648, lng=-121.374,
              address="2828 El Centro Rd, Sacramento, CA", distance_mi=5.6)
-ROADYS = Place(id="g-roadys", name="Roady's Truck Stop", category="truck_stop", lat=38.57, lng=-121.56,
+ROADYS = Place(id="g-roadys", name="Roady's Truck Stop", category="truck_stop", lat=38.624, lng=-121.417,
                address="1 W Capitol Ave, West Sacramento, CA", distance_mi=6.4)
 
 
