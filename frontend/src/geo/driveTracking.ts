@@ -45,7 +45,7 @@ export async function startDriveTracking(destination: string): Promise<boolean> 
     await Location.startLocationUpdatesAsync(DRIVE_TASK, {
       accuracy: Location.Accuracy.BestForNavigation,
       timeInterval: 1000,
-      distanceInterval: 5,
+      distanceInterval: 10, // the off-route tracker needs time off the line, not a dense trail; half the wakeups of 5 m
       activityType: Location.ActivityType.AutomotiveNavigation,
       pausesUpdatesAutomatically: false,
       showsBackgroundLocationIndicator: true,
