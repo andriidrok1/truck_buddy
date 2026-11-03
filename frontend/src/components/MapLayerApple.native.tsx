@@ -17,6 +17,8 @@ const REFIT_WINDOW_MS = 1500; // a padding change this soon after a fit re-runs 
 const FIT_CHECK_MS = 900; // the fit animation is over by then: read the camera back and correct a dropped one
 const FIT_MARGIN = 56; // layout units kept free around the fitted points, inside the map window
 const FIT_MAX_ZOOM = 16;
+const SINGLE_POINT_ZOOM = 15.5; // one point: about the 0.015-degree region the recenter button shows
+const FIT_RETRIES = 2; // a dropped fit animation is sent again at most this many times
 
 /** Custom-view marker that stops tracking view changes once its icon has rendered.
  *  A new `redraw` value re-renders the icon (Android otherwise keeps the first snapshot). */
@@ -79,25 +81,42 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
 
   const fitAt = useRef(0);
   const fitCheck = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A camera command before the map has loaded is dropped by the native view. The first fit (the GPS fix, a
+  // restored route) can come in that window once the fix is in before this mounts, so it waits for
+  // onMapReady and runs then.
+  const ready = useRef(false);
+  const pendingFit = useRef(false);
   // One camera for the points, computed here for the map window (the screen minus the chrome the
   // insets describe). The map padding already centres the camera in that window.
   // Android drops the animation now and then (the sheet growing for the route card changes the
   // padding in the same frames) and the camera stays on the previous view, so once the animation
   // should be over the camera is read back and sent again if it never got there (QA 2026-10-31, Н7).
   const fit = () => {
-    if (fitCheck.current) clearTimeout(fitCheck.current);
-    if (fitPoints.length > 1) {
-      const cam = fitCamera(fitPoints, winW, Math.max(120, winH - topInset - bottomInset), FIT_MARGIN, FIT_MAX_ZOOM);
-      const target = { center: toCoord(cam.center), zoom: cam.zoom, pitch: 0, heading: 0 };
-      mapRef.current?.animateCamera(target, { duration: 450 });
-      fitCheck.current = setTimeout(async () => {
-        const c = await mapRef.current?.getCamera().catch(() => null);
-        const actual = c?.center ? { center: { lat: c.center.latitude, lng: c.center.longitude }, zoom: c.zoom } : null;
-        if (!cameraSettled(cam, actual, winW, winH)) mapRef.current?.animateCamera(target, { duration: 400 });
-      }, FIT_CHECK_MS);
-    } else if (fitPoints.length === 1) {
-      mapRef.current?.animateToRegion({ ...toCoord(fitPoints[0]), latitudeDelta: 0.015, longitudeDelta: 0.015 }, 450);
+    if (!ready.current) {
+      pendingFit.current = true;
+      return;
     }
+    if (fitCheck.current) clearTimeout(fitCheck.current);
+    if (fitPoints.length === 0) return;
+    // One point (the GPS fix, a tester's spot) goes through the same camera + read-back path as a set of
+    // points: right after onMapReady Android still drops the first animation, and a plain animateToRegion
+    // had no second try, so the map stayed on the demo point (stand, 2026-11-01).
+    const cam =
+      fitPoints.length > 1
+        ? fitCamera(fitPoints, winW, Math.max(120, winH - topInset - bottomInset), FIT_MARGIN, FIT_MAX_ZOOM)
+        : { center: fitPoints[0], zoom: SINGLE_POINT_ZOOM };
+    const target = { center: toCoord(cam.center), zoom: cam.zoom, pitch: 0, heading: 0 };
+    mapRef.current?.animateCamera(target, { duration: 450 });
+    let tries = 0;
+    const check = async () => {
+      const c = await mapRef.current?.getCamera().catch(() => null);
+      const actual = c?.center ? { center: { lat: c.center.latitude, lng: c.center.longitude }, zoom: c.zoom } : null;
+      if (cameraSettled(cam, actual, winW, winH) || tries >= FIT_RETRIES) return;
+      tries += 1;
+      mapRef.current?.animateCamera(target, { duration: 400 });
+      fitCheck.current = setTimeout(check, FIT_CHECK_MS);
+    };
+    fitCheck.current = setTimeout(check, FIT_CHECK_MS);
   };
   useEffect(() => {
     fitAt.current = Date.now();
@@ -120,6 +139,14 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
       testID="map-view"
       style={StyleSheet.absoluteFill}
       initialRegion={{ ...toCoord(driver), latitudeDelta: 0.015, longitudeDelta: 0.015 }}
+      onMapReady={() => {
+        ready.current = true;
+        if (pendingFit.current) {
+          pendingFit.current = false;
+          fitAt.current = Date.now();
+          fit();
+        }
+      }}
       customMapStyle={scheme === "dark" ? NIGHT_MAP_STYLE : undefined}
       userInterfaceStyle={scheme}
       mapPadding={padding}
