@@ -32,6 +32,7 @@ CACHE_MAX = 500
 COMPASS = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"]
 LOOKING = "Let me look at the satellite."
 STILL = "Still looking at the satellite, I'll tell you when I have it."
+_U_TURN = re.compile(r"\bu-?turn\b", re.I)
 _STREET = re.compile(r"\b(?:onto|on)\s+(.+?)(?:\.\s|\.?$|,| toward)", re.I)
 # Words that only make sense from the satellite's point of view (north-up), not the driver's.
 _DIRECTIONAL = re.compile(
@@ -104,7 +105,10 @@ def from_route(route: RouteInfo) -> Optional[Approach]:
             # is the way in, the side to say. The heading below is the last 300 m, often that very ramp, with the
             # lot nearly dead ahead of it (Elkhorn, QA 2026-11-02: "On your left, off I-5 S", it is on the right).
             leave = moves[k + 1] if k + 1 < len(moves) else None
-            if leave is not None and leave.direction in ("right", "left") and \
+            # A U-turn's "left" is the way the truck turns around, not the side the place is on (review
+            # 2026-11-02): no side from it, the geometry below decides.
+            if leave is not None and leave.direction in ("right", "left") and not _U_TURN.search(
+                    f"{leave.action} {leave.instruction}") and \
                     sum(_m(g[j - 1], g[j]) for j in range(max(1, leave.index + 1), len(g))) <= EXIT_M:
                 exit_side = leave.direction
             break

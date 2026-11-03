@@ -7,7 +7,7 @@ of it and the geometry named "left" on a few meters. The way the route leaves th
 import pytest
 from conftest import fixture_json
 
-from models import Approach, ParkingCheck, ParkingSpot
+from models import Approach, Maneuver, ParkingCheck, ParkingSpot, RouteInfo
 from services import approach
 from services.routing import _here_parse
 
@@ -38,3 +38,27 @@ def test_nearly_dead_ahead_names_no_side(lateral_m, side):
     a = Approach(bearing=0, compass="south", lat=38.0, lng=-121.0)  # heading north, E 100 m ahead
     lng = -121.0 - lateral_m / (111320 * 0.788)  # positive = west = left
     assert approach.side(a, 38.0009, lng) == side
+
+
+def _synthetic(leave):
+    """North along Main St for 800 m, then the maneuver `leave` 200 m before the finish."""
+    g = [[38.0 + i * 0.0009, -121.0] for i in range(10)]  # ~100 m apart
+    moves = [Maneuver(action="turn", direction="right", instruction="Turn right onto Main St.", lat=g[0][0],
+                      lng=g[0][1], index=0), leave,
+             Maneuver(action="arrive", instruction="Arrive at your destination.", lat=g[-1][0], lng=g[-1][1], index=9)]
+    return RouteInfo(geometry=g, distance_m=900, duration_s=120, distance_mi=0.6, duration_min=2, summary="2 min",
+                     source="here", maneuvers=moves)
+
+
+@pytest.mark.parametrize("action, instruction", [("uTurn", "Make a U-turn."), ("turn", "Make a U-turn at 1st St.")])
+def test_a_u_turn_names_no_side(action, instruction):
+    # Review 2026-11-02: the side came from the first unnamed maneuver after the street; a U-turn's "left" is not
+    # the side the place is on.
+    u = Maneuver(action=action, direction="left", instruction=instruction, lat=38.0072, lng=-121.0, index=7)
+    ap = approach.from_route(_synthetic(u))
+    assert ap.street == "Main St" and ap.exit_side is None
+
+
+def test_a_turn_off_the_street_still_names_its_side():
+    keep = Maneuver(action="keep", direction="right", instruction="Keep right.", lat=38.0072, lng=-121.0, index=7)
+    assert approach.from_route(_synthetic(keep)).exit_side == "right"
