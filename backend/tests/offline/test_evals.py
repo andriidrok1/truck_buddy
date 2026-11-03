@@ -160,6 +160,11 @@ def test_variants_of_one_case():
      True, True),
     ({"intent": "control", "actions": ["zoom_in"]}, {"intent": "control", "actions": []}, True, False),
     ({"intent": "breakdown", "kind": "tire"}, {"intent": "breakdown", "kind": "tire"}, True, True),
+    # where: the town may come in query or near
+    ({"intent": "add_stop", "where": {"contains": "fernley"}}, {"intent": "add_stop", "query": "Pilot", "near": "Fernley, NV"},
+     True, True),
+    ({"intent": "add_stop", "where": {"contains": "fernley"}}, {"intent": "add_stop", "query": "Pilot Fernley NV"}, True, True),
+    ({"intent": "add_stop", "where": {"contains": "fernley"}}, {"intent": "add_stop", "query": "Pilot"}, True, False),
     ({"intent": "unclear"}, {}, False, False),
     ({"intent": "unclear"}, "not a dict", False, False),
 ])
