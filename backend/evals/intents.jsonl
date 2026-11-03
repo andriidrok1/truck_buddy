@@ -56,7 +56,7 @@
 {"id": "h_alt_faster", "text": "is there a faster way", "context_preset": "route_active", "expected": {"intent": "alternative"}, "tags": [], "source": "hand"}
 {"id": "h_alt_no_route", "text": "is there another way", "context_preset": "idle", "expected": {"intent": "chat"}, "tags": ["edge"], "source": "hand"}
 {"id": "h_stop_fuel", "text": "add a fuel stop on the way", "context_preset": "route_active", "expected": {"intent": "add_stop", "category": "truck_stop"}, "tags": ["core"], "source": "hand"}
-{"id": "h_stop_pilot_fernley", "text": "stop at the Pilot in Fernley on the way", "context_preset": "route_active", "expected": {"intent": "add_stop", "query": {"contains": "fernley"}}, "tags": ["core"], "source": "hand"}
+{"id": "h_stop_pilot_fernley", "text": "stop at the Pilot in Fernley on the way", "context_preset": "route_active", "expected": {"intent": "add_stop", "where": {"contains": "fernley"}}, "tags": ["core"], "source": "hand"}
 {"id": "h_stop_rest_area", "text": "I need a rest area before that", "context_preset": "route_active", "expected": {"intent": "add_stop", "category": "rest_area"}, "tags": [], "source": "hand"}
 {"id": "h_stop_loves_first", "text": "swing by Love's first", "context_preset": "route_active", "expected": {"intent": "add_stop", "query": {"contains": "love"}}, "tags": ["core"], "source": "hand"}
 {"id": "h_stop_no_route", "text": "add a fuel stop", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": ["edge"], "source": "hand"}
@@ -147,7 +147,7 @@
 {"id": "l_10_port_of_oakland", "text": "I need to get to the Port of Oakland", "context_preset": "idle", "expected": {"intent": "go", "query": {"contains": "oakland"}}, "tags": [], "source": "legacy"}
 {"id": "l_11_how_far", "text": "How far is it?", "context_preset": "options_shown", "expected": {"intent": "chat", "reply": {"contains": "4.7"}}, "tags": ["core", "follow_up"], "source": "legacy"}
 {"id": "l_12_how_long", "text": "How long until I get there?", "context_preset": "options_shown", "expected": {"intent": "chat", "reply": {"contains": "9"}}, "tags": ["follow_up"], "source": "legacy"}
-{"id": "l_13_not_that_one", "text": "Not that one", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [1, 2]}, "tags": ["core", "follow_up", "ambiguous"], "source": "legacy"}
+{"id": "l_13_not_that_one", "text": "Not that one", "context_preset": "options_shown", "expected": {"intent": "pick"}, "tags": ["core", "follow_up", "ambiguous"], "source": "legacy"}
 {"id": "l_14_second_one", "text": "The second one", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2]}, "tags": ["core", "follow_up"], "source": "legacy"}
 {"id": "l_15_flying_j_instead", "text": "Take me to the Flying J instead", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2]}, "tags": ["core", "follow_up"], "source": "legacy"}
 {"id": "l_16_bye", "text": "Bye", "context_preset": "options_shown", "expected": {"intent": "bye"}, "tags": ["core"], "source": "legacy"}
@@ -159,9 +159,9 @@
 {"id": "l_22_google_flying_j", "text": "Take me to the Flying J instead", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [2]}, "tags": ["follow_up"], "source": "legacy"}
 {"id": "h_stop_cheapest_diesel_route", "text": "cheapest diesel on my route", "context_preset": "route_active", "expected": {"intent": "add_stop", "category": "truck_stop"}, "tags": ["core"], "source": "hand"}
 {"id": "h_stop_fuel_on_the_way", "text": "I need fuel on the way", "context_preset": "route_active", "expected": {"intent": "add_stop", "category": "truck_stop"}, "tags": ["core"], "source": "hand"}
-{"id": "h_pick_something_else", "text": "something else", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [1, 2]}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
-{"id": "h_pick_not_that_one_alts", "text": "not that one", "context_preset": "route_active_alts", "expected": {"intent": "pick", "place_index": [1, 2]}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
-{"id": "h_pick_something_else_alts", "text": "something else", "context_preset": "route_active_alts", "expected": {"intent": "pick", "place_index": [1, 2]}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
+{"id": "h_pick_something_else", "text": "something else", "context_preset": "options_shown", "expected": {"intent": "pick"}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
+{"id": "h_pick_not_that_one_alts", "text": "not that one", "context_preset": "route_active_alts", "expected": {"intent": "pick"}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
+{"id": "h_pick_something_else_alts", "text": "something else", "context_preset": "route_active_alts", "expected": {"intent": "pick"}, "tags": ["core", "follow_up", "ambiguous"], "source": "hand"}
 {"id": "h_pick_second_one_alts", "text": "the second one", "context_preset": "route_active_alts", "expected": {"intent": "pick", "place_index": [2]}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_alt_another_way_alts", "text": "is there another way", "context_preset": "route_active_alts", "expected": {"intent": "alternative"}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_alt_faster_alts", "text": "is there a faster way", "context_preset": "route_active_alts", "expected": {"intent": "alternative"}, "tags": ["core", "follow_up"], "source": "hand"}

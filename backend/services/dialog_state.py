@@ -5,7 +5,7 @@ Keys written to the session anywhere (services/agent.py, services/nudges.py, ser
 all declared below: history, places, city, pending, via, alternatives, rejected, dest_declined, rejected_chains,
 confirmed_once, facts, past, past_loaded, n, turns, driver, nudge_break_done, nudge_parking_done,
 nudge_chains_done, hos_cache, breakdown_pending, breakdown, providers, providers_at, near, say_learned,
-last_offer.
+last_offer, replies, name_at, breakdown_asked.
 Rules that make it serializable: the former sets (rejected, dest_declined) are lists; the pending question's
 "yes" is a pattern NAME (YES_PATTERNS in agent.py), not a compiled regex; the memory read that used to live on
 as an asyncio.Task (past_task) is gone, past_loaded says whether it has landed; clocks are epoch seconds
@@ -16,7 +16,7 @@ as before; the model is what gets stored.
 """
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator
 
 from models import Place, Provider, RouteInfo
 
@@ -54,6 +54,7 @@ class DialogState(BaseModel):
     nudge_chains_done: bool = False
     hos_cache: Optional[list] = None  # [epoch seconds, hos dict]
     breakdown_pending: Optional[dict] = None
+    breakdown_asked: Optional[str] = None  # the question asked last turn and not answered (never asked twice in a row)
     breakdown: Optional[dict] = None
     providers: list[Provider] = []
     providers_at: float = 0.0  # epoch seconds
@@ -62,6 +63,10 @@ class DialogState(BaseModel):
     # {"kind": "stop", "id": stop id, "place": destination id}: what "not that one" turns down when it is not
     # the destination (a stop just added on the way)
     last_offer: Optional[dict] = None
+    replies: int = 0  # copilot replies in this dialog
+    name_at: Optional[int] = None  # the reply (by `replies`) that last used the driver's name
+    # each key as JSON when the state was loaded or last saved: what this request changed is what differs
+    _saved: dict = PrivateAttr(default_factory=dict)
 
     @field_validator("via", mode="before")
     @classmethod
@@ -135,6 +140,21 @@ class DialogState(BaseModel):
 
     def to_json(self) -> str:
         return self.model_dump_json()
+
+    def __eq__(self, other: object) -> bool:
+        """The same dialog: what was saved when (the private baseline) does not count."""
+        return isinstance(other, DialogState) and self.model_dump() == other.model_dump()
+
+    def mark_saved(self) -> None:
+        """What the store holds now (after a load or a save); changes() is measured from here."""
+        self._saved = self.model_dump(mode="json")
+
+    def changes(self) -> dict:
+        """The top-level keys this request changed since mark_saved(), as JSON values: all a save writes, so a
+        /nudges poll, a breakdown research landing late or a turn running beside another never put back the keys
+        the other one changed (review 2026-11-02, item 21)."""
+        now = self.model_dump(mode="json")
+        return {k: v for k, v in now.items() if k not in self._saved or self._saved[k] != v}
 
     @classmethod
     def from_json(cls, text: str) -> "DialogState":

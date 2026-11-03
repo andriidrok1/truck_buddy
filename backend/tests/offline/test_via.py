@@ -1,5 +1,6 @@
 """Stops on the way (HERE via=): request shape, section starts, and the add_stop / clear_stops dialog."""
 import copy
+import re
 
 import httpx
 
@@ -368,3 +369,16 @@ def test_a_stop_by_category_is_only_ahead_on_the_route(agent_sandbox, fake_http)
     assert res.status == "chat" and res.reply == "I couldn't find a truck stop ahead on your route."
     res = run(prov.handle(_req("add a fuel stop", sid="behind-only"), None))
     assert res.status == "chat" and res.reply == "I couldn't find a truck stop ahead on your route."
+
+
+def test_a_named_stop_in_another_town_is_that_towns(agent_sandbox, fake_http):
+    # Eval 2026-11-02: for "stop at the Pilot in Fernley on the way" the model sometimes puts the town in `near`
+    # and only "Pilot" in `query`; the search by name then took the Pilot next to the truck in Sacramento.
+    prov = _sandbox(agent_sandbox, fake_http)
+    pilot_sac = Place(id="g-pilot-sac", name="Pilot Travel Center", category="truck_stop", lat=38.6, lng=-121.5,
+                      address="West Sacramento, CA", distance_mi=3.0)
+    agent_sandbox.places_provider.places = [pilot_sac]
+    agent_sandbox.llm.rules.insert(0, (re.compile(r"pilot in fernley", re.I), {"intent": "add_stop", "query": "Pilot", "near": "Fernley, NV"}))
+    run(prov.handle(_req("take me to Reno", sid="near", active=None), None))
+    res = run(prov.handle(_req("stop at the Pilot in Fernley on the way", sid="near"), None))
+    assert [o.id for o in res.options] == [PILOT.id]

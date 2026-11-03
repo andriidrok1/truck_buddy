@@ -82,7 +82,7 @@ def test_preset_contexts_carry_their_state(agent_sandbox):
     assert "Current route: Pilot Travel Center" in route and "4.7 miles, about 9 minutes" in route
     options = build_context("options_shown")[1]
     # numbered as the app's cards: the other options first, the current route last (QA 2026-11-02, bug 6)
-    assert "3=Pilot Travel Center (truck_stop)" in options and "diesel $5.39" in options
+    assert "3=Pilot Travel Center in West Sacramento, CA (truck_stop)" in options and "diesel $5.39" in options
     assert "1=Love's Travel Stop" in options and "2=Flying J Travel Center" in options
     assert "[current route]" in options and "Driver: find me a truck stop" in options
     assert "Stops on the way: Love's Travel Stop" in build_context("stops")[1]
@@ -114,11 +114,17 @@ def test_generated_variants_follow_the_rules():
     for parent_id, kids in per_parent.items():
         assert sum("noisy_stt" in k["tags"] for k in kids) <= gen_variants.MAX_NOISY_PER_CASE
         assert sum("disfluency" in k["tags"] for k in kids) == 1
-    core = [c for c in hand.values() if "core" in c["tags"]]
-    assert set(per_parent) == {c["id"] for c in core}
+    # every core case has variants, except noise with nothing to mishear and no wrapper (intent unclear)
+    core = [c for c in hand.values() if "core" in c["tags"] and c["expected"].get("intent") not in gen_variants.NO_WRAPPER]
+    assert set(per_parent) >= {c["id"] for c in core}
     noisy = [g for g in gen if "noisy_stt" in g["tags"]]
     assert any(g["text"] == "I need few" for g in noisy)  # l_02 "I need fuel", fuel -> few
     assert any(g["text"].endswith(" please") for g in gen) and any(g["text"].startswith("uh, ") for g in gen)
+    # no "please" on a goodbye, a breakdown or noise; no wrapper on noise at all
+    for g in gen:
+        intent = g["expected"].get("intent")
+        assert not (g["text"].endswith(" please") and intent in gen_variants.NOT_A_REQUEST), g["text"]
+        assert not ("disfluency" in g["tags"] and intent in gen_variants.NO_WRAPPER), g["text"]
 
 
 def test_variants_of_one_case():
@@ -154,6 +160,11 @@ def test_variants_of_one_case():
      True, True),
     ({"intent": "control", "actions": ["zoom_in"]}, {"intent": "control", "actions": []}, True, False),
     ({"intent": "breakdown", "kind": "tire"}, {"intent": "breakdown", "kind": "tire"}, True, True),
+    # where: the town may come in query or near
+    ({"intent": "add_stop", "where": {"contains": "fernley"}}, {"intent": "add_stop", "query": "Pilot", "near": "Fernley, NV"},
+     True, True),
+    ({"intent": "add_stop", "where": {"contains": "fernley"}}, {"intent": "add_stop", "query": "Pilot Fernley NV"}, True, True),
+    ({"intent": "add_stop", "where": {"contains": "fernley"}}, {"intent": "add_stop", "query": "Pilot"}, True, False),
     ({"intent": "unclear"}, {}, False, False),
     ({"intent": "unclear"}, "not a dict", False, False),
 ])
