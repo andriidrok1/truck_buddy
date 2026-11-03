@@ -238,7 +238,8 @@ export type AgentResponse = {
 
 export type AppAction = { type: string; value?: boolean | number | string | null };
 
-export type UiState = { driving: boolean; voice_guidance: boolean; hands_free: boolean; options_count: number };
+/** option_ids: the place cards on screen, in screen order ("the second one" is counted on them). */
+export type UiState = { driving: boolean; voice_guidance: boolean; hands_free: boolean; options_count: number; option_ids?: string[] };
 
 export type ActiveRoute = {
   place: Place;
@@ -246,6 +247,9 @@ export type ActiveRoute = {
   parking?: ParkingCheck | null;
   /** Via stops on the way, in order (mirrors `route.via`); empty or missing = none. */
   stops?: Place[];
+  /** The drive's id for trip events (src/net/tripEvents.ts); set when the route is started, kept across
+   * reroutes, alternatives and a restart. Missing on routes saved before it existed. */
+  trip_id?: string;
 };
 
 /** POST /api/nudges body (truck_profile is added by the client). */

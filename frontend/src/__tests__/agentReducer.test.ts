@@ -41,7 +41,7 @@ describe("reduceAgentResponse", () => {
     const res: AgentResponse = { ...routeSetRes, route, options: [stop] };
     const { patch, effects } = reduceAgentResponse(res, onRoute);
     expect(types(effects)).toEqual(["backToIdle", "speak"]); // no startRoute, no followParking, no pauseDialog
-    expect(patch).toEqual({ activeRoute: { route, stops: [stop] } });
+    expect(patch).toEqual({ activeRoute: { route, stops: [stop], parking: routeSetRes.parking } });
     expect(patch.options).toBeUndefined(); // the options sheet is left alone
     expect(patch.parking).toBeUndefined();
   });
@@ -52,7 +52,7 @@ describe("reduceAgentResponse", () => {
     const res: AgentResponse = { ...routeSetRes, route, options: [optionsRes.options![0]] };
     const { patch, effects } = reduceAgentResponse(res, onRoute);
     expect(types(effects)).toEqual(["backToIdle", "speak"]);
-    expect(patch.activeRoute).toEqual({ route, stops: [] });
+    expect(patch.activeRoute).toEqual({ route, stops: [], parking: routeSetRes.parking });
     // "another way?": no via field at all is the same thing.
     const other = reduceAgentResponse({ ...routeSetRes, options: [] }, onRoute);
     expect(other.patch.activeRoute?.stops).toEqual([]);
@@ -71,7 +71,8 @@ describe("reduceAgentResponse", () => {
   test("route_set without a route falls through to the toast branch", () => {
     const { patch, effects } = reduceAgentResponse({ ...routeSetRes, route: null }, idle);
     expect(patch).toEqual({});
-    expect(types(effects)).toEqual(["toast", "backToIdle", "speak", "continueDialog"]);
+    // the recorded fixture carries a legacy `set_driving` action no build knows: reported, not acted on
+    expect(types(effects)).toEqual(["toast", "backToIdle", "unknownAction", "speak", "continueDialog"]);
   });
 
   test("options status fills list", () => {
@@ -197,8 +198,11 @@ describe("reduceActions", () => {
     expect(reduceActions([{ type: "set_nudges", value: true }], idle)).toEqual([{ type: "setNudges", on: true }]);
   });
 
-  test("unknown action is ignored", () => {
-    expect(reduceActions([{ type: "make_coffee", value: "double" }, { type: "set_driving", value: true }], onRoute)).toEqual([]);
+  test("an unknown action is reported, never acted on", () => {
+    expect(reduceActions([{ type: "make_coffee", value: "double" }, { type: "set_driving", value: true }], onRoute)).toEqual([
+      { type: "unknownAction", action: "make_coffee" },
+      { type: "unknownAction", action: "set_driving" },
+    ]);
   });
 
   test("trip and map controls need the matching state", () => {
@@ -222,5 +226,20 @@ describe("reduceActions", () => {
       { type: "setVoiceGuidance", on: true },
       { type: "setHandsFree", on: false },
     ]);
+  });
+});
+
+
+describe("every action the backend can emit is handled", () => {
+  const actions: string[] = require("../../contracts/actions.json").actions;
+  test.each(actions)("%s", (type) => {
+    const ctx = { activePlaceId: "p1", optionsCount: 2, favoriteChains: [] as string[] };
+    const value = type.startsWith("set_") || type.startsWith("avoid_") || type === "voice_guidance" || type === "wake_word" ? true : type.includes("chain") ? "Pilot" : undefined;
+    const effects = reduceActions([{ type, value } as AppAction], ctx);
+    expect(effects.some((e) => e.type === "unknownAction")).toBe(false);
+  });
+  test("an action this build does not know is reported, not dropped", () => {
+    const effects = reduceActions([{ type: "teleport" } as AppAction], { activePlaceId: null, optionsCount: 0, favoriteChains: [] });
+    expect(effects).toEqual([{ type: "unknownAction", action: "teleport" }]);
   });
 });

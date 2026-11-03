@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
+import { Dimensions, StyleSheet } from "react-native";
 
 import { AlternativesSheet, routeFacts } from "../components/AlternativesSheet";
 import type { RouteInfo } from "../types";
@@ -53,7 +54,7 @@ const primary = route("I-5 N", {
 // RNTL 14: render() and fireEvent.* are async.
 describe("AlternativesSheet", () => {
   test("lists the current route and each alternative with its facts", async () => {
-    await render(<AlternativesSheet primary={primary} bottom={0} onPick={() => {}} onClose={() => {}} />);
+    await render(<AlternativesSheet primary={primary} bottom={0} top={0} onPick={() => {}} onClose={() => {}} />);
     expect(screen.getByTestId("alternative-current")).toBeTruthy();
     expect(screen.getByText("8 min · 4.2 mi · current")).toBeTruthy();
     expect(screen.getByText("I-80")).toBeTruthy();
@@ -65,11 +66,17 @@ describe("AlternativesSheet", () => {
   test("tapping an alternative reports its index; close reports close", async () => {
     const onPick = jest.fn();
     const onClose = jest.fn();
-    await render(<AlternativesSheet primary={primary} bottom={0} onPick={onPick} onClose={onClose} />);
+    await render(<AlternativesSheet primary={primary} bottom={0} top={0} onPick={onPick} onClose={onClose} />);
     await fireEvent.press(screen.getByTestId("alternative-1"));
     expect(onPick).toHaveBeenCalledWith(1);
     await fireEvent.press(screen.getByTestId("alternatives-close"));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test("never grows past the top bound: the title and close stay on screen at large font (QA 2026-11-02)", async () => {
+    await render(<AlternativesSheet primary={primary} bottom={300} top={200} onPick={() => {}} onClose={() => {}} />);
+    const style = StyleSheet.flatten(screen.getByTestId("alternatives-sheet").props.style);
+    expect(style.maxHeight).toBe(Dimensions.get("window").height - 500);
   });
 });
 

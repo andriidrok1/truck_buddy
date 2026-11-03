@@ -1,5 +1,27 @@
 # TruckBuddy app
 
+## Builds
+
+Three ways the app runs, and only the first two are the real binary:
+
+- Dev client (`eas build --profile development`): our own build with every native module in `package.json`
+  (MapLibre, background location, keep-awake, Sentry), plus Metro, hot reload and the dev menu. This is what
+  the stand and test phones should run; see `docs/stand-dev-client.md`.
+- Staging / production (`eas build --profile staging|production`): what drivers get. Internal distribution
+  for the pilot fleets, the store for the rest.
+- Expo Go: works for quick UI checks only; nothing background, no MapLibre, a different binary from drivers'.
+
+OTA: `runtimeVersion` follows the app version, so every build of 1.0.0 is one runtime. A JS-only change ships
+with `eas update --branch staging` (or `production`) and is picked up on the next app open; a native change
+(new module, config plugin) needs a new build and a version bump.
+
+Crash reporting: Sentry is initialised in `app/_layout.tsx` and dormant without `EXPO_PUBLIC_SENTRY_DSN`.
+Events carry the `trip_id` tag so a crash sits next to the trip log on the backend.
+
+One-time owner steps: `npx eas-cli login`, `npx eas-cli init` (project id → `EXPO_PUBLIC_EAS_PROJECT_ID`),
+Sentry project (DSN, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` as EAS secrets), `EXPO_TOKEN` as a
+GitHub secret for the manual `eas-build-dev` workflow job.
+
 ## Running on a phone
 
 - **Expo Go (quickest):** start the backend on your laptop, put the phone on the same Wi-Fi, then

@@ -129,19 +129,32 @@ describe("savedAgeLabel", () => {
 describe("writes are serialised", () => {
   it("a save still in flight when the route is cleared does not bring it back", async () => {
     await AsyncStorage.clear();
-    const real = AsyncStorage.setItem.bind(AsyncStorage);
+    // Not jest.spyOn: the module is already a jest mock, and mockRestore() on a spy over a mock function
+    // leaves setItem with no implementation for every later test in this file.
+    const original = AsyncStorage.setItem;
     let release: () => void = () => {};
     const slow = new Promise<void>((r) => (release = r));
-    const spy = jest.spyOn(AsyncStorage, "setItem").mockImplementationOnce(async (k, v) => {
-      await slow; // the parking result's save hangs in the bridge
-      return real(k, v);
-    });
-    const saving = saveActiveRoute(active, T0);
-    const clearing = clearSavedRoute(); // "End route" a few ms later
-    release();
-    await Promise.all([saving, clearing]);
-    expect(await AsyncStorage.getItem(ACTIVE_ROUTE_KEY)).toBeNull();
-    expect(getSavedAt()).toBeNull();
-    spy.mockRestore();
+    AsyncStorage.setItem = jest.fn(async (k: string, v: string) => {
+      AsyncStorage.setItem = original; // only the first write hangs in the bridge
+      await slow;
+      return original(k, v);
+    }) as typeof AsyncStorage.setItem;
+    try {
+      const saving = saveActiveRoute(active, T0);
+      const clearing = clearSavedRoute(); // "End route" a few ms later
+      release();
+      await Promise.all([saving, clearing]);
+      expect(await AsyncStorage.getItem(ACTIVE_ROUTE_KEY)).toBeNull();
+      expect(getSavedAt()).toBeNull();
+    } finally {
+      AsyncStorage.setItem = original;
+    }
   });
+});
+
+test("the trip id rides along with the saved route", async () => {
+  await AsyncStorage.clear();
+  await saveActiveRoute({ ...active, trip_id: "trip-abc-0001" }, T0);
+  const saved = await loadActiveRoute(T0 + H);
+  expect(saved?.active.trip_id).toBe("trip-abc-0001");
 });

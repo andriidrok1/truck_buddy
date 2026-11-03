@@ -1,0 +1,28 @@
+{
+  "_source": "backend/services/controls.py (AppAction types the copilot can emit); regenerate by hand when a control is added",
+  "actions": [
+    "add_favorite_chain",
+    "avoid_ferries_tunnels",
+    "avoid_tolls",
+    "end_route",
+    "overview",
+    "recenter",
+    "remove_favorite_chain",
+    "reroute",
+    "set_break_hours",
+    "set_chains_on_board",
+    "set_driver_name",
+    "set_hazmat",
+    "set_height_in",
+    "set_nudges",
+    "set_trailer_ft",
+    "set_weight_lb",
+    "show_options",
+    "start_navigation",
+    "stop_talking",
+    "voice_guidance",
+    "wake_word",
+    "zoom_in",
+    "zoom_out"
+  ]
+}

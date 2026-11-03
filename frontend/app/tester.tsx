@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,8 +10,13 @@ import { clearAnnouncements, useAnnouncements, type AnnouncementKind } from "@/s
 import { cumulativeMeters } from "@/src/geo/guidance";
 import { syntheticTrace, type TracePoint } from "@/src/geo/trace";
 import { useOnline } from "@/src/hooks/useOnline";
+import { recorder, useRecorder } from "@/src/geo/driveRecorder";
+import { requestReplay } from "@/src/geo/replayRequest";
+import { listTraces, readTrace, shareTrace } from "@/src/geo/traceFiles";
+import { tripLog, useTripLog } from "@/src/net/tripEvents";
 import { isTracePlaying, playTrace, SCENARIOS, setSim, stopTrace, useSim } from "@/src/sim";
-import { useActiveRoute } from "@/src/state/activeRoute";
+import { useTripStore } from "@/src/state/tripStore";
+import { useTripEvents } from "@/src/data/profile";
 import { savedAgeLabel, useSavedRouteAt } from "@/src/state/routeStore";
 import { fonts, radius, shadow, spacing, useTheme } from "@/src/theme";
 import type { RouteInfo } from "@/src/types";
@@ -85,12 +90,55 @@ export default function TesterScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const sim = useSim();
-  const active = useActiveRoute();
+  const active = useTripStore((s) => s.active);
   const announcements = useAnnouncements();
   const savedAt = useSavedRouteAt();
   const { online } = useOnline();
   const [speedFactor, setSpeedFactor] = useState<1 | 4>(1);
   const playing = isTracePlaying();
+  const trip = useTripLog();
+  const rec = useRecorder();
+  // Re-listed when a recording starts or a file lands (listTraces is a synchronous directory read).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const traces = useMemo(() => listTraces(), [rec.recording, rec.lastFile]);
+  const [traceNote, setTraceNote] = useState<string | null>(null);
+  const toggleRecording = async () => {
+    if (rec.recording) {
+      const name = await recorder.stop();
+      setTraceNote(name ? `Saved ${name}` : null);
+    } else {
+      recorder.start({ tripId: active?.trip_id ?? null, place: active?.place ?? null, route: active?.route ?? null });
+      setTraceNote(null);
+    }
+  };
+  const share = async (name: string) => {
+    setTraceNote((await shareTrace(name)) ? null : "Sharing is not available on this device; pull the file with adb.");
+  };
+  const replayRecorded = async (name: string) => {
+    const trace = await readTrace(name);
+    if (!trace) {
+      setTraceNote(`Couldn't read ${name}.`);
+      return;
+    }
+    if (!trace.fixes.length) {
+      setTraceNote(`${name} has no fixes.`);
+      return;
+    }
+    requestReplay({ trace, speedFactor, name });
+    router.back();
+  };
+  // The trip log rows the backend holds for this drive, through react-query (the flush goes first, so the
+  // rows include what the app just sent).
+  const [tripAsked, setTripAsked] = useState(false);
+  const tripQuery = useTripEvents(active?.trip_id, tripAsked);
+  const tripRows = tripAsked ? (tripQuery.data ?? null) : null;
+  const tripNote = !tripAsked ? null : tripQuery.isFetching ? "Loading…" : tripQuery.error ? `Couldn't load: ${String(tripQuery.error)}` : null;
+  const loadTrip = async () => {
+    if (!active?.trip_id) return;
+    await tripLog.flush().catch(() => {});
+    if (tripAsked) tripQuery.refetch();
+    else setTripAsked(true); // enabling the query fetches it
+  };
   // Drivers can reach this route by deep link (truckbuddy://tester); the simulated locations are for testers only.
   if (!isTester()) return <Redirect href="/" />;
 
@@ -212,6 +260,77 @@ export default function TesterScreen() {
             <Icon name="stop-circle-outline" size={20} color={colors.onSurface} />
             <Text style={[styles.resetText, { color: colors.onSurface }]}>Stop replay (truck stays here)</Text>
           </PressableScale>
+        )}
+
+        <View style={styles.sectionHead}>
+          <Text style={[styles.section, { color: colors.onSurface }]}>Recorded drives</Text>
+        </View>
+        <Text style={[styles.cardSub, { color: colors.onSurfaceSecondary }]}>
+          Real GPS fixes with the route and what the copilot said, as a file you can share. A recording replays here on its own route.
+        </Text>
+        <PressableScale
+          testID="trace-record"
+          accessibilityLabel={rec.recording ? "Stop recording" : "Record this drive"}
+          onPress={() => toggleRecording().catch(() => {})}
+          style={[styles.reset, { borderColor: rec.recording ? colors.warning : colors.onSurface }]}
+        >
+          <Icon name={rec.recording ? "stop-circle-outline" : "record-circle-outline"} size={20} color={rec.recording ? colors.warning : colors.onSurface} />
+          <Text style={[styles.resetText, { color: rec.recording ? colors.warning : colors.onSurface }]}>
+            {rec.recording ? `Stop recording (${rec.fixes} fixes)` : "Record this drive"}
+          </Text>
+        </PressableScale>
+        {traceNote && <Text style={[styles.cardSub, { color: colors.muted }]}>{traceNote}</Text>}
+        {traces.length === 0 ? (
+          <Text style={[styles.cardSub, { color: colors.muted }]}>No recordings yet.</Text>
+        ) : (
+          traces.slice(0, 10).map((name) => (
+            <View key={name} style={[styles.status, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.cardSub, { color: colors.onSurface, flex: 1 }]} numberOfLines={2}>
+                {name}
+              </Text>
+              <PressableScale testID={`trace-share-${name}`} accessibilityLabel={`Share ${name}`} onPress={() => share(name).catch(() => {})} style={styles.clear}>
+                <Icon name="share-variant-outline" size={22} color={colors.info} />
+              </PressableScale>
+              <PressableScale testID={`trace-replay-${name}`} accessibilityLabel={`Replay ${name}`} onPress={() => replayRecorded(name).catch(() => {})} style={styles.clear}>
+                <Icon name="play-circle-outline" size={24} color={colors.info} />
+              </PressableScale>
+            </View>
+          ))
+        )}
+
+        <View style={styles.sectionHead}>
+          <Text style={[styles.section, { color: colors.onSurface }]}>Trip log</Text>
+          <PressableScale testID="trip-flush" accessibilityLabel="Flush trip events" onPress={() => tripLog.flush().catch(() => {})} style={styles.clear}>
+            <Text style={[styles.segText, { color: colors.info }]}>Flush now</Text>
+          </PressableScale>
+        </View>
+        <View style={[styles.status, { backgroundColor: colors.surface }]}>
+          <Icon name="chart-timeline-variant" size={22} color={colors.onSurfaceSecondary} />
+          <Text testID="trip-log-status" style={[styles.cardSub, { color: colors.onSurfaceSecondary, flex: 1 }]} numberOfLines={2}>
+            {`${trip.pending} event${trip.pending === 1 ? "" : "s"} pending · last flush ${trip.lastFlushAt ? clock(trip.lastFlushAt) : "never"}`}
+            {active?.trip_id ? ` · trip ${active.trip_id}` : " · no trip"}
+          </Text>
+        </View>
+        {active?.trip_id && (
+          <PressableScale testID="trip-load" accessibilityLabel="Load this trip's events" onPress={loadTrip} style={[styles.reset, { borderColor: colors.onSurface }]}>
+            <Icon name="cloud-download-outline" size={20} color={colors.onSurface} />
+            <Text style={[styles.resetText, { color: colors.onSurface }]}>Load this trip from the server</Text>
+          </PressableScale>
+        )}
+        {(tripNote || tripRows) && (
+          <View testID="trip-events" style={[styles.log, { backgroundColor: colors.surface }]}>
+            {tripNote && <Text style={[styles.cardSub, { color: colors.muted }]}>{tripNote}</Text>}
+            {tripRows?.length === 0 && <Text style={[styles.cardSub, { color: colors.muted }]}>Nothing stored for this trip yet.</Text>}
+            {tripRows?.map((r) => (
+              <View key={r.id} style={styles.logRow}>
+                <Icon name={r.source === "server" ? "server-network" : "cellphone"} size={16} color={colors.onSurfaceSecondary} />
+                <Text style={[styles.logTime, { color: colors.muted }]}>{clock(Date.parse(r.t))}</Text>
+                <Text style={[styles.logText, { color: colors.onSurface }]}>
+                  {r.kind} {Object.keys(r.data).length ? JSON.stringify(r.data) : ""}
+                </Text>
+              </View>
+            ))}
+          </View>
         )}
 
         <View style={styles.sectionHead}>

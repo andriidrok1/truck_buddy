@@ -16,7 +16,7 @@ export type AgentPatch = {
   parking?: Record<string, ParkingState>;
   phase?: Phase;
   /** Same destination, new route ("another way?", a via stop added or cleared): swap it in place. */
-  activeRoute?: { route: RouteInfo; stops: Place[] };
+  activeRoute?: { route: RouteInfo; stops: Place[]; parking: ParkingCheck | null };
 };
 
 export type Effect =
@@ -48,7 +48,9 @@ export type Effect =
   | { type: "setNudges"; on: boolean }
   | { type: "saveProfile"; patch: Partial<TruckProfile> }
   /** Save the patch, then re-plan the active route with it. */
-  | { type: "reroute"; patch: Partial<TruckProfile> };
+  | { type: "reroute"; patch: Partial<TruckProfile> }
+  /** An action type this build does not know (older app, newer backend): logged, never silently dropped. */
+  | { type: "unknownAction"; action: string };
 
 export type AgentContext = {
   /** Destination of the active route, null without one. */
@@ -139,7 +141,10 @@ export function reduceActions(actions: AppAction[], ctx: AgentContext): Effect[]
         effects.push({ type: "reroute", patch: truckPatch });
         truckPatch = {};
         break;
-      // parking_followup is handled by reduceAgentResponse (it wraps the spoken reply); unknown types are ignored.
+      case "parking_followup":
+        break; // handled by reduceAgentResponse (it wraps the spoken reply)
+      default:
+        effects.push({ type: "unknownAction", action: String(type) });
     }
   }
   if (Object.keys(truckPatch).length) effects.push({ type: "saveProfile", patch: truckPatch });
@@ -163,7 +168,7 @@ export function reduceAgentResponse(res: AgentResponse, ctx: AgentContext): Agen
     // backToIdle: the turn is over. Without it the sheet stayed on "Thinking..." after "add a fuel stop"
     // while navigating (QA 2026-10-28).
     effects.push({ type: "backToIdle" }, { type: "speak" });
-    return { patch: { activeRoute: { route: res.route, stops } }, effects };
+    return { patch: { activeRoute: { route: res.route, stops, parking: res.parking ?? null } }, effects };
   }
 
   if (res.status === "route_set" && res.place && res.route) {
