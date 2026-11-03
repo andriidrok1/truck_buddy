@@ -1,0 +1,1106 @@
+[
+ {
+  "id": "ho-ts-loves-travel-stop-tehachapi",
+  "name": "Love's Travel Stop Tehachapi",
+  "category": "truck_stop",
+  "lat": 35.126063,
+  "lng": -118.40823,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     35.125524,
+     -118.407105
+    ],
+    [
+     35.124657,
+     -118.407105
+    ]
+   ],
+   "park": [
+    [
+     35.125232,
+     -118.408961
+    ],
+    [
+     35.124505,
+     -118.40795
+    ],
+    [
+     35.125098,
+     -118.407297
+    ]
+   ],
+   "note": "north car driveway off Monolith St at y~318 not counted"
+  }
+ },
+ {
+  "id": "ho-ts-pilot-travel-center-tehachapi",
+  "name": "Pilot Travel Center Tehachapi",
+  "category": "truck_stop",
+  "lat": 35.127115,
+  "lng": -118.415423,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     35.126697,
+     -118.41449
+    ]
+   ],
+   "park": [
+    [
+     35.126306,
+     -118.414973
+    ],
+    [
+     35.125902,
+     -118.415467
+    ],
+    [
+     35.125588,
+     -118.415192
+    ]
+   ],
+   "note": "car driveways off E Tehachapi Blvd and north end of Steuber Rd not counted"
+  }
+ },
+ {
+  "id": "ho-ts-petro-stopping-center-kingman",
+  "name": "Petro Stopping Center Kingman",
+  "category": "truck_stop",
+  "lat": 35.177968,
+  "lng": -113.788827,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     35.178637,
+     -113.789602
+    ],
+    [
+     35.178368,
+     -113.789783
+    ]
+   ],
+   "park": [
+    [
+     35.178224,
+     -113.7882
+    ],
+    [
+     35.177362,
+     -113.787772
+    ],
+    [
+     35.17782,
+     -113.787376
+    ]
+   ],
+   "note": "third driveway off CR 151 at the south leads to the car lot first"
+  }
+ },
+ {
+  "id": "ho-ts-flying-j-travel-center-phoenix",
+  "name": "Flying J Travel Center Phoenix",
+  "category": "truck_stop",
+  "lat": 33.461045,
+  "lng": -112.204534,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     33.460111,
+     -112.207452
+    ],
+    [
+     33.460138,
+     -112.205901
+    ],
+    [
+     33.460138,
+     -112.20532
+    ]
+   ],
+   "park": [
+    [
+     33.461854,
+     -112.205987
+    ],
+    [
+     33.460821,
+     -112.206903
+    ],
+    [
+     33.461,
+     -112.206041
+    ]
+   ],
+   "note": "westmost Latham St driveway lies just outside the 400 m frame; car-side driveway at x~536 and car lot off 51st Ave not counted"
+  }
+ },
+ {
+  "id": "ho-ts-best-truck-stop",
+  "name": "Best Truck Stop",
+  "category": "truck_stop",
+  "lat": 35.973919,
+  "lng": -119.293038,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [],
+   "park": [
+    [
+     35.974144,
+     -119.293515
+    ]
+   ],
+   "note": "small fuel stop, open dirt apron along North Park Dr with no distinct driveway; two semis parked by the freeway side"
+  }
+ },
+ {
+  "id": "ho-ts-flying-j-travel-center-picacho",
+  "name": "Flying J Travel Center Picacho",
+  "category": "truck_stop",
+  "lat": 32.732417,
+  "lng": -111.549424,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     32.731375,
+     -111.550331
+    ]
+   ],
+   "park": [
+    [
+     32.732646,
+     -111.548815
+    ],
+    [
+     32.732027,
+     -111.548399
+    ],
+    [
+     32.731784,
+     -111.549007
+    ]
+   ],
+   "note": "north driveway off Sunshine Blvd at y~250 goes to the car lot and store, not counted"
+  }
+ },
+ {
+  "id": "ho-ts-pilot-travel-center-picacho",
+  "name": "Pilot Travel Center Picacho",
+  "category": "truck_stop",
+  "lat": 32.738639,
+  "lng": -111.549391,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     32.73793,
+     -111.550395
+    ],
+    [
+     32.739664,
+     -111.550422
+    ]
+   ],
+   "park": [
+    [
+     32.737885,
+     -111.548606
+    ],
+    [
+     32.738424,
+     -111.548606
+    ],
+    [
+     32.739529,
+     -111.548606
+    ]
+   ],
+   "note": "car-canopy driveway off Sunshine Blvd at y~286 not counted"
+  }
+ },
+ {
+  "id": "ho-ts-loves-travel-stop-coachella",
+  "name": "Love's Travel Stop Coachella",
+  "category": "truck_stop",
+  "lat": 33.717439,
+  "lng": -116.171427,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     33.717277,
+     -116.170218
+    ],
+    [
+     33.71681,
+     -116.171611
+    ],
+    [
+     33.716684,
+     -116.172464
+    ]
+   ],
+   "park": [
+    [
+     33.718166,
+     -116.17173
+    ],
+    [
+     33.717178,
+     -116.172702
+    ],
+    [
+     33.718616,
+     -116.171622
+    ]
+   ],
+   "note": "car-lot driveways off Dillon Rd near the corner not counted"
+  }
+ },
+ {
+  "id": "ho-ts-loves-travel-stop-holbrook",
+  "name": "Love's Travel Stop Holbrook",
+  "category": "truck_stop",
+  "lat": 34.954874,
+  "lng": -110.311321,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     34.955597,
+     -110.313305
+    ],
+    [
+     34.955543,
+     -110.311513
+    ],
+    [
+     34.954326,
+     -110.309956
+    ]
+   ],
+   "park": [
+    [
+     34.955211,
+     -110.312614
+    ],
+    [
+     34.954771,
+     -110.312368
+    ]
+   ],
+   "note": ""
+  }
+ },
+ {
+  "id": "ho-ts-loves-travel-stop-santa-nella",
+  "name": "Love's Travel Stop Santa Nella",
+  "category": "truck_stop",
+  "lat": 36.99562,
+  "lng": -120.096594,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     36.99637,
+     -120.096504
+    ],
+    [
+     36.994484,
+     -120.094907
+    ]
+   ],
+   "park": [
+    [
+     36.994816,
+     -120.096746
+    ],
+    [
+     36.995831,
+     -120.094828
+    ],
+    [
+     36.995239,
+     -120.096746
+    ]
+   ],
+   "note": "west car-lot driveway off the north road not counted"
+  }
+ },
+ {
+  "id": "ho-ts-flying-j-travel-center-barstow",
+  "name": "Flying J Travel Center Barstow",
+  "category": "truck_stop",
+  "lat": 34.854522,
+  "lng": -117.081438,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     34.853237,
+     -117.080677
+    ]
+   ],
+   "park": [
+    [
+     34.855241,
+     -117.080633
+    ],
+    [
+     34.855007,
+     -117.079319
+    ],
+    [
+     34.855712,
+     -117.081038
+    ]
+   ],
+   "note": "car driveways off High Point Pkwy (x~246, x~337) and Fisher Blvd not counted"
+  }
+ },
+ {
+  "id": "ho-ts-loves-travel-stop-tulare",
+  "name": "Love's Travel Stop Tulare",
+  "category": "truck_stop",
+  "lat": 36.180938,
+  "lng": -119.330141,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     36.180538,
+     -119.331098
+    ],
+    [
+     36.179285,
+     -119.331098
+    ]
+   ],
+   "park": [
+    [
+     36.180534,
+     -119.33028
+    ],
+    [
+     36.180098,
+     -119.3294
+    ],
+    [
+     36.179052,
+     -119.330152
+    ]
+   ],
+   "note": "north driveway at y~228 serves the car canopy, not counted"
+  }
+ },
+ {
+  "id": "ho-ts-loves-travel-stop-klamath-falls",
+  "name": "Love's Travel Stop Klamath Falls",
+  "category": "truck_stop",
+  "lat": 42.258047,
+  "lng": -121.799379,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     42.258739,
+     -121.79765
+    ],
+    [
+     42.257777,
+     -121.796788
+    ]
+   ],
+   "park": [
+    [
+     42.257993,
+     -121.79836
+    ],
+    [
+     42.25802,
+     -121.797492
+    ]
+   ],
+   "note": "east entry (from the loop road) lies just outside the 400 m frame; west car-lot driveway at x~327 not counted"
+  }
+ },
+ {
+  "id": "ho-ts-loves-travel-stop-brawley",
+  "name": "Love's Travel Stop Brawley",
+  "category": "truck_stop",
+  "lat": 33.038208,
+  "lng": -115.629207,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     33.038801,
+     -115.630058
+    ],
+    [
+     33.037485,
+     -115.627787
+    ]
+   ],
+   "park": [
+    [
+     33.039448,
+     -115.628805
+    ],
+    [
+     33.038962,
+     -115.628355
+    ],
+    [
+     33.039205,
+     -115.629737
+    ]
+   ],
+   "note": "car-canopy driveways (west road y~565, south road x~440) not counted"
+  }
+ },
+ {
+  "id": "ho-ts-loves-travel-stop-yuma",
+  "name": "Love's Travel Stop Yuma",
+  "category": "truck_stop",
+  "lat": 32.686223,
+  "lng": -114.582776,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     32.687081,
+     -114.584323
+    ],
+    [
+     32.686968,
+     -114.583
+    ]
+   ],
+   "park": [
+    [
+     32.686645,
+     -114.583934
+    ],
+    [
+     32.685464,
+     -114.583976
+    ],
+    [
+     32.68506,
+     -114.582856
+    ]
+   ],
+   "note": "west access road is the main truck way in; middle driveway also reaches the diesel lanes past the store"
+  }
+ },
+ {
+  "id": "ho-ts-pilot-travel-center-gila-bend",
+  "name": "Pilot Travel Center Gila Bend",
+  "category": "truck_stop",
+  "lat": 32.930026,
+  "lng": -112.672832,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     32.930049,
+     -112.674186
+    ]
+   ],
+   "park": [
+    [
+     32.930857,
+     -112.673699
+    ],
+    [
+     32.930884,
+     -112.672447
+    ],
+    [
+     32.931149,
+     -112.672725
+    ]
+   ],
+   "note": "south driveway at the car canopy not counted; NW driveways belong to the neighbouring building"
+  }
+ },
+ {
+  "id": "ho-ts-loves-travel-stop-buckeye",
+  "name": "Love's Travel Stop Buckeye",
+  "category": "truck_stop",
+  "lat": 33.431131,
+  "lng": -112.591799,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     33.430089,
+     -112.592704
+    ],
+    [
+     33.430089,
+     -112.592284
+    ],
+    [
+     33.430089,
+     -112.591778
+    ],
+    [
+     33.431638,
+     -112.591024
+    ]
+   ],
+   "park": [
+    [
+     33.430574,
+     -112.592914
+    ],
+    [
+     33.430507,
+     -112.59251
+    ],
+    [
+     33.431382,
+     -112.592709
+    ]
+   ],
+   "note": "Miller Rd driveway by the car canopy (y~428) not counted"
+  }
+ },
+ {
+  "id": "ho-ts-loves-travel-stop-kingman",
+  "name": "Love's Travel Stop Kingman",
+  "category": "truck_stop",
+  "lat": 35.199251,
+  "lng": -113.90401,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     35.200095,
+     -113.902405
+    ],
+    [
+     35.198316,
+     -113.903559
+    ]
+   ],
+   "park": [
+    [
+     35.199129,
+     -113.902636
+    ],
+    [
+     35.200261,
+     -113.902982
+    ],
+    [
+     35.198595,
+     -113.902636
+    ]
+   ],
+   "note": "east truck lot is reached by a loop road from N Roundup Ave; car driveway off Minerva Ln at x~362 not counted"
+  }
+ },
+ {
+  "id": "ho-ts-pilot-travel-center-weed",
+  "name": "Pilot Travel Center Weed",
+  "category": "truck_stop",
+  "lat": 41.399123,
+  "lng": -122.37681,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     41.398633,
+     -122.375977
+    ],
+    [
+     41.39857,
+     -122.376373
+    ]
+   ],
+   "park": [
+    [
+     41.399419,
+     -122.375355
+    ],
+    [
+     41.399958,
+     -122.376181
+    ],
+    [
+     41.399608,
+     -122.37575
+    ]
+   ],
+   "note": "Vista Dr frontage is mostly open; west driveway (x~319) goes to the store lot"
+  }
+ },
+ {
+  "id": "ho-ts-pilot-travel-center-boron",
+  "name": "Pilot Travel Center Boron",
+  "category": "truck_stop",
+  "lat": 34.991758,
+  "lng": -117.542259,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     34.992419,
+     -117.54358
+    ],
+    [
+     34.992383,
+     -117.542719
+    ]
+   ],
+   "park": [
+    [
+     34.991934,
+     -117.543821
+    ],
+    [
+     34.991475,
+     -117.543821
+    ],
+    [
+     34.991934,
+     -117.543098
+    ]
+   ],
+   "note": "lot frontage on Twenty Mule Team Rd is mostly open; east driveway (x~556) serves the store and car canopy"
+  }
+ },
+ {
+  "id": "ho-ts-flying-j-travel-center-ontario",
+  "name": "Flying J Travel Center Ontario",
+  "category": "truck_stop",
+  "lat": 34.0152,
+  "lng": -117.525555,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     34.014616,
+     -117.527278
+    ],
+    [
+     34.015515,
+     -117.524742
+    ]
+   ],
+   "park": [
+    [
+     34.015497,
+     -117.527029
+    ],
+    [
+     34.015137,
+     -117.526378
+    ],
+    [
+     34.016251,
+     -117.526292
+    ]
+   ],
+   "note": "west Riverside Dr driveway is the truck way in; Riverside Dr driveway at x~469 serves the car lot, not counted"
+  }
+ },
+ {
+  "id": "ho-ts-pilot-travel-center-fernley",
+  "name": "Pilot Travel Center Fernley",
+  "category": "truck_stop",
+  "lat": 39.61799,
+  "lng": -119.266574,
+  "tags": [
+   "Truck access",
+   "Diesel"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     39.618561,
+     -119.26784
+    ],
+    [
+     39.618561,
+     -119.267122
+    ]
+   ],
+   "park": [
+    [
+     39.617802,
+     -119.268166
+    ],
+    [
+     39.617397,
+     -119.267432
+    ],
+    [
+     39.618071,
+     -119.267641
+    ]
+   ],
+   "note": "truck lot frontage on Commerce Center Dr is wide open; east driveways (x~545, x~599) serve the store and car canopy"
+  }
+ },
+ {
+  "id": "ho-ra-buttonwillow-rest-area-southbound",
+  "name": "Buttonwillow Rest Area (southbound)",
+  "category": "rest_area",
+  "lat": 35.417426,
+  "lng": -119.424723,
+  "tags": [
+   "Truck parking",
+   "Restrooms"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     35.418863,
+     -119.42539
+    ]
+   ],
+   "park": [
+    [
+     35.418225,
+     -119.424944
+    ],
+    [
+     35.417902,
+     -119.424547
+    ]
+   ],
+   "note": "southbound side of I-5; off-ramp enters at the NW corner; point set between the restrooms and the truck rows so the ramp end stays inside the frame"
+  }
+ },
+ {
+  "id": "ho-ra-coalinga-avenal-rest-area-northbound",
+  "name": "Coalinga-Avenal Rest Area (northbound)",
+  "category": "rest_area",
+  "lat": 36.089687,
+  "lng": -120.113221,
+  "tags": [
+   "Truck parking",
+   "Restrooms"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     36.088654,
+     -120.112626
+    ]
+   ],
+   "park": [
+    [
+     36.089525,
+     -120.113665
+    ],
+    [
+     36.089058,
+     -120.113132
+    ]
+   ],
+   "note": "northbound side of I-5; off-ramp arrives from the south, the ramp at the top is the way back onto I-5"
+  }
+ },
+ {
+  "id": "ho-ra-desert-oasis-rest-area-northbound",
+  "name": "Desert Oasis Rest Area (northbound)",
+  "category": "rest_area",
+  "lat": 34.80022,
+  "lng": -116.524911,
+  "tags": [
+   "Truck parking",
+   "Restrooms"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     34.800929,
+     -116.526443
+    ]
+   ],
+   "park": [
+    [
+     34.800597,
+     -116.52513
+    ],
+    [
+     34.800345,
+     -116.523861
+    ]
+   ],
+   "note": "northbound I-15 side (toward Las Vegas) only; entry is the off-ramp at the west end"
+  }
+ },
+ {
+  "id": "ho-ra-boardman-rest-area-westbound",
+  "name": "Boardman Rest Area (westbound)",
+  "category": "rest_area",
+  "lat": 45.83288,
+  "lng": -119.768509,
+  "tags": [
+   "Truck parking",
+   "Restrooms"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     45.832673,
+     -119.76684
+    ]
+   ],
+   "park": [
+    [
+     45.832736,
+     -119.767581
+    ],
+    [
+     45.832682,
+     -119.768045
+    ]
+   ],
+   "note": "westbound side; truck lot fed by the off-ramp from the east, car ramp splits off at x~500"
+  }
+ },
+ {
+  "id": "ho-ra-haviland-rest-area-i-40-eastbound",
+  "name": "Haviland Rest Area (I-40 eastbound)",
+  "category": "rest_area",
+  "lat": 34.831048,
+  "lng": -114.143682,
+  "tags": [
+   "Truck parking",
+   "Restrooms"
+  ],
+  "truth": {
+   "fits": "likely",
+   "entries": [
+    [
+     34.830226,
+     -114.144344
+    ]
+   ],
+   "park": [
+    [
+     34.831812,
+     -114.144306
+    ],
+    [
+     34.831129,
+     -114.144262
+    ]
+   ],
+   "note": "east-side lot only (I-40 runs north-south here); off-ramp enters from the south"
+  }
+ },
+ {
+  "id": "ho-ra-sand-hills-rest-area",
+  "name": "Sand Hills Rest Area",
+  "category": "rest_area",
+  "lat": 32.737398,
+  "lng": -114.89037,
+  "tags": [
+   "Truck parking",
+   "Restrooms"
+  ],
+  "truth": {
+   "fits": "unclear",
+   "entries": [
+    [
+     32.737676,
+     -114.889537
+    ],
+    [
+     32.736791,
+     -114.891657
+    ]
+   ],
+   "park": [],
+   "note": "median rest area on I-8 serving both directions; wide loop road but no marked truck rows and no trucks in the image"
+  }
+ },
+ {
+  "id": "ho-ff-mcdonalds-merced",
+  "name": "McDonald's",
+  "category": "fast_food",
+  "lat": 37.30002,
+  "lng": -120.49437,
+  "tags": [],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": "car-only fast food in town by CA-99"
+  }
+ },
+ {
+  "id": "ho-gas-shell-grants-pass-s",
+  "name": "Shell",
+  "category": "gas_station",
+  "lat": 42.42259,
+  "lng": -123.34248,
+  "tags": [],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": "small car fuel station beside I-5"
+  }
+ },
+ {
+  "id": "ho-ff-mcdonalds-grants-pass",
+  "name": "McDonald's",
+  "category": "fast_food",
+  "lat": 42.43655,
+  "lng": -123.30813,
+  "tags": [],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": "fast food with a car lot"
+  }
+ },
+ {
+  "id": "ho-ht-whispering-winds-motel-flagstaff",
+  "name": "Whispering Winds Motel",
+  "category": "hotel",
+  "lat": 35.19449,
+  "lng": -111.63819,
+  "tags": [
+   "Parking"
+  ],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": "motel on Route 66, car lot only"
+  }
+ },
+ {
+  "id": "ho-gas-arco-grants-pass",
+  "name": "Arco",
+  "category": "gas_station",
+  "lat": 42.43616,
+  "lng": -123.30339,
+  "tags": [],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": "car fuel station in a retail area"
+  }
+ },
+ {
+  "id": "ho-gas-chevron-grants-pass",
+  "name": "Chevron",
+  "category": "gas_station",
+  "lat": 42.42184,
+  "lng": -123.33246,
+  "tags": [],
+  "truth": {
+   "fits": "unlikely",
+   "entries": [],
+   "park": [],
+   "note": "car fuel station at the I-5 interchange"
+  }
+ }
+]

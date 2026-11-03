@@ -1,7 +1,6 @@
 # Iteration 4 retests: height 203 in, gibberish rejection, Discover landmarks, friendly notices, destination parking=None
 import os
 import sys
-import asyncio
 import pytest
 import requests
 

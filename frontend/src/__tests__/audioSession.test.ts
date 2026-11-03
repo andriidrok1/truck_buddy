@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- jest.resetModules needs a fresh require */
 import { Platform } from "react-native";
 
 jest.mock("expo-audio", () => ({ setIsAudioActiveAsync: jest.fn(() => Promise.resolve()) }));

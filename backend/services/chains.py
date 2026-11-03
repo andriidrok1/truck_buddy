@@ -16,6 +16,7 @@ from typing import Optional
 from models import ChainControl
 from services.flags import on
 from services.geo import haversine_km
+from services import kv, leader
 from services.http import client
 
 logger = logging.getLogger("truckbuddy.chains")
@@ -95,14 +96,42 @@ async def fetch_district(n: int, now: Optional[float] = None) -> list[ChainContr
     return controls
 
 
+FEED_NAME = "caltrans_chains"
+
+
 async def refresh_all() -> None:
     await asyncio.gather(*(fetch_district(n) for n in districts()), return_exceptions=True)
+
+
+async def share() -> None:
+    """The leader's copy of every district into feed_cache for the other workers."""
+    payload = {str(n): [c.model_dump(mode="json") for c in controls] for n, (_at, controls) in _cache.items()}
+    await kv.feed_put(FEED_NAME, payload)
+
+
+async def take_shared(now: Optional[float] = None) -> bool:
+    """A follower: the leader's districts from feed_cache into the local cache. False when there is none yet."""
+    row = await kv.feed_get(FEED_NAME)
+    if not row:
+        return False
+    payload, _fetched = row
+    mono = time.monotonic() if now is None else now
+    for n, items in (payload or {}).items():
+        try:
+            _cache[int(n)] = (mono, [ChainControl(**c) for c in items])
+        except Exception as e:  # noqa: BLE001
+            logger.warning("shared chain controls D%s unreadable: %s", n, e)
+    return True
 
 
 async def _poll() -> None:
     while True:
         try:
-            await refresh_all()
+            if await leader.try_lead(FEED_NAME):
+                await refresh_all()
+                await share()
+            elif not await take_shared():
+                await refresh_all()  # no leader copy yet: fetch once ourselves
         except Exception as e:  # noqa: BLE001
             logger.warning("chain control poll failed: %s", e)
         await asyncio.sleep(POLL_S)

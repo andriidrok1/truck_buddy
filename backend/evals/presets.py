@@ -87,6 +87,15 @@ def options_shown() -> tuple[AgentRequest, dict]:
     return req, sess
 
 
+def route_active_alts() -> tuple[AgentRequest, dict]:
+    """options_shown plus the alternative routes HERE returned for the current route, exactly as the live
+    dialog has them: the context then says "1 alternative route not yet offered", which pulled "not that
+    one" towards `alternative` (QA 2026-10-30, H4)."""
+    req, sess = options_shown()
+    sess["alternatives"] = {"place": sess["places"][0].id, "routes": [object()], "i": 0}
+    return req, sess
+
+
 def stops() -> tuple[AgentRequest, dict]:
     """Route to the Pilot with one stop added on the way (the Love's)."""
     req, sess = route_active()
@@ -117,6 +126,7 @@ PRESETS: dict[str, Callable[[], tuple[AgentRequest, dict]]] = {
     "idle": idle,
     "route_active": route_active,
     "options_shown": options_shown,
+    "route_active_alts": route_active_alts,
     "stops": stops,
     "near_follow_up": near_follow_up,
     "past_memory": past_memory,

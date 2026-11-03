@@ -32,6 +32,9 @@ OFFLINE_ENV = {
     "OPENAI_API_KEY": "test-openai",
     "PARKING_WARM": "0",
     "DEV_DOCS": "0",
+    # The TPIMS poller starts with every TestClient; a first poll that lands after a test installed fake_http shows
+    # up in its calls[0] (test_tpims turns it on itself).
+    "TPIMS_ENABLED": "0",
 }
 
 
@@ -112,10 +115,21 @@ class FakeHttp:
 
 @pytest.fixture
 def fake_http(monkeypatch) -> FakeHttp:
+    from services import weather
     router = FakeHttp()
     monkeypatch.setattr(http, "_client", httpx.AsyncClient(transport=httpx.MockTransport(router)))
+    _clear_weather_caches(weather)  # the NWS feed and zone polygons are process-wide; never across tests
     yield router
     http._client = None
+    _clear_weather_caches(weather)
+
+
+def _clear_weather_caches(weather) -> None:
+    weather._feed_cache.clear()
+    weather._zone_cache.clear()
+    weather._alert_cache.clear()
+    weather._zone_fail.clear()
+    weather._feed_refresh = None
 
 
 def params_of(request: httpx.Request) -> list[tuple[str, str]]:
@@ -258,3 +272,14 @@ def api_client():
             yield c
     finally:
         mp.undo()
+
+
+@pytest.fixture
+def sqlite_store(tmp_path, monkeypatch):
+    """The conversation memory and the trip log on a throwaway SQLite file."""
+    from services import memory
+    monkeypatch.setenv("MEMORY_STORE", "sqlite")
+    monkeypatch.setenv("MEMORY_SQLITE_PATH", str(tmp_path / "mem.sqlite"))
+    run(memory.close())
+    yield tmp_path / "mem.sqlite"
+    run(memory.close())

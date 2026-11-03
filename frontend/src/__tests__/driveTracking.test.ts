@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- jest.resetModules needs a fresh require */
 import { AppState } from "react-native";
 
 jest.mock("expo", () => ({ isRunningInExpoGo: () => false }));

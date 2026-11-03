@@ -19,7 +19,7 @@ BASE = (os.environ.get("EXPO_BACKEND_URL") or os.environ.get("EXPO_PUBLIC_BACKEN
 def _stats(mp3: bytes) -> dict:
     out = subprocess.run([FF, "-hide_banner", "-i", "pipe:0", "-af", "loudnorm=print_format=summary", "-f", "null", "-"],
                          input=mp3, capture_output=True).stderr.decode()
-    val = lambda k: float(next(l for l in out.splitlines() if k in l).split(":")[1].split()[0])  # noqa: E731
+    val = lambda k: float(next(line for line in out.splitlines() if k in line).split(":")[1].split()[0])  # noqa: E731
     import re
     times = re.findall(r"time=(\d+):(\d+):([\d.]+)", out)
     dur = (int(times[-1][0]) * 3600 + int(times[-1][1]) * 60 + float(times[-1][2])) if times else None

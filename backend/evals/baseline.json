@@ -1,11 +1,11 @@
 {
  "model": "gpt-5.4-mini",
- "date": "2026-10-29",
+ "date": "2026-11-02",
  "adapter": "chat_json",
- "n_cases": 292,
- "n_results": 292,
- "intent_acc": 0.9589,
- "case_acc": 0.9315,
+ "n_cases": 305,
+ "n_results": 305,
+ "intent_acc": 0.9672,
+ "case_acc": 0.9443,
  "by_tag": {
   "address": {
    "n": 6,
@@ -13,34 +13,34 @@
    "case_acc": 1.0
   },
   "ambiguous": {
-   "n": 5,
-   "intent_acc": 1.0,
-   "case_acc": 0.8
+   "n": 11,
+   "intent_acc": 0.9091,
+   "case_acc": 0.9091
   },
   "core": {
-   "n": 87,
-   "intent_acc": 0.977,
-   "case_acc": 0.954
+   "n": 94,
+   "intent_acc": 0.9787,
+   "case_acc": 0.9681
   },
   "disfluency": {
-   "n": 87,
-   "intent_acc": 0.9655,
-   "case_acc": 0.9425
+   "n": 91,
+   "intent_acc": 0.978,
+   "case_acc": 0.967
   },
   "edge": {
    "n": 16,
-   "intent_acc": 0.9375,
-   "case_acc": 0.9375
+   "intent_acc": 0.875,
+   "case_acc": 0.875
   },
   "follow_up": {
-   "n": 47,
-   "intent_acc": 0.9787,
-   "case_acc": 0.9149
+   "n": 62,
+   "intent_acc": 1.0,
+   "case_acc": 1.0
   },
   "memory": {
    "n": 7,
-   "intent_acc": 1.0,
-   "case_acc": 1.0
+   "intent_acc": 0.8571,
+   "case_acc": 0.8571
   },
   "near": {
    "n": 16,
@@ -49,15 +49,15 @@
   },
   "noisy_stt": {
    "n": 44,
-   "intent_acc": 0.8864,
-   "case_acc": 0.8182
+   "intent_acc": 0.9545,
+   "case_acc": 0.8409
   }
  },
  "by_preset": {
   "idle": {
-   "n": 161,
-   "intent_acc": 0.9503,
-   "case_acc": 0.9317
+   "n": 159,
+   "intent_acc": 0.9623,
+   "case_acc": 0.9371
   },
   "near_follow_up": {
    "n": 5,
@@ -65,19 +65,24 @@
    "case_acc": 1.0
   },
   "options_shown": {
-   "n": 49,
-   "intent_acc": 0.9796,
-   "case_acc": 0.9184
+   "n": 51,
+   "intent_acc": 0.9804,
+   "case_acc": 0.9804
   },
   "past_memory": {
    "n": 7,
-   "intent_acc": 1.0,
-   "case_acc": 1.0
+   "intent_acc": 0.8571,
+   "case_acc": 0.8571
   },
   "route_active": {
    "n": 65,
-   "intent_acc": 0.9538,
+   "intent_acc": 0.9692,
    "case_acc": 0.9231
+  },
+  "route_active_alts": {
+   "n": 13,
+   "intent_acc": 1.0,
+   "case_acc": 1.0
   },
   "stops": {
    "n": 5,
@@ -93,7 +98,7 @@
    "confusions": {}
   },
   "alternative": {
-   "n": 7,
+   "n": 14,
    "intent_acc": 1.0,
    "case_acc": 1.0,
    "confusions": {}
@@ -106,18 +111,17 @@
   },
   "bye": {
    "n": 11,
-   "intent_acc": 0.9091,
-   "case_acc": 0.9091,
-   "confusions": {
-    "chat": 1
-   }
+   "intent_acc": 1.0,
+   "case_acc": 1.0,
+   "confusions": {}
   },
   "chat": {
-   "n": 17,
-   "intent_acc": 0.9412,
-   "case_acc": 0.9412,
+   "n": 18,
+   "intent_acc": 0.7222,
+   "case_acc": 0.7222,
    "confusions": {
-    "bye": 1
+    "alternative": 1,
+    "bye": 4
    }
   },
   "clear_stops": {
@@ -129,26 +133,24 @@
   "control": {
    "n": 42,
    "intent_acc": 1.0,
-   "case_acc": 0.9762,
+   "case_acc": 1.0,
    "confusions": {}
   },
   "find": {
    "n": 90,
-   "intent_acc": 0.9444,
+   "intent_acc": 0.9556,
    "case_acc": 0.9333,
    "confusions": {
-    "breakdown": 2,
-    "add_stop": 1,
-    "control": 1,
-    "unclear": 1
+    "breakdown": 3,
+    "add_stop": 1
    }
   },
   "go": {
    "n": 21,
-   "intent_acc": 0.8571,
+   "intent_acc": 0.9524,
    "case_acc": 0.8571,
    "confusions": {
-    "unclear": 3
+    "unclear": 1
    }
   },
   "hos": {
@@ -164,12 +166,10 @@
    "confusions": {}
   },
   "pick": {
-   "n": 25,
-   "intent_acc": 0.96,
-   "case_acc": 0.84,
-   "confusions": {
-    "go": 1
-   }
+   "n": 33,
+   "intent_acc": 1.0,
+   "case_acc": 1.0,
+   "confusions": {}
   },
   "reviews": {
    "n": 8,
@@ -178,12 +178,10 @@
    "confusions": {}
   },
   "unclear": {
-   "n": 8,
-   "intent_acc": 0.875,
-   "case_acc": 0.875,
-   "confusions": {
-    "chat": 1
-   }
+   "n": 5,
+   "intent_acc": 1.0,
+   "case_acc": 1.0,
+   "confusions": {}
   },
   "weather": {
    "n": 9,
@@ -193,20 +191,16 @@
   }
  },
  "confusions": {
-  "go→unclear": 3,
-  "find→breakdown": 2,
-  "pick→go": 1,
+  "chat→bye": 4,
+  "find→breakdown": 3,
+  "chat→alternative": 1,
   "find→add_stop": 1,
-  "bye→chat": 1,
-  "find→control": 1,
-  "find→unclear": 1,
-  "chat→bye": 1,
-  "unclear→chat": 1
+  "go→unclear": 1
  },
- "p50_ms": 986.0,
- "p95_ms": 1846.0,
- "cached_ratio": 0.8941,
- "cost_usd": 0.0695,
+ "p50_ms": 699.0,
+ "p95_ms": 926.0,
+ "cached_ratio": 0.7036,
+ "cost_usd": 0.1246,
  "failures": [
   {
    "id": "h_find_def",
@@ -218,13 +212,6 @@
    },
    "got": {
     "intent": "breakdown",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": null,
-    "reply": null,
     "kind": "fuel",
     "detail": "low on DEF",
     "mode": "unknown",
@@ -237,28 +224,24 @@
    ]
   },
   {
-   "id": "h_pick_reno_one",
-   "text": "the one in Reno",
-   "preset": "options_shown",
+   "id": "h_alt_no_route",
+   "text": "is there another way",
+   "preset": "idle",
    "expected": {
-    "intent": "pick",
-    "place_index": [
-     3
-    ]
+    "intent": "chat"
    },
    "got": {
-    "intent": "go",
+    "intent": "alternative",
     "category": null,
     "near": null,
-    "query": "Reno, NV",
+    "query": null,
     "when": null,
     "place_index": null,
     "actions": null,
     "reply": null
    },
    "mismatches": [
-    "intent: expected 'pick', got 'go'",
-    "place_index: expected one of [3], got None"
+    "intent: expected 'chat', got 'alternative'"
    ]
   },
   {
@@ -306,78 +289,66 @@
    ]
   },
   {
-   "id": "h_ctl_break_off",
-   "text": "stop reminding me about breaks",
-   "preset": "idle",
-   "expected": {
-    "intent": "control",
-    "actions": [
-     "set_break_hours"
-    ]
-   },
-   "got": {
-    "intent": "control",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": [
-     {
-      "type": "set_nudges",
-      "value": false
-     }
-    ],
-    "reply": null
-   },
-   "mismatches": [
-    "actions: missing ['set_break_hours'], got ['set_nudges']"
-   ]
-  },
-  {
-   "id": "h_bye_nothing_else",
-   "text": "nothing else",
+   "id": "h_chat_thanks",
+   "text": "thanks",
    "preset": "route_active",
    "expected": {
-    "intent": "bye"
+    "intent": "chat"
    },
    "got": {
-    "intent": "chat",
+    "intent": "bye",
     "category": null,
     "near": null,
     "query": null,
     "when": null,
     "place_index": null,
     "actions": null,
-    "reply": "Got it. Say the word if you need anything else."
+    "reply": "You bet — safe travels."
    },
    "mismatches": [
-    "intent: expected 'bye', got 'chat'"
+    "intent: expected 'chat', got 'bye'"
    ]
   },
   {
-   "id": "l_13_not_that_one",
-   "text": "Not that one",
-   "preset": "options_shown",
+   "id": "h_mem_thanks",
+   "text": "thanks",
+   "preset": "past_memory",
    "expected": {
-    "intent": "pick",
-    "place_index": [
-     2,
-     3
-    ]
+    "intent": "chat"
    },
    "got": {
-    "intent": "pick",
+    "intent": "bye",
     "category": null,
     "near": null,
     "query": null,
     "when": null,
-    "place_index": 1,
+    "place_index": null,
     "actions": null,
-    "reply": null
+    "reply": "You’re welcome. Safe travels."
    },
    "mismatches": [
-    "place_index: expected one of [2, 3], got 1"
+    "intent: expected 'chat', got 'bye'"
+   ]
+  },
+  {
+   "id": "l_20_thanks_man",
+   "text": "Thanks, man",
+   "preset": "options_shown",
+   "expected": {
+    "intent": "chat"
+   },
+   "got": {
+    "intent": "bye",
+    "category": null,
+    "near": null,
+    "query": null,
+    "when": null,
+    "place_index": null,
+    "actions": null,
+    "reply": "You got it, safe driving."
+   },
+   "mismatches": [
+    "intent: expected 'chat', got 'bye'"
    ]
   },
   {
@@ -389,22 +360,22 @@
     "category": "truck_stop"
    },
    "got": {
-    "intent": "control",
+    "intent": "breakdown",
     "category": null,
     "near": null,
     "query": null,
     "when": null,
     "place_index": null,
-    "actions": [
-     {
-      "type": "set_hazmat",
-      "value": false
-     }
-    ],
-    "reply": null
+    "actions": null,
+    "reply": null,
+    "kind": "fuel",
+    "detail": "low on DEF",
+    "mode": "unknown",
+    "tire_position": null,
+    "tire_size": null
    },
    "mismatches": [
-    "intent: expected 'find', got 'control'",
+    "intent: expected 'find', got 'breakdown'",
     "category: expected 'truck_stop', got None"
    ]
   },
@@ -470,18 +441,17 @@
     "category": "weigh_station"
    },
    "got": {
-    "intent": "unclear",
-    "category": null,
+    "intent": "find",
+    "category": "truck_stop",
     "near": null,
-    "query": null,
+    "query": "skill house",
     "when": null,
     "place_index": null,
     "actions": null,
     "reply": null
    },
    "mismatches": [
-    "intent: expected 'find', got 'unclear'",
-    "category: expected 'weigh_station', got None"
+    "category: expected 'weigh_station', got 'truck_stop'"
    ]
   },
   {
@@ -520,66 +490,17 @@
     }
    },
    "got": {
-    "intent": "unclear",
+    "intent": "go",
     "category": null,
     "near": null,
-    "query": null,
+    "query": "Rina",
     "when": null,
     "place_index": null,
     "actions": null,
     "reply": null
    },
    "mismatches": [
-    "intent: expected 'go', got 'unclear'",
-    "query: expected to contain 'reno', got None"
-   ]
-  },
-  {
-   "id": "h_pick_reno_one__stt_reno",
-   "text": "the one in Rina",
-   "preset": "options_shown",
-   "expected": {
-    "intent": "pick",
-    "place_index": [
-     3
-    ]
-   },
-   "got": {
-    "intent": "pick",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": null,
-    "reply": null
-   },
-   "mismatches": [
-    "place_index: expected one of [3], got None"
-   ]
-  },
-  {
-   "id": "h_pick_reno_one__dis_hey",
-   "text": "hey buddy the one in Reno",
-   "preset": "options_shown",
-   "expected": {
-    "intent": "pick",
-    "place_index": [
-     3
-    ]
-   },
-   "got": {
-    "intent": "pick",
-    "category": "truck_stop",
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": null,
-    "reply": null
-   },
-   "mismatches": [
-    "place_index: expected one of [3], got None"
+    "query: expected to contain 'reno', got 'Rina'"
    ]
   },
   {
@@ -646,31 +567,10 @@
     "when": null,
     "place_index": null,
     "actions": null,
-    "reply": "You bet, safe travels."
+    "reply": "You got it. Safe travels."
    },
    "mismatches": [
     "intent: expected 'chat', got 'bye'"
-   ]
-  },
-  {
-   "id": "h_unclear_music__dis_please",
-   "text": "music playing please",
-   "preset": "idle",
-   "expected": {
-    "intent": "unclear"
-   },
-   "got": {
-    "intent": "chat",
-    "category": null,
-    "near": null,
-    "query": null,
-    "when": null,
-    "place_index": null,
-    "actions": null,
-    "reply": "Got it."
-   },
-   "mismatches": [
-    "intent: expected 'unclear', got 'chat'"
    ]
   },
   {
@@ -684,18 +584,17 @@
     }
    },
    "got": {
-    "intent": "unclear",
+    "intent": "go",
     "category": null,
     "near": null,
-    "query": null,
+    "query": "Rina",
     "when": null,
     "place_index": null,
     "actions": null,
     "reply": null
    },
    "mismatches": [
-    "intent: expected 'go', got 'unclear'",
-    "query: expected to contain 'reno', got None"
+    "query: expected to contain 'reno', got 'Rina'"
    ]
   }
  ],
@@ -898,8 +797,8 @@
    "ok_all": true
   },
   "h_pick_reno_one": {
-   "ok_intent": false,
-   "ok_all": false
+   "ok_intent": true,
+   "ok_all": true
   },
   "h_pick_third": {
    "ok_intent": true,
@@ -926,8 +825,8 @@
    "ok_all": true
   },
   "h_alt_no_route": {
-   "ok_intent": true,
-   "ok_all": true
+   "ok_intent": false,
+   "ok_all": false
   },
   "h_stop_fuel": {
    "ok_intent": true,
@@ -1127,7 +1026,7 @@
   },
   "h_ctl_break_off": {
    "ok_intent": true,
-   "ok_all": false
+   "ok_all": true
   },
   "h_bd_tire": {
    "ok_intent": true,
@@ -1166,8 +1065,8 @@
    "ok_all": true
   },
   "h_chat_thanks": {
-   "ok_intent": true,
-   "ok_all": true
+   "ok_intent": false,
+   "ok_all": false
   },
   "h_chat_speed_limit": {
    "ok_intent": true,
@@ -1210,8 +1109,8 @@
    "ok_all": true
   },
   "h_bye_nothing_else": {
-   "ok_intent": false,
-   "ok_all": false
+   "ok_intent": true,
+   "ok_all": true
   },
   "h_unclear_siren": {
    "ok_intent": true,
@@ -1234,8 +1133,8 @@
    "ok_all": true
   },
   "h_mem_thanks": {
-   "ok_intent": true,
-   "ok_all": true
+   "ok_intent": false,
+   "ok_all": false
   },
   "h_mem_hos": {
    "ok_intent": true,
@@ -1299,7 +1198,7 @@
   },
   "l_13_not_that_one": {
    "ok_intent": true,
-   "ok_all": false
+   "ok_all": true
   },
   "l_14_second_one": {
    "ok_intent": true,
@@ -1326,8 +1225,8 @@
    "ok_all": true
   },
   "l_20_thanks_man": {
-   "ok_intent": true,
-   "ok_all": true
+   "ok_intent": false,
+   "ok_all": false
   },
   "l_21_google_second_one": {
    "ok_intent": true,
@@ -1342,6 +1241,42 @@
    "ok_all": true
   },
   "h_stop_fuel_on_the_way": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_something_else": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_not_that_one_alts": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_something_else_alts": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_second_one_alts": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_another_way_alts": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_faster_alts": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_take_other_way_alts": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_around_storm_alts": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_other_way_idle": {
    "ok_intent": true,
    "ok_all": true
   },
@@ -1466,7 +1401,7 @@
    "ok_all": true
   },
   "h_find_scale_house__stt_scale": {
-   "ok_intent": false,
+   "ok_intent": true,
    "ok_all": false
   },
   "h_find_scale_house__dis_please": {
@@ -1514,7 +1449,7 @@
    "ok_all": true
   },
   "h_go_reno_instead__stt_reno": {
-   "ok_intent": false,
+   "ok_intent": true,
    "ok_all": false
   },
   "h_go_reno_instead__dis_please": {
@@ -1551,11 +1486,11 @@
   },
   "h_pick_reno_one__stt_reno": {
    "ok_intent": true,
-   "ok_all": false
+   "ok_all": true
   },
   "h_pick_reno_one__dis_hey": {
    "ok_intent": true,
-   "ok_all": false
+   "ok_all": true
   },
   "h_alt_another_way__dis_uh": {
    "ok_intent": true,
@@ -1737,11 +1672,11 @@
    "ok_intent": true,
    "ok_all": true
   },
-  "h_bd_wont_start__dis_please": {
+  "h_bd_wont_start__dis_uh": {
    "ok_intent": true,
    "ok_all": true
   },
-  "h_bd_reefer__dis_please": {
+  "h_bd_reefer__dis_uh": {
    "ok_intent": true,
    "ok_all": true
   },
@@ -1749,7 +1684,7 @@
    "ok_intent": true,
    "ok_all": true
   },
-  "h_bd_out_of_fuel__dis_please": {
+  "h_bd_out_of_fuel__dis_uh": {
    "ok_intent": true,
    "ok_all": true
   },
@@ -1769,21 +1704,13 @@
    "ok_intent": true,
    "ok_all": true
   },
-  "h_bye_bye__dis_please": {
+  "h_bye_bye__dis_uh": {
    "ok_intent": true,
    "ok_all": true
   },
   "h_bye_thats_it__dis_uh": {
    "ok_intent": true,
    "ok_all": true
-  },
-  "h_unclear_siren__dis_hey": {
-   "ok_intent": true,
-   "ok_all": true
-  },
-  "h_unclear_music__dis_please": {
-   "ok_intent": false,
-   "ok_all": false
   },
   "h_mem_fuel__stt_fuel": {
    "ok_intent": true,
@@ -1818,7 +1745,7 @@
    "ok_all": true
   },
   "l_08_reno__stt_reno": {
-   "ok_intent": false,
+   "ok_intent": true,
    "ok_all": false
   },
   "l_08_reno__dis_please": {
@@ -1841,11 +1768,7 @@
    "ok_intent": true,
    "ok_all": true
   },
-  "l_16_bye__dis_please": {
-   "ok_intent": true,
-   "ok_all": true
-  },
-  "l_19_beeping__dis_please": {
+  "l_16_bye__dis_uh": {
    "ok_intent": true,
    "ok_all": true
   },
@@ -1868,14 +1791,61 @@
   "h_stop_fuel_on_the_way__dis_uh": {
    "ok_intent": true,
    "ok_all": true
+  },
+  "h_pick_something_else__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_not_that_one_alts__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_something_else_alts__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_pick_second_one_alts__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_another_way_alts__dis_please": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_faster_alts__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
+  },
+  "h_alt_take_other_way_alts__dis_hey": {
+   "ok_intent": true,
+   "ok_all": true
   }
  },
  "errors": 0,
  "comparison": {
-  "has_baseline": false,
-  "deltas": {},
+  "has_baseline": true,
+  "baseline_model": "gpt-5.4-mini",
+  "baseline_date": "2026-10-31",
+  "baseline_intent_acc": 0.9545,
+  "deltas": {
+   "intent_acc": 0.0127,
+   "case_acc": 0.0287,
+   "p50_ms": 22.0,
+   "p95_ms": 21.0,
+   "cached_ratio": -0.2234,
+   "cost_usd": 0.0573
+  },
   "regressions": [],
-  "fixes": [],
-  "note": "no baseline yet (promote a run with --promote)"
+  "fixes": [
+   "h_find_shower__stt_shower",
+   "h_pick_not_that_one_alts__dis_hey",
+   "h_pick_reno_one",
+   "h_pick_reno_one__stt_reno",
+   "h_pick_something_else",
+   "h_pick_something_else__dis_hey",
+   "h_pick_something_else_alts",
+   "l_03_diesel_def__stt_diesel",
+   "l_13_not_that_one__dis_uh"
+  ]
  }
 }

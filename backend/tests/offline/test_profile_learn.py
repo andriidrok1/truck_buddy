@@ -152,7 +152,8 @@ def test_memory_intents(agent_sandbox, monkeypatch):
     assert res.reply == profile_learn.KNOW_NOTHING
     agent._SESSIONS["mm"]["facts"] = FACTS
     res = run(prov.handle(AgentRequest(text="what do you know about me", session_id="mm", **SAC), "drv"))
-    assert res.reply == f"Here's what I know: {facts_line(FACTS)}."
+    assert res.reply == ("Here's what I know. You like Pilot. You'd rather skip Love's. You avoid tolls. "
+                         "You stop for the night at truck stops. You like short answers. Hauls reefer.")
     res = run(prov.handle(AgentRequest(text="forget that", session_id="mm", **SAC), "drv"))
     assert res.reply == profile_learn.FORGOT and cleared == ["drv"] and agent._SESSIONS["mm"]["facts"] is None
 
@@ -219,5 +220,38 @@ def test_facts_load_with_the_past(agent_sandbox, monkeypatch):
     agent_sandbox.llm.default = {"intent": "chat", "reply": "Hi."}
     prov = agent_sandbox.provider()
     run(prov.handle(AgentRequest(text="hi", session_id="lf", **SAC), "drv"))
-    assert agent._SESSIONS["lf"]["facts"] == FACTS and agent._SESSIONS["lf"]["past"] == ["hello"]
+    assert agent._SESSIONS["lf"]["facts"] == profile_learn.tidy(FACTS) and agent._SESSIONS["lf"]["past"] == ["hello"]
     assert "likes Pilot" in agent_sandbox.llm.calls[-1][1]
+
+
+def test_profile_preferences_are_part_of_what_i_know(agent_sandbox):
+    """QA 2026-10-31, H19: "remember I like Pilot and I hate tolls" is saved in the profile; asked "what do
+    you know about me" the copilot listed learned facts only, or nothing, and never the profile."""
+    from models import TruckProfile
+    agent_sandbox.llm.on(r"know about me", {"intent": "memory", "query": "show"})
+    prov = agent_sandbox.provider()
+    truck = TruckProfile(favorite_chains=["Pilot"], avoid_tolls=True)
+    res = run(prov.handle(AgentRequest(text="what do you know about me", session_id="pf", truck_profile=truck, **SAC), None))
+    assert res.reply == "From your profile: you like Pilot, you avoid toll roads."
+    assert profile_learn.prefs_line(TruckProfile()) == ""
+    assert profile_learn.prefs_line(TruckProfile(favorite_chains=["Pilot", "Love's", "TA"], avoid_ferries_tunnels=True)) == \
+        "From your profile: you like Pilot, Love's and TA, you avoid ferries and tunnels."
+    agent._SESSIONS["pf"]["facts"] = {"chains_liked": [], "places_liked": ["the 49er"]}
+    res = run(prov.handle(AgentRequest(text="what do you know about me", session_id="pf", truck_profile=truck, **SAC), None))
+    assert res.reply.startswith("Here's what I know. You like the 49er.") and res.reply.endswith(" From your profile: you like Pilot, you avoid toll roads.")
+
+
+def test_forget_as_the_first_turn_of_a_dialog_clears_the_stored_facts(agent_sandbox, monkeypatch):
+    """QA 2026-11-02, bug 4 (item 27): a new dialog opened with "forget that" answered "Done, I've forgotten",
+    and the driver_facts row stayed: the dialog learned whose it was only after its first turn."""
+    cleared = []
+
+    async def clear_facts(driver):
+        cleared.append(driver)
+        return 1
+
+    monkeypatch.setattr(memory, "clear_facts", clear_facts)
+    agent_sandbox.llm.on(r"forget", {"intent": "memory", "query": "forget"})
+    prov = agent_sandbox.provider()
+    res = run(prov.handle(AgentRequest(text="forget that", session_id="fresh", **SAC), "drv"))
+    assert res.reply == profile_learn.FORGOT and cleared == ["drv"]

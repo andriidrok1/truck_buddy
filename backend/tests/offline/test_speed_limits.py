@@ -1,12 +1,11 @@
 """Posted speed limits from HERE spans=maxSpeed: conversion, merging, index remap, flag, API shape."""
-import math
 
 import pytest
 from conftest import fixture_json, params_of, run
 
 from models import TruckProfile
 from services import routing
-from services.routing import MAX_POINTS, _here_parse, _remap_limits, _speed_limits, _thin_index
+from services.routing import MAX_POINTS, _Index, _here_parse, _remap_limits, _speed_limits, _thin_indices
 
 DATA = fixture_json("here/route_sac_reno")
 
@@ -35,22 +34,23 @@ def test_consecutive_equal_limits_collapse_and_base_offset_applies():
 @pytest.mark.parametrize("n", [10, 1499, 1500, 1501, 3001, 100_001])
 def test_remap_keeps_order_and_bounds(n):
     limits = [(off, 55 + 10 * (k % 2)) for k, off in enumerate(range(0, n, max(1, n // 40)))]
-    out = _remap_limits(limits, n)
-    thinned_len = len(routing._thin([[0.0, 0.0]] * n))
-    idx = [s.index for s in out]
-    assert idx == sorted(idx) and len(set(idx)) == len(idx)
-    assert all(0 <= i < thinned_len for i in idx)
+    pts = [[38.0, -121.0 + i * 0.0001] for i in range(n)]  # a straight line: only the anchors survive
+    idx = _Index(_thin_indices(pts, [off for off, _ in limits]))
+    out = _remap_limits(limits, idx)
+    thinned_len = len(idx.kept)
+    ids = [s.index for s in out]
+    assert ids == sorted(ids) and len(set(ids)) == len(ids)
+    assert all(0 <= i < thinned_len for i in ids)
     assert all(a.mph != b.mph for a, b in zip(out, out[1:]))  # merged after remap too
-    if n > MAX_POINTS:  # several raw offsets can land on one thinned index; the first wins
-        assert len(out) <= len(limits)
-    assert out[0].index == _thin_index(limits[0][0], n)
+    assert len(out) == len(limits)  # every limit change is its own kept vertex
+    assert out[0].index == idx(limits[0][0]) == 0
 
 
 def test_remap_merges_entries_that_land_on_one_index():
-    n = 3000  # step 2: offsets 10 and 11 both map to index 5
-    out = _remap_limits([(10, 55), (11, 65), (40, 65), (60, 45)], n)
-    assert [(s.index, s.mph) for s in out] == [(5, 55), (30, 45)] or [(s.index, s.mph) for s in out][0] == (5, 55)
-    assert out[0] == routing.SpeedLimit(index=5, mph=55)
+    idx = _Index([0, 10, 40, 60, 99])  # offset 11 is not a kept vertex: it lands on index 1 with offset 10
+    out = _remap_limits([(10, 55), (11, 65), (40, 65), (60, 45)], idx)
+    assert [(s.index, s.mph) for s in out] == [(1, 55), (2, 65), (3, 45)]
+    assert out[0] == routing.SpeedLimit(index=1, mph=55)
 
 
 def test_fixture_route_has_limits_between_25_and_70():
@@ -91,8 +91,19 @@ def test_route_endpoint_returns_speed_limits(api_client, fake_http):
     assert body["parking"] is None if "parking" in body else True
 
 
-def test_thin_index_is_consistent_with_thin_for_fixture_size():
-    n = 2533  # the fixture's raw point count
-    thinned = routing._thin([[float(i), 0.0] for i in range(n)])
-    assert len(thinned) == math.ceil(n / math.ceil(n / MAX_POINTS)) + 1
-    assert _thin_index(n - 1, n) == len(thinned) - 1
+def test_fixture_limits_sit_on_kept_vertices():
+    info = _here_parse(DATA)
+    assert info.speed_limits and len(info.geometry) <= MAX_POINTS
+    assert all(0 <= s.index < len(info.geometry) for s in info.speed_limits)
+    assert [s.index for s in info.speed_limits] == sorted(s.index for s in info.speed_limits)
+
+
+def test_a_stretch_without_a_posted_limit_ends_the_previous_one():
+    spans = [_span(0, 29.17), {"offset": 4}, {"offset": 7}, _span(9, 24.44)]
+    assert _speed_limits(spans, 0) == [(0, 65), (4, None), (9, 55)]  # one None for the unknown stretch, not two
+    assert _speed_limits([{"offset": 0}, _span(3, 29.17)], 0) == [(3, 65)]  # nothing known yet: nothing to end
+    # the next section opens without a limit: the previous section's 65 ends there too
+    assert _speed_limits([{"offset": 0}, _span(5, 24.44)], 100, prev=65) == [(100, None), (105, 55)]
+    assert _speed_limits([_span(0, 29.17)], 100, prev=65) == []  # same limit continues: no entry
+    idx = _Index([0, 4, 9])
+    assert [(s.index, s.mph) for s in _remap_limits([(0, 65), (4, None), (9, 55)], idx)] == [(0, 65), (1, None), (2, 55)]

@@ -25,9 +25,10 @@ def test_context_lists_every_session_verdict():
     sess["places"] = [a, b, c]
     req = AgentRequest(text="t", lat=10, lng=20, session_id="ctx-test", active_place=a)
     ctx = LlmAgentProvider()._context(req, sess)
-    assert "1=Stop 1 (truck_stop) 0.0 mi: likely; Entry: Use the east driveway; Park: Back row" in ctx
-    assert "2=Stop 2 (truck_stop) 0.0 mi: unlikely" in ctx
-    assert "3=Stop 3 (truck_stop) 0.0 mi: parking not checked yet" in ctx
+    # numbered as the app's cards, the current route last (QA 2026-11-02, bug 6)
+    assert "3=Stop 1 (truck_stop) 0.0 mi: likely; Entry: Use the east driveway; Park: Back row [current route]" in ctx
+    assert "1=Stop 2 (truck_stop) 0.0 mi: unlikely" in ctx
+    assert "2=Stop 3 (truck_stop) 0.0 mi: parking not checked yet" in ctx
     assert "Satellite parking check there: likely" in ctx  # current route
 
 
