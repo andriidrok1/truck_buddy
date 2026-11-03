@@ -290,6 +290,7 @@ def test_new_route_offers_the_way_around_and_the_other_way_takes_it(agent_sandbo
                               "Say 'take the other way' if you want it.")
     assert [len(a.weather) for a in res.route.alternatives] == [0, 1]  # each alternative carries its own
     assert res.route.weather_known and all(a.weather_known for a in res.route.alternatives)
+    assert res.route.alternatives[0].labels == ["I-80", "CA-89"]  # the Routes sheet's first row is the way around
     res = run(prov.handle(AgentRequest(text="take the other way", session_id="wd", active_place=RENO, **SAC), None))
     assert res.status == "route_set" and res.route.labels == ["I-80", "CA-89"] and res.route.weather == []
     assert res.reply == "Here's another way via I-80 and CA-89, 4 h 38 min, 204 miles, about 1 h 46 min longer, " \

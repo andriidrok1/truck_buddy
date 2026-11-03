@@ -580,9 +580,11 @@ async def for_route(route: RouteInfo, budget_s: Optional[float] = None, alt_budg
                     now: Optional[datetime] = None, mono: Optional[float] = None) -> bool:
     """Alerts on the route and on each of its alternatives (attached as `.weather`, only those still in effect
     on arrival), the point cache shared across them. The route's own lookup gets `budget_s`; the alternatives
-    run alongside and get `alt_budget_s` more, so a slow NWS costs the detour line, never the warning.
+    run alongside and get `alt_budget_s` in all, measured from the start, so a slow NWS costs the detour line,
+    never the warning, and the two budgets never add up (2.5 + 2.5 s on /route was 5 s with NWS hung).
     Returns whether the alternatives' weather is known (False: nothing may be claimed about them)."""
-    mono = time.monotonic() if mono is None else mono
+    started = time.monotonic()
+    mono = started if mono is None else mono
     now = _now(now)
     alts = list(route.alternatives)
     for r in [route] + alts:
@@ -601,7 +603,8 @@ async def for_route(route: RouteInfo, budget_s: Optional[float] = None, alt_budg
     if side is None:
         return True
     try:
-        results = await (asyncio.wait_for(side, alt_budget_s) if alt_budget_s else side)
+        left = max(0.0, alt_budget_s - (time.monotonic() - started)) if alt_budget_s else None
+        results = await (asyncio.wait_for(side, left) if alt_budget_s else side)
     except Exception as e:  # noqa: BLE001
         logger.info("alternatives weather skipped: %s", type(e).__name__)
         side.cancel()
