@@ -8,6 +8,7 @@ keeps working) that also knows the driver's org, driver row, vehicle and role. T
 carry no org claims; the org is looked up (or created as an org of one) on the way in."""
 import hashlib
 import hmac
+import logging
 import os
 import secrets as _secrets
 import time
@@ -21,7 +22,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from services.settings import settings
 from typing import Optional
 
-from services import tenancy
+from services import db, tenancy
 
 JWT_DAYS = 30  # access token; the refresh token (REFRESH_DAYS) gets a new one
 REFRESH_DAYS = 365
@@ -200,14 +201,21 @@ async def _principal(claims: dict) -> Principal:
     (created as an org of one for a token from before tenancy, or for a store that was just turned on)."""
     sub, role = claims["sub"], str(claims.get("role") or "driver")
     if claims.get("org_id"):
-        dev = await tenancy.device_of(sub)  # a bind since the token was issued wins over the claims
+        try:
+            dev = await tenancy.device_of(sub)  # a bind since the token was issued wins over the claims
+        except Exception as e:  # noqa: BLE001 - a store hiccup must not lock every driver out
+            logging.getLogger("truckbuddy.auth").warning("device lookup failed for %s: %s", sub, e)
+            return Principal(sub, role, claims.get("driver_id"), claims["org_id"], claims.get("vehicle_id"))
         if dev is not None:
             return Principal(sub, dev.role or role, dev.driver_id, dev.org_id, dev.vehicle_id)
+        if db.store() != "off":
+            # The store answered and this phone is not in it any more: its fleet claims are no longer true
+            # (review 2026-11-02, bug 6). The app drops the token on 401 and signs in again.
+            raise HTTPException(status_code=401, detail="This device is no longer registered")
         return Principal(sub, role, claims.get("driver_id"), claims["org_id"], claims.get("vehicle_id"))
     try:
         dev = await tenancy.ensure_solo_org(sub, role)
     except Exception as e:  # noqa: BLE001 - a store hiccup must not lock every driver out
-        import logging
         logging.getLogger("truckbuddy.auth").warning("tenancy lookup failed for %s: %s", sub, e)
         dev = None
     if dev is None:

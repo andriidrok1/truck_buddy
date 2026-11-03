@@ -20,7 +20,7 @@ from services.agent import get_agent_provider  # noqa: E402
 from services import breakdown, flags, nudges  # noqa: E402
 from services.speech_text import split_reply  # noqa: E402
 from services.google_places import PlacesUnavailable  # noqa: E402
-from services.parking import cached_parking, check_parking, fetch_satellite  # noqa: E402
+from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
@@ -115,9 +115,13 @@ async def auth_fleet_code(req: FleetCodeRequest, principal: auth.Principal = Dep
 
 
 @api.get("/me/profile", response_model=TruckProfile)
-async def me_profile(principal: auth.Principal = Depends(auth.require_driver)):
+async def me_profile(response: Response, principal: auth.Principal = Depends(auth.require_driver)):
     """The truck profile the server routes for when the app sends none: the vehicle's when the device is bound to
-    one, else the driver's. 404 when nothing is stored yet (the app keeps its local copy)."""
+    one, else the driver's. 404 when nothing is stored yet (the app keeps its local copy). X-Profile-Source says
+    which: "vehicle" is the fleet's truck, which a driver's own change does not overwrite (it holds for the trip
+    on the phone), "driver" is the driver's own copy."""
+    fleet_truck = bool(principal.vehicle_id) and principal.role == "driver"
+    response.headers["X-Profile-Source"] = "vehicle" if fleet_truck else "driver"
     try:
         profile = await tenancy.profile_get(principal.sub)
     except Exception as e:  # noqa: BLE001
@@ -298,8 +302,9 @@ async def build_route(req: RouteRequest, driver: str = Depends(auth.require_driv
     await _advisories(route, WEATHER_BUDGET_S, WEATHER_BUDGET_S)
     if req.skip_parking:  # breakdown providers: the driver needs the shop, no parking check at all
         return RouteResponse(place=place, route=route, parking=None)
+    parking = approach.for_route(place, route)
     approach.background(check_parking(place, route.approach))  # don't wait for the satellite; app re-asks /parking
-    return RouteResponse(place=place, route=route, parking=cached_parking(place))
+    return RouteResponse(place=place, route=route, parking=parking)
 
 
 @api.post("/nudges", response_model=NudgeResponse)
@@ -335,7 +340,8 @@ REROUTE_ADVISORY_BUDGET_S = 1.0
 @api.post("/reroute", response_model=RouteResponse)
 async def reroute(req: RerouteRequest, driver: str = Depends(auth.require_driver)):
     """The app detected the driver left the route: a new route from the current position to the same place.
-    No new satellite check (the destination hasn't changed); the cached parking verdict comes along."""
+    No new satellite check (the destination hasn't changed); the cached verdict comes along, its entry tip
+    phrased for the way this route arrives."""
     _require_us(req.lat, req.lng)
     _require_us(req.place.lat, req.place.lng)
     for stop in req.via:
@@ -358,7 +364,7 @@ async def reroute(req: RerouteRequest, driver: str = Depends(auth.require_driver
     # The new route needs its own alerts and chain controls, or the advisories vanish after a reroute; the
     # driver is off the route while this runs, so the budget is shorter.
     await _advisories(route, REROUTE_ADVISORY_BUDGET_S, 0)
-    return RouteResponse(place=req.place, route=route, parking=cached_parking(req.place))
+    return RouteResponse(place=req.place, route=route, parking=approach.for_route(req.place, route))
 
 
 def _reroute_event(driver: str, req: RerouteRequest, ok: bool, error: Optional[str] = None) -> None:
@@ -438,7 +444,7 @@ def _finish(res: AgentResponse, extra: Optional[dict] = None, driver: Optional[s
             trip_id: Optional[str] = None, sid: Optional[str] = None,
             pos: Optional[tuple[float, float]] = None) -> AgentResponse:
     """Timings onto the response, one `turn {json}` log line per copilot turn (scripts/turn_stats.py reads it:
-    request id, driver, the app's session id, org, status, intent, notes, timings; never the transcript), and
+    request id, device, driver, the app's session id, org, status, intent, notes, timings; never the transcript), and
     the turn's trip events when the driver is known (services/trip_events.from_turn)."""
     res.timings = {**(extra or {}), **timing.current()}
     res.timings["total"] = sum(v for k, v in res.timings.items() if k != "total" and not timing.is_counter(k))
@@ -446,8 +452,11 @@ def _finish(res: AgentResponse, extra: Optional[dict] = None, driver: Optional[s
     res.timings["first_audio"] = sum(res.timings.get(k, 0) for k in TURN_STAGES)
     notes = timing.notes()
     res.intent = notes.get("intent") or res.intent
-    fields = {"req": reqid.current(), "driver": str(driver) if driver else None, "sid": sid,
-              "org": getattr(driver, "org_id", None), "status": res.status, "intent": res.intent or "-",
+    # device = the phone's sub, driver = drivers.id (the row the fleet tables use); both look like drv_…, and
+    # "driver" used to be the sub, which no fleet table could be joined on (review 2026-11-02, bug 11).
+    fields = {"req": reqid.current(), "device": str(driver) if driver else None,
+              "driver": getattr(driver, "driver_id", None), "sid": sid, "org": getattr(driver, "org_id", None),
+              "status": res.status, "intent": res.intent or "-",
               **{k: v for k, v in notes.items() if k != "intent"}, **res.timings}
     logger.info("turn %s", json.dumps(fields, separators=(",", ":"), default=str))
     trip_events.from_turn(driver, trip_id, res.status, res.intent, notes, res.transcript or "", pos=pos)

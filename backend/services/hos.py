@@ -21,6 +21,8 @@ logger = logging.getLogger("truckbuddy.hos")
 
 URL = "https://api.gomotive.com/v1/available_time"
 TIMEOUT_S = 6
+PER_PAGE = 100
+MAX_PAGES = 5  # 500 drivers; the copilot waits 8 s for the whole answer
 LOW_DRIVE_MIN = 30
 CONNECT = "Connect Motive in settings and I'll keep track of your hours."
 BAD_KEY = "Motive didn't accept the key. Check it in settings."
@@ -74,9 +76,7 @@ def parse(data: dict, user_id: Optional[str] = None) -> Optional[Hos]:
                break_min=_minutes(avail["break"]) if avail.get("break") is not None else None, driver=name)
 
 
-async def available_time(key: str, user_id: Optional[str] = None) -> Hos:
-    """The clocks behind a personal key, or one user's clocks behind a fleet key (user_id)."""
-    params = {"driver_ids[]": user_id} if user_id else None
+async def _get(key: str, params: Optional[dict]) -> dict:
     try:
         r = await client().get(URL, headers={"X-Api-Key": key, "Accept": "application/json"}, params=params, timeout=TIMEOUT_S)
     except Exception as e:  # noqa: BLE001
@@ -86,12 +86,38 @@ async def available_time(key: str, user_id: Optional[str] = None) -> Hos:
     if r.is_error:
         raise HosDown(f"HTTP {r.status_code}")
     try:
-        hos = parse(r.json(), user_id)
+        return r.json()
     except ValueError as e:
         raise HosDown("bad json") from e
-    if hos is None:
-        raise HosDown("unexpected shape")
-    return hos
+
+
+def _more_pages(data: dict, page: int) -> bool:
+    p = data.get("pagination") if isinstance(data, dict) else None
+    if not isinstance(p, dict):
+        return False
+    try:
+        return page * int(p.get("per_page") or PER_PAGE) < int(p.get("total") or 0)
+    except (TypeError, ValueError):
+        return False
+
+
+async def available_time(key: str, user_id: Optional[str] = None) -> Hos:
+    """The clocks behind a personal key, or one user's clocks behind a fleet key (user_id). The fleet call asks
+    Motive for that driver (driver_ids[]); whether Motive applies the filter is not verified on a real key, so
+    the pages are walked until the driver is in the answer (bug 8), at most MAX_PAGES within the copilot's wait."""
+    if not user_id:
+        hos = parse(await _get(key, None))
+        if hos is None:
+            raise HosDown("unexpected shape")
+        return hos
+    for page in range(1, MAX_PAGES + 1):
+        data = await _get(key, {"driver_ids[]": user_id, "per_page": PER_PAGE, "page_no": page})
+        hos = parse(data, user_id)
+        if hos is not None:
+            return hos
+        if not _more_pages(data, page):
+            break
+    raise HosDown("driver not in the answer")
 
 
 def _hm(minutes: int) -> str:

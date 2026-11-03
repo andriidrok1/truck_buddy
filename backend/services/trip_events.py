@@ -10,6 +10,8 @@ event). Kept RETENTION_DAYS, pruned at startup and lazily.
 The kinds a fleet dashboard reads (DASHBOARD_MODELS) have their data checked against a model; a wrong type is a
 422 for the batch like any other bad event. Extra fields pass, and every other kind is stored as is.
 
+The app's "arrived" events are also counted as visits per place (memory.add_visits), apart from the likes.
+
 The transcript of a failed turn is stored as is (decision 2026-11-01): it is what tells us what drivers say and
 what the copilot missed. It is read only by the driver's own routes and the tester route; the fleet routes
 (services/fleet_api.py) strip it before anything leaves the server.
@@ -36,13 +38,17 @@ MAX_DATA_BYTES = 16 * 1024
 MAX_TRIP_ID = 64
 KIND_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 PRUNE_EVERY_S = 6 * 3600
-PAST_LIMIT = timedelta(days=30)  # an event older than this is a clock problem, not a drive
+# An event older than this is a clock problem (or a time moved on purpose: a fleet's day counts by it), not a
+# drive. The app buffers events offline and across a restart, so the client's time is kept within the window;
+# 30 days let an event land in any day of the month (review 2026-11-02, bug 4).
+PAST_LIMIT = timedelta(hours=24)
 FUTURE_LIMIT = timedelta(minutes=5)
 
 # Kinds the app and the server send today; an unknown kind is stored and logged, never rejected (the app adds
 # kinds on its own schedule).
 KNOWN_KINDS = frozenset({
-    "route_started", "reroute", "alternative_picked", "stop_added", "stops_cleared", "route_ended",
+    "route_started", "reroute", "alternative_picked", "stop_added", "stops_cleared", "stop_removed", "route_ended",
+    "route_restored", "route_replaced", "turn_unknown_action", "position", "arrived",
     "maneuver_said", "speech_dropped", "turn_failed",
     "stop_guard", "dest_check", "stt_confirm", "not_understood", "turn_error", "route_failed", "reroute_requested",
 })
@@ -116,9 +122,13 @@ _pending: "defaultdict[str, set]" = defaultdict(set)  # driver -> saves still in
 _last_prune = 0.0
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def parse_time(t, now: Optional[datetime] = None) -> datetime:
     """ISO 8601 or epoch (ms when > 1e11, else s); missing or unreadable = now; clamped to [now - 30 d, now + 5 min]."""
-    now = now or datetime.now(timezone.utc)
+    now = now or _utcnow()
     at: Optional[datetime] = None
     if isinstance(t, datetime):
         at = t
@@ -152,7 +162,7 @@ def normalize(driver: str, events: list[dict], source: str = "app") -> list[tupl
     org_id, vehicle_id = getattr(driver, "org_id", None), getattr(driver, "vehicle_id", None)
     if len(events) > MAX_BATCH:
         raise ValueError(f"at most {MAX_BATCH} events per batch")
-    now = datetime.now(timezone.utc)
+    now = _utcnow()
     rows = []
     for i, e in enumerate(events):
         if not isinstance(e, dict):
@@ -208,8 +218,32 @@ async def add(driver: str, events: list[dict], source: str = "app") -> int:
         pool = await memory._db()
         await pool.executemany(
             f"INSERT INTO trip_events ({_INSERT_COLS}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", rows)
+    if source == "app":
+        await _count_visits(str(driver), rows)
     _maybe_prune()
     return len(rows)
+
+
+async def _count_visits(driver: str, rows: list[tuple]) -> None:
+    """The app's "arrived" events, one more visit each to the place (services/memory.py keeps them apart from the
+    likes). Best effort: the events are stored either way."""
+    visits = []
+    for r in rows:
+        if r[2] != "arrived":
+            continue
+        data = json.loads(r[5])
+        place_id = data.get("place_id")
+        if not isinstance(place_id, str) or not place_id.strip() or len(place_id) > 200:
+            continue
+        name, category = data.get("name"), data.get("category")
+        visits.append((place_id.strip(), name[:120] if isinstance(name, str) and name.strip() else None,
+                       category[:40] if isinstance(category, str) and category.strip() else None, r[3], r[1]))
+    if not visits:
+        return
+    try:
+        await memory.add_visits(driver, visits)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("visits not counted: %s: %s", type(e).__name__, e)
 
 
 def add_later(driver: Optional[str], trip_id: Optional[str], kind: str, data: Optional[dict] = None,
