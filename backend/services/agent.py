@@ -793,6 +793,8 @@ STOP_KIND = ((re.compile(r"\b(?:truck|fuel|gas|diesel) stop\b|\btravel (?:center
              (re.compile(r"\b(?:cat )?scale\b", re.I), "cat_scale"),
              (re.compile(r"\btruck wash\b", re.I), "truck_wash"),
              (re.compile(r"\bwalmart\b", re.I), "walmart"))
+# "Add another truck stop", "a different one", "one more": a stop besides those on the route.
+ANOTHER = re.compile(r"\b(?:another|different|one more|other|else|second|extra)\b", re.I)
 ROAD_WORDS = re.compile(r"\b(?:way|road|route|highway|freeway|interstate|detour|grade|pass|toll)s?\b", re.I)
 # "The second one", "number two", "the last one": a reference into the list, never something to geocode
 # (HERE once turned "the second one" into W 21st Pl, The Dalles, OR, 598 miles out).
@@ -1863,7 +1865,9 @@ class LlmAgentProvider:
             return AgentResponse(status="chat", transcript=text, source=self.source,
                                  reply=VIA_IS_DESTINATION.format(name=place.name.split(",")[0]))
         if any(s.id == stop.id for s in stops):
-            if named_in_text(text, [stop]):  # "stop at the 49er" when it already is one (QA 2026-10-31, H9)
+            # "stop at the 49er" when it already is one (QA 2026-10-31, H9); "yeah add that one" said again added
+            # a different stop nobody asked for (review 2026-11-02): only "another" looks further
+            if named_in_text(text, [stop]) or not ANOTHER.search(text):
                 return AgentResponse(status="chat", transcript=text, source=self.source,
                                      reply=VIA_DUPLICATE.format(name=stop.name.split(",")[0]))
             # "add another truck stop": the model's "truck stop" or its index landed on a stop already on the route

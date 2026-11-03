@@ -49,3 +49,22 @@ def test_naming_the_stop_again_is_still_a_duplicate(agent_sandbox, fake_http):
                        (re.compile(r"another truck stop", re.I), {"intent": "add_stop", "category": "truck_stop"}))
     res = run(prov.handle(_req("swing by Love's", "a5"), None))
     assert res.status == "chat" and res.reply == agent.VIA_DUPLICATE.format(name="Love's Travel Stop")
+
+
+def test_add_it_again_changes_nothing(agent_sandbox, fake_http):
+    """Review 2026-11-02: "yeah add that one" just after Love's was added (the model's index on Love's) added Flying J,
+    a stop the driver never asked for. Only "another", "a different one", "one more" look for a new one."""
+    for sid, said in (("a6", "yeah add that one"), ("a7", "add it")):
+        prov = _with_loves(agent_sandbox, fake_http, sid,
+                           (re.compile(r"^(?:yeah add|add it)", re.I), {"intent": "add_stop", "place_index": 1}))
+        before = len(fake_http.calls_to("router.hereapi.com"))
+        res = run(prov.handle(_req(said, sid), None))
+        assert res.status == "chat" and res.reply == agent.VIA_DUPLICATE.format(name="Love's Travel Stop"), res.reply
+        assert len(fake_http.calls_to("router.hereapi.com")) == before
+
+
+def test_one_more_is_another(agent_sandbox, fake_http):
+    prov = _with_loves(agent_sandbox, fake_http, "a8",
+                       (re.compile(r"one more", re.I), {"intent": "add_stop", "category": "truck_stop", "place_index": 1}))
+    res = run(prov.handle(_req("add one more on the way", "a8"), None))
+    assert res.status == "route_set" and res.reply.startswith("Added Flying J,"), res.reply
