@@ -38,13 +38,17 @@ MAX_DATA_BYTES = 16 * 1024
 MAX_TRIP_ID = 64
 KIND_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 PRUNE_EVERY_S = 6 * 3600
-PAST_LIMIT = timedelta(days=30)  # an event older than this is a clock problem, not a drive
+# An event older than this is a clock problem (or a time moved on purpose: a fleet's day counts by it), not a
+# drive. The app buffers events offline and across a restart, so the client's time is kept within the window;
+# 30 days let an event land in any day of the month (review 2026-11-02, bug 4).
+PAST_LIMIT = timedelta(hours=24)
 FUTURE_LIMIT = timedelta(minutes=5)
 
 # Kinds the app and the server send today; an unknown kind is stored and logged, never rejected (the app adds
 # kinds on its own schedule).
 KNOWN_KINDS = frozenset({
-    "route_started", "reroute", "alternative_picked", "stop_added", "stops_cleared", "route_ended",
+    "route_started", "reroute", "alternative_picked", "stop_added", "stops_cleared", "stop_removed", "route_ended",
+    "route_restored", "route_replaced", "turn_unknown_action", "position", "arrived",
     "maneuver_said", "speech_dropped", "turn_failed",
     "stop_guard", "dest_check", "stt_confirm", "not_understood", "turn_error", "route_failed", "reroute_requested",
 })
@@ -118,9 +122,13 @@ _pending: "defaultdict[str, set]" = defaultdict(set)  # driver -> saves still in
 _last_prune = 0.0
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def parse_time(t, now: Optional[datetime] = None) -> datetime:
     """ISO 8601 or epoch (ms when > 1e11, else s); missing or unreadable = now; clamped to [now - 30 d, now + 5 min]."""
-    now = now or datetime.now(timezone.utc)
+    now = now or _utcnow()
     at: Optional[datetime] = None
     if isinstance(t, datetime):
         at = t
@@ -154,7 +162,7 @@ def normalize(driver: str, events: list[dict], source: str = "app") -> list[tupl
     org_id, vehicle_id = getattr(driver, "org_id", None), getattr(driver, "vehicle_id", None)
     if len(events) > MAX_BATCH:
         raise ValueError(f"at most {MAX_BATCH} events per batch")
-    now = datetime.now(timezone.utc)
+    now = _utcnow()
     rows = []
     for i, e in enumerate(events):
         if not isinstance(e, dict):

@@ -53,6 +53,14 @@ def _device(c, code=None) -> dict:
     return h
 
 
+@pytest.fixture(autouse=True)
+def _frozen_now(monkeypatch):
+    """The events below carry fixed times on 2026-11-02; the server's clock is pinned near them, so a run on
+    another day sees the same window (trip_events keeps a client's time within 24 hours)."""
+    from datetime import datetime, timezone
+    monkeypatch.setattr(trip_events, "_utcnow", lambda: datetime(2026, 11, 3, 2, 0, tzinfo=timezone.utc))
+
+
 def _sub(h: dict) -> str:
     return _claims(h["Authorization"].split()[1])["sub"]
 
@@ -179,6 +187,20 @@ def test_fleet_events_never_carry_the_transcript(client):
     assert client.get(f"/api/fleet/vehicles/{f['t1']}/events?day=2026-11-01", headers=f["a_disp"]).json()["events"] == []
 
 
+def test_fleet_events_pass_only_known_fields(client):
+    # Bug 7: the transcript was cut by a deny list while event data takes any field; a new free-text field
+    # ("query", "heard") would have reached the owner. Strings now pass only for known fields.
+    f = _two_fleets(client)
+    client.post("/api/trips/events", headers=f["a_drv"], json=[
+        _ev("stop_added", stops=2, query="the Walmart by my ex's place", heard="the walmart", t="2026-11-02T17:00:00Z"),
+        _ev("route_replaced", by="copilot", duration_s=3600, labels=["I-80", "US-50"], note="call mom", t="2026-11-02T17:01:00Z"),
+        _ev("reroute", cause="off_route", ok=True, applied=True, dist_m=180, said="rerouting you", t="2026-11-02T17:02:00Z")])
+    events = client.get(f"/api/fleet/vehicles/{f['t1']}/events?day=2026-11-02", headers=f["a_disp"]).json()["events"]
+    assert events[0]["data"] == {"stops": 2}
+    assert events[1]["data"] == {"by": "copilot", "duration_s": 3600, "labels": ["I-80", "US-50"]}
+    assert events[2]["data"] == {"cause": "off_route", "ok": True, "applied": True, "dist_m": 180}
+
+
 def test_fleet_summary_counts_per_truck(client):
     f = _two_fleets(client)
     client.post("/api/trips/events", headers=f["a_drv"], json=[
@@ -193,6 +215,17 @@ def test_fleet_summary_counts_per_truck(client):
                   "route_failures": 1}
     assert next(v for v in s["vehicles"] if v["vehicle_id"] == f["t2"])["routes"] == 0
     assert s["totals"]["failed_turns"] == 2 and s["day"] == "2026-11-02"  # Bravo's turn is not counted
+
+
+def test_fleet_drivers_lists_only_drivers(client):
+    # QA 2026-11-02, bug 3: the owner and the dispatcher bound by code got a drivers row and showed up as drivers.
+    f = _two_fleets(client)
+    drivers = client.get("/api/fleet/drivers", headers=f["a_owner"]).json()["drivers"]
+    ids = {d["id"] for d in drivers}
+    assert run(tenancy.device_of(_sub(f["a_drv"]))).driver_id in ids
+    assert run(tenancy.device_of(_sub(f["a_owner"]))).driver_id not in ids
+    assert run(tenancy.device_of(_sub(f["a_disp"]))).driver_id not in ids
+    assert len(drivers) == 1
 
 
 def test_fleet_motive_key_is_used_only_for_a_mapped_driver(client, agent_sandbox, fake_http, monkeypatch, caplog):
@@ -252,8 +285,9 @@ def test_turn_line_is_json_without_the_transcript(client, agent_sandbox, monkeyp
     assert "Elm St" not in caplog.text
     line = next(rec.getMessage() for rec in caplog.records if rec.getMessage().startswith("turn "))
     fields = json.loads(line[len("turn "):])
-    org = run(tenancy.device_of(_sub(h))).org_id
-    assert fields["req"] == "req-from-app-1" and fields["driver"] == _sub(h) and fields["sid"] == "s-7" and fields["org"] == org
+    dev = run(tenancy.device_of(_sub(h)))
+    assert fields["req"] == "req-from-app-1" and fields["sid"] == "s-7" and fields["org"] == dev.org_id
+    assert fields["device"] == _sub(h) and fields["driver"] == dev.driver_id != _sub(h)  # bug 11
     assert fields["status"] == "not_understood" and "text" not in fields and "transcript" not in fields
     assert all(getattr(rec, "req", None) == "req-from-app-1" for rec in caplog.records if rec.getMessage().startswith("turn "))
     # the trip log still has the words, and the request id to join them
@@ -405,6 +439,8 @@ def test_turn_stats_reads_old_and_new_lines():
     assert s["stages"]["stt"]["n"] == 4 and s["status"]["route_set"] == 3
     # pairs: drv_a s1 (go -> not_understood: a re-ask) and drv_b alone; the old line is its own dialog
     assert s["reask_rate"] == 1.0
+    # from 2026-11-02 the sub is "device" and "driver" is drivers.id (bug 11): the dialog still keys on the phone
+    assert turn_stats._dialog({"device": "drv_a", "driver": "dr_1", "sid": "s1"}) == turn_stats._dialog({"driver": "drv_a", "sid": "s1"})
 
 
 def test_device_cache_expires(monkeypatch):
@@ -416,3 +452,95 @@ def test_device_cache_expires(monkeypatch):
     clock[0] += tenancy.DEVICE_TTL_S + 1
     assert run(tenancy.device_of("sub_x")) is None  # re-read: no such row in the store
     tenancy._devices.pop("sub_x", None)
+
+
+def test_vehicle_events_say_when_the_day_is_cut(client):
+    # Bug 10: the day stopped at the limit with nothing in the answer to say so.
+    f = _two_fleets(client)
+    client.post("/api/trips/events", headers=f["a_drv"], json=[
+        _ev("maneuver_said", index=i, t=f"2026-11-02T17:{i:02d}:00Z") for i in range(3)])
+    url = f"/api/fleet/vehicles/{f['t1']}/events?day=2026-11-02"
+    cut = client.get(url + "&limit=2", headers=f["a_disp"]).json()
+    assert [e["data"]["index"] for e in cut["events"]] == [0, 1] and cut["truncated"] is True
+    assert client.get(url + "&limit=3", headers=f["a_disp"]).json()["truncated"] is False
+
+
+def test_a_fleet_token_without_its_device_row_is_401(client):
+    # Bug 6: a token carrying org_id kept authorising after its devices row was gone.
+    f = _two_fleets(client)
+    sub = _sub(f["a_drv"])
+    assert client.get("/api/fleet/vehicles", headers=f["a_owner"]).status_code == 200
+    run(db._sq_run(lambda con: con.execute("DELETE FROM devices WHERE sub = ?", (sub,))))
+    tenancy._devices.pop(sub, None)
+    r = client.get("/api/trips", headers=f["a_drv"])
+    assert r.status_code == 401 and r.json()["detail"] == "This device is no longer registered"
+
+
+def test_a_position_event_moves_the_truck_on_the_dashboard(client):
+    # Bug 13: the app now logs "position" every 5 minutes while driving; the dashboard takes it like any event.
+    f = _two_fleets(client)
+    client.post("/api/trips/events", headers=f["a_drv"], json=[
+        _ev("route_started", place_id="p1", lat=38.58, lng=-121.49, t="2026-11-02T17:00:00Z"),
+        _ev("position", speed_mps=29.1, lat=39.1, lng=-120.9, t="2026-11-02T17:55:00Z")])
+    truck = next(v for v in client.get("/api/fleet/vehicles", headers=f["a_disp"]).json()["vehicles"] if v["id"] == f["t1"])
+    assert truck["position"]["lat"] == 39.1 and truck["last_kind"] == "position"
+
+
+def test_a_fleet_driver_changes_the_trip_not_the_truck(client):
+    # Bug 2 (decision 2026-11-02): a fleet driver's PUT /me/profile rewrote the truck every driver of it uses,
+    # driver_name included, and the name stayed on the truck after "Delete my data". The truck's sizes are the
+    # owner's and the dispatcher's; the driver's name goes to the driver's own row; the trip's own sizes stay
+    # on the phone (the app sends them with every request).
+    f = _two_fleets(client)
+    other = _device(client, run(tenancy.create_fleet_code(f["acme"], f["t1"])))  # a second driver of Unit 1
+    r = client.put("/api/me/profile", json=TruckProfile(height_in=150, trailer_ft=48, driver_name="Sam").model_dump(),
+                   headers=f["a_drv"])
+    assert r.status_code == 200
+    tenancy.reset_caches()
+    r = client.get("/api/me/profile", headers=f["a_drv"])
+    mine = r.json()
+    assert mine["height_in"] == 162 and mine["driver_name"] == "Sam"  # the truck's sizes, the driver's own name
+    assert r.headers["x-profile-source"] == "vehicle"  # the app keeps its own sizes for the trip
+    theirs = client.get("/api/me/profile", headers=other).json()
+    assert theirs["height_in"] == 162 and theirs["driver_name"] is None
+    drivers = client.get("/api/fleet/drivers", headers=f["a_owner"]).json()["drivers"]
+    assert any(d["display_name"] == "Sam" for d in drivers)
+    # "Delete my data" takes the name with it
+    client.delete("/api/memory", headers=f["a_drv"])
+    tenancy.reset_caches()
+    assert client.get("/api/me/profile", headers=f["a_drv"]).json()["driver_name"] is None
+
+
+def test_the_owner_and_the_dispatcher_set_the_trucks_sizes(client):
+    f = _two_fleets(client)
+    url = f"/api/fleet/vehicles/{f['t1']}/profile"
+    body = TruckProfile(height_in=168, trailer_ft=53, driver_name="ignored").model_dump()
+    assert client.put(url, json=body, headers=f["a_drv"]).status_code == 403
+    assert client.put(url, json=body, headers=f["b_disp"]).status_code == 404  # another fleet's truck
+    r = client.put(url, json=body, headers=f["a_disp"])
+    assert r.status_code == 200 and r.json()["height_in"] == 168 and r.json()["driver_name"] is None
+    tenancy.reset_caches()
+    assert client.get("/api/me/profile", headers=f["a_drv"]).json()["height_in"] == 168
+    assert client.put(url, json=body, headers=f["a_owner"]).status_code == 200
+    client.put("/api/me/profile", json=TruckProfile(height_in=150).model_dump(), headers=f["solo"])
+    assert client.get("/api/me/profile", headers=f["solo"]).headers["x-profile-source"] == "driver"
+
+
+def test_the_fleets_day_is_its_own_calendar_day(client):
+    # Bug 4 (decision 2026-11-02): "today" was a UTC day, so a California evening shift was split at 4-5 pm.
+    f = _two_fleets(client)
+    client.post("/api/trips/events", headers=f["a_drv"], json=[
+        _ev("route_started", t="2026-11-02T17:00:00Z"),   # 9 am Pacific
+        _ev("route_started", t="2026-11-03T01:30:00Z")])  # 5:30 pm Pacific, already Nov 3 in UTC
+    day = client.get("/api/fleet/summary?day=2026-11-02", headers=f["a_disp"]).json()
+    assert day["timezone"] == "America/Los_Angeles" and day["totals"]["routes"] == 2
+    assert client.get("/api/fleet/summary?day=2026-11-03", headers=f["a_disp"]).json()["totals"]["routes"] == 0
+    # the owner moves the fleet to Berlin: 01:30 UTC is 2:30 am there on Nov 3
+    assert client.put("/api/fleet/timezone", json={"timezone": "Europe/Berlin"}, headers=f["a_disp"]).status_code == 403
+    assert client.put("/api/fleet/timezone", json={"timezone": "Mars/Olympus"}, headers=f["a_owner"]).status_code == 422
+    assert client.put("/api/fleet/timezone", json={"timezone": "Europe/Berlin"}, headers=f["a_owner"]).status_code == 200
+    assert client.get("/api/fleet/summary?day=2026-11-03", headers=f["a_disp"]).json()["totals"]["routes"] == 1
+    events = client.get(f"/api/fleet/vehicles/{f['t1']}/events?day=2026-11-02", headers=f["a_disp"]).json()["events"]
+    assert len(events) == 1
+    # another fleet keeps its own zone
+    assert client.get("/api/fleet/summary", headers=f["b_disp"]).json()["timezone"] == "America/Los_Angeles"

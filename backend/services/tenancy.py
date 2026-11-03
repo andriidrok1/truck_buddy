@@ -10,11 +10,15 @@ Every function returns None / does nothing when the store is off (keyless dev, m
 import json
 import logging
 import secrets
+import sqlite3
 import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+import asyncpg
 
 from models import TruckProfile
 from services import db
@@ -230,9 +234,12 @@ async def org_vehicles(org_id: str) -> list[dict]:
 
 
 async def org_drivers(org_id: str) -> list[dict]:
-    """The org's drivers with their truck (when a device is bound to one) and whether Motive knows them."""
-    sql = ("SELECT r.id, r.display_name, r.motive_user_id, d.vehicle_id FROM drivers r LEFT JOIN devices d ON d.driver_id = r.id "
-           "WHERE r.org_id = {p} ORDER BY r.created_at, r.id")
+    """The org's drivers with their truck (when a device is bound to one) and whether Motive knows them.
+    A row whose devices are all owner or dispatcher phones is not a driver: binding by code gives everyone a
+    drivers row (it carries their memory), and the owner and the dispatcher were listed as drivers (QA
+    2026-11-02, bug 3). A row with no device left (a former driver) stays listed."""
+    sql = ("SELECT r.id, r.display_name, r.motive_user_id, d.vehicle_id, d.role FROM drivers r "
+           "LEFT JOIN devices d ON d.driver_id = r.id WHERE r.org_id = {p} ORDER BY r.created_at, r.id")
     k = db.store()
     if k == "sqlite":
         rows = await db._sq_run(lambda con: con.execute(sql.format(p="?"), (org_id,)).fetchall())
@@ -240,11 +247,18 @@ async def org_drivers(org_id: str) -> list[dict]:
         pool = await db._db()
         rows = [tuple(r) for r in await pool.fetch(sql.format(p="$1"), org_id)]
     out: dict[str, dict] = {}
-    for did, name, motive, vid in rows:
+    staff: set[str] = set()  # rows seen only with owner/dispatcher devices so far
+    for did, name, motive, vid, role in rows:
+        new = did not in out
         d = out.setdefault(did, {"id": did, "display_name": name, "motive_linked": bool(motive), "vehicle_ids": []})
+        if role is not None and role != "driver":
+            if new:
+                staff.add(did)
+            continue
+        staff.discard(did)
         if vid and vid not in d["vehicle_ids"]:
             d["vehicle_ids"].append(vid)
-    return list(out.values())
+    return [d for did, d in out.items() if did not in staff]
 
 
 class MotiveUserTaken(Exception):
@@ -253,27 +267,27 @@ class MotiveUserTaken(Exception):
 
 async def set_motive_user(org_id: str, driver_id: str, user_id: Optional[str]) -> bool:
     """Maps the org's driver to a Motive user id (None unmaps); False when the driver is not in this org,
-    MotiveUserTaken when another driver of the org already has that id (their hours would be read twice)."""
+    MotiveUserTaken when another driver of the org already has that id (their hours would be read twice). The
+    unique index drivers_org_motive_user (0006) decides; a check in code under a lock did before (bug 9)."""
     k = db.store()
     if k == "off":
         raise RuntimeError("store is off")
-    taken = "SELECT 1 FROM drivers WHERE org_id = {p1} AND motive_user_id = {p2} AND id <> {p3}"
     update = "UPDATE drivers SET motive_user_id = {p2} WHERE org_id = {p1} AND id = {p3}"
+    n: Optional[int]
     if k == "sqlite":
-        def _set(con):  # check and write under the one connection's lock
-            if user_id is not None and con.execute(taken.format(p1="?", p2="?", p3="?"), (org_id, user_id, driver_id)).fetchone():
+        def _set(con):
+            try:
+                return con.execute(update.format(p1="?", p2="?", p3="?"), (user_id, org_id, driver_id)).rowcount
+            except sqlite3.IntegrityError:
                 return None
-            return con.execute(update.format(p1="?", p2="?", p3="?"), (user_id, org_id, driver_id)).rowcount
         n = await db._sq_run(_set)
     else:
         pool = await db._db()
-        async with pool.acquire() as con, con.transaction():
-            await con.execute("SELECT pg_advisory_xact_lock(hashtext($1))", f"motive:{org_id}")
-            if user_id is not None and await con.fetchval(taken.format(p1="$1", p2="$2", p3="$3"), org_id, user_id, driver_id):
-                n = None
-            else:
-                status = await con.execute(update.format(p1="$1", p2="$2", p3="$3"), org_id, user_id, driver_id)
-                n = int(status.split()[-1])
+        try:
+            status = await pool.execute(update.format(p1="$1", p2="$2", p3="$3"), org_id, user_id, driver_id)
+            n = int(status.split()[-1])
+        except asyncpg.UniqueViolationError:
+            n = None
     if n is None:
         raise MotiveUserTaken(user_id)
     _motive_users.pop(driver_id, None)
@@ -350,8 +364,14 @@ def _profile_target(dev: Device) -> tuple[str, str]:
     return ("vehicles", dev.vehicle_id) if dev.vehicle_id else ("drivers", dev.driver_id)
 
 
+def _drives_a_fleet_truck(dev: Device) -> bool:
+    """A fleet driver on a fleet truck: the truck's sizes are the owner's and the dispatcher's, not theirs."""
+    return bool(dev.vehicle_id) and (dev.role or "driver") == "driver"
+
+
 async def profile_get(sub: str) -> Optional[TruckProfile]:
-    """The stored truck profile for this device (the vehicle's when bound to one), or None."""
+    """The stored truck profile for this device (the vehicle's when bound to one, with the driver's own name from
+    the drivers row), or None."""
     hit = _profiles.get(sub)
     if hit and time.monotonic() - hit[1] < PROFILE_CACHE_S:
         return hit[0]
@@ -361,38 +381,77 @@ async def profile_get(sub: str) -> Optional[TruckProfile]:
     table, row_id = _profile_target(dev)
     k = db.store()
     if k == "sqlite":
-        row = await db._sq_run(lambda con: con.execute(f"SELECT profile FROM {table} WHERE id = ?", (row_id,)).fetchone())
-        text = row[0] if row else None
+        def _read(con):
+            row = con.execute(f"SELECT profile FROM {table} WHERE id = ?", (row_id,)).fetchone()
+            name = con.execute("SELECT display_name FROM drivers WHERE id = ?", (dev.driver_id,)).fetchone()
+            return (row[0] if row else None), (name[0] if name else None)
+        text, name = await db._sq_run(_read)
     else:
         pool = await db._db()
         text = await pool.fetchval(f"SELECT profile::text FROM {table} WHERE id = $1", row_id)
+        name = await pool.fetchval("SELECT display_name FROM drivers WHERE id = $1", dev.driver_id)
     profile = None
     if text:
         try:
             profile = TruckProfile(**json.loads(text))
         except Exception as e:  # noqa: BLE001 - a bad row must not break every request
             logger.warning("stored profile for %s unreadable: %s", sub, e)
+    if profile is not None and table == "vehicles":
+        profile = profile.model_copy(update={"driver_name": name})  # a truck has no driver's name of its own
     _profiles[sub] = (profile, time.monotonic())
     return profile
 
 
 async def profile_put(sub: str, profile: TruckProfile) -> None:
+    """The app's profile. A fleet driver's sizes are not written anywhere: they change the trip, which the phone
+    carries (decision 2026-11-02, bug 2: one driver's trailer and name were written onto the truck for all of
+    its drivers). Their name goes to their own drivers row."""
     dev = await ensure_solo_org(sub)
     if dev is None:
         raise RuntimeError("store is off")
+    k = db.store()
+    if _drives_a_fleet_truck(dev):
+        name = profile.driver_name
+        if k == "sqlite":
+            await db._sq_run(lambda con: con.execute("UPDATE drivers SET display_name = ? WHERE id = ?", (name, dev.driver_id)))
+        else:
+            pool = await db._db()
+            await pool.execute("UPDATE drivers SET display_name = $1 WHERE id = $2", name, dev.driver_id)
+        _profiles.pop(sub, None)
+        return
     table, row_id = _profile_target(dev)
     text = profile.model_dump_json()
-    k = db.store()
     if k == "sqlite":
         await db._sq_run(lambda con: con.execute(f"UPDATE {table} SET profile = ? WHERE id = ?", (text, row_id)))
     else:
         pool = await db._db()
         await pool.execute(f"UPDATE {table} SET profile = $1::jsonb WHERE id = $2", text, row_id)
-    _profiles[sub] = (profile, time.monotonic())
+    if table == "vehicles":
+        _profiles.clear()  # every device on this truck
+    else:
+        _profiles[sub] = (profile, time.monotonic())
+
+
+async def vehicle_profile_put(org_id: str, vehicle_id: str, profile: TruckProfile) -> bool:
+    """The truck's sizes, set by its fleet's owner or dispatcher; no driver's name. False for a truck that is not
+    the org's."""
+    text = profile.model_copy(update={"driver_name": None}).model_dump_json()
+    k = db.store()
+    if k == "off":
+        raise RuntimeError("store is off")
+    if k == "sqlite":
+        n = await db._sq_run(lambda con: con.execute(
+            "UPDATE vehicles SET profile = ? WHERE id = ? AND org_id = ?", (text, vehicle_id, org_id)).rowcount)
+    else:
+        pool = await db._db()
+        status = await pool.execute("UPDATE vehicles SET profile = $1::jsonb WHERE id = $2 AND org_id = $3", text, vehicle_id, org_id)
+        n = int(status.split()[-1])
+    _profiles.clear()  # every device on this truck reads it again
+    return n > 0
 
 
 async def profile_clear(sub: str) -> bool:
-    """"Delete my data": the driver's own stored profile goes; a fleet truck's profile is the fleet's and stays.
+    """"Delete my data": the driver's own stored profile and name go; a fleet truck's profile is the fleet's and stays.
     True when there was one."""
     dev = await device_of(sub)
     _profiles.pop(sub, None)
@@ -400,11 +459,15 @@ async def profile_clear(sub: str) -> bool:
         return False
     k = db.store()
     if k == "sqlite":
-        n = await db._sq_run(lambda con: con.execute(
-            "UPDATE drivers SET profile = NULL WHERE id = ? AND profile IS NOT NULL", (dev.driver_id,)).rowcount)
+        def _clear(con):
+            n = con.execute("UPDATE drivers SET profile = NULL WHERE id = ? AND profile IS NOT NULL", (dev.driver_id,)).rowcount
+            con.execute("UPDATE drivers SET display_name = NULL WHERE id = ?", (dev.driver_id,))  # the name goes too
+            return n
+        n = await db._sq_run(_clear)
     else:
         pool = await db._db()
         status = await pool.execute("UPDATE drivers SET profile = NULL WHERE id = $1 AND profile IS NOT NULL", dev.driver_id)
+        await pool.execute("UPDATE drivers SET display_name = NULL WHERE id = $1", dev.driver_id)  # the name goes too
         n = int(status.split()[-1])
     return n > 0
 
@@ -423,6 +486,43 @@ async def effective_profile(sub: Optional[str], sent: TruckProfile) -> TruckProf
         logger.info("stored profile lookup skipped: %s", e)
         return sent
     return stored or sent
+
+
+# ---- org time zone -------------------------------------------------------------------------------------------
+
+DEFAULT_TZ = "America/Los_Angeles"
+
+
+def valid_timezone(name: str) -> bool:
+    try:
+        ZoneInfo(name)
+        return True
+    except (ZoneInfoNotFoundError, ValueError):
+        return False
+
+
+async def org_timezone(org_id: str) -> ZoneInfo:
+    """The fleet's own time zone, which its "today" is counted in (America/Los_Angeles unless the owner set one)."""
+    k = db.store()
+    name = None
+    if k == "sqlite":
+        row = await db._sq_run(lambda con: con.execute("SELECT timezone FROM orgs WHERE id = ?", (org_id,)).fetchone())
+        name = row[0] if row else None
+    elif k == "pg":
+        pool = await db._db()
+        name = await pool.fetchval("SELECT timezone FROM orgs WHERE id = $1", org_id)
+    return ZoneInfo(name if name and valid_timezone(name) else DEFAULT_TZ)
+
+
+async def set_org_timezone(org_id: str, name: str) -> None:
+    k = db.store()
+    if k == "off":
+        raise RuntimeError("store is off")
+    if k == "sqlite":
+        await db._sq_run(lambda con: con.execute("UPDATE orgs SET timezone = ? WHERE id = ?", (name, org_id)))
+    else:
+        pool = await db._db()
+        await pool.execute("UPDATE orgs SET timezone = $1 WHERE id = $2", name, org_id)
 
 
 # ---- org credentials -----------------------------------------------------------------------------------------

@@ -1,4 +1,5 @@
 """Schema migrations: numbered SQL files applied once each, recorded in schema_version, idempotent."""
+import json
 import os
 import sqlite3
 
@@ -133,3 +134,54 @@ def test_postgres_migrates_and_round_trips(monkeypatch):
         run(scenario())
     finally:  # the pool died with its loop; a later test must not find a closed pool
         db._pool, db._pool_lock = None, None
+
+
+@pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="needs TEST_DATABASE_URL (a throwaway Postgres)")
+def test_postgres_motive_index_stops_on_duplicates(monkeypatch):
+    """Bug 9: one Motive user per driver was held by code only. 0006 adds a unique index; a store that already
+    has two drivers on one Motive user stops the migration and names them instead of failing on the index."""
+    import asyncpg
+    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    sql = next(p for v, p in db.migration_files("pg") if v == 6).read_text()
+
+    async def scenario():
+        pool = await db._db()
+        async with pool.acquire() as con:
+            tr = con.transaction()
+            await tr.start()
+            try:
+                await con.execute("DROP INDEX IF EXISTS drivers_org_motive_user")
+                await con.execute("INSERT INTO orgs (id, name, solo, created_at) VALUES ('o-dup', 'Dup', 0, now())")
+                for d in ("dr-a", "dr-b"):
+                    await con.execute("INSERT INTO drivers (id, org_id, motive_user_id, created_at) VALUES ($1, 'o-dup', '42', now())", d)
+                with pytest.raises(asyncpg.RaiseError, match="o-dup / Motive user 42"):
+                    async with con.transaction():
+                        await con.execute(sql)
+                await con.execute("UPDATE drivers SET motive_user_id = NULL WHERE id = 'dr-b'")
+                await con.execute(sql)
+                with pytest.raises(asyncpg.UniqueViolationError):
+                    async with con.transaction():
+                        await con.execute("UPDATE drivers SET motive_user_id = '42' WHERE id = 'dr-b'")
+            finally:
+                await tr.rollback()
+        await db.close()
+
+    try:
+        run(scenario())
+    finally:
+        db._pool, db._pool_lock = None, None
+
+
+def test_sqlite_0007_takes_the_drivers_name_off_the_trucks(tmp_path, monkeypatch):
+    files = db.migration_files("sqlite")
+    monkeypatch.setattr(db, "migration_files", lambda dialect: [f for f in files if f[0] <= 6])
+    con = sqlite3.connect(str(tmp_path / "names.sqlite"), isolation_level=None)
+    db._migrate_sqlite(con)
+    con.execute("INSERT INTO orgs (id, name, solo, created_at) VALUES ('o1', 'Acme', 0, '2026-10-01T00:00:00+00:00')")
+    con.execute("INSERT INTO vehicles (id, org_id, label, profile, created_at) VALUES "
+                "('v1', 'o1', 'Unit 1', '{\"height_in\": 162, \"driver_name\": \"Solo QA\"}', '2026-10-01T00:00:00+00:00')")
+    monkeypatch.setattr(db, "migration_files", lambda dialect: files)
+    assert 7 in db._migrate_sqlite(con)
+    profile = json.loads(con.execute("SELECT profile FROM vehicles WHERE id = 'v1'").fetchone()[0])
+    assert profile == {"height_in": 162}
+    con.close()

@@ -80,8 +80,10 @@ def pct(values: list[int], p: float) -> Optional[int]:
 
 
 def _dialog(t: dict) -> tuple:
-    """The dialog a turn belongs to: (driver, sid) when the line names them, else one shared bucket."""
-    return (t.get("driver"), t.get("sid")) if t.get("driver") else (None, None)
+    """The dialog a turn belongs to: (device, sid) when the line names them, else one shared bucket. Lines before
+    2026-11-02 carried the device's sub under "driver"."""
+    who = t.get("device") or t.get("driver")
+    return (who, t.get("sid")) if who else (None, None)
 
 
 def reask_rate(turns: list[dict]) -> Optional[float]:

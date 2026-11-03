@@ -4,19 +4,22 @@ Motive user each driver is).
 Every route needs an owner or dispatcher of an organisation (auth.require_org_member), and the two settings
 need the owner; a driver's token, a solo driver's included, gets 403. Every query is filtered by the caller's
 org_id, so a truck id from another fleet is a 404 and another fleet's events never show up. Transcripts stay
-on the server: whatever a driver said (`text`, `transcript` in an event's data) is removed here, on the way out
+on the server: an event's data leaves with numbers, flags and known code fields only (public_event), on the way out
 (decision 2026-10-30: the owner sees what happened, not what was said). The tester route /api/trips/recent is unchanged.
 
-Days are UTC calendar days (?day=YYYY-MM-DD, default today).
+Days are the fleet's calendar days in its own time zone (orgs.timezone, America/Los_Angeles unless the owner set
+one with PUT /api/fleet/timezone); ?day=YYYY-MM-DD, default today there.
 """
 import asyncio
 import logging
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
+from models import TruckProfile
 from services import auth, secrets, tenancy, trip_events
 
 logger = logging.getLogger("truckbuddy.fleet")
@@ -27,6 +30,9 @@ owner = auth.require_org_member("owner")
 WAIT_S = 8.0
 UNAVAILABLE = "Fleet data is unavailable right now"
 TRANSCRIPT_KEYS = frozenset({"text", "transcript"})
+# String fields a fleet may read besides the dashboard models' own: codes and ids the app and the server set,
+# never words the driver said.
+PUBLIC_TEXT_KEYS = frozenset({"place_id", "category", "cause", "status", "error", "result", "intent", "action", "by", "where"})
 DAY_RE = r"^\d{4}-\d{2}-\d{2}$"
 
 # What the summary counts, per truck. reroute_requested is the server's record of every /reroute call (the app's
@@ -35,18 +41,35 @@ FAILED_TURN_KINDS = ("not_understood", "turn_error", "turn_failed")
 SUMMARY_KINDS = ("reroute_requested", "stop_guard", "route_started", "route_failed", *FAILED_TURN_KINDS)
 
 
+def _public_value(kind: str, key: str, value) -> bool:
+    if key in TRANSCRIPT_KEYS:
+        return False
+    if value is None or isinstance(value, (bool, int, float)):
+        return True  # counts, metres, seconds, flags: nothing a driver said fits in a number
+    model = trip_events.DASHBOARD_MODELS.get(kind)
+    if isinstance(value, str):
+        return key in PUBLIC_TEXT_KEYS or (model is not None and key in model.model_fields)
+    return key == "labels" and isinstance(value, list) and all(isinstance(x, str) for x in value)  # road names
+
+
 def public_event(e: dict) -> dict:
-    """An event as a fleet may see it: no transcript."""
-    return {**e, "data": {k: v for k, v in (e.get("data") or {}).items() if k not in TRANSCRIPT_KEYS}}
+    """An event as a fleet may see it. Event data takes any field, so a deny list of transcript keys let any new
+    free-text field through to the owner (review 2026-11-02, bug 7): numbers and flags pass, text only for the
+    fields known to hold codes and ids."""
+    kind = str(e.get("kind") or "")
+    return {**e, "data": {k: v for k, v in (e.get("data") or {}).items() if _public_value(kind, k, v)}}
 
 
-def _day(day: Optional[str]) -> tuple[datetime, datetime, str]:
+def _day(day: Optional[str], tz: ZoneInfo) -> tuple[datetime, datetime, str]:
+    """The fleet's calendar day [start, end) in UTC. A UTC day split a California evening shift in two at 4-5 pm
+    (review 2026-11-02, bug 4); a DST day is 23 or 25 hours long."""
     try:
-        d = date.fromisoformat(day) if day else datetime.now(timezone.utc).date()
+        d = date.fromisoformat(day) if day else datetime.now(tz).date()
     except ValueError:
         raise HTTPException(status_code=422, detail="day is YYYY-MM-DD")
-    start = datetime.combine(d, dtime.min, tzinfo=timezone.utc)
-    return start, start + timedelta(days=1), d.isoformat()
+    start = datetime.combine(d, dtime.min, tzinfo=tz)
+    end = datetime.combine(d + timedelta(days=1), dtime.min, tzinfo=tz)
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc), d.isoformat()
 
 
 async def _guarded(coro):
@@ -84,13 +107,15 @@ async def vehicles(principal: auth.Principal = Depends(reader)):
 @router.get("/vehicles/{vehicle_id}/events")
 async def vehicle_events(vehicle_id: str = Path(max_length=64), day: Optional[str] = Query(None, pattern=DAY_RE),
                          limit: int = Query(2000, ge=1, le=5000), principal: auth.Principal = Depends(reader)):
-    """One truck's day, oldest first, without transcripts; 404 for a truck that is not the caller's."""
-    start, end, label = _day(day)
+    """One truck's day, oldest first, without transcripts; 404 for a truck that is not the caller's. `truncated`
+    says the day has more than `limit` events (the list used to stop at 2000 with nothing to say so, bug 10)."""
+    start, end, label = _day(day, await _guarded(tenancy.org_timezone(principal.org_id)))
     trucks = await _guarded(tenancy.org_vehicles(principal.org_id))
     if vehicle_id not in {v["id"] for v in trucks}:
         raise HTTPException(status_code=404, detail="No such vehicle")
-    events = await _guarded(trip_events.vehicle_day(principal.org_id, vehicle_id, start, end, limit))
-    return {"day": label, "vehicle_id": vehicle_id, "events": [public_event(e) for e in events]}
+    events = await _guarded(trip_events.vehicle_day(principal.org_id, vehicle_id, start, end, limit + 1))
+    return {"day": label, "vehicle_id": vehicle_id, "events": [public_event(e) for e in events[:limit]],
+            "truncated": len(events) > limit}
 
 
 SUMMARY_COUNTS = ("routes", "reroutes", "guard_questions", "failed_turns", "route_failures")
@@ -100,11 +125,21 @@ def _zero_row(vehicle_id: Optional[str], label: Optional[str]) -> dict:
     return {"vehicle_id": vehicle_id, "label": label, **dict.fromkeys(SUMMARY_COUNTS, 0)}
 
 
+@router.put("/vehicles/{vehicle_id}/profile", response_model=TruckProfile)
+async def vehicle_profile(profile: TruckProfile, vehicle_id: str = Path(max_length=64), principal: auth.Principal = Depends(reader)):
+    """The truck's sizes, which every driver of it routes with: the owner's and the dispatcher's to set (a driver
+    changes only the trip, from the phone). 404 for a truck that is not the caller's."""
+    if not await _guarded(tenancy.vehicle_profile_put(principal.org_id, vehicle_id, profile)):
+        raise HTTPException(status_code=404, detail="No such vehicle")
+    return profile.model_copy(update={"driver_name": None})
+
+
 @router.get("/summary")
 async def summary(day: Optional[str] = Query(None, pattern=DAY_RE), principal: auth.Principal = Depends(reader)):
     """Per truck for the day: routes started, reroutes, far-stop questions the guard asked, failed copilot turns,
     routing failures. Events from a phone not bound to a truck are counted under vehicle_id null."""
-    start, end, label = _day(day)
+    tz = await _guarded(tenancy.org_timezone(principal.org_id))
+    start, end, label = _day(day, tz)
     trucks = await _guarded(tenancy.org_vehicles(principal.org_id))
     events = await _guarded(trip_events.org_day(principal.org_id, start, end, SUMMARY_KINDS))
     labels = {v["id"]: v["label"] for v in trucks}
@@ -124,7 +159,7 @@ async def summary(day: Optional[str] = Query(None, pattern=DAY_RE), principal: a
             r["route_failures"] += 1
     totals = {k: sum(r[k] for r in rows.values()) for k in SUMMARY_COUNTS}
     ordered = sorted(rows.values(), key=lambda r: (r["vehicle_id"] is None, r["label"] or "", r["vehicle_id"] or ""))
-    return {"day": label, "vehicles": ordered, "totals": totals}
+    return {"day": label, "timezone": tz.key, "vehicles": ordered, "totals": totals}
 
 
 @router.get("/drivers")
@@ -152,6 +187,19 @@ async def driver_motive(body: MotiveUserIn, driver_id: str = Path(max_length=64)
 
 class MotiveKeyIn(BaseModel):
     key: str = Field(min_length=8, max_length=200)
+
+
+class TimezoneBody(BaseModel):
+    timezone: str = Field(..., max_length=64)
+
+
+@router.put("/timezone")
+async def put_timezone(body: TimezoneBody, principal: auth.Principal = Depends(owner)):
+    """The fleet's time zone (IANA name, e.g. America/Chicago): its "today" in the summary and a truck's day."""
+    if not tenancy.valid_timezone(body.timezone):
+        raise HTTPException(status_code=422, detail="Unknown time zone")
+    await _guarded(tenancy.set_org_timezone(principal.org_id, body.timezone))
+    return {"timezone": body.timezone}
 
 
 @router.put("/credentials/motive")
