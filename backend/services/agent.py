@@ -769,8 +769,15 @@ def name_policy(text: str, name: str, allowed: bool, places: Iterable[Place] = (
 REJECT_PLACE = re.compile(
     r"\b(?:not (?:that|this) one|something else|somewhere else|another one|a different one|different one|"
     r"(?:the )?next one|not there|no,? not that)\b", re.I)
-# "Skip the Pilot", "drop the Love's stop": one of the route's stops left out (with the stop's own word in the text).
-DROP_STOP = re.compile(r"\b(?:skip|drop|remove|cancel|take off|no stop at|don'?t stop at|not stopping at)\b", re.I)
+# "Skip the Pilot", "drop the Love's stop", "take the Pilot off": an order about one of the route's stops. The verb
+# leads the sentence and the stop is its object; "can I drop my trailer at the Pilot", "what time should I take off
+# from the Pilot" and "drop the load in Fernley" dropped the stop too (review 2026-11-02).
+DROP_ORDER = re.compile(
+    r"^(?:(?:ok(?:ay)?|yeah|yes|no|so|and|please|let'?s|just|go ahead and|can you|could you|would you|will you)\s+)*"
+    r"(?P<verb>skip|drop|remove|cancel|scratch|forget|take|no stop at|don'?t stop at|not stopping at)\b(?P<obj>.*)$", re.I)
+TAKE_OFF = re.compile(r"^\s+off\b(?!\s+from)|\boff(?:\s+(?:the|my)\s+(?:route|list|trip))?\s*$", re.I)
+NOT_A_STOP_OBJECT = re.compile(r"\b(?:trailers?|loads?|freight|cargo|reefer|pallets?|time)\b"
+                               r"|\b\d{1,2}(?::\d\d)?\s*(?:am|pm|a\.m\.|p\.m\.|o'?clock)\b|\b(?:noon|midnight)\b", re.I)
 STOPS_WORD = re.compile(r"^(?:the |all )*(?:stops?|all)$", re.I)  # "the stops" as the model's query means all of them
 ROAD_WORDS = re.compile(r"\b(?:way|road|route|highway|freeway|interstate|detour|grade|pass|toll)s?\b", re.I)
 # "The second one", "number two", "the last one": a reference into the list, never something to geocode
@@ -897,6 +904,23 @@ def stop_named(text: str, query: str, stops: list[Place], dest: Optional[Place] 
         if n > hits:
             best, hits = s, n
     return best
+
+
+def stop_to_drop(text: str, stops: list[Place], dest: Optional[Place] = None) -> Optional[Place]:
+    """The route's stop an order in the text leaves out ("skip the Pilot", "cancel the Fernley stop"), or None."""
+    for clause in re.split(r"[.!?;,]+|\bthen\b", text or ""):
+        m = DROP_ORDER.match(clause.strip())
+        if not m:
+            continue
+        obj = m.group("obj")
+        if m.group("verb").lower() == "take" and not TAKE_OFF.search(obj):
+            continue
+        if NOT_A_STOP_OBJECT.search(obj):
+            continue
+        stop = stop_named(obj, "", stops, dest)
+        if stop:
+            return stop
+    return None
 
 
 def reject_or_reference_guard(intent: str, d: dict, text: str, places: list[Place],
@@ -2169,7 +2193,7 @@ class LlmAgentProvider:
                                               req.ui.option_ids)
         if intent == "not_understood":
             return _not_understood(text, self.source)
-        if intent not in ("add_stop", "clear_stops") and DROP_STOP.search(text) and stop_named(text, "", self._stops(req, sess), req.active_place):
+        if intent not in ("add_stop", "clear_stops") and stop_to_drop(text, self._stops(req, sess), req.active_place):
             # "drop the Pilot stop" read as a pick of the Pilot: the driver named one of the route's stops to leave out
             logger.info("agent %s %s names a stop to drop -> clear_stops", intent, said(text))
             intent = "clear_stops"

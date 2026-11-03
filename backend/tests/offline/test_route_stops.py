@@ -121,3 +121,35 @@ def test_the_destinations_town_does_not_name_a_stop(agent_sandbox, fake_http):
     petro = PILOT.model_copy(update={"id": "g-petro-reno", "name": "Petro Stopping Center, Reno", "address": None})
     res = run(prov.handle(_fresh("no stops, straight to Reno", "rs11", [LOVES, petro]), None))
     assert res.status == "route_set" and res.reply.startswith("Stops cleared."), res.reply
+
+
+# Review 2026-11-02: drop/take off/cancel anywhere in the sentence plus any word of a stop's name dropped that stop,
+# whatever the model made of it. Only an order about the stop itself leaves it out.
+@pytest.mark.parametrize("text", [
+    "can I drop my trailer at the Pilot",
+    "what time should I take off from the Pilot",
+    "drop the load in Fernley",
+    "take off from the Pilot at 6",
+    "skip breakfast, the Pilot has food",
+])
+def test_talk_with_a_drop_word_keeps_the_stops(agent_sandbox, fake_http, text):
+    prov = _sandbox(agent_sandbox, fake_http)
+    agent_sandbox.llm.rules.insert(0, (re.compile(re.escape(text), re.I), {"intent": "chat", "reply": "Sure."}))
+    res = run(prov.handle(_fresh(text, "rs12", [LOVES, PILOT]), None))
+    assert res.status == "chat" and res.reply == "Sure.", res.reply
+    assert fake_http.calls_to("router.hereapi.com") == []
+
+
+@pytest.mark.parametrize("text", [
+    "skip the Pilot",
+    "please drop the stop at the Pilot",
+    "cancel the Fernley stop",
+    "take the Pilot off",
+    "let's take off the Pilot",
+    "okay, can you remove the Pilot",
+])
+def test_an_order_about_the_stop_drops_it_whatever_the_model_read(agent_sandbox, fake_http, text):
+    prov = _sandbox(agent_sandbox, fake_http)
+    agent_sandbox.llm.rules.insert(0, (re.compile(re.escape(text), re.I), {"intent": "pick", "place_index": None}))
+    res = run(prov.handle(_fresh(text, "rs13", [LOVES, PILOT]), None))
+    assert res.status == "route_set" and [o.id for o in res.options] == [LOVES.id], res.reply
