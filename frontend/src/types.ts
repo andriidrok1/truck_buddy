@@ -90,9 +90,12 @@ export type RouteInfo = {
   via?: [number, number][];
   /** Geometry index where each route section (between via stops) starts. */
   section_starts?: number[];
+  /** Seconds standing at the via stops, already counted in duration_s. */
+  stops_s?: number;
 };
 
-export type SpeedLimit = { index: number; mph: number };
+/** `mph` null = no posted limit known from `index` on (a ramp, a road the router has no data for). */
+export type SpeedLimit = { index: number; mph: number | null };
 
 export type Incident = { type: string; closed: boolean; description: string; index: number; criticality: string };
 

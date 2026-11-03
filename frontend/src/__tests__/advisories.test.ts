@@ -155,3 +155,15 @@ describe("advisoryText", () => {
     );
   });
 });
+
+
+test("limitAt: a null (or 0) entry means no posted limit known from there", () => {
+  const limits = [
+    { index: 0, mph: 65 },
+    { index: 10, mph: null },
+    { index: 20, mph: 25 },
+  ];
+  expect(limitAt(limits, 5)).toBe(65);
+  expect(limitAt(limits, 12)).toBeNull();
+  expect(limitAt(limits, 20)).toBe(25);
+});
