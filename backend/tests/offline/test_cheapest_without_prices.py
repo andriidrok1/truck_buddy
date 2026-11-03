@@ -2,6 +2,8 @@
 cheapest diesel" came back as a pick (the eval wants that) and the destination moved to the 49er, although
 no place on the list had a diesel price. Without prices there is nothing to pick on: the current stop
 stays, or, with no current stop, the closest one is routed with the usual "no price" caveat."""
+import re
+
 from conftest import fixture_json, run
 
 from models import AgentRequest, Place
@@ -70,3 +72,29 @@ def test_no_prices_no_route_and_the_router_down_is_said(agent_sandbox, fake_http
     agent._SESSIONS["h8-down"] = agent.DialogState(places=[ROADYS, WESTSAC])
     res = run(prov.handle(_req("where's the cheapest diesel", "h8-down"), None))
     assert res.status == "error" and res.reply == agent.ROUTE_DOWN
+
+
+EMPTY_OFFER = "I can check the cheapest one in the list if you want."  # what the model said (QA 2026-11-02)
+OFFER = ("None of these list a diesel price, so I can't tell which is cheapest. The closest is West Sac Truck Stop, "
+         "1.2 miles. Want to go there?")
+
+
+def test_cheapest_as_small_talk_names_the_closest_and_offers_it(agent_sandbox, fake_http):
+    """QA 2026-11-02: "where's the cheapest diesel" with no price on the list came back as chat, "I can check the
+    cheapest one in the list if you want": an offer of nothing, nobody has a price. The copilot says so, names
+    the closest and offers to go there; "yes" routes to it."""
+    prov = _sandbox(agent_sandbox, fake_http, [ROADYS, WESTSAC, FORTYNINER])
+    agent_sandbox.llm.rules.insert(0, (re.compile(r"cheapest diesel", re.I),
+                                       {"intent": "chat", "reply": EMPTY_OFFER}))
+    run(prov.handle(_req("find a truck stop", "h8d"), None))
+    fast = _req("where's the cheapest diesel", "h8d", active=ROADYS).model_copy(update={"speed_mps": 30.0})
+    res = run(prov.handle(fast, None))
+    assert res.status == "confirm" and res.reply == OFFER  # whole at highway speed: the question is the point
+    yes = run(prov.handle(_req("yes", "h8d", active=ROADYS), None))
+    assert yes.status == "route_set" and yes.place.id == WESTSAC.id, yes.reply
+
+    run(prov.handle(_req("find a truck stop", "h8e"), None))
+    res = run(prov.handle(_req("where's the cheapest diesel", "h8e"), None))  # no route: the same offer
+    assert res.reply == OFFER
+    no = run(prov.handle(_req("no", "h8e"), None))
+    assert no.status == "chat" and no.route is None

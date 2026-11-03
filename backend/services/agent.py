@@ -609,7 +609,12 @@ def _diesel_note(p: Place) -> str:
 
 PRICE_WORDS = re.compile(r"\b(cheap(?:est|er)?|price|prices|cost|how much)\b", re.I)
 NO_PRICE = " I don't have a diesel price for it."
-NO_PRICES_KEEP = "I don't have diesel prices for any of these, so I can't say which is cheapest. {name} stays as your stop."
+NO_PRICES = "None of these list a diesel price, so I can't tell which is cheapest."
+# "I can check the cheapest one in the list if you want" was an offer of nothing (QA 2026-11-02): the closest is
+# what there is to offer, and "yes" goes there.
+NO_PRICES_OFFER = NO_PRICES + " The closest is {name}, {mi} miles. Want to go there?"
+NO_PRICES_KEEP = NO_PRICES + " {name} is the closest, and that's where we're headed."
+CHEAPEST = re.compile(r"\bcheap(?:est|er)\b", re.I)
 # A fuel/rest stop asked for "on my route" while a route is active is a stop on the way, never a new destination.
 ON_THE_WAY = re.compile(r"\b(?:on|along) (?:my|the|our) (?:route|way)\b|\ben route\b|\bon the way\b"
                         r"|\bbefore (?:I|we) (?:get|arrive)\b", re.I)
@@ -1084,14 +1089,23 @@ class LlmAgentProvider:
             logger.info("agent %r is a truck stop nearby -> %s", query, found.name)
         return found
 
-    async def _cheapest_without_prices(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
-        """No place in the list has a diesel price: keep the current stop and say so; with no current stop
-        the closest one is the honest pick, with the usual "no price" caveat."""
-        if req.active_place:
-            logger.info("agent pick %s with no diesel prices in the list -> keeping %s", said(text), req.active_place.name)
-            return AgentResponse(status="chat", transcript=text, source=self.source,
-                                 reply=NO_PRICES_KEEP.format(name=req.active_place.name))
+    async def _cheapest_without_prices(self, req: AgentRequest, sess: dict, text: str,
+                                       ask: bool = False) -> AgentResponse:
+        """No place in the list has a diesel price: say so and name the closest. The current stop stays; another
+        closest one is offered ("yes" routes there). A pick with no route routes to the closest with the usual
+        "no price" caveat; a question (`ask`) only offers it."""
         nearest = min(sess["places"], key=lambda p: p.distance_mi or 0)
+        name = nearest.name.split(",")[0]
+        if req.active_place and nearest.id == req.active_place.id:
+            return AgentResponse(status="chat", transcript=text, source=self.source,
+                                 reply=NO_PRICES_KEEP.format(name=name))
+        if req.active_place or ask:
+            logger.info("agent cheapest %s with no diesel prices in the list -> offering %s", said(text), nearest.name)
+            sess["pending"] = {"text": text, "kind": "cheapest_offer", "yes": "dest_yes", "no": {"reply": "Okay."},
+                               "d": {"intent": "go", "place": nearest.model_dump()}}
+            # a question (status confirm): never cut to its first sentence at highway speed
+            return AgentResponse(status="confirm", transcript=text, source=self.source,
+                                 reply=NO_PRICES_OFFER.format(name=name, mi=_miles(nearest.distance_mi or 0)))
         logger.info("agent pick %s with no diesel prices in the list -> the closest, %s", said(text), nearest.name)
         return await self._route_to(req, nearest, sess["places"], text)
 
@@ -1947,10 +1961,12 @@ class LlmAgentProvider:
         try:
             # "The cheapest diesel" over a list with no prices: the model still names one, and the destination
             # changed for no reason the driver could see (QA 2026-10-31, H8). No prices, no switch.
-            if intent == "pick" and d.get("place_index") is not None and PRICE_WORDS.search(text) and sess["places"] \
-                    and all(p.category == "truck_stop" and p.diesel_price is None for p in sess["places"]):
+            no_prices = bool(sess["places"]) and all(p.category == "truck_stop" and p.diesel_price is None
+                                                     for p in sess["places"])
+            if no_prices and ((intent == "pick" and d.get("place_index") is not None and PRICE_WORDS.search(text))
+                              or (intent in ("pick", "chat") and CHEAPEST.search(text))):
                 # inside the try: with no route to keep, routing to the closest one can fail (review 2026-11-02, bug 18)
-                return await self._cheapest_without_prices(req, sess, text)
+                return await self._cheapest_without_prices(req, sess, text, ask=intent == "chat")
             # "Not that one" just after a stop was added is about the stop (review 2026-11-02, bug 15).
             offered = self._offered_stop(req, sess) if intent in ("pick", "find") else None
             if offered and (REJECT_PLACE.search(text) or (intent == "pick" and d.get("place_index") is None)):
