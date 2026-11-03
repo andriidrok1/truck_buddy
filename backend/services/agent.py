@@ -724,7 +724,7 @@ def _address(name: str) -> re.Pattern:
     n = re.escape(name)
     return re.compile(rf"(?P<lead>{_SENTENCE_START}(?:(?i:hey|hi|hello),?\s+)?{n}\s*[,!.]\s*)"  # "Hey Mike, you've got..."
                       rf"|{_SENTENCE_START}{_INTERJECTION}(?P<inter>,?\s+{n})(?=\s*[,.!?])"  # "Thanks Mike!", "Okay, Rob."
-                      rf"|(?P<tail>\s*,\s*{n})(?=[.!?](?:\s|$)|\s*$)")  # "Sure thing, Mike." ("safe, Mike, and" stays)
+                      rf"|(?P<tail>\s*,\s*{n})(?=[.!?](?:\s|$)|\s*$|\s*[\u2014\u2013]|\s+-\s)")  # "Sure thing, Mike." / "..., Mike \u2014"
 
 
 def _a_place(text: str, name: str, places: Iterable[Place]) -> bool:
@@ -747,19 +747,42 @@ def _cut(text: str, spans: list[re.Match]) -> str:
     return text
 
 
+GREETING = re.compile(r"(?i:hey|hi|hello|thanks|thank you|good (?:morning|afternoon|evening|night))$")
+SHORT_LEAD = 3  # "You're welcome, Austin." / "Doing good, Austin.": a social phrase this short before ", Name" is an address
+
+
+def _vocatives(text: str, name: str, places: Iterable[Place]) -> list[re.Match]:
+    """Where the reply addresses the driver. When the name is also a place here ("Austin" driving to Austin), a
+    ", Austin." at the end of a sentence may be the town, so only the plain addresses go: "Hey Austin,", "Thanks
+    Austin!", and ", Austin" after a phrase of at most SHORT_LEAD words. Skipping them all kept the name in every
+    small-talk reply (stand 2026-11-02: three in a row)."""
+    if not name or not text:
+        return []
+    spans = list(_address(name).finditer(text))
+    if not _a_place(text, name, places):
+        return spans
+
+    def plain(m: re.Match) -> bool:
+        if m.group("lead") is not None:  # "Austin, TX is 240 miles out" is the town
+            return not re.match(r"[A-Z]{2}\b", text[m.end():])
+        if m.group("inter") is not None:  # "Thanks Austin!" is him; "Okay, Jackson." may answer "take me to Jackson"
+            return bool(GREETING.match(text[m.start():m.start("inter")].strip()))
+        lead = re.split(r"[.!?]\s+", text[:m.start("tail")])[-1]
+        return len(lead.split()) <= SHORT_LEAD
+
+    return [m for m in spans if plain(m)]
+
+
 def without_name(text: str, name: str, places: Iterable[Place] = ()) -> str:
     """The reply with no direct address to the driver."""
-    if not name or not text or _a_place(text, name, places):
-        return text
-    return _cut(text, list(_address(name).finditer(text)))
+    return _cut(text, _vocatives(text, name, list(places)))
 
 
 def name_policy(text: str, name: str, allowed: bool, places: Iterable[Place] = ()) -> tuple[str, bool]:
     """(the reply, whether it still addresses the driver): the first address is kept only when the dialog is due
     one and the reply is long enough to carry it; the rest go. A name that is not an address is left alone and
     does not count as one."""
-    places = list(places)
-    spans = list(_address(name).finditer(text)) if name and text and not _a_place(text, name, places) else []
+    spans = _vocatives(text, name, list(places))
     if not spans:
         return text, False
     keep = allowed and len(_cut(text, spans).split()) >= NAME_MIN_WORDS

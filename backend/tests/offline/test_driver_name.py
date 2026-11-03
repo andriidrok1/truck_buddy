@@ -89,3 +89,20 @@ def test_the_name_once_in_a_while_and_never_in_short_replies(agent_sandbox):
 def test_twice_in_one_reply_keeps_the_first(agent_sandbox):
     said = _dialog(agent_sandbox, ["Mike, you've got about four hours left today. Drive safe, Mike."])
     assert said == ["Mike, you've got about four hours left today. Drive safe."]
+
+
+AUSTIN = [Place(id="a", name="Austin, TX", category="destination", lat=30.27, lng=-97.74)]
+
+
+@pytest.mark.parametrize("reply, cut", [
+    ("You're welcome, Austin.", "You're welcome."),
+    ("Doing good, Austin. I'm ready when you are.", "Doing good. I'm ready when you are."),
+    ("Sure thing, Austin — why did the truck stop apply?", "Sure thing — why did the truck stop apply?"),
+    ("Thanks Austin!", "Thanks!"),
+    ("Alright. Route to Austin is set, 28 h.", "Alright. Route to Austin is set, 28 h."),
+    ("Okay, heading to Austin, 240 miles.", "Okay, heading to Austin, 240 miles."),
+])
+def test_a_driver_named_after_the_destination_is_still_not_called_every_time(reply, cut):
+    # Stand 2026-11-02: driver Austin on the way to Austin heard the name in three small-talk replies in a row:
+    # the name was a place, so nothing was cut. Plain addresses go; the town stays.
+    assert without_name(reply, "Austin", AUSTIN) == cut
