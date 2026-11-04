@@ -21,6 +21,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import time
 from typing import AsyncIterable, Optional
 
@@ -59,7 +60,8 @@ def turn_handling() -> dict:
         "interruption": {
             "mode": "vad",
             "min_duration": policy.MIN_INTERRUPT_S,
-            "min_words": policy.MIN_INTERRUPT_WORDS,
+            # VOICE_MIN_WORDS=0: stop on voice alone (LiveKit pauses, then resumes if no words come); rig experiments
+            "min_words": int(os.environ.get("VOICE_MIN_WORDS", policy.MIN_INTERRUPT_WORDS)),
             "resume_false_interruption": True,
             "false_interruption_timeout": policy.FALSE_INTERRUPT_S,
         },
@@ -113,7 +115,14 @@ class Copilot(Agent):
         timing.begin()
         try:
             req = AgentRequest(**{**ctx, "text": text, "session_id": self.sid})
-            res = await get_agent_provider().handle(req, self._driver)
+            task = asyncio.ensure_future(get_agent_provider().handle(req, self._driver))
+            done, _ = await asyncio.wait({task}, timeout=policy.FILLER_AFTER_S)
+            if not done:  # HERE and Google take seconds: say we heard, then the answer follows in the same breath
+                filler = random.choice(policy.FILLERS)
+                self.turn["filler"] = True
+                self.reply_now = filler
+                yield filler + " "
+            res = await task
         except Exception:  # noqa: BLE001 - a failed turn is said out loud, never silence
             logger.exception("agent turn failed")
             self.turn.update(status="error", reply_chars=len(AGENT_FAILED))
@@ -157,6 +166,10 @@ async def entrypoint(ctx: JobContext) -> None:
         llm=lk_openai.LLM(model="gpt-5.4-mini"),  # never called: llm_node above replaces it
         tts=lk_openai.TTS(model="gpt-4o-mini-tts", voice=voice.DEFAULT_VOICE, instructions=voice.INSTRUCTIONS),
         turn_handling=turn_handling(),
+        # LiveKit feeds STT silence for the first 3 s of agent speech by default (waiting for a server-side AEC to
+        # settle), which drops whatever the driver says over the start of a reply ("No wait, find one closer" was
+        # lost on the rig, 2026-11-03). The phone cancels echo in hardware from the first frame; tune on the device.
+        aec_warmup_duration=float(os.environ.get("VOICE_AEC_WARMUP_S", "0.5")) or None,
     )
 
     copilot = Copilot(ctx.room, driver, dialog_id)

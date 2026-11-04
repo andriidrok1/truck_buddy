@@ -11,6 +11,8 @@ MAX_ENDPOINT_S = 3.0  # an unfinished thought ("I need to find a...") waits at m
 MIN_INTERRUPT_S = 0.5  # speech over the agent shorter than this never stops it
 MIN_INTERRUPT_WORDS = 2  # nor does speech with fewer words (a cough, the radio, "uh-huh")
 FALSE_INTERRUPT_S = 1.5  # after a stop with no words, the agent picks up where it was
+FILLER_AFTER_S = 0.7  # the agent hasn't answered by then: a short "Hang on." first
+FILLERS = ("Hang on.", "On it.", "Checking.", "Okay, one sec.")  # the short end of the app's list (useFillers.ts)
 
 BACKCHANNEL = {"uh-huh", "uh huh", "mhm", "mm-hmm", "mm", "hmm", "yeah", "yep", "ok", "okay", "right", "sure",
                "got it", "alright", "all right", "uh", "um"}

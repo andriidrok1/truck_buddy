@@ -5,10 +5,10 @@
 Each scenario creates its own room (so each is a fresh dialog), dispatches truckbuddy-copilot into it, plays
 16 kHz clips from rig_clips/ as the driver's microphone (optionally under synthetic cab noise), watches the
 agent's audio track, and prints:
-  eou_ms     end of the driver's clip -> first agent audio (how fast it answers a finished sentence)
+  first_audio_ms  end of the driver's clip -> first agent audio (how fast it answers a finished sentence)
   early      the agent spoke during a mid-sentence pause (should be False)
   stop_ms    start of a barge-in clip -> the agent's audio goes quiet (how fast it shuts up)
-  stopped    whether a backchannel ("uh-huh") stopped the agent (should be False)
+  interrupted     whether a backchannel ("uh-huh") cut the reply (should be False)
 The agent's audio goes to rig_out/<room>.wav for listening. Costs money: STT, the agent (HERE, Google), TTS.
 """
 from __future__ import annotations
@@ -181,6 +181,21 @@ class Driver:
             await asyncio.sleep(0.02)
         return None
 
+    def turns(self) -> int:
+        return sum(e.get("kind") == "turn" for e in self.events)
+
+    async def wait_turns(self, n: int, timeout: float = 40.0) -> bool:
+        """The agent logs a `turn` event when a reply ends (spoken out or cut off): the reliable end of a reply."""
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if self.turns() >= n:
+                return True
+            await asyncio.sleep(0.05)
+        return False
+
+    def last_turn(self) -> dict:
+        return next((e for e in reversed(self.events) if e.get("kind") == "turn"), {})
+
     async def close(self) -> None:
         if self._mic:
             self._mic.cancel()
@@ -207,8 +222,9 @@ async def complete(snr):
     try:
         end = await d.say(clip("park"))
         first = await d.wait_speaking(end)
-        await d.wait_quiet(first or end)
-        return {"eou_ms": int((first - end) * 1000) if first else None, "reply": d.replies[-1:]}
+        await d.wait_turns(1)
+        return {"first_audio_ms": int((first - end) * 1000) if first else None, "turn": d.last_turn(),
+                "reply": d.replies[-1:]}
     finally:
         await d.close()
 
@@ -221,8 +237,9 @@ async def pause(snr):
         early = d.started_after(t0) is not None
         end = await d.say(clip("showers"))
         first = await d.wait_speaking(end)
-        await d.wait_quiet(first or end)
-        return {"early": early, "eou_ms": int((first - end) * 1000) if first else None, "reply": d.replies[-1:]}
+        await d.wait_turns(1)
+        return {"early": early, "first_audio_ms": int((first - end) * 1000) if first else None,
+                "turns": d.turns(), "turn": d.last_turn(), "reply": d.replies[-1:]}
     finally:
         await d.close()
 
@@ -238,11 +255,9 @@ async def barge(snr):
         t_in = time.monotonic()
         asyncio.ensure_future(d.say(clip("reno")))
         stop = await d.wait_quiet(t_in, timeout=6)
-        await asyncio.sleep(2.5)
-        again = await d.wait_speaking(t_in + 0.5, timeout=15)
-        if again:
-            await d.wait_quiet(again)
-        return {"stop_ms": int((stop - t_in) * 1000) if stop else None, "replies": d.replies[-2:]}
+        await d.wait_turns(2, timeout=45)
+        return {"stop_ms": int((stop - t_in) * 1000) if stop else None,
+                "turns": [e for e in d.events if e.get("kind") == "turn"], "replies": d.replies[-2:]}
     finally:
         await d.close()
 
@@ -255,12 +270,12 @@ async def backchannel(snr):
         if not first:
             return {"error": "agent never spoke"}
         await asyncio.sleep(max(0.0, first + 1.0 - time.monotonic()))
-        t_in = time.monotonic()
         await d.say(clip("uhhuh"))
-        stop = d.stopped_after(t_in)
-        stopped = stop is not None and stop - t_in < 0.9
-        await d.wait_quiet(t_in)
-        return {"stopped": stopped, "false_interruptions": sum(e.get("kind") == "false_interruption" for e in d.events)}
+        await d.wait_turns(1)
+        t = d.last_turn()
+        return {"interrupted": t.get("interrupted"), "heard_chars": t.get("heard_chars"),
+                "reply_chars": t.get("reply_chars"), "turns": d.turns(),
+                "false_interruptions": sum(e.get("kind") == "false_interruption" for e in d.events)}
     finally:
         await d.close()
 
