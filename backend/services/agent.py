@@ -1160,6 +1160,20 @@ class LlmAgentProvider:
                 sess["places"] = ([res.place] + list(res.options))[:MAX_OPTIONS + 1]
         return res
 
+    async def heard_only(self, session_id: str, heard: str) -> bool:
+        """Duplex voice: the driver cut the copilot off mid-reply. Its last line in the dialog history becomes what
+        the driver actually heard, so the next turn doesn't assume the rest was said. False when there is no line."""
+        store = session_store.get_store()
+        state = await store.load(session_id)
+        hist = state["history"]
+        for i in range(len(hist) - 1, -1, -1):
+            if hist[i].startswith("Copilot: "):
+                heard = " ".join((heard or "").split())[:200]
+                hist[i] = f"Copilot (cut off by the driver): {heard}" if heard else "Copilot: (cut off before saying anything)"
+                await store.save(session_id, state)
+                return True
+        return False
+
     @staticmethod
     def _name_once_in_a_while(req: AgentRequest, res: AgentResponse) -> None:
         """The driver's first name at most once in NAME_EVERY replies of the dialog (name_policy)."""
