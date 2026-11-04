@@ -24,7 +24,7 @@ from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import approach, approach_api, auth, chains, db, fleet_api, kv, leader, memory, onboarding, parking_store, parking_warm, reqid, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services import approach, approach_api, auth, chains, db, fleet_api, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
 from services.http import client as http_client  # noqa: E402
 from services.logs import said, transcripts_on  # noqa: E402
 from services.settings import settings  # noqa: E402
@@ -411,6 +411,11 @@ async def satellite(lat: float = Query(..., ge=-90, le=90), lng: float = Query(.
 async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = None) -> AgentResponse:
     if driver and req.session_id:
         req.session_id = f"{driver}:{req.session_id}"[:64]  # sessions can't be shared across drivers
+    if not quota.take_turn(driver, getattr(driver, "role", "driver")):
+        # Free release: the day's copilot turns are spent (services/quota.py). Said, not an error screen.
+        logger.info("turn budget spent for %s", driver)
+        return await _speak(AgentResponse(status="chat", transcript=req.text, reply=quota.OUT_OF_TURNS,
+                                          source="quota"), speak)
     res = await get_agent_provider().handle(req, driver)
     logger.info("agent text=%s status=%s place=%s", said(req.text), res.status, res.place.name if res.place else None)
     return await _speak(res, speak)
