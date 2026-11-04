@@ -653,15 +653,16 @@ export default function MapScreen() {
     onListenFailed: () => showToast(MESSAGES.notUnderstood),
     onResponse: (res, ctx) => applyResponse(res, ctx),
   });
-  // A nudge just played: a short mic window for the "yes" (the speech queue's onDone, registered above).
+  // A nudge just played (the speech queue's onDone, registered above): with autoListen a short mic window for
+  // the "yes"; in walkie-talkie mode nothing.
   useEffect(() => {
     nudgeAnswer.current = turn.nudgeOffer;
   });
 
   // ---- Nudges: while driving, every few minutes the backend may have something to offer (a
-  // break coming due, parking ahead). Each line is spoken as ambient; once it has played the mic
-  // opens for a few seconds (listenForAnswer) and the backend keeps the offer pending for the next
-  // turn of the same session, so "yes" is enough. Not offline, not before "Go". ----
+  // break coming due, parking ahead). Each line is spoken as ambient; the backend keeps the offer
+  // pending for the next turn of the same session, so a tap and "yes" is enough (walkie-talkie: the
+  // mic does not open by itself, turnMachine.ts). Not offline, not before "Go". ----
   const hasRoute = !!active;
   const nudgesOn = useNudgesEnabled();
   useEffect(() => {
