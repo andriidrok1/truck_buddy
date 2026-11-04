@@ -155,7 +155,7 @@ def test_noise_only_rules(monkeypatch):
     monkeypatch.delenv("STT_MAYBE_MIN_CONFIDENCE", raising=False)
     assert voice.noise_only("Thank you.", 0.95)  # the classic made-up line
     assert voice.noise_only("", None)
-    assert voice.noise_only("Reno", 0.3) and voice.noise_only("go", None)
+    assert voice.noise_only("Reno", 0.3) and not voice.noise_only("go", None)  # no logprobs: not judged on it
     assert not voice.noise_only("yes", 0.9) and not voice.noise_only("Go.", 0.7)
     assert not voice.noise_only("find me a truck stop", 0.2)  # three words and more are speech
     monkeypatch.setenv("STT_MAYBE_MIN_CONFIDENCE", "0.95")

@@ -87,7 +87,8 @@ def maybe_min_confidence() -> float:
 
 def noise_only(text: str, confidence: Optional[float]) -> bool:
     """For a recording the app flagged as doubtful (sound, no clear speech): is this transcript noise, not words?
-    Two words or fewer that are a known noise guess, or that the model was not sure of. Longer text is speech."""
+    Two words or fewer that are a known noise guess, or that the model was sure of less than the threshold.
+    Longer text is speech."""
     words = re.findall(r"[a-zA-Z']+", text.lower())
     if not words:
         return True
@@ -95,7 +96,8 @@ def noise_only(text: str, confidence: Optional[float]) -> bool:
         return False
     if " ".join(words) in NOISE_GUESSES:
         return True
-    return confidence is None or confidence < maybe_min_confidence()
+    # No confidence at all (a model without logprobs): keep it, the known noise lines are already out.
+    return confidence is not None and confidence < maybe_min_confidence()
 
 
 def stt_prompt(hint: Optional[str] = None) -> str:
