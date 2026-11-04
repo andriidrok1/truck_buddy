@@ -44,12 +44,13 @@ export type AnswerContext = {
 
 export type TurnDeps = {
   voice: {
-    listen: (opts: { chime: boolean; maxMs?: number }) => Promise<string>;
+    /** The recording's uri; `{uri, maybe}` when the mic heard something but no clear speech; or "silent" / "cancelled". */
+    listen: (opts: { chime: boolean; maxMs?: number }) => Promise<string | { uri: string; maybe: true }>;
     cancelRecording: () => Promise<void>;
     stopSpeaking: () => void;
   };
   api: {
-    transcribe: (uri: string, signal?: AbortSignal, hint?: string) => Promise<{ transcript: string; stt_ms?: number | null; stt_confidence?: number | null }>;
+    transcribe: (uri: string, signal?: AbortSignal, hint?: string, maybe?: boolean) => Promise<{ transcript: string; stt_ms?: number | null; stt_confidence?: number | null }>;
     agentSpeak: (
       text: string, at: LatLng, active: ActiveRoute | null, signal: AbortSignal | undefined, sessionId: string | undefined,
       ui: UiState, heading: number | null, limitMph: number | null, sttMs: number | null, sttConfidence: number | null,
@@ -73,6 +74,8 @@ export type TurnDeps = {
   /** Applies the answer (state patch, effects, speech); resolves with the promise of the spoken reply, wrapped
    *  so the await here does not flatten it (the reply may play for a while after the effects ran). */
   onResponse: (res: AgentResponse, ctx: AnswerContext) => Promise<{ spoken: Promise<void> }>;
+  /** Hands-free loop (the mic reopens by itself). Off by default: walkie-talkie, taps only (turnMachine.ts). */
+  autoListen?: boolean;
   now?: () => number;
   newId?: () => string;
 };
@@ -128,7 +131,7 @@ export type CopilotTurnController = CopilotTurn & {
  */
 export function createCopilotTurn(initialDeps: TurnDeps): CopilotTurnController {
   let deps = initialDeps;
-  let state: TurnState = initialTurnState;
+  let state: TurnState = { ...initialTurnState, autoListen: !!initialDeps.autoListen };
   const listeners = new Set<() => void>();
   let inflight: Prepared | null = null; // the request of the turn in flight
   let prepared: Prepared | null = null; // STT done, agent call about to start (same turn)
@@ -173,7 +176,7 @@ export function createCopilotTurn(initialDeps: TurnDeps): CopilotTurnController 
   async function runListening(c: Extract<Command, { type: "startListening" }>) {
     deps.onPhase("listening");
     clearStages();
-    let res: string;
+    let res: string | { uri: string; maybe: true };
     try {
       res = await deps.voice.listen({ chime: c.chime, maxMs: c.maxMs });
     } catch {
@@ -196,19 +199,31 @@ export function createCopilotTurn(initialDeps: TurnDeps): CopilotTurnController 
     }
     // A recording: the transcript is the turn. The acknowledgement is planned before STT, so the driver
     // hears something ~300 ms after they stop talking (the transcript alone takes 1-1.5 s to come back).
+    // A doubtful recording (no clear speech) gets no "Hang on.": most of them turn out empty.
+    const maybe = typeof res !== "string";
+    const uri = typeof res === "string" ? res : res.uri;
     deps.onPhase("thinking");
     startStages();
-    const p = prepare(deps.fillers.schedule());
+    const p = prepare(maybe ? null : deps.fillers.schedule());
     prepared = p;
     try {
       const ctx = deps.context();
       const hint = buildSttHint(ctx.hintNames);
-      const stt = await deps.api.transcribe(res, p.ctrl.signal, hint || undefined);
+      const stt = await deps.api.transcribe(uri, p.ctrl.signal, hint || undefined, maybe);
       if (!isCurrent(c.turnId) || prepared !== p) return;
       p.sttMs = stt.stt_ms ?? null;
       p.sttConfidence = stt.stt_confidence ?? null;
       if (!stt.transcript) p.plan?.cancel(); // nothing heard: no "Hang on." for silence
       else deps.onHeard(stt.transcript);
+      if (maybe && !stt.transcript) {
+        // Noise, not words: the same as silence (no agent call, "didn't hear anything").
+        prepared = null;
+        dropRequest(p);
+        clearStages();
+        dispatch({ type: "sttDone", transcript: "" });
+        deps.onIdle();
+        return;
+      }
       dispatch({ type: "sttDone", transcript: stt.transcript, heard: true });
     } catch (e) {
       if (!isCurrent(c.turnId) || prepared !== p) return;

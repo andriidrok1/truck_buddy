@@ -645,6 +645,8 @@ export default function MapScreen() {
     onThinking: setThinkingText,
     onHeard: (transcript) => setCaption({ reply: "…", heard: transcript }),
     onNotUnderstood: () => {
+      // Walkie-talkie: every tap that heard nothing says so, with its own sound (not the "sent" one).
+      voice.cue("miss");
       if (!captionRef.current) setCaption({ reply: MESSAGES.notUnderstood });
     },
     onError: (message) => setCaption(replyCaption(message)),
@@ -785,10 +787,13 @@ export default function MapScreen() {
     // Barge-in: a tap while the copilot is still working drops that turn and listens again (same session,
     // so "no, the other one" lands where it should); useCopilotTurn does the dropping.
     voice.stopSpeaking();
-    const perm = await voice.micPermission();
-    if (perm !== "granted") {
-      setMicCard(perm);
-      return;
+    // The permission round trip only until it is known granted: the tap must start recording at once.
+    if (!voice.micKnownGranted()) {
+      const perm = await voice.micPermission();
+      if (perm !== "granted") {
+        setMicCard(perm);
+        return;
+      }
     }
     if (!turn.dialogId()) setCaption(null);
     turn.tap();
@@ -1302,6 +1307,7 @@ export default function MapScreen() {
       <CopilotSheet
         phase={phase}
         speaking={voice.speaking}
+        micLevel={voice.level}
         onShowOptions={() => setPhase("options")}
         thinkingText={thinkingText}
         options={options}

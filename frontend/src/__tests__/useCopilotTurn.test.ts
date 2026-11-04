@@ -61,6 +61,7 @@ function fakeDeps(): Fake {
 
 test("tap → listen → STT → agent → spoken → the mic reopens (hands-free loop)", async () => {
   const f = fakeDeps();
+  f.deps.autoListen = true;
   const { result } = harness(f.deps);
   act(() => result.current.tap());
   expect(f.calls).toEqual(["phase:listening"]);
@@ -98,8 +99,9 @@ test("silence twice closes the dialog; the first silence tells the driver nothin
   expect(result.current.dialogId()).toBeNull();
 });
 
-test("a confirm question reopens the mic even when the loop is paused", async () => {
+test("a confirm question reopens the mic even when the loop is paused (hands-free loop)", async () => {
   const f = fakeDeps();
+  f.deps.autoListen = true;
   f.agentResult = () => Promise.resolve({ status: "confirm", transcript: "Reno", reply: "Did you say Reno?", source: "t" } as AgentResponse);
   f.listenResult = () => new Promise<string>(() => undefined); // the driver has not answered yet
   const { result } = harness(f.deps);
@@ -149,4 +151,41 @@ test("offline: a tap pauses the loop and does not record", () => {
   act(() => result.current.tap());
   expect(f.listen).not.toHaveBeenCalled();
   expect(f.calls).toEqual(["idle"]);
+});
+
+test("walkie-talkie (default): after the answer the mic stays shut", async () => {
+  const f = fakeDeps();
+  const { result } = harness(f.deps);
+  act(() => result.current.tap());
+  await flush();
+  await flush();
+  expect(f.calls).toContain("response:chat");
+  expect(f.listen).toHaveBeenCalledTimes(1);
+  expect(result.current.state).toMatchObject({ mode: "idle", dialogId: "dlg-1" });
+});
+
+test("a doubtful recording goes to STT as maybe; empty means silence, no agent call and no filler", async () => {
+  const f = fakeDeps();
+  const schedule = jest.fn(f.deps.fillers.schedule);
+  f.deps.fillers.schedule = schedule;
+  f.listenResult = () => Promise.resolve({ uri: "file://rec.m4a", maybe: true }) as never;
+  f.transcribe.mockImplementation(async () => ({ transcript: "", stt_ms: 300, stt_confidence: null }));
+  const { result } = harness(f.deps);
+  act(() => result.current.tap());
+  await flush();
+  expect(f.transcribe.mock.calls[0][3]).toBe(true);
+  expect(schedule).not.toHaveBeenCalled();
+  expect(f.agent).not.toHaveBeenCalled();
+  expect(f.calls).toEqual(["phase:listening", "phase:thinking", "notUnderstood", "idle"]);
+  expect(result.current.state.mode).toBe("idle");
+});
+
+test("a doubtful recording with words is an ordinary turn", async () => {
+  const f = fakeDeps();
+  f.listenResult = () => Promise.resolve({ uri: "file://rec.m4a", maybe: true }) as never;
+  const { result } = harness(f.deps);
+  act(() => result.current.tap());
+  await flush();
+  await flush();
+  expect(f.agent.mock.calls[0][0]).toBe("take me to Reno");
 });

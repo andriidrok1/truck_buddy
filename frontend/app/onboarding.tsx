@@ -251,7 +251,7 @@ export default function Onboarding() {
       }
       setMode("thinking");
       try {
-        const out = await api.onboardingParse(res, s);
+        const out = await api.onboardingParse(typeof res === "string" ? res : res.uri, s);
         if (run.current !== token) return;
         const got = Object.keys(out.updates).length > 0;
         const saidNone = s === "prefs" && /\b(no|none|nothing|nope|that's it|all good)\b/i.test(out.transcript);
