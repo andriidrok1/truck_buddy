@@ -152,8 +152,8 @@ class Driver:
             else:
                 if self.quiet_since is None:
                     self.quiet_since = now
-                # 300 ms of quiet ends a stretch of agent speech (words have short gaps)
-                if self.speaking_since is not None and now - self.quiet_since > 0.3:
+                # 500 ms of quiet ends a stretch of agent speech (gaps between words and sentences are shorter)
+                if self.speaking_since is not None and now - self.quiet_since > 0.5:
                     self.speaking_since = None
                     self.talk_log.append((self.quiet_since, False))
 

@@ -21,6 +21,7 @@ import os
 import time
 from typing import AsyncIterable, Optional
 
+import numpy as np
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -36,6 +37,10 @@ from services.agent import get_agent_provider  # noqa: E402
 from voice_agent import policy  # noqa: E402
 
 logger = logging.getLogger("truckbuddy.voice_agent")
+
+TTS_GAIN = 10 ** (float(os.environ.get("VOICE_TTS_GAIN_DB", "9")) / 20)
+NO_POSITION = "I can't see where you are yet. Give me a second and ask again."
+AGENT_FAILED = "Sorry, something went wrong on my end. Say that again?"
 
 CONTEXT_ATTR = "tb.context"
 AGENT_TOPIC = "tb.agent"
@@ -56,6 +61,13 @@ def turn_handling() -> dict:
         },
         "preemptive_generation": False,  # our agent calls HERE and Google; a thrown-away turn costs real money
     }
+
+
+def louder(frame: rtc.AudioFrame) -> rtc.AudioFrame:
+    x = np.frombuffer(frame.data, dtype=np.int16).astype(np.float32) / 32768
+    y = np.tanh(x * TTS_GAIN) if TTS_GAIN > 1 else x  # soft limit instead of clipping
+    pcm = (y * 32767).astype(np.int16)
+    return rtc.AudioFrame(pcm.tobytes(), frame.sample_rate, frame.num_channels, frame.samples_per_channel)
 
 
 class Copilot(Agent):
@@ -86,16 +98,31 @@ class Copilot(Agent):
         if not text.strip():
             return
         ctx = self._context()
+        if "lat" not in ctx or "lng" not in ctx:
+            logger.warning("no %s from the app yet; not running the agent at (0, 0)", CONTEXT_ATTR)
+            yield NO_POSITION
+            return
         t0 = time.monotonic()
-        req = AgentRequest(**{"lat": 0.0, "lng": 0.0, **ctx, "text": text,
-                              "session_id": f"{self._driver}:{self._dialog_id}"[:64] if self._driver else self._dialog_id})
-        res = await get_agent_provider().handle(req, self._driver)
+        sid = f"{self._driver}:{self._dialog_id}" if self._driver else self._dialog_id
+        try:
+            req = AgentRequest(**{**ctx, "text": text, "session_id": sid[:64]})
+            res = await get_agent_provider().handle(req, self._driver)
+        except Exception:  # noqa: BLE001 - a failed turn is said out loud, never silence
+            logger.exception("agent turn failed")
+            yield AGENT_FAILED
+            return
         ms = int((time.monotonic() - t0) * 1000)
         await self._room.local_participant.send_text(res.model_dump_json(exclude_none=True), topic=AGENT_TOPIC)
         await self._room.local_participant.send_text(json.dumps({"kind": "agent", "ms": ms, "status": res.status}),
                                                      topic=EVENTS_TOPIC)
         if res.reply:
             yield res.reply
+
+    async def tts_node(self, text: AsyncIterable[str], model_settings) -> AsyncIterable[rtc.AudioFrame]:
+        """OpenAI TTS comes out around -31 to -35 LUFS (services/voice.py boosts its mp3s for the same reason);
+        raise it with a soft limiter so the phone speaker in a cab can carry it."""
+        async for frame in Agent.default.tts_node(self, text, model_settings):
+            yield louder(frame)
 
 
 def _driver_of(room_name: str) -> tuple[Optional[str], str]:
