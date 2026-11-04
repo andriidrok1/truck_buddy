@@ -264,20 +264,25 @@ export function useVoice() {
       const meter: number[] = []; // dB per poll, for tuning the thresholds on recorded cab profiles (PR 3)
       let hasMeter = false;
       let rearmed = false;
+      let sawRecording = false; // the recorder really ran at some poll (else the file is not this turn's)
       let ended = "max";
       let maybe = false;
       while (listenToken.current === token) {
         await new Promise((r) => setTimeout(r, POLL_MS));
         if (listenToken.current !== token) break;
+        // `recorder.isRecording` is the native recorder's own state. The status object's isRecording is not: on iOS
+        // it says "recording" once record() was called, even when AVAudioRecorder refused to start.
+        const running = recorder.isRecording;
+        if (running) sawRecording = true;
         if (finishNow.current) {
           ended = "tap";
-          maybe = !ep.stats().spoke; // a tap on a recording with no clear speech: the server decides
+          maybe = hasMeter && !ep.stats().spoke; // a tap on a recording with no clear speech: the server decides
           break;
         }
         const status = recorder.getStatus();
         const db = status.metering;
         const t = Date.now() - t0;
-        if (!rearmed && t >= 300 && !status.isRecording) {
+        if (!rearmed && t >= 300 && !running) {
           // The fast start skipped the session switch on a mic that looked armed; if the recorder did not start,
           // do the full switch once (the old path) instead of recording nothing.
           rearmed = true;
@@ -325,6 +330,11 @@ export function useVoice() {
         await cancelRecording();
         return "silent";
       }
+      if (!sawRecording && !recorder.isRecording) {
+        // Never recorded this turn: the file on disk is an old one. Fail the listen (a toast, no stale replay).
+        await cancelRecording();
+        throw new Error("recorder never started");
+      }
       const uri = await stopRecording();
       if (!uri) return "silent";
       playCue("sent");
@@ -362,7 +372,9 @@ export function useVoice() {
       // That leaves no prepared recorder behind, so the next tap prepares it again.
       prepared.current = false;
       acquireAudioSession()
-        .then(() => setMode("playback"))
+        // Only while this clip is still the one to play: a tap that cut it meanwhile owns the session now, and a
+        // late playback mode would stop its recording (iOS stops recorders when recording is disallowed).
+        .then(() => (player.current === p ? setMode("playback") : undefined))
         .catch((e) => console.log(`[voice] playback mode failed: ${String(e)}`))
         .finally(() => {
           if (player.current === p) p.play();
