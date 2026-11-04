@@ -233,8 +233,13 @@ export type AgentResponse = {
   timings?: Record<string, number>;
   end_conversation?: boolean;
   actions?: AppAction[];
+  /** A Google Maps grounded answer (what drivers say about a place): `reply` is its exact text, and these links must
+   *  show right under it with "Google Maps" (Gemini API terms). */
+  maps_sources?: MapsSource[];
   source: string;
 };
+
+export type MapsSource = { name: string; url: string };
 
 export type AppAction = { type: string; value?: boolean | number | string | null };
 

@@ -8,9 +8,10 @@ import { routesChipText } from "../geo/routeChoice";
 import type { OfflineMapState } from "../hooks/useOfflineMap";
 import { formatBytes } from "../map/bounds";
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
-import type { ActiveRoute, ParkingState, Phase, Place } from "../types";
+import type { ActiveRoute, MapsSource, ParkingState, Phase, Place } from "../types";
 import { Avatar } from "./Avatar";
 import { Icon } from "./Icon";
+import { MapsSources } from "./MapsSources";
 import { OptionsList } from "./OptionsList";
 import { ParkingLiveBadge } from "./ParkingLiveBadge";
 import { ParkingStatus } from "./ParkingStatus";
@@ -48,6 +49,8 @@ type Props = {
   onSubmitText: (text: string) => void;
   /** The copilot's last answer, shown under the title while idle (the caption on the map fades). */
   lastReply?: string | null;
+  /** Google Maps links of a grounded last reply: shown under it (MapsSources). */
+  lastReplySources?: MapsSource[];
   onClose: () => void;
   onEndRoute: () => void;
   /** Drop one via stop (the route is re-planned without it). */
@@ -145,7 +148,7 @@ function durationLabel(seconds: number) {
 }
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel } = props;
+  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel } = props;
   const routesChip = active && !driving ? routesChipText(active.route) : null;
   const { colors } = useTheme();
   const navigating = phase === "navigating";
@@ -322,6 +325,7 @@ export function CopilotSheet(props: Props) {
                 {lastReply}
               </Text>
             )}
+            {!!lastReply && <MapsSources sources={lastReplySources} center />}
           </View>
         )}
         {phase === "listening" && (

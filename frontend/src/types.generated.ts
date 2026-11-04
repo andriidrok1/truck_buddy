@@ -68,6 +68,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/fleet-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Fleet Code
+         * @description Binds this device to the fleet (and truck) the code was made for; answers with a token carrying the org.
+         */
+        post: operations["auth_fleet_code_api_auth_fleet_code_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Refresh
+         * @description A new access token for a device's refresh token (the refresh token rotates).
+         */
+        post: operations["auth_refresh_api_auth_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/breakdown/{rid}": {
         parameters: {
             query?: never;
@@ -88,6 +128,171 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/fleet/credentials/motive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Motive Key
+         * @description The fleet's Motive API key, stored encrypted (services/secrets.py); owner only, never read back.
+         */
+        put: operations["motive_key_api_fleet_credentials_motive_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleet/drivers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Drivers
+         * @description The org's drivers (ids to map to Motive users; no device tokens).
+         */
+        get: operations["drivers_api_fleet_drivers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleet/drivers/{driver_id}/motive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Driver Motive
+         * @description Which Motive user this driver is, so the fleet key fetches their clocks (null unlinks); owner only, like
+         *     the key itself. 409 when another driver of the fleet is already that Motive user.
+         */
+        put: operations["driver_motive_api_fleet_drivers__driver_id__motive_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleet/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Summary
+         * @description Per truck for the day: routes started, reroutes, far-stop questions the guard asked, failed copilot turns,
+         *     routing failures. Events from a phone not bound to a truck are counted under vehicle_id null.
+         */
+        get: operations["summary_api_fleet_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleet/timezone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Timezone
+         * @description The fleet's time zone (IANA name, e.g. America/Chicago): its "today" in the summary and a truck's day.
+         */
+        put: operations["put_timezone_api_fleet_timezone_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleet/vehicles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Vehicles
+         * @description The org's trucks with where each was last seen (the last event that carried a position) and whether a
+         *     route is running (the last route_started vs route_ended).
+         */
+        get: operations["vehicles_api_fleet_vehicles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleet/vehicles/{vehicle_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Vehicle Events
+         * @description One truck's day, oldest first, without transcripts; 404 for a truck that is not the caller's. `truncated`
+         *     says the day has more than `limit` events (the list used to stop at 2000 with nothing to say so, bug 10).
+         */
+        get: operations["vehicle_events_api_fleet_vehicles__vehicle_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleet/vehicles/{vehicle_id}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Vehicle Profile
+         * @description The truck's sizes, which every driver of it routes with: the owner's and the dispatcher's to set (a driver
+         *     changes only the trip, from the phone). 404 for a truck that is not the caller's.
+         */
+        put: operations["vehicle_profile_api_fleet_vehicles__vehicle_id__profile_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -95,9 +300,37 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Health */
+        /**
+         * Health
+         * @description Liveness and the providers in use (public); ?deep=1 (tester token only) also checks the database and one
+         *     HERE call (cached DEEP_CACHE_S) and answers 503 when either fails.
+         */
         get: operations["health_api_health_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Me Profile
+         * @description The truck profile the server routes for when the app sends none: the vehicle's when the device is bound to
+         *     one, else the driver's. 404 when nothing is stored yet (the app keeps its local copy). X-Profile-Source says
+         *     which: "vehicle" is the fleet's truck, which a driver's own change does not overwrite (it holds for the trip
+         *     on the phone), "driver" is the driver's own copy.
+         */
+        get: operations["me_profile_api_me_profile_get"];
+        /** Me Profile Put */
+        put: operations["me_profile_put_api_me_profile_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -116,7 +349,12 @@ export interface paths {
         get: operations["memory_list_api_memory_get"];
         put?: never;
         post?: never;
-        /** Memory Clear */
+        /**
+         * Memory Clear
+         * @description "Delete my data": the dialogs, the remembered turns and facts, the trip events (after the saves still in
+         *     flight land) and the driver's own stored truck profile (a fleet truck's profile belongs to the fleet).
+         *     `deleted` counts turns, as before.
+         */
         delete: operations["memory_clear_api_memory_delete"];
         options?: never;
         head?: never;
@@ -223,7 +461,8 @@ export interface paths {
         /**
          * Reroute
          * @description The app detected the driver left the route: a new route from the current position to the same place.
-         *     No new satellite check (the destination hasn't changed); the cached parking verdict comes along.
+         *     No new satellite check (the destination hasn't changed); the cached verdict comes along, its entry tip
+         *     phrased for the way this route arrives.
          */
         post: operations["reroute_api_reroute_post"];
         delete?: never;
@@ -463,6 +702,14 @@ export interface components {
             lng: number;
             /** Motive Key */
             motive_key?: string | null;
+            /** Motive User */
+            motive_user?: string | null;
+            /** Route Handle */
+            route_handle?: string | null;
+            /** Route Stops */
+            route_stops?: components["schemas"]["Place"][];
+            /** Route Via */
+            route_via?: number[][];
             /** Session Id */
             session_id?: string | null;
             /** Speed Mps */
@@ -502,6 +749,8 @@ export interface components {
             end_conversation: boolean;
             /** Intent */
             intent?: string | null;
+            /** Maps Sources */
+            maps_sources?: components["schemas"]["MapsSource"][];
             /** Message */
             message?: string | null;
             /** Options */
@@ -555,6 +804,8 @@ export interface components {
             bearing: number;
             /** Compass */
             compass: string;
+            /** Exit Side */
+            exit_side?: ("right" | "left") | null;
             /** Lat */
             lat?: number | null;
             /** Lng */
@@ -675,6 +926,11 @@ export interface components {
             /** Updated */
             updated?: string | null;
         };
+        /** FleetCodeRequest */
+        FleetCodeRequest: {
+            /** Code */
+            code: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -713,6 +969,27 @@ export interface components {
             lat: number;
             /** Lng */
             lng: number;
+        };
+        /**
+         * MapsSource
+         * @description A Google Maps place citation of a grounded answer (services.maps_grounding): Google's terms want it shown right
+         *     under the answer, attributed to "Google Maps", one tap away.
+         */
+        MapsSource: {
+            /** Name */
+            name: string;
+            /** Url */
+            url: string;
+        };
+        /** MotiveKeyIn */
+        MotiveKeyIn: {
+            /** Key */
+            key: string;
+        };
+        /** MotiveUserIn */
+        MotiveUserIn: {
+            /** User Id */
+            user_id?: string | null;
         };
         /**
          * NearbyLot
@@ -773,6 +1050,8 @@ export interface components {
             local_hour?: number | null;
             /** Motive Key */
             motive_key?: string | null;
+            /** Motive User */
+            motive_user?: string | null;
             /** Session Id */
             session_id?: string | null;
             truck_profile?: components["schemas"]["TruckProfile"];
@@ -1006,6 +1285,11 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** RefreshRequest */
+        RefreshRequest: {
+            /** Refresh Token */
+            refresh_token: string;
+        };
         /**
          * RerouteRequest
          * @description The driver left the active route: a new route from where they are, back onto the old one if possible.
@@ -1163,6 +1447,11 @@ export interface components {
             /** Mph */
             mph?: number | null;
         };
+        /** TimezoneBody */
+        TimezoneBody: {
+            /** Timezone */
+            timezone: string;
+        };
         /** TrafficSegment */
         TrafficSegment: {
             /**
@@ -1242,6 +1531,8 @@ export interface components {
              * @default true
              */
             hands_free: boolean;
+            /** Option Ids */
+            option_ids?: string[];
             /**
              * Options Count
              * @default 0
@@ -1403,6 +1694,72 @@ export interface operations {
             };
         };
     };
+    auth_fleet_code_api_auth_fleet_code_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FleetCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_refresh_api_auth_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     breakdown_result_api_breakdown__rid__get: {
         parameters: {
             query?: {
@@ -1436,7 +1793,40 @@ export interface operations {
             };
         };
     };
-    health_api_health_get: {
+    motive_key_api_fleet_credentials_motive_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MotiveKeyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    drivers_api_fleet_drivers_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -1452,6 +1842,278 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    driver_motive_api_fleet_drivers__driver_id__motive_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                driver_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MotiveUserIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    summary_api_fleet_summary_get: {
+        parameters: {
+            query?: {
+                day?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_timezone_api_fleet_timezone_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TimezoneBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vehicles_api_fleet_vehicles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    vehicle_events_api_fleet_vehicles__vehicle_id__events_get: {
+        parameters: {
+            query?: {
+                day?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                vehicle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vehicle_profile_api_fleet_vehicles__vehicle_id__profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vehicle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TruckProfile"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TruckProfile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    health_api_health_get: {
+        parameters: {
+            query?: {
+                deep?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_profile_api_me_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TruckProfile"];
+                };
+            };
+        };
+    };
+    me_profile_put_api_me_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TruckProfile"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TruckProfile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

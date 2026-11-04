@@ -313,7 +313,7 @@ export default function MapScreen() {
   }
 
   const sayReply = (res: AgentResponse, isCurrent: () => boolean = () => true) => {
-    setCaption(replyCaption(res.reply, res.transcript || undefined));
+    setCaption(replyCaption(res.reply, res.transcript || undefined, Date.now(), res.maps_sources));
     if (!res.audio_url) return Promise.resolve();
     // The playback timeouts are sized from the text behind each clip: the server says how it split
     // the reply when it can; older backends leave that to the sentence split.
@@ -336,7 +336,7 @@ export default function MapScreen() {
       if (!(await available)) {
         console.warn(`[voice] second half unavailable (${url2}); showing the full text instead`);
         next.remove();
-        setCaption(replyCaption(res.reply, res.transcript || undefined));
+        setCaption(replyCaption(res.reply, res.transcript || undefined, Date.now(), res.maps_sources));
         return;
       }
       if (!isCurrent()) {
@@ -1297,7 +1297,7 @@ export default function MapScreen() {
         <Icon name={following ? "navigation-variant" : "crosshairs-gps"} size={24} color={following ? colors.onInfo : colors.info} />
       </PressableScale>
 
-      <CaptionBubble text={mapWindow >= MIN_MAP_FOR_BUBBLE ? (caption?.reply ?? null) : null} heard={caption?.heard} bottom={chromeBottom} />
+      <CaptionBubble text={mapWindow >= MIN_MAP_FOR_BUBBLE ? (caption?.reply ?? null) : null} heard={caption?.heard} bottom={chromeBottom} sources={caption?.sources} />
 
       <CopilotSheet
         phase={phase}
@@ -1316,6 +1316,7 @@ export default function MapScreen() {
         onAvatarPress={onAvatarPress}
         onSubmitText={onSubmitText}
         lastReply={caption?.kind === "reply" ? caption.reply : null}
+        lastReplySources={caption?.kind === "reply" ? caption.sources : undefined}
         onClose={onClose}
         onEndRoute={onEndRoutePress}
         onRemoveStop={onRemoveStop}
