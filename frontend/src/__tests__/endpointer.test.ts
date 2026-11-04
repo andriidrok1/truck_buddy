@@ -134,3 +134,15 @@ test("highway with jitter: noise -30 sd 3 dB, voice -22: the phrase is sent on i
   expect(r.decision).toBe("send");
   expect(r.at).toBeLessThan(4600);
 });
+
+test("a meter that starts at -160 (not running yet) or drops out is not the noise floor", () => {
+  // Emulator 2026-11-04: -160, then a flat -72; the -160 became the floor and silence counted as speech.
+  expect(run((t) => (t <= 50 ? -160 : -72)).decision).toBe("silent");
+  // the same with the settling ramp the emulator showed: -160, -78, -76, then -72
+  expect(run((t) => (t <= 50 ? -160 : t <= 100 ? -78 : t <= 150 ? -76 : -72)).decision).toBe("silent");
+  // dropouts inside quiet noise
+  expect(run((t) => (t % 1000 === 0 ? -160 : -60)).decision).toBe("silent");
+  // and a real phrase after a -160 start is still a phrase
+  const r = run((t) => (t <= 50 ? -160 : t >= 800 && t < 2600 && (t - 800) % 380 < 300 ? -25 : -55));
+  expect(r.decision).toBe("send");
+});
