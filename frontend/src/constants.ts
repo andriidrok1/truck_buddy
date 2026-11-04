@@ -55,3 +55,4 @@ export const MESSAGES = {
 };
 
 export const PRIVACY_URL = "https://truckbuddy.io/privacy";
+export const TERMS_URL = "https://truckbuddy.io/terms";

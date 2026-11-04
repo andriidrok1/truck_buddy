@@ -15,6 +15,7 @@ The "Coming soon" store buttons are placeholders until the App Store and Google 
 
 - `/` (`index.html`): the landing page.
 - `/privacy/`: the privacy policy, copied word for word from the app store submission draft (the app's consent screen links `https://truckbuddy.io/privacy`).
+- `/terms/`: the Terms of Use (road signs come first, no warranty, limits of the free service), linked from the app's consent screen.
 - `/support/`: contact email and common questions, for the App Store and Google Play listings.
 
 Each page is a folder with an `index.html`, so `/privacy` and `/support` work on any static host without rewrite rules.

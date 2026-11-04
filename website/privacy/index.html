@@ -55,7 +55,7 @@ footer a { color: var(--ink-2); font-weight: 600; text-decoration: none; }
 <header>
   <div class="wrap head-row">
     <a class="brand" href="../"><span class="brand-disc"><img src="../assets/favicon.png" alt=""></span>TruckBuddy</a>
-    <nav aria-label="Main"><a href="../">Home</a><a href="../privacy/" aria-current="page">Privacy</a><a href="../support/">Support</a></nav>
+    <nav aria-label="Main"><a href="../">Home</a><a href="../privacy/" aria-current="page">Privacy</a><a href="../terms/">Terms</a><a href="../support/">Support</a></nav>
   </div>
 </header>
 <section class="intro">
@@ -63,7 +63,7 @@ footer a { color: var(--ink-2); font-weight: 600; text-decoration: none; }
     <span class="eyebrow">Privacy policy</span>
     <h1>TruckBuddy Privacy Policy</h1>
     <p>TruckBuddy is a voice copilot for truck drivers. This policy explains what the app collects, why, and who it is shared with.</p>
-    <p class="updated">Last updated: October 28, 2026</p>
+    <p class="updated">Last updated: November 4, 2026</p>
   </div>
 </section>
 <main class="doc wrap">
@@ -73,7 +73,9 @@ footer a { color: var(--ink-2); font-weight: 600; text-decoration: none; }
     <li><strong>Voice.</strong> When you tap the copilot, TruckBuddy records what you say and sends it to our server to understand your request. The microphone is only used after a tap.</li>
     <li><strong>Truck profile and preferences.</strong> Height, trailer length, weight, hazmat, your first name and route preferences you enter. These are stored on your phone and sent with each request so routes fit your truck.</li>
     <li><strong>Conversation history.</strong> Recent things you said and the copilot&rsquo;s replies are stored on our server, linked to a random ID issued to your device the first time you open the app, so the copilot can remember context. You can clear it in the app (Conversation memory &rarr; Clear memory).</li>
-    <li><strong>Hours of service (optional).</strong> If you add a Motive API key in Truck profile, it is kept in your phone&rsquo;s secure storage and sent with copilot requests so our server can read your hours-of-service clocks (drive, shift, break, cycle) from Motive. Our server uses the key for that one request and does not store the key or your clocks.</li>
+    <li><strong>Trip events.</strong> While a route is active, the app reports what happens on the drive (route set, rerouted, arrived, a request the copilot could not handle) with the truck&rsquo;s position at that moment. They are stored on our server with your device&rsquo;s random ID for 90 days, so we can find and fix what went wrong. If your phone belongs to a fleet in TruckBuddy, the fleet sees the trip events, never your conversations.</li>
+<li><strong>Crash reports.</strong> If the app crashes or hits an error, a report with the error, the app version and the phone model is sent to Sentry. It does not contain your voice or what you said.</li>
+<li><strong>Hours of service (optional).</strong> If you add a Motive API key in Truck profile, it is kept in your phone&rsquo;s secure storage and sent with copilot requests so our server can read your hours-of-service clocks (drive, shift, break, cycle) from Motive. Our server uses the key for that one request and does not store the key or your clocks.</li>
   </ul>
   <p>We do not collect your contacts, photos, or advertising identifiers, and we do not track you across other apps or websites.</p>
 
@@ -82,6 +84,9 @@ footer a { color: var(--ink-2); font-weight: 600; text-decoration: none; }
   <ul>
     <li><strong>OpenAI</strong> receives your voice recordings and transcripts to transcribe speech, understand requests and generate spoken replies. Satellite images of a destination may be sent to OpenAI to check truck parking.</li>
     <li><strong>HERE, OpenRouteService, Google Maps Platform and OpenStreetMap (Nominatim)</strong> receive locations and truck dimensions to search places, geocode addresses and plan truck routes.</li>
+<li><strong>Google (Gemini API)</strong> receives the name, address and location of a place when you ask what drivers say about it, to answer from Google Maps. Your voice and your position are not sent with it.</li>
+<li><strong>Esri</strong> receives the coordinates of a destination to return its satellite image for the parking check.</li>
+<li><strong>Sentry</strong> receives crash and error reports.</li>
     <li><strong>The US National Weather Service</strong> receives points along your route to look up weather alerts and forecasts. No information about you is sent with them.</li>
     <li><strong>Motive</strong>, only if you add your own Motive API key, receives that key so it can return your hours-of-service clocks.</li>
   </ul>
@@ -91,6 +96,7 @@ footer a { color: var(--ink-2); font-weight: 600; text-decoration: none; }
   <ul>
     <li>Voice audio is processed and not kept after the reply is generated (generated reply audio is cached briefly).</li>
     <li>Conversation history is kept until you clear it.</li>
+<li>Trip events are kept for 90 days.</li>
   </ul>
 
   <h2>Your choices</h2>
@@ -107,7 +113,7 @@ footer a { color: var(--ink-2); font-weight: 600; text-decoration: none; }
   <p>Questions or deletion requests: <a href="mailto:support@truckbuddy.io">support@truckbuddy.io</a></p>
 </main>
 <footer>
-  <div class="wrap row"><span>© 2026 TruckBuddy</span><span><a href="../privacy/">Privacy</a> · <a href="../support/">Support</a> · support@truckbuddy.io</span></div>
+  <div class="wrap row"><span>© 2026 TruckBuddy</span><span><a href="../privacy/">Privacy</a> · <a href="../terms/">Terms</a> · <a href="../support/">Support</a> · support@truckbuddy.io</span></div>
 </footer>
 
 </body>
