@@ -47,7 +47,8 @@ const PLAYBACK_MODE = {
 
 type ListenOptions = { maxMs?: number; silenceMs?: number; startTimeoutMs?: number; chime?: boolean };
 
-/** A short sound and a haptic, fire and forget. Never under a recording: the caller plays it once the mic is off. */
+/** A short sound and a haptic, fire and forget. "sent" and "miss" play once the mic is off; "start" and "tick"
+ *  play while recording (short and quiet: the recogniser ignores them). */
 function playCue(cue: Cue | "start") {
   const c = createAudioPlayer(cue === "start" ? CHIME : CUES[cue]);
   if (cue === "start") c.volume = 0.6;
@@ -262,6 +263,7 @@ export function useVoice() {
       const t0 = Date.now();
       const meter: number[] = []; // dB per poll, for tuning the thresholds on recorded cab profiles (PR 3)
       let hasMeter = false;
+      let rearmed = false;
       let ended = "max";
       let maybe = false;
       while (listenToken.current === token) {
@@ -269,10 +271,27 @@ export function useVoice() {
         if (listenToken.current !== token) break;
         if (finishNow.current) {
           ended = "tap";
+          maybe = !ep.stats().spoke; // a tap on a recording with no clear speech: the server decides
           break;
         }
-        const db = recorder.getStatus().metering;
+        const status = recorder.getStatus();
+        const db = status.metering;
         const t = Date.now() - t0;
+        if (!rearmed && t >= 300 && !status.isRecording) {
+          // The fast start skipped the session switch on a mic that looked armed; if the recorder did not start,
+          // do the full switch once (the old path) instead of recording nothing.
+          rearmed = true;
+          console.log("[voice] recorder not running after the fast start: re-arming");
+          try {
+            await setMode("record");
+            await ensurePrepared();
+            prepared.current = false;
+            recorder.record();
+          } catch (e) {
+            console.log(`[voice] re-arm failed: ${String(e)}`);
+          }
+          continue;
+        }
         if (typeof db === "number" && Number.isFinite(db)) {
           hasMeter = true;
           meter.push(Math.round(db));
@@ -311,7 +330,7 @@ export function useVoice() {
       playCue("sent");
       return maybe ? { uri, maybe: true } : uri;
     },
-    [recorder, startRecording, stopRecording, cancelRecording, setLevel],
+    [recorder, startRecording, stopRecording, cancelRecording, setLevel, setMode, ensurePrepared],
   );
 
   const play = useCallback(

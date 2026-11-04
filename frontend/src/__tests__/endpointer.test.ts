@@ -88,8 +88,7 @@ test("a 25 s story is not cut; the cap sends at 30 s after one warning", () => {
 test("silence is silent after the start timeout; a cough is not speech", () => {
   expect(run(profile(-55, []))).toMatchObject({ decision: "silent", at: START_TIMEOUT_MS });
   const cough = run(profile(-55, [{ from: 1000, to: 100 + 1000, db: -20 }]));
-  expect(cough.at).toBe(START_TIMEOUT_MS);
-  expect(cough.decision).toBe("maybe"); // the server hears it and drops it if there are no words
+  expect(cough.decision).toBe("maybe"); // never a sure turn: the server hears it and drops it if there are no words
 });
 
 test("decisions are final; stats describe the turn", () => {
@@ -105,4 +104,33 @@ test("a missing meter value is skipped, not treated as silence", () => {
   const ep = createEndpointer();
   expect(ep.push(Number.NaN, 50)).toBe("wait");
   expect(ep.stats().peakDb).toBe(-160);
+});
+
+// Road noise jumps a few dB from one 50 ms meter sample to the next. Against raw samples the old rolling-minimum
+// rule counted that jitter as speech and recorded 30 s of nothing (review 2026-11-04).
+function gauss(seed: number) {
+  const u = rng(seed);
+  return () => Math.sqrt(-2 * Math.log(u() + 1e-9)) * Math.cos(2 * Math.PI * u());
+}
+function jittery(noise: number, sd: number, speech: [number, number] | null, voice = -24, seed = 11) {
+  const g = gauss(seed);
+  return (t: number) => {
+    const on = speech && t >= speech[0] && t < speech[1] && (t - speech[0]) % 380 < 300;
+    return (on ? voice : noise) + g() * sd;
+  };
+}
+
+test.each([1, 2, 3, 4])("noise jitter sd %i dB: silence never records to the cap, a phrase ends on its pause", (sd) => {
+  const quiet = run(jittery(-40, sd, null, -24, sd));
+  expect(["silent", "maybe"]).toContain(quiet.decision);
+  expect(quiet.at).toBe(START_TIMEOUT_MS);
+  const phrase = run(jittery(-40, sd, [1000, 3000], -24, sd + 20));
+  expect(phrase.decision).toBe("send");
+  expect(phrase.at).toBeLessThan(4600);
+});
+
+test("highway with jitter: noise -30 sd 3 dB, voice -22: the phrase is sent on its pause", () => {
+  const r = run(jittery(-30, 3, [800, 2800], -22, 5));
+  expect(r.decision).toBe("send");
+  expect(r.at).toBeLessThan(4600);
 });
