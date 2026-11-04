@@ -780,6 +780,25 @@ export default function MapScreen() {
     }, []),
   );
 
+  // Keep the recorder armed while this screen is in front and the mic is allowed, so a tap records at once
+  // (useVoice.prepareIdle). It was wired as setPrewarm(micOk && focused && !wakeArmed) before the turn-machine
+  // move (112c7e1) and got lost there: every tap then switched the session and prepared from scratch. The
+  // permission check also tells useVoice it is granted, so the first tap skips that round trip too.
+  const { setPrewarm, micPermission } = voice;
+  useEffect(() => {
+    if (!focused) {
+      setPrewarm(false);
+      return;
+    }
+    let live = true;
+    micPermission()
+      .then((p) => live && setPrewarm(p === "granted"))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [focused, micCard, setPrewarm, micPermission]); // micCard: re-check once the driver allowed the mic
+
   const onAvatarPress = async () => {
     if (phase === "listening") {
       voice.finishListening();
