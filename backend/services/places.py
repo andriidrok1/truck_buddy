@@ -1,9 +1,17 @@
-"""Places provider. MOCK implementation: real places in the Bay Area, along I-80 and around Sacramento, CA,
-plus nationwide data files for categories Google can't search well (backend/data/<category>.json,
-built by scripts/import_*.py): CAT scales, weigh stations.
+"""Places providers.
+
+- OwnPlacesProvider (PLACES_PROVIDER=own): our own US data in backend/data/places/<category>.json, built monthly
+  by scripts/build_places.py from open sources we may store, speak and show on any map (AllThePlaces chain
+  locations, FHWA NTAD, Overture). No per-search cost.
+- GooglePlacesProvider (services/google_places.py): Google Places text search; its terms forbid speaking, storing
+  and showing results on a non-Google map, which the copilot does (2026-11-03), so it is being replaced.
+- MockPlacesProvider: real places in the Bay Area, along I-80 and around Sacramento, for keyless dev boxes.
+
+All of them serve CAT scales and weigh stations from backend/data/<category>.json (scripts/import_*.py).
 """
 import json
 import logging
+import math
 import os
 from pathlib import Path
 from typing import List, Optional, Protocol
@@ -29,6 +37,9 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 # Categories served from a data file only (no Google text search: it returns junk for these).
 DATA_ONLY: tuple[Category, ...] = ("cat_scale", "weigh_station")
 DATA_RADII_KM = (50.0, 150.0, 400.0)  # these are sparse: widen until there's something to say
+PLACES_DIR = DATA_DIR / "places"
+OWN_RADII_KM = (25.0, 60.0, 150.0)  # truck stops, rest areas, Walmart, motels: near first, then wider
+OWN_MAX = 10
 _data_cache: dict[str, Optional[list[dict]]] = {}
 
 
@@ -178,14 +189,82 @@ class MockPlacesProvider:
         return None
 
 
+class OwnPlacesProvider:
+    """Places from backend/data/places/<category>.json (scripts/build_places.py). Coordinates are never moved: the
+    satellite parking check looks exactly there. A category without a file answers with an honest "no data"."""
+
+    source = "own"
+
+    def __init__(self, directory: Path = PLACES_DIR) -> None:
+        self._dir = directory
+        self._rows: dict[str, list[dict]] = {}
+        self._by_id: Optional[dict[str, dict]] = None
+
+    def rows(self, category: str) -> list[dict]:
+        if category not in self._rows:
+            path = self._dir / f"{category}.json"
+            rows: list[dict] = []
+            try:
+                loaded = json.loads(path.read_text()) if path.exists() else []
+                rows = [r for r in loaded if isinstance(r, dict)] if isinstance(loaded, list) else []
+            except (OSError, ValueError) as e:
+                logger.warning("own places %s unreadable: %s", path.name, e)
+            self._rows[category] = rows
+        return self._rows[category]
+
+    async def search(self, category: Category, lat: float, lng: float) -> PlacesResponse:
+        if category in DATA_ONLY:
+            return search_data(category, lat, lng, "data")
+        rows = self.rows(category)
+        if not rows:
+            return PlacesResponse(category=category, radius_km=0, widened=False, places=[], source=self.source,
+                                  message=NO_DATA.format(what=category.replace("_", " ")))
+        found: List[Place] = []
+        radius, widened = OWN_RADII_KM[0], False
+        for i, radius in enumerate(OWN_RADII_KM):
+            dlat = radius / 111.0
+            dlng = radius / max(1.0, 111.0 * math.cos(math.radians(lat)))
+            box = [r for r in rows if abs(r["lat"] - lat) <= dlat and abs(r["lng"] - lng) <= dlng]
+            found = sorted((p for p in (_with_distance(r, lat, lng) for r in box) if (p.distance_km or 0) <= radius),
+                           key=lambda p: p.distance_km or 0)
+            widened = i > 0
+            if len(found) >= MIN_RESULTS:
+                break
+        found = found[:OWN_MAX]
+        from services import tpims
+        tpims.attach(found)
+        return PlacesResponse(category=category, radius_km=radius, widened=widened, places=found, source=self.source)
+
+    async def get(self, place_id: str, lat: float, lng: float) -> Optional[Place]:
+        if self._by_id is None:
+            self._by_id = {}
+            for f in sorted(self._dir.glob("*.json")) if self._dir.exists() else []:
+                for r in self.rows(f.stem):
+                    self._by_id[r["id"]] = r
+        raw = self._by_id.get(place_id)
+        if raw is None:
+            for category in DATA_ONLY:
+                raw = next((r for r in data_rows(category) if r.get("id") == place_id), None)
+                if raw:
+                    break
+        return _with_distance(raw, lat, lng) if raw else None
+
+
 _mock: PlacesProvider = MockPlacesProvider()
 _google: Optional[PlacesProvider] = None
+_own: Optional[PlacesProvider] = None
 
 
 def get_places_provider() -> PlacesProvider:
-    """Real Google Places when GOOGLE_MAPS_API_KEY is set, otherwise demo places."""
-    global _google
-    if not os.environ.get("GOOGLE_MAPS_API_KEY"):
+    """PLACES_PROVIDER=own|google|mock picks one; unset keeps the old rule: Google when GOOGLE_MAPS_API_KEY is set,
+    otherwise demo places."""
+    global _google, _own
+    choice = (os.environ.get("PLACES_PROVIDER") or "").strip().lower()
+    if choice == "own":
+        if _own is None:
+            _own = OwnPlacesProvider()
+        return _own
+    if choice == "mock" or not os.environ.get("GOOGLE_MAPS_API_KEY"):
         return _mock
     if _google is None:
         from services.google_places import GooglePlacesProvider

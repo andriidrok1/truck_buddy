@@ -29,6 +29,8 @@ OFFLINE_ENV = {
     "RATE_LIMIT_PER_MIN": "0",
     "HERE_API_KEY": "test-here",
     "GOOGLE_MAPS_API_KEY": "",  # mock places provider; tests that want Google install FakePlaces instead
+    "PLACES_PROVIDER": "",  # the default rule (mock here); test_own_places sets "own" itself
+    "GEMINI_API_KEY": "",  # no Maps grounding unless a test turns it on (test_maps_grounding)
     "OPENAI_API_KEY": "test-openai",
     "PARKING_WARM": "0",
     "DEV_DOCS": "0",
