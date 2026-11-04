@@ -10,8 +10,8 @@ import type { ExpoConfig } from "expo/config";
 const mapLibre = process.env.EXPO_PUBLIC_MAP_PROVIDER?.trim().toLowerCase() === "maplibre";
 // EAS project id (from `eas init`; also in EAS env as EXPO_PUBLIC_EAS_PROJECT_ID). Without it there is no
 // OTA (`updates.url` stays unset) and the config is still valid, so Expo Go and local builds keep working.
-// TODO(owner): run `eas init` once and put the id into EAS env / .env.local.
-const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim() || undefined;
+// Default = the project `eas init` created on the andrylik Expo account (2026-11-04); the env var overrides it.
+const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim() || "9443d359-aa8f-4b33-b66c-fdefbb6cf99f";
 // Sentry: organization and project slugs for the source-map upload plugin; the DSN is read at runtime
 // (EXPO_PUBLIC_SENTRY_DSN, app/_layout.tsx). No slugs = no plugin, nothing else changes.
 const sentryOrg = process.env.SENTRY_ORG?.trim() || undefined;
@@ -33,7 +33,7 @@ const config: ExpoConfig = {
       : {}),
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "io.truckbuddy.app",
+      "bundleIdentifier": "io.truckbuddy.copilot",
       "infoPlist": {
         "LSApplicationQueriesSchemes": [
           "comgooglemaps",
