@@ -28,6 +28,14 @@ export const START_TIMEOUT_MS = 7000;
 /** No counted speech by the timeout, but something this far over the noise for MAYBE_MIN_MS: send it anyway. */
 export const MAYBE_OVER_NOISE_DB = 5;
 export const MAYBE_MIN_MS = 100;
+/** Below this the sample is not cab noise but a meter that is not running yet (the first sample after record() is
+ *  -160 on Android) or a dropout. Taken as the noise floor it made plain silence count as speech (emulator,
+ *  2026-11-04: an empty tap went to STT and the agent). Such samples are skipped. */
+export const METER_FLOOR_DB = -100;
+/** The meter settles for ~150 ms after record() (emulator: -78, -76, then a flat -72): those first samples taken
+ *  as the noise made the flat silence after them look 6 dB louder, a `maybe` instead of silence. Skipped. Speech
+ *  that starts with the tap goes on past this and is counted from there. */
+export const WARMUP_MS = 200;
 
 /** wait: keep recording. send: the turn is over. maybe: no clear speech, but something; the server decides.
  *  silent: nothing worth sending. warn: still recording, the cap is close (play a tick once). */
@@ -72,7 +80,7 @@ export function createEndpointer(opts: EndpointerOptions = {}): Endpointer {
     if (reason) return reason === "silent" ? "silent" : reason === "maybe" ? "maybe" : "send";
     const dt = Math.max(0, t - prevT);
     prevT = t;
-    if (Number.isFinite(db)) {
+    if (Number.isFinite(db) && db > METER_FLOOR_DB && t >= WARMUP_MS) {
       peak = Math.max(peak, db);
       raw.push({ t, db });
       while (raw.length > 1 && raw[0].t <= t - SMOOTH_MS) raw.shift();
