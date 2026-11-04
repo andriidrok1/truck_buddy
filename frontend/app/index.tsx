@@ -16,6 +16,8 @@ import { Icon } from "@/src/components/Icon";
 import MapLayer from "@/src/components/MapLayer";
 import type { MapLayerHandle } from "@/src/components/mapTypes";
 import { MicPermissionCard } from "@/src/components/MicPermissionCard";
+import { HeightConfirmCard } from "@/src/components/HeightConfirmCard";
+import { confirmHeight, isHeightConfirmed, useHeightConfirmed } from "@/src/truck/heightConfirmed";
 import { NavBanner } from "@/src/components/NavBanner";
 import { PressableScale } from "@/src/components/PressableScale";
 import { dial, ProvidersList } from "@/src/components/ProvidersList";
@@ -109,6 +111,7 @@ export default function MapScreen() {
   const loc = useDriverLocation();
   const voice = useVoice();
   const truck = useTruckProfile();
+  const heightConfirmed = useHeightConfirmed();
   const router = useRouter();
   const mapRef = useRef<MapLayerHandle>(null);
   const center = useRef<LatLng>(loc.coords);
@@ -711,6 +714,11 @@ export default function MapScreen() {
   }, [driving, hasRoute, nudgesOn, say, turn]); // refs and a stable callback; `active` itself must not restart the timer
 
   const onGo = () => {
+    if (!isHeightConfirmed()) {
+      // Bridges on the route were checked for the default 13'6"; a taller truck must not drive it blind.
+      showToast("Tell me your truck height first: it decides which bridges are safe.", "info");
+      return;
+    }
     turn.pause();
     voice.stopSpeaking();
     setCaption(null);
@@ -1185,10 +1193,16 @@ export default function MapScreen() {
       setVoiceGuidance: setVoiceOn,
       setHandsFree,
       setNudges: setNudgesEnabled,
-      saveProfile: (patch) => saveProfile({ ...getTruckProfile(), ...patch }),
+      saveProfile: (patch) => {
+        if (typeof patch.height_in === "number") confirmHeight(); // "my truck is 14 feet": an answer
+        return saveProfile({ ...getTruckProfile(), ...patch });
+      },
       unknownAction: (action) => tripLog.log("turn_unknown_action", { action }, trip().active?.trip_id),
       // Save first so the new route uses the new profile.
-      reroute: (patch) => saveProfile({ ...getTruckProfile(), ...patch }).then(() => reroute("profile")),
+      reroute: (patch) => {
+        if (typeof patch.height_in === "number") confirmHeight();
+        return saveProfile({ ...getTruckProfile(), ...patch }).then(() => reroute("profile"));
+      },
     });
   };
 
@@ -1330,6 +1344,20 @@ export default function MapScreen() {
 
       {routesOpen && active && !driving && !!active.route.alternatives?.length && (
         <AlternativesSheet primary={active.route} bottom={chromeBottom} top={topH + spacing.sm} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
+      )}
+
+      {heightConfirmed === false && focused && !micCard && (
+        <HeightConfirmCard
+          bottom={chromeBottom}
+          current={truck.height_in}
+          onPick={async (h) => {
+            await confirmHeight();
+            const changed = h !== getTruckProfile().height_in;
+            await saveProfile({ ...getTruckProfile(), height_in: h });
+            if (changed && trip().active) reroute("profile"); // the route was planned for another height
+          }}
+          onOther={() => router.push("/truck-profile")}
+        />
       )}
 
       {micCard && (
