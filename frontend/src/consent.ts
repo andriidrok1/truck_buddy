@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import { storage } from "./utils/storage";
 
 // Apple 5.1.2(i): the driver must agree before voice and location go to third-party AI and map services.
-const KEY = "ai_consent_v1";
+// v2 (2026-11-04): adds the Terms of Use ("road signs come first") and Google Gemini; drivers who agreed to v1
+// see the screen once more.
+const KEY = "ai_consent_v2";
 let state: "loading" | "yes" | "no" = "loading";
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
