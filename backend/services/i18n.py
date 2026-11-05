@@ -338,3 +338,47 @@ async def localize(text: str, code: Optional[str] = None) -> str:
         elif got:
             logger.warning("i18n fallback changed numbers, kept English: %r -> %r", s, got)
     return translate(text, code, fallback=lambda s, c: done.get(s))
+
+
+# ---- whole responses -------------------------------------------------------------------------------------------
+
+def localize_route(route):
+    """Turn instructions and route notices of a RouteInfo (and its alternatives) in this request's language, by the
+    catalog only. HERE answers in English on purpose: services/approach.py reads the street of the way in from the
+    English instruction ("... onto El Centro Rd"); the words are swapped only on the way out."""
+    if route is None or lang() == "en":
+        return route
+    # A copy: the dialog session keeps this route, and approach reads its English instructions again later.
+    route = route.model_copy(deep=True) if hasattr(route, "model_copy") else route
+    for m in getattr(route, "maneuvers", None) or []:
+        m.instruction = translate(m.instruction, fallback=None)
+    if getattr(route, "notices", None):
+        route.notices = [translate(n, fallback=None) for n in route.notices]
+    if getattr(route, "alternatives", None):
+        route.alternatives = [localize_route(alt) for alt in route.alternatives]
+    return route
+
+
+async def localize_parking(check):
+    """A ParkingCheck's card text (verdict label, reason, entry and parking tips) in this request's language."""
+    if check is None or lang() == "en":
+        return check
+    for f in ("label", "reason", "entry_tip", "park_tip"):
+        v = getattr(check, f, None)
+        if v:
+            setattr(check, f, await localize(v))
+    return check
+
+
+class LangMiddleware:
+    """Pure ASGI: the X-Lang header sets the request's language before the endpoint runs (in the same context), so
+    /route, /reroute, /parking and the rest answer in it without a field on every request model."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http":
+            raw = dict(scope.get("headers") or []).get(b"x-lang")
+            set_lang(raw.decode("latin-1") if raw else None)
+        await self.app(scope, receive, send)

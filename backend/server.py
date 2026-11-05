@@ -301,10 +301,10 @@ async def build_route(req: RouteRequest, driver: str = Depends(auth.require_driv
     # and never the route itself.
     await _advisories(route, WEATHER_BUDGET_S, WEATHER_BUDGET_S)
     if req.skip_parking:  # breakdown providers: the driver needs the shop, no parking check at all
-        return RouteResponse(place=place, route=route, parking=None)
+        return RouteResponse(place=place, route=i18n.localize_route(route), parking=None)
     parking = approach.for_route(place, route)
     approach.background(check_parking(place, route.approach))  # don't wait for the satellite; app re-asks /parking
-    return RouteResponse(place=place, route=route, parking=parking)
+    return RouteResponse(place=place, route=i18n.localize_route(route), parking=await i18n.localize_parking(parking))
 
 
 @api.post("/nudges", response_model=NudgeResponse)
@@ -368,7 +368,8 @@ async def reroute(req: RerouteRequest, driver: str = Depends(auth.require_driver
     # The new route needs its own alerts and chain controls, or the advisories vanish after a reroute; the
     # driver is off the route while this runs, so the budget is shorter.
     await _advisories(route, REROUTE_ADVISORY_BUDGET_S, 0)
-    return RouteResponse(place=req.place, route=route, parking=approach.for_route(req.place, route))
+    return RouteResponse(place=req.place, route=i18n.localize_route(route),
+                         parking=await i18n.localize_parking(approach.for_route(req.place, route)))
 
 
 def _reroute_event(driver: str, req: RerouteRequest, ok: bool, error: Optional[str] = None) -> None:
@@ -400,7 +401,7 @@ async def _advisories(route: RouteInfo, budget_s: float, alt_budget_s: float) ->
 @api.post("/parking", response_model=ParkingCheck)
 async def parking_check(req: ParkingRequest):
     _require_us(req.place.lat, req.place.lng)  # each new coordinate is a satellite fetch + a vision call
-    return await check_parking(req.place, req.approach)
+    return await i18n.localize_parking(await check_parking(req.place, req.approach))
 
 
 @api.get("/satellite")  # behind the token: the thumbnail is loaded with the auth header
@@ -427,6 +428,8 @@ async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
             res.reply = await i18n.localize(res.reply)
         if res.message:
             res.message = await i18n.localize(res.message)
+        res.route = i18n.localize_route(res.route)
+        res.parking = await i18n.localize_parking(res.parking)
     if speak and res.reply:
         # The first clip (first clause, or first sentence with TTS_CLAUSE_SPLIT=0) is spoken as soon as it's
         # ready; the rest is generated in parallel and the app plays it right after.
@@ -813,4 +816,5 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Request-Id"],
 )
+app.add_middleware(i18n.LangMiddleware)  # X-Lang: the driver's language for every endpoint (services/i18n.py)
 app.add_middleware(reqid.RequestIdMiddleware)  # outermost: the id is set before anything else runs

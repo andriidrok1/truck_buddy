@@ -246,3 +246,12 @@ W = {
     "hurricane force wind warning": "предупреждение об ураганном ветре", "avalanche warning": "предупреждение о лавинах",
     "dense smoke advisory": "предупреждение о густом дыме",
 }
+for en, ru in [("Likely fits a truck (satellite check)", "Скорее всего, фура встанет (по спутнику)"),
+               ("Unlikely to fit a truck (satellite check)", "Скорее всего, фура не встанет (по спутнику)"),
+               ("Truck parking unclear", "Неясно, есть ли парковка для фур"), ("Truck parking listed", "Указана парковка для траков"),
+               ("Truck parking listed, not visible on satellite", "Парковка для траков указана, но по спутнику не видна"),
+               ("No parking check for a town", "Для города парковку не проверяю"), ("Satellite image unavailable.", "Спутниковый снимок недоступен."),
+               ("Couldn't read the satellite image.", "Не удалось разобрать спутниковый снимок."),
+               ("The place info lists truck parking.", "В данных о месте указана парковка для траков."),
+               ("Daily satellite checks are used up; I'll check this one tomorrow.", "Проверки по спутнику на сегодня закончились; это место проверю завтра.")]:
+    t(en, ru)

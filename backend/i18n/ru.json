@@ -1543,6 +1543,378 @@
    "ru": "Данных по {what|dat} у меня пока нет."
   },
   {
+   "en": "Likely fits a truck (satellite check)",
+   "ru": "Скорее всего, фура встанет (по спутнику)"
+  },
+  {
+   "en": "Unlikely to fit a truck (satellite check)",
+   "ru": "Скорее всего, фура не встанет (по спутнику)"
+  },
+  {
+   "en": "Truck parking unclear",
+   "ru": "Неясно, есть ли парковка для фур"
+  },
+  {
+   "en": "Truck parking listed",
+   "ru": "Указана парковка для траков"
+  },
+  {
+   "en": "Truck parking listed, not visible on satellite",
+   "ru": "Парковка для траков указана, но по спутнику не видна"
+  },
+  {
+   "en": "No parking check for a town",
+   "ru": "Для города парковку не проверяю"
+  },
+  {
+   "en": "Satellite image unavailable.",
+   "ru": "Спутниковый снимок недоступен."
+  },
+  {
+   "en": "Couldn't read the satellite image.",
+   "ru": "Не удалось разобрать спутниковый снимок."
+  },
+  {
+   "en": "The place info lists truck parking.",
+   "ru": "В данных о месте указана парковка для траков."
+  },
+  {
+   "en": "Daily satellite checks are used up; I'll check this one tomorrow.",
+   "ru": "Проверки по спутнику на сегодня закончились; это место проверю завтра."
+  },
+  {
+   "en": "Turn left",
+   "ru": "Поверни налево"
+  },
+  {
+   "en": "Turn left onto {road}",
+   "ru": "Поверни налево на {road}"
+  },
+  {
+   "en": "Turn left onto {road} toward {to}",
+   "ru": "Поверни налево на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn left toward {to}",
+   "ru": "Поверни налево в сторону {to}"
+  },
+  {
+   "en": "Turn left and take ramp onto {road} toward {to}",
+   "ru": "Поверни налево и заезжай на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn left and take ramp onto {road}",
+   "ru": "Поверни налево и заезжай на {road}"
+  },
+  {
+   "en": "Turn right",
+   "ru": "Поверни направо"
+  },
+  {
+   "en": "Turn right onto {road}",
+   "ru": "Поверни направо на {road}"
+  },
+  {
+   "en": "Turn right onto {road} toward {to}",
+   "ru": "Поверни направо на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn right toward {to}",
+   "ru": "Поверни направо в сторону {to}"
+  },
+  {
+   "en": "Turn right and take ramp onto {road} toward {to}",
+   "ru": "Поверни направо и заезжай на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn right and take ramp onto {road}",
+   "ru": "Поверни направо и заезжай на {road}"
+  },
+  {
+   "en": "Turn slightly left",
+   "ru": "Поверни плавно налево"
+  },
+  {
+   "en": "Turn slightly left onto {road}",
+   "ru": "Поверни плавно налево на {road}"
+  },
+  {
+   "en": "Turn slightly left onto {road} toward {to}",
+   "ru": "Поверни плавно налево на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn slightly left toward {to}",
+   "ru": "Поверни плавно налево в сторону {to}"
+  },
+  {
+   "en": "Turn slightly left and take ramp onto {road} toward {to}",
+   "ru": "Поверни плавно налево и заезжай на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn slightly left and take ramp onto {road}",
+   "ru": "Поверни плавно налево и заезжай на {road}"
+  },
+  {
+   "en": "Turn slightly right",
+   "ru": "Поверни плавно направо"
+  },
+  {
+   "en": "Turn slightly right onto {road}",
+   "ru": "Поверни плавно направо на {road}"
+  },
+  {
+   "en": "Turn slightly right onto {road} toward {to}",
+   "ru": "Поверни плавно направо на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn slightly right toward {to}",
+   "ru": "Поверни плавно направо в сторону {to}"
+  },
+  {
+   "en": "Turn slightly right and take ramp onto {road} toward {to}",
+   "ru": "Поверни плавно направо и заезжай на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn slightly right and take ramp onto {road}",
+   "ru": "Поверни плавно направо и заезжай на {road}"
+  },
+  {
+   "en": "Turn sharp left",
+   "ru": "Поверни резко налево"
+  },
+  {
+   "en": "Turn sharp left onto {road}",
+   "ru": "Поверни резко налево на {road}"
+  },
+  {
+   "en": "Turn sharp left onto {road} toward {to}",
+   "ru": "Поверни резко налево на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn sharp left toward {to}",
+   "ru": "Поверни резко налево в сторону {to}"
+  },
+  {
+   "en": "Turn sharp left and take ramp onto {road} toward {to}",
+   "ru": "Поверни резко налево и заезжай на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn sharp left and take ramp onto {road}",
+   "ru": "Поверни резко налево и заезжай на {road}"
+  },
+  {
+   "en": "Turn sharp right",
+   "ru": "Поверни резко направо"
+  },
+  {
+   "en": "Turn sharp right onto {road}",
+   "ru": "Поверни резко направо на {road}"
+  },
+  {
+   "en": "Turn sharp right onto {road} toward {to}",
+   "ru": "Поверни резко направо на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn sharp right toward {to}",
+   "ru": "Поверни резко направо в сторону {to}"
+  },
+  {
+   "en": "Turn sharp right and take ramp onto {road} toward {to}",
+   "ru": "Поверни резко направо и заезжай на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn sharp right and take ramp onto {road}",
+   "ru": "Поверни резко направо и заезжай на {road}"
+  },
+  {
+   "en": "Keep left",
+   "ru": "Держись левее"
+  },
+  {
+   "en": "Keep left toward {to}",
+   "ru": "Держись левее в сторону {to}"
+  },
+  {
+   "en": "Keep left onto {road}",
+   "ru": "Держись левее на {road}"
+  },
+  {
+   "en": "Keep left onto {road} toward {to}",
+   "ru": "Держись левее на {road} в сторону {to}"
+  },
+  {
+   "en": "Take the left exit onto {road}",
+   "ru": "Уходи на левый съезд на {road}"
+  },
+  {
+   "en": "Take the left exit onto {road} toward {to}",
+   "ru": "Уходи на левый съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Take the left exit toward {to}",
+   "ru": "Уходи на левый съезд в сторону {to}"
+  },
+  {
+   "en": "Take left ramp onto {road} toward {to}",
+   "ru": "Заезжай на левый съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Take left ramp onto {road}",
+   "ru": "Заезжай на левый съезд на {road}"
+  },
+  {
+   "en": "Keep right",
+   "ru": "Держись правее"
+  },
+  {
+   "en": "Keep right toward {to}",
+   "ru": "Держись правее в сторону {to}"
+  },
+  {
+   "en": "Keep right onto {road}",
+   "ru": "Держись правее на {road}"
+  },
+  {
+   "en": "Keep right onto {road} toward {to}",
+   "ru": "Держись правее на {road} в сторону {to}"
+  },
+  {
+   "en": "Take the right exit onto {road}",
+   "ru": "Уходи на правый съезд на {road}"
+  },
+  {
+   "en": "Take the right exit onto {road} toward {to}",
+   "ru": "Уходи на правый съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Take the right exit toward {to}",
+   "ru": "Уходи на правый съезд в сторону {to}"
+  },
+  {
+   "en": "Take right ramp onto {road} toward {to}",
+   "ru": "Заезжай на правый съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Take right ramp onto {road}",
+   "ru": "Заезжай на правый съезд на {road}"
+  },
+  {
+   "en": "Continue on {road}",
+   "ru": "Продолжай по {road}"
+  },
+  {
+   "en": "Continue on {road} toward {to}",
+   "ru": "Продолжай по {road} в сторону {to}"
+  },
+  {
+   "en": "Continue toward {to}",
+   "ru": "Продолжай в сторону {to}"
+  },
+  {
+   "en": "Take exit {n} toward {to}",
+   "ru": "Съезд {n} в сторону {to}"
+  },
+  {
+   "en": "Take exit {n} toward {to} onto {road}",
+   "ru": "Съезд {n} в сторону {to} на {road}"
+  },
+  {
+   "en": "Take exit {n} onto {road}",
+   "ru": "Съезд {n} на {road}"
+  },
+  {
+   "en": "Take exit {n} onto {road} toward {to}",
+   "ru": "Съезд {n} на {road} в сторону {to}"
+  },
+  {
+   "en": "Take the exit toward {to} onto {road}",
+   "ru": "Уходи на съезд в сторону {to} на {road}"
+  },
+  {
+   "en": "Take the exit toward {to}",
+   "ru": "Уходи на съезд в сторону {to}"
+  },
+  {
+   "en": "Take the exit onto {road}",
+   "ru": "Уходи на съезд на {road}"
+  },
+  {
+   "en": "Take ramp onto {road} toward {to}",
+   "ru": "Заезжай на {road} в сторону {to}"
+  },
+  {
+   "en": "Take ramp onto {road}",
+   "ru": "Заезжай на {road}"
+  },
+  {
+   "en": "Head toward {to}",
+   "ru": "Езжай в сторону {to}"
+  },
+  {
+   "en": "Head {dir} on {road}",
+   "ru": "Езжай на {dir|to} по {road}"
+  },
+  {
+   "en": "Head {dir} on {road} toward {to}",
+   "ru": "Езжай на {dir|to} по {road} в сторону {to}"
+  },
+  {
+   "en": "Head {dir}",
+   "ru": "Езжай на {dir|to}"
+  },
+  {
+   "en": "Arrive at {place}",
+   "ru": "Прибытие: {place}"
+  },
+  {
+   "en": "Arrive at your destination",
+   "ru": "Ты на месте"
+  },
+  {
+   "en": "Your destination is on the left",
+   "ru": "Место назначения слева"
+  },
+  {
+   "en": "Your destination is on the right",
+   "ru": "Место назначения справа"
+  },
+  {
+   "en": "Your destination is straight ahead",
+   "ru": "Место назначения прямо"
+  },
+  {
+   "en": "Take the {nth} exit from roundabout onto {road}",
+   "ru": "На круге {nth|ord} съезд на {road}"
+  },
+  {
+   "en": "Take the {nth} exit from roundabout onto {road} toward {to}",
+   "ru": "На круге {nth|ord} съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Take the {nth} exit from roundabout",
+   "ru": "На круге {nth|ord} съезд"
+  },
+  {
+   "en": "Pass {n} roundabouts and continue on {road}",
+   "ru": "Проедь {n|plural:круг,круга,кругов} и продолжай по {road}"
+  },
+  {
+   "en": "Make a U-turn",
+   "ru": "Развернись"
+  },
+  {
+   "en": "Make a U-turn onto {road}",
+   "ru": "Развернись на {road}"
+  },
+  {
+   "en": "Take the ferry",
+   "ru": "Заезжай на паром"
+  },
+  {
+   "en": "Follow the route",
+   "ru": "Следуй по маршруту"
+  },
+  {
    "en": "The closest is {name}, {mi} miles.",
    "ru": "Ближайший: {name}, {mi|plural:миля,мили,миль}."
   },
@@ -1632,28 +2004,36 @@
    "dat": "ширине"
   },
   "east": {
-   "from": "восточный"
+   "from": "восточный",
+   "to": "восток"
   },
   "west": {
-   "from": "западный"
+   "from": "западный",
+   "to": "запад"
   },
   "north": {
-   "from": "северный"
+   "from": "северный",
+   "to": "север"
   },
   "south": {
-   "from": "южный"
+   "from": "южный",
+   "to": "юг"
   },
   "northeast": {
-   "from": "северо-восточный"
+   "from": "северо-восточный",
+   "to": "северо-восток"
   },
   "northwest": {
-   "from": "северо-западный"
+   "from": "северо-западный",
+   "to": "северо-запад"
   },
   "southeast": {
-   "from": "юго-восточный"
+   "from": "юго-восточный",
+   "to": "юго-восток"
   },
   "southwest": {
-   "from": "юго-западный"
+   "from": "юго-западный",
+   "to": "юго-запад"
   },
   "left": {
    "side": "слева",
@@ -1717,6 +2097,24 @@
   "storm surge warning": "предупреждение о штормовом нагоне",
   "hurricane force wind warning": "предупреждение об ураганном ветре",
   "avalanche warning": "предупреждение о лавинах",
-  "dense smoke advisory": "предупреждение о густом дыме"
+  "dense smoke advisory": "предупреждение о густом дыме",
+  "1st": {
+   "ord": "первый"
+  },
+  "2nd": {
+   "ord": "второй"
+  },
+  "3rd": {
+   "ord": "третий"
+  },
+  "4th": {
+   "ord": "четвёртый"
+  },
+  "5th": {
+   "ord": "пятый"
+  },
+  "6th": {
+   "ord": "шестой"
+  }
  }
 }

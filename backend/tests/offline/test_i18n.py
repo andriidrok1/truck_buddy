@@ -125,3 +125,41 @@ def test_a_russian_turn_end_to_end(api_client, agent_sandbox):
     assert re.search(r"[А-Яа-я]", reply) and not re.search(r"\b(miles|about|right off)\b", reply), reply
     en = api_client.post("/api/agent", json={"text": "find a truck stop", "lat": 38.5816, "lng": -121.4944})
     assert en.status_code == 200 and not re.search(r"[А-Яа-я]", en.json()["reply"])  # no lang: English as before
+
+
+def test_route_turns_are_translated_on_a_copy():
+    from models import Maneuver, RouteInfo
+    i18n.catalog.cache_clear()
+    route = RouteInfo(distance_mi=1, duration_min=2, distance_m=1609, duration_s=120, source="here", summary="2 min · 1 mi",
+                      geometry=[[38.5, -121.5], [38.6, -121.5]],
+                      maneuvers=[Maneuver(action="turn", direction="left", instruction="Turn left onto El Centro Rd", lat=38.5, lng=-121.5, index=0),
+                                 Maneuver(action="arrive", instruction="Arrive at Pilot. Your destination is on the right", lat=38.6, lng=-121.5, index=1)],
+                      notices=["This route goes under a 13 ft 10 in clearance; your truck is 14 ft 1 in."])
+    i18n.set_lang("ru")
+    try:
+        out = i18n.localize_route(route)
+    finally:
+        i18n.set_lang("en")
+    assert [m.instruction for m in out.maneuvers] == ["Поверни налево на El Centro Rd", "Прибытие: Pilot. Место назначения справа"]
+    assert out.notices == ["На маршруте проезд высотой 13 футов 10 дюймов, а твой трак 14 футов 1 дюйм."]
+    assert route.maneuvers[0].instruction == "Turn left onto El Centro Rd"  # the session's copy stays English
+
+
+def test_x_lang_header_sets_the_language():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    seen = []
+    app = FastAPI()
+
+    @app.get("/probe")
+    async def _probe():
+        seen.append(i18n.lang())
+        return {}
+
+    app.add_middleware(i18n.LangMiddleware)
+    client = TestClient(app)
+    client.get("/probe", headers={"X-Lang": "ru-RU"})
+    client.get("/probe")
+    client.get("/probe", headers={"X-Lang": "uk"})
+    assert seen == ["ru", "en", "uk"]
