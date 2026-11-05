@@ -100,7 +100,7 @@ function compiled(): Pattern[] {
           const m = /^\{(\w+)\}$/.exec(part);
           if (!m) return escapeRx(part);
           names.push(m[1]);
-          return "(.+?)";
+          return "(.*?)"; // may be empty: "All set{name}!" without a name
         })
         .join("");
       return { rx: new RegExp(`^${src}$`, "s"), names, target, lit: en.replace(/\{\w+\}/g, "").length };
@@ -142,3 +142,7 @@ export function useT() {
 }
 
 export const useLang = () => useLangStore((s) => s.lang);
+
+// The saved choice is read as soon as anything imports this module (the root layout does, through src/auth.ts),
+// not by a hook: no screen called the hook, and after a restart the phone's language came back (review 2026-11-05).
+void loadLang();

@@ -56,6 +56,15 @@ def lang() -> str:
     return _lang.get()
 
 
+def use_lang(explicit: Optional[str]) -> str:
+    """An endpoint's language: a value sent in the request itself wins; without one the X-Lang header's (set by
+    LangMiddleware) stands. The app sends only the header, so resetting from an empty field made every answer
+    English (review 2026-11-05)."""
+    if explicit:
+        return set_lang(explicit)
+    return lang()
+
+
 # ---- catalog ---------------------------------------------------------------------------------------------------
 
 # A captured value never runs over a sentence end: "Okay, no stop at {name}." must not swallow "Pilot. New total ...".
@@ -326,17 +335,22 @@ async def localize(text: str, code: Optional[str] = None) -> str:
         return first
     from services import llm  # lazy: llm is heavy and tests stub it
 
-    done: dict[str, str] = {}
-    for s in misses:
+    import asyncio
+
+    async def one(s: str) -> tuple[str, Optional[str]]:
         try:
             got = (await llm.complete(FALLBACK_PROMPT.format(language=_LANG_NAMES.get(code, code)), s)).strip()
         except Exception as e:  # noqa: BLE001
             logger.warning("i18n fallback failed: %s", e)
-            continue
+            return s, None
         if got and numbers_kept(s, got):
-            done[s] = got
-        elif got:
+            return s, got
+        if got:
             logger.warning("i18n fallback changed numbers, kept English: %r -> %r", s, got)
+        return s, None
+
+    # All misses at once: one after another, three unknown lines added three model round trips to the answer.
+    done = {s: got for s, got in await asyncio.gather(*(one(s) for s in dict.fromkeys(misses))) if got}
     return translate(text, code, fallback=lambda s, c: done.get(s))
 
 

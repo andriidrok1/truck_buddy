@@ -311,7 +311,7 @@ async def build_route(req: RouteRequest, driver: str = Depends(auth.require_driv
 async def nudges_endpoint(req: NudgeRequest, request: Request, driver: str = Depends(auth.require_driver)):
     """Anything the copilot wants to say on its own right now (break due, parking before the shift ends)."""
     _require_us(req.lat, req.lng)
-    i18n.set_lang(req.lang)
+    req.lang = i18n.use_lang(req.lang)
     req.motive_key, req.motive_user = await motive_auth(request, driver)
     req.truck_profile = await tenancy.effective_profile(driver, req.truck_profile)
     if req.session_id:
@@ -480,7 +480,7 @@ def _finish(res: AgentResponse, extra: Optional[dict] = None, driver: Optional[s
 async def agent(req: AgentRequest, request: Request, speak: bool = Query(False),
                 driver: str = Depends(auth.require_driver)):
     timing.begin()
-    i18n.set_lang(req.lang)
+    req.lang = i18n.use_lang(req.lang)  # the body's field, else the X-Lang header; the model is told either way
     req.motive_key, req.motive_user = await motive_auth(request, driver)
     req.truck_profile = await tenancy.effective_profile(driver, req.truck_profile)
     sid = req.session_id
@@ -584,7 +584,7 @@ async def voice_turn(
     request: Request = None,
 ):
     timing.begin()
-    i18n.set_lang(lang)
+    lang = i18n.use_lang(lang)
     with timing.stage("upload"):
         data = await audio.read()
     if not data:
@@ -626,7 +626,7 @@ async def voice_transcribe(audio: UploadFile = File(...), hint: Optional[str] = 
                            lang: Optional[str] = Form(None, max_length=10)):
     """Step 1 of a voice turn: speech -> text (the app shows it right away, then calls /agent?speak=true)."""
     timing.begin()
-    i18n.set_lang(lang)  # the recogniser's language and prompt (services/voice.stt_language_and_prompt)
+    i18n.use_lang(lang)  # the recogniser's language and prompt (services/voice.stt_language_and_prompt)
     with timing.stage("upload"):
         data = await audio.read()
     if not data:

@@ -3,7 +3,7 @@ import json
 import re
 
 import pytest
-from conftest import run
+from conftest import fixture_json, run
 
 from services import i18n
 
@@ -115,14 +115,22 @@ def test_real_catalog_lines():
         assert i18n.translate(en, "ru") == ru, en
 
 
-def test_a_russian_turn_end_to_end(api_client, agent_sandbox):
+def test_a_russian_turn_end_to_end(api_client, agent_sandbox, fake_http):
     """lang=ru on /api/agent: a templated answer comes back in Russian, the place names stay as they are."""
     i18n.catalog.cache_clear()
+    from models import Place
+    fake_http.add("router.hereapi.com", "/v8/routes", json=fixture_json("here/route_sac_reno"))
+    fake_http.add("api.weather.gov", "/alerts/active", json={"features": []})
+    fake_http.add("cwwp2.dot.ca.gov", "/data/", json={"data": []})
+    agent_sandbox.places_provider.places = [Place(id="ts-1", name="Pilot Travel Center", category="truck_stop",
+                                                  lat=38.60, lng=-121.50, address="1 Main St, Sacramento, CA")]
     agent_sandbox.llm.on(r"трак-стоп|truck stop", {"intent": "find", "category": "truck_stop"})
     r = api_client.post("/api/agent", json={"text": "найди трак-стоп", "lat": 38.5816, "lng": -121.4944, "lang": "ru"})
     assert r.status_code == 200, r.text
     reply = r.json()["reply"]
-    assert re.search(r"[А-Яа-я]", reply) and not re.search(r"\b(miles|about|right off)\b", reply), reply
+    # a place, said in Russian (not "Извини, не расслышал": a Latin-only noise check once answered every Russian line so)
+    assert r.json()["status"] == "route_set" and re.search(r"мил[ьяи]", reply), reply
+    assert not re.search(r"\b(miles|about|right off)\b", reply), reply
     en = api_client.post("/api/agent", json={"text": "find a truck stop", "lat": 38.5816, "lng": -121.4944})
     assert en.status_code == 200 and not re.search(r"[А-Яа-я]", en.json()["reply"])  # no lang: English as before
 
@@ -170,3 +178,33 @@ def test_onboarding_takes_a_cyrillic_answer(fake_llm):
     fake_llm.on(r"Михаил", '{"driver_name": "Михаил"}')
     assert run(onboarding.extract("name", "Меня зовут Михаил")) == {"driver_name": "Михаил"}
     assert run(onboarding.extract("name", "...")) == {}
+
+
+def test_the_app_path_header_only(api_client, agent_sandbox, fake_http):
+    """The app sends the language only in X-Lang (src/auth.ts authHeader), never in the body: the endpoints must not
+    reset it to English from an empty field, and the model must still be told the language."""
+    i18n.catalog.cache_clear()
+    from models import Place
+    fake_http.add("router.hereapi.com", "/v8/routes", json=fixture_json("here/route_sac_reno"))
+    fake_http.add("api.weather.gov", "/alerts/active", json={"features": []})
+    fake_http.add("cwwp2.dot.ca.gov", "/data/", json={"data": []})
+    agent_sandbox.places_provider.places = [Place(id="ts-1", name="Pilot Travel Center", category="truck_stop",
+                                                  lat=38.60, lng=-121.50, address="1 Main St, Sacramento, CA")]
+    agent_sandbox.llm.on(r"трак-стоп|truck stop", {"intent": "find", "category": "truck_stop"})
+    r = api_client.post("/api/agent", json={"text": "где тут трак-стоп поблизости", "lat": 38.5816, "lng": -121.4944},
+                        headers={"X-Lang": "ru"})  # a text of its own: a repeated one is answered from the classify cache
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "route_set" and re.search(r"мил[ьяи]", r.json()["reply"]), r.json()["reply"]
+    assert any("Language: Russian" in c[1] for c in agent_sandbox.llm.calls), "the model was not told the language"
+
+
+def test_yes_and_no_in_russian_and_ukrainian():
+    from services import agent
+    for said in ("да", "Да, давай", "ага", "так", "звісно", "да, это он"):
+        assert agent.bare_answer(said, agent.YES), said
+    for said in ("нет", "Нет, не то", "ні"):
+        assert agent.bare_answer(said, agent.NO), said
+    assert not agent.bare_answer("нет, поехали во Фресно", agent.NO)  # a new request in the same breath
+    assert not agent.bare_answer("да, а потом найди стоянку", agent.YES)
+    assert agent.bare_answer("добавь", agent.VIA_FAR_YES) and agent.bare_answer("поехали", agent.DEST_YES)
+    assert not agent.YES.match("дальше")  # "да" only as a whole word

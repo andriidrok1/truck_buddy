@@ -43,3 +43,35 @@ describe("i18n", () => {
     expect(screen.getByTestId("y").props.children).toBe("Ты сказал: «find parking»");
   });
 });
+
+describe("i18n, review 2026-11-05", () => {
+  test("a pattern slot may be empty", () => {
+    expect(t("All set! Tap me anytime and tell me where you need to go.", undefined, "ru")).toBe(
+      "Всё готово! Нажимай на меня в любой момент и говори, куда нужно.");
+    expect(t("All set, Mike! Tap me anytime and tell me where you need to go.", undefined, "ru")).toBe(
+      "Всё готово, Mike! Нажимай на меня в любой момент и говори, куда нужно.");
+  });
+
+  test("the saved language comes back after a restart", async () => {
+    // A fresh module registry = a fresh app start: the choice is on disk before the i18n module loads.
+    let fresh: typeof import("../i18n") | undefined;
+    let store: typeof import("../utils/storage") | undefined;
+    jest.isolateModules(() => {
+      store = jest.requireActual<typeof import("../utils/storage")>("../utils/storage");
+    });
+    await store!.storage.setItem("lang_v1", "ru");
+    jest.isolateModules(() => {
+      jest.doMock("../utils/storage", () => store);
+      fresh = jest.requireActual<typeof import("../i18n")>("../i18n");
+    });
+    // No explicit loadLang(): importing the module must be enough (no screen calls a hook for it).
+    for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(fresh!.getLang()).toBe("ru");
+  });
+});
+
+test("the break reminder, with and without a name", () => {
+  expect(t("Hey Mike, you've been driving for 3 hours. Want me to find a rest area?", undefined, "ru")).toBe("Mike, ты за рулём уже 3 часа. Найти рест-эрию?");
+  expect(t("you've been driving for an hour. Want me to find a rest area?", undefined, "ru")).toBe("Ты за рулём уже час. Найти рест-эрию?");
+  expect(t("No signal right now. I can still read your turns and what we loaded.", undefined, "ru")).toBe("Сейчас нет связи. Повороты и то, что загружено, я всё ещё вижу.");
+});
