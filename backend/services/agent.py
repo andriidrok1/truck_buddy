@@ -14,9 +14,9 @@ from typing import Callable, Iterable, Optional
 
 import httpx
 
-from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
-from services import (approach, breakdown, chains, controls, fuel_index, hos, llm, memory, profile_learn, reviews,
-                      timing, tpims, weather)
+from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, MapsSource, Place, RouteInfo, TruckProfile
+from services import (approach, breakdown, chains, controls, fuel_index, hos, llm, maps_grounding, memory, profile_learn,
+                      reviews, timing, tpims, weather)
 from services.geo import haversine_km, km_to_mi
 from services.geocode import _STATES, chain_query, geocode, is_street, town_query
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
@@ -1562,6 +1562,11 @@ class LlmAgentProvider:
             if fresh and fresh.reviews:
                 place = fresh
         with stage("tools"):
+            grounded = await maps_grounding.drivers_say(place)
+            if grounded:
+                # Google Maps grounded: the exact text, nothing added, its links under it in the app.
+                return AgentResponse(status="chat", transcript=text, reply=grounded.text, place=place,
+                                     maps_sources=[MapsSource(**s) for s in grounded.sources], source=self.source)
             reply = await reviews.speech(place)
         return AgentResponse(status="chat", transcript=text, reply=reply, place=place, source=self.source)
 

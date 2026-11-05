@@ -402,7 +402,7 @@ export default function TruckProfileScreen() {
         </Text>
         {/* Credits the open place data asks for (backend/scripts/build_places.py: ODbL, CDLA, Apache-2.0). */}
         <Text testID="data-credits" style={[styles.deleteNote, { color: colors.muted, marginTop: spacing.lg }]}>
-          Places: © OpenStreetMap contributors (ODbL), © Overture Maps Foundation, Foursquare, AllThePlaces, FHWA.
+          Places: © OpenStreetMap contributors (ODbL), © Overture Maps Foundation, Foursquare, AllThePlaces, FHWA. What drivers say: Google Maps.
         </Text>
       </KeyboardAwareScrollView>
 
