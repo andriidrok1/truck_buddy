@@ -17,6 +17,7 @@ import { setOnboarded, useTruckProfile, type TruckProfile } from "@/src/hooks/us
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
 import { truckErrors, truckFromInputs } from "@/src/truck/validate";
+import { confirmHeight } from "@/src/truck/heightConfirmed";
 
 type Step = "name" | "truck" | "prefs" | "done";
 type Mode = "speaking" | "listening" | "thinking" | "waiting";
@@ -344,6 +345,7 @@ export default function Onboarding() {
       const t = truckFrom(feet, inches, trailer, weight);
       if (!t) return;
       applyUpdates(t);
+      confirmHeight(); // Next on the truck step is an answer; Skip is not (the map asks again)
     }
     if (step === "done") {
       finish(draftRef.current);

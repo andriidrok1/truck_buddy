@@ -19,6 +19,7 @@ import { Chip, PrefsForm, type Prefs } from "@/src/components/PrefsForm";
 import { formatBytes } from "@/src/map/bounds";
 import { setSim } from "@/src/sim";
 import { truckErrors, truckFromInputs } from "@/src/truck/validate";
+import { confirmHeight } from "@/src/truck/heightConfirmed";
 import { fonts, radius, spacing, useTheme, setThemePref, useThemePref, type ThemePref } from "@/src/theme";
 
 
@@ -149,6 +150,7 @@ export default function TruckProfileScreen() {
       ...sizes,
       hazmat,
     });
+    await confirmHeight(); // the driver saw and saved the height
     requestTruckReroute(); // the map reroutes an active route for the new size (silently)
     close();
   };
