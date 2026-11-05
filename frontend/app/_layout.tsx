@@ -13,6 +13,8 @@ import { KeyboardProvider } from "@/src/keyboard";
 import { useAuthState } from "@/src/auth";
 import { loadThemePref, useTheme } from "@/src/theme";
 import { ConsentGate } from "@/src/components/ConsentGate";
+import { LanguageGate } from "@/src/components/LanguageGate";
+import { useLangStore } from "@/src/i18n";
 import { startLocation } from "@/src/geo/location";
 import "@/src/geo/driveTracking"; // defines the background location task at startup (the OS may wake the app for it)
 import { ensureTruckProfile } from "@/src/hooks/useTruckProfile";
@@ -61,6 +63,8 @@ function RootLayout() {
   }, []);
   const auth = useAuthState();
   const consent = useConsent();
+  const langLoaded = useLangStore((s) => s.loaded);
+  const langChosen = useLangStore((s) => s.chosen);
   // The Motive key is read alongside the auth token so the first copilot request already carries it.
   useEffect(() => {
     loadEldToken();
@@ -94,7 +98,7 @@ function RootLayout() {
     "PlusJakartaSans-ExtraBold": require("../assets/fonts/PlusJakartaSans-ExtraBold.ttf"),
   });
 
-  if ((!loaded && !error) || auth === "loading" || consent === "loading" || !themeReady || !storageReady) return null;
+  if ((!loaded && !error) || auth === "loading" || consent === "loading" || !themeReady || !storageReady || !langLoaded) return null;
 
   // One app level ErrorBoundary; a render crash shows a reload screen
   // instead of a blank app. GestureHandlerRootView must wrap the whole tree
@@ -112,7 +116,7 @@ function RootLayout() {
                 animations are 200-320 ms fades, so they always play; this replaces the per-view flag from #69. */}
             <ReducedMotionConfig mode={ReduceMotion.Never} />
             <StatusBar style={scheme === "dark" ? "light" : "dark"} />
-            {consent !== "yes" ? <ConsentGate /> : auth !== "in" ? <DeviceGate /> : <Stack screenOptions={{ headerShown: false }} />}
+            {!langChosen ? <LanguageGate /> : consent !== "yes" ? <ConsentGate /> : auth !== "in" ? <DeviceGate /> : <Stack screenOptions={{ headerShown: false }} />}
           </KeyboardProvider>
         </QueryClientProvider>
       </ErrorBoundary>

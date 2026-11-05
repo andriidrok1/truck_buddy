@@ -31,13 +31,15 @@ export function deviceLang(): Lang {
   return code === "ru" ? "ru" : code === "uk" && UK_READY ? "uk" : "en";
 }
 
-type LangState = { lang: Lang; loaded: boolean; setLang: (l: Lang) => void };
+/** `chosen`: the driver picked a language (the first screen asks until then, src/components/LanguageGate.tsx). */
+type LangState = { lang: Lang; loaded: boolean; chosen: boolean; setLang: (l: Lang) => void };
 
 export const useLangStore = create<LangState>()((set) => ({
   lang: deviceLang(),
   loaded: false,
+  chosen: false,
   setLang: (lang) => {
-    set({ lang });
+    set({ lang, chosen: true });
     storage.setItem(LANG_KEY, lang).catch(() => {});
   },
 }));
@@ -49,7 +51,7 @@ export function loadLang(): Promise<void> {
     reading = storage
       .getItem<string | null>(LANG_KEY, null)
       .then((v) => {
-        if (v === "en" || v === "ru" || v === "uk") useLangStore.setState({ lang: v, loaded: true });
+        if (v === "en" || v === "ru" || v === "uk") useLangStore.setState({ lang: v, loaded: true, chosen: true });
         else useLangStore.setState({ loaded: true });
       })
       .catch(() => useLangStore.setState({ loaded: true }));
