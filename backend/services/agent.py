@@ -27,7 +27,7 @@ from services.errors import NoTruckRoute
 from services.routing import VIA_STOP_S, get_routing_provider
 from services.flags import on
 from services.logs import said
-from services.speech_text import fit_reply
+from services.speech_text import fit_reply, hours_minutes as _minutes_said
 from services.timing import stage
 
 logger = logging.getLogger("truckbuddy.agent")
@@ -555,11 +555,6 @@ def bare_answer(text: str, rx: re.Pattern) -> bool:
         return False
     # words of any script: "нет, поехали во Фресно" is a new request, not a bare "no"
     return all(w in ANSWER_FILLER for w in re.findall(r"[^\W\d_']+(?:'[^\W\d_]+)?", text[m.end():].lower()))
-
-
-def _minutes_said(m: int) -> str:
-    h, mm = divmod(int(m), 60)
-    return f"{h} h {mm} min" if h and mm else (f"{h} h" if h else f"{mm} min")
 
 
 def _alt_reply(route: RouteInfo, current: Optional[RouteInfo] = None) -> str:

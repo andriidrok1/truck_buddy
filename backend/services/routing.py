@@ -24,6 +24,7 @@ from services.approach import from_route
 from services.errors import NoTruckRoute
 from services.flags import on
 from services.geo import haversine_km, km_to_mi
+from services.speech_text import hours_minutes
 
 logger = logging.getLogger("truckbuddy.routing")
 
@@ -41,11 +42,7 @@ HERE_HAZMAT = "explosive,gas,flammable,combustible,poison,corrosive"
 
 
 def format_summary(duration_min: int, distance_mi: float) -> str:
-    if duration_min >= 60:
-        h, m = divmod(duration_min, 60)
-        time = f"{h} h {m} min" if m else f"{h} h"
-    else:
-        time = f"{duration_min} min"
+    time = hours_minutes(duration_min)
     dist = f"{distance_mi:,.0f} mi" if distance_mi >= 100 else f"{distance_mi:.1f} mi"
     return f"{time} · {dist}"
 

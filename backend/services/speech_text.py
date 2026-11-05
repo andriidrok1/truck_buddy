@@ -9,6 +9,12 @@ _ONES = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
 _TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
 
 
+def hours_minutes(m: int) -> str:
+    """A duration in minutes as the copilot shows and says it: "2 h 52 min", "3 h", "45 min"."""
+    h, mm = divmod(int(m), 60)
+    return f"{h} h {mm} min" if h and mm else (f"{h} h" if h else f"{mm} min")
+
+
 def words(n: int) -> str:
     """0..9999 as English words."""
     if n < 20:
