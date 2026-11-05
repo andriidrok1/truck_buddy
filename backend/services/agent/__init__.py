@@ -13,7 +13,7 @@ from typing import Callable, Optional
 import httpx
 
 from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, MapsSource, Place, RouteInfo, TruckProfile
-from services import (approach, breakdown, chains, controls, fuel_index, hos, i18n, llm, maps_grounding, memory,
+from services import (approach, breakdown, chains, controls, fuel_index, hos, llm, maps_grounding, memory,
                       profile_learn, reviews, timing, tpims, weather)
 from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode, is_street
@@ -57,11 +57,13 @@ from services.agent.common import (  # noqa: F401
     REACHED_KM, CATEGORIES, MAX_HISTORY, _SESSIONS, FIT_STATUSES, FAST_SENTENCES, SLOW_SENTENCES, fast_mps, at_speed,
     _fit_for_speed, _session, _session_if, REJECTIONS_TO_LEARN, _facts, STOP_DETOUR_MIN_S, STOP_DETOUR_FRACTION, _id,
     _not_understood, _chain_of, _short_name, CHAIN_SPELLING)
+from services.agent.context import ContextMixin
+from services.agent.learning import LearningMixin
+from services.agent.stops import StopsMixin
 
 logger = logging.getLogger("truckbuddy.agent")
 
 CLASSIFY_TIMEOUT_S = 20
-
 
 MODEL = ("openai", "gpt-5.4-mini")
 MAX_OPTIONS = 4
@@ -178,7 +180,7 @@ async def classify(text: str, context: str, truck: TruckProfile) -> dict:
 _past_tasks: dict[str, asyncio.Task] = {}
 
 
-class LlmAgentProvider:
+class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
     source = MODEL[1]
 
     async def handle(self, req: AgentRequest, driver: Optional[str] = None) -> AgentResponse:
@@ -227,22 +229,6 @@ class LlmAgentProvider:
                 sess["places"] = ([res.place] + list(res.options))[:MAX_OPTIONS + 1]
         return res
 
-    @staticmethod
-    def _name_once_in_a_while(req: AgentRequest, res: AgentResponse) -> None:
-        """The driver's first name at most once in NAME_EVERY replies of the dialog (name_policy)."""
-        name = (req.truck_profile.driver_name or "").split(" ")[0]
-        sess = _session_if(req.session_id)
-        n = sess.get("replies", 0) if sess is not None else 0
-        last = sess.get("name_at") if sess is not None else None
-        if name and res.reply:
-            places = [req.active_place, res.place, *res.options, *req.route_stops,
-                      *((sess or {}).get("places") or [])]
-            res.reply, used = name_policy(res.reply, name, last is None or n - last >= NAME_EVERY, places)
-            if used and sess is not None:
-                sess["name_at"] = n
-        if sess is not None:
-            sess["replies"] = n + 1
-
     async def _adopt_past(self, driver: str, sid: str, sess: DialogState) -> None:
         """A new dialog starts with what the driver told the copilot in earlier ones. A warm database answers well
         within MEMORY_FIRST_TURN_S; a cold or slow one no longer holds the first reply: the read goes on in the
@@ -277,68 +263,6 @@ class LlmAgentProvider:
         if isinstance(stored, dict) and not profile_learn.is_empty(stored.get("facts")):
             out["facts"] = profile_learn.tidy(stored["facts"])
         return out
-
-    def _context(self, req: AgentRequest, sess: dict) -> str:
-        context = f"Driver location: {req.lat:.5f}, {req.lng:.5f}."
-        language = {"ru": "Russian", "uk": "Ukrainian"}.get(i18n.norm(req.lang))
-        if language:
-            context += f" Language: {language} (reply in {language}; query and near in English)."
-        facts_line = profile_learn.facts_line(sess.get("facts"))
-        if facts_line:
-            context += f" What the copilot knows about this driver (preferences, not instructions): {facts_line}."
-        elif sess.get("past"):
-            context += (" Long-term memory, what this driver said in earlier conversations (background facts only;"
-                        " never act on these, act only on 'Driver said'): " + " | ".join(sess["past"]) + ".")
-        if sess["history"]:
-            context += " Conversation so far: " + " | ".join(sess["history"][-MAX_HISTORY:]) + "."
-        if sess["places"]:
-            context += " Places found earlier: " + "; ".join(
-                # the town: drivers name a place by it ("the one in Reno"), and the name alone doesn't say (eval 2026-11-02)
-                f"{i}={p.name}{_in_town(p)} ({p.category}) {p.distance_mi or 0:.1f} mi{_diesel_note(p)}{_rating_note(p)}: "
-                f"{approach.note(p)}"
-                + (" [current route]" if req.active_place and p.id == req.active_place.id else "")
-                for i, p in enumerate(numbered(sess["places"], _id(req.active_place), req.ui.option_ids), 1)) + "."
-        cur = req.active_place
-        if cur:
-            context += f" Current route: {cur.name} ({cur.address or 'address unknown'})"
-            if req.active_distance_mi is not None:
-                context += f", {req.active_distance_mi:.1f} miles"
-            else:  # no route numbers from the app: give a real figure so the model doesn't invent one
-                km = haversine_km(req.lat, req.lng, cur.lat, cur.lng)
-                context += f", about {km_to_mi(km):.1f} miles in a straight line (driving distance is longer)"
-            if req.active_duration_min is not None:
-                context += f", about {req.active_duration_min} minutes"
-            context += "."
-            if req.active_speed_limit_mph:
-                context += f" Posted speed limit here: {req.active_speed_limit_mph} mph."
-            alts = sess.get("alternatives")
-            if alts and alts.get("place") == cur.id:
-                left = len(alts["routes"]) - alts["i"]
-                context += f" {left} alternative route{'s' if left != 1 else ''} not yet offered."
-            stops = self._stops(req, sess)
-            if stops:
-                context += " Stops on the way: " + ", ".join(s.name.split(",")[0] for s in stops) + "."
-            pk = approach.best(cur)
-            if is_town(cur):
-                context += " Destination is a town; no parking check."
-            elif pk:
-                context += f" Satellite parking check there: {pk.label}. {pk.reason}"
-                if pk.entry_tip:
-                    context += f" Entry: {pk.entry_tip}."
-                if pk.park_tip:
-                    context += f" Park: {pk.park_tip}."
-            else:
-                context += " Parking there has not been checked yet."
-        else:
-            context += " No route is active."
-        ui = req.ui
-        if at_speed(req):
-            context += " The truck is at highway speed: answer in one short sentence."
-        context += (f" App: {'driving (navigation started)' if ui.driving else 'not driving yet'};"
-                    f" spoken turn directions {'on' if ui.voice_guidance else 'off'};"
-                    f" hands-free wake word {'on' if ui.hands_free else 'off (the driver taps the copilot to talk)'};"
-                    f" {ui.options_count} other options available.")
-        return context
 
     async def _truck_stop_named(self, req: AgentRequest, query: str) -> Optional[Place]:
         """The truck stop near the driver whose name the query is ("the 49er", "Roady's"), or None."""
@@ -501,117 +425,6 @@ class LlmAgentProvider:
         return AgentResponse(status="chat", transcript=text, reply=reply, source=self.source)
 
     @staticmethod
-    async def _refresh_facts(driver: str, sess: dict) -> None:
-        facts = await profile_learn.refresh_if_due(driver)
-        if facts is not None:
-            sess["facts"] = facts
-
-    @staticmethod
-    async def _note_rejection(sess: dict, place: Place) -> None:
-        """A place turned down is a dislike the next dialogs know about (it was read back as a "like", QA
-        2026-11-02, bug 5); three "not that one" on the same chain in one dialog: steer clear of the chain."""
-        if not on("PROFILE_LEARN"):
-            return
-        facts = sess.get("facts") or {}
-        if place.category != "destination" and _short_name(place).lower() not in \
-                [n.lower() for n in facts.get("places_avoided") or []]:
-            facts = sess["facts"] = profile_learn.add(facts, avoid_places=[_short_name(place)])
-            await profile_learn.save(sess.get("driver"), facts)
-        chain = _chain_of(place.name)
-        if not chain or not profile_learn.chain_name(chain):  # "Travel Plaza" is a word of the name, not a chain
-            return
-        counts = sess.setdefault("rejected_chains", {})
-        counts[chain] = counts.get(chain, 0) + 1
-        avoided = [c.lower() for c in facts.get("chains_avoided") or []]
-        if counts[chain] == REJECTIONS_TO_LEARN and chain.lower() not in avoided:
-            sess["facts"] = await profile_learn.learn_avoid(sess.get("driver"), facts, chain)
-            sess["say_learned"] = profile_learn.LEARNED_AVOID.format(chain=chain).strip()
-
-    async def _remember(self, req: AgentRequest, d: dict, sess: dict, text: str) -> Optional[AgentResponse]:
-        """"Remember I like Pilot and I hate tolls": into the learned facts (and saved), and what the profile holds
-        (favorite chains, tolls, ferries) into the profile as before. The model calls it a control and only the
-        profile changed (QA 2026-11-02, bug 5). None when the words are not a like or a dislike."""
-        said_ = profile_learn.said_prefs(text)
-        if not said_:
-            return None
-        add: dict = {k: [] for k in ("like_chains", "like_places", "avoid_chains", "avoid_places", "roads",
-                                     "roads_ok", "notes")}
-        actions: list[dict] = []
-        heard = []
-        favorites = {c.lower() for c in req.truck_profile.favorite_chains}
-        for verb, what, liked in said_:
-            road = next(((name, act) for rx, name, act in ROAD_PREFS if rx.search(what)), None)
-            chain = profile_learn.chain_name(what)
-            listed = named_place(what, sess["places"])
-            if road:
-                add["roads_ok" if liked else "roads"].append(road[0])
-                if road[1]:
-                    actions.append({"type": road[1], "value": not liked})
-            elif chain:
-                what = chain
-                add["like_chains" if liked else "avoid_chains"].append(chain)
-                if liked:
-                    actions.append({"type": "add_favorite_chain", "value": chain})
-                elif chain.lower() in favorites:
-                    actions.append({"type": "remove_favorite_chain", "value": chain})
-            elif listed or name_like(what):
-                add["like_places" if liked else "avoid_places"].append(_short_name(listed) if listed else what)
-            else:
-                add["notes"].append(f"you {verb} {what}")
-            heard.append(f"you {verb} {what}")
-        sess["facts"] = profile_learn.add(sess.get("facts"), **add)
-        await profile_learn.save(sess.get("driver"), sess["facts"])
-        # anything else the model read in the same breath ("...and set my height to 14 feet") still applies
-        mine = {a["type"] for a in actions} | {"add_favorite_chain", "remove_favorite_chain"}
-        extra = [a for a in d.get("actions") or [] if isinstance(a, dict) and a.get("type") not in mine] \
-            if d.get("intent") == "control" else []
-        acts, say, _ = controls.apply_actions(extra + actions, req)
-        reply = profile_learn.REMEMBERED.format(what=" and ".join(heard))
-        if extra and say:
-            reply += f" {say}"
-        elif any(a.type == "reroute" for a in acts):
-            reply += " Rerouting for that."
-        logger.info("agent remember %s -> %s", said(text), {k: v for k, v in add.items() if v})
-        return AgentResponse(status="chat", transcript=text, reply=reply, actions=acts, source=self.source)
-
-    async def _memory_intent(self, req: AgentRequest, sess: dict, d: dict, text: str) -> AgentResponse:
-        """"What do you know about me?" / "forget that"."""
-        want = str(d.get("query") or "show").lower()
-        if want.startswith("forget"):
-            sess["facts"] = None
-            sess.pop("past", None)
-            driver = sess.get("driver")
-            if driver:
-                try:
-                    await asyncio.wait_for(memory.clear_facts(driver), 3.0)
-                except Exception as e:  # noqa: BLE001
-                    logger.warning("clear_facts failed: %s", type(e).__name__)
-            return AgentResponse(status="chat", transcript=text, reply=profile_learn.FORGOT, source=self.source)
-        line = " ".join(x for x in (profile_learn.speech(sess.get("facts"), req.truck_profile),
-                                    await self._visits_line(sess.get("driver"))) if x)
-        prefs = profile_learn.prefs_line(req.truck_profile)
-        if line:
-            reply = profile_learn.KNOW.format(facts=line) + (f" {prefs}" if prefs else "")
-        elif not profile_learn.is_empty(sess.get("facts")) and prefs:
-            reply = prefs  # all it knows is in the profile already
-        else:
-            # No facts yet (they need ~5 turns) but earlier lines exist: "what's my dog's name?" is answered
-            # from them, as it was before facts existed (live test test_long_term_recall_across_sessions).
-            reply = await profile_learn.recall(text, sess.get("past") or []) or prefs or profile_learn.KNOW_NOTHING
-        return AgentResponse(status="chat", transcript=text, reply=reply, source=self.source)
-
-    @staticmethod
-    async def _visits_line(driver: Optional[str]) -> str:
-        """The places the driver stopped at often, read when asked (bounded; a slow store only leaves them out)."""
-        if not driver:
-            return ""
-        try:
-            return profile_learn.visits_speech(await asyncio.wait_for(memory.visits(driver), 2.0))
-        except Exception as e:  # noqa: BLE001 - incl. the store off and a timeout
-            logger.info("visits skipped: %s", type(e).__name__)
-            return ""
-
-    @staticmethod
     async def _regional_note(place: Place) -> str:
         """EIA comparison for the diesel price of a truck stop; bounded so it can never slow the reply down."""
         if place.diesel_price is None or place.category != "truck_stop":
@@ -639,92 +452,6 @@ class LlmAgentProvider:
                                      maps_sources=[MapsSource(**s) for s in grounded.sources], source=self.source)
             reply = await reviews.speech(place)
         return AgentResponse(status="chat", transcript=text, reply=reply, place=place, source=self.source)
-
-    @staticmethod
-    def _remember_alternatives(req: AgentRequest, place: Place, route: RouteInfo) -> None:
-        """A new primary route: its alternatives serve "another way?" later; any stops of the old route are gone."""
-        sess = _session_if(req.session_id)
-        if sess is not None:
-            sess["alternatives"] = {"place": place.id, "routes": list(route.alternatives), "i": 0,
-                                    "current": route.model_copy(update={"alternatives": []}),
-                                    "origin": (req.lat, req.lng), "profile": _profile_key(req.truck_profile)}
-            sess.pop("via", None)
-            sess.pop("last_offer", None)
-
-    @staticmethod
-    def _alternatives_stale(cached: Optional[dict], req: AgentRequest, place: Place) -> bool:
-        """The cached alternatives are for this destination, this truck, from near here and for the stops as they
-        are; otherwise "another way" plans afresh from where the truck is (QA 2026-11-01: a cached route from
-        Sacramento was offered near Reno, with Sacramento's miles; alternatives for 13 ft 6 in after "set height
-        to 14 ft"; the no-stop alternatives after a stop was added)."""
-        if not cached or cached.get("place") != place.id or cached.get("refetch"):
-            return True
-        if cached.get("profile") is not None and cached["profile"] != _profile_key(req.truck_profile):
-            return True
-        origin = cached.get("origin")
-        return bool(origin) and haversine_km(origin[0], origin[1], req.lat, req.lng) > ALT_ORIGIN_KM
-
-    @staticmethod
-    def _current_geometry(req: AgentRequest, sess: dict) -> list:
-        """The line of the route being driven (the dialog's copy), or [] when this dialog did not set it."""
-        cached = sess.get("alternatives")
-        if not cached or not req.active_place or cached.get("place") != req.active_place.id:
-            return []
-        cur = cached.get("current")
-        return list(cur.geometry) if cur is not None else []
-
-    @staticmethod
-    def _apps_stops(req: AgentRequest) -> bool:
-        """The app sent the route's stops (route_stops, an empty list included): they are the truth, the dialog's
-        copy in sess["via"] only a cache of what it last set. An older app sends none."""
-        return "route_stops" in req.model_fields_set
-
-    def _stops(self, req: AgentRequest, sess: dict) -> list[Place]:
-        """Stops still ahead on the way to the active destination (empty for any other route); every reader of the
-        route's stops goes through here. The app's when it sends them: a dialog that starts after a restart knows
-        nothing of them (2026-11-02). Else the dialog's own, where a stop the truck has driven past is dropped:
-        re-planning through it sent the driver back to it."""
-        if not req.active_place:
-            return []
-        if self._apps_stops(req):
-            # the app cuts the stops behind; one the truck is parked at is made, as below
-            return [s for s in req.route_stops if haversine_km(s.lat, s.lng, req.lat, req.lng) >= REACHED_KM]
-        via = sess.get("via")
-        if not via or not req.active_place or via.get("place") != req.active_place.id:
-            return []
-        stops = list(via["stops"])
-        geometry = self._current_geometry(req, sess)
-        if stops and geometry:
-            here = _nearest_index(geometry, req.lat, req.lng)
-
-            def still_ahead(s: Place) -> bool:
-                d = haversine_km(s.lat, s.lng, req.lat, req.lng)
-                if d < REACHED_KM:  # parked at the stop: "add the TA too" must not route through this lot again
-                    return False
-                return _nearest_index(geometry, s.lat, s.lng) >= here or d < PASSED_KM
-
-            ahead = [s for s in stops if still_ahead(s)]
-            if len(ahead) != len(stops):
-                logger.info("stops passed: %s", ", ".join(s.name for s in stops if s not in ahead))
-                via["stops"] = ahead
-                stops = ahead
-        return stops
-
-    def _order_stops(self, req: AgentRequest, sess: dict, stops: list[Place]) -> list[Place]:
-        """Stops in the order the road meets them (by the nearest vertex of the current line): "swing by Love's
-        first" after a Fernley stop used to drive to Fernley and back. Without the line (a dialog started after a
-        restart) the stops keep the order they have and the new one, last, goes before the first stop farther
-        from the truck than it is."""
-        geometry = self._current_geometry(req, sess)
-        if geometry:
-            return sorted(stops, key=lambda s: (_nearest_index(geometry, s.lat, s.lng),
-                                                haversine_km(s.lat, s.lng, req.lat, req.lng)))
-        if not stops:
-            return []
-        *kept, new = stops
-        far = haversine_km(new.lat, new.lng, req.lat, req.lng)
-        i = next((i for i, s in enumerate(kept) if haversine_km(s.lat, s.lng, req.lat, req.lng) > far), len(kept))
-        return kept[:i] + [new] + kept[i:]
 
     async def _resolve_stop(self, req: AgentRequest, d: dict, sess: dict, text: str = "") -> Optional[Place]:
         """The place the driver wants to stop at: a place offered earlier (nudges), a listed place the driver
@@ -787,83 +514,6 @@ class LlmAgentProvider:
         found = sorted(self._ahead(req, sess, res.places), key=lambda p: p.distance_mi or 0)
         return choose_place(found, req.truck_profile, exclude, sess.get("facts"))
 
-    def _ahead(self, req: AgentRequest, sess: dict, places: list[Place]) -> list[Place]:
-        """The places ahead of the truck on the way to the active destination. The search is around the truck, and
-        the nearest truck stop could be 13 miles back: a U-turn the detour question (45 minutes) never asked about
-        (review 2026-11-02, bug 19). Along the dialog's route line when there is one, else nearer to the
-        destination than the truck is."""
-        dest = req.active_place
-        if not dest:
-            return list(places)
-        geometry = self._current_geometry(req, sess)
-        if len(geometry) >= 2:
-            along = [0.0]
-            for i in range(1, len(geometry)):
-                along.append(along[-1] + haversine_km(*geometry[i - 1], *geometry[i]))
-            here = along[_nearest_index(geometry, req.lat, req.lng)]
-
-            def ahead(p: Place) -> bool:
-                # further along the line than it is off the line: a stop 20 km to the side of where the truck
-                # is (the line passes nearest to it right here) is a detour back, not a stop ahead
-                i = _nearest_index(geometry, p.lat, p.lng)
-                return along[i] - here > haversine_km(p.lat, p.lng, *geometry[i])
-        else:
-            left = haversine_km(req.lat, req.lng, dest.lat, dest.lng)
-
-            def ahead(p: Place) -> bool:
-                return haversine_km(p.lat, p.lng, dest.lat, dest.lng) < left
-        kept = [p for p in places if ahead(p)]
-        if len(kept) != len(places):
-            logger.info("stop search: behind the truck, left out: %s", ", ".join(p.name for p in places if p not in kept))
-        return kept
-
-    def _offered_stop(self, req: AgentRequest, sess: dict) -> Optional[Place]:
-        """The stop added last on the way to the active destination, while it is still one of the stops."""
-        offer = sess.get("last_offer") or {}
-        if offer.get("kind") != "stop" or not req.active_place or offer.get("place") != req.active_place.id:
-            return None
-        return next((s for s in self._stops(req, sess) if s.id == offer.get("id")), None)
-
-    async def _reject_stop(self, req: AgentRequest, sess: dict, stop: Place, text: str) -> AgentResponse:
-        """"Not that one" right after a stop was added turns the stop down, never the destination (review
-        2026-11-02, bug 15: Reno was rejected, and the same truck stop came back as the destination). Another
-        place of the kind takes the stop's place; with none, the route goes on without it."""
-        place = req.active_place
-        rejected = sess.setdefault("rejected", [])
-        if stop.id not in rejected:
-            await self._note_rejection(sess, stop)
-            rejected.append(stop.id)
-        kept = [s for s in self._stops(req, sess) if s.id != stop.id]
-        name = stop.name.split(",")[0]
-        other = await self._stop_search(req, sess, stop.category, {place.id, *rejected, *(s.id for s in kept)})
-        if other is not None and other.id not in rejected and other.id != place.id:
-            res = await self._add_stop(req, {"intent": "add_stop", "place": other.model_dump(), "_drop": stop.id},
-                                       sess, text)
-            if res.status in ("route_set", "confirm"):
-                res.reply = VIA_REJECTED.format(name=name) + res.reply
-            return res
-        route = await self._route_with_stops(req, kept)
-        self._remember_driven(req, sess, route)
-        if kept:
-            sess["via"] = {"place": place.id, "stops": kept}
-        else:
-            sess.pop("via", None)
-        sess.pop("last_offer", None)
-        time_, mi = route.summary.split(" · ")[0], _miles(route.distance_mi)
-        rest = (VIA_LEFT if kept else VIA_STRAIGHT).format(time=time_, mi=mi)
-        reply = _with_warnings(VIA_DROPPED.format(name=name, what=CATEGORY_WORD.get(stop.category, "stop")) + rest, route)
-        return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
-                             route=route, parking=approach.for_route(place, route), options=kept, source=self.source)
-
-    def _via_now(self, req: AgentRequest, sess: dict) -> list[list[float]]:
-        """The stops on the way as [[lat, lng], ...]: the route's stops (_stops) when the app sent them or the
-        dialog set them for this destination, else the app's coordinates (route_via, from an app that sends no
-        route_stops; a dialog that starts after a restart knows nothing of them)."""
-        via = sess.get("via")
-        if self._apps_stops(req) or (via and req.active_place and via.get("place") == req.active_place.id):
-            return [[s.lat, s.lng] for s in self._stops(req, sess)]
-        return [list(v) for v in req.route_via]
-
     async def _route_from_request(self, req: AgentRequest, sess: dict) -> RouteInfo:
         """The route the app is driving when the dialog has none: by its HERE handle (the same road; HERE falls
         back to a fresh plan when the handle has expired), else planned from the truck through the stops."""
@@ -892,45 +542,6 @@ class LlmAgentProvider:
                 raise RouteFailed(f"{type(e).__name__}: {e}") from e
         route.alternatives = []
         return route
-
-    @staticmethod
-    def _remember_driven(req: AgentRequest, sess: dict, route: RouteInfo) -> None:
-        """A route with the stops as they are now is the line being driven; the alternatives cached for the
-        no-stop route would lose the stops, so "another way" plans afresh through them."""
-        if req.active_place:
-            sess["alternatives"] = {"place": req.active_place.id, "routes": [], "i": 0, "refetch": True,
-                                    "current": route.model_copy(update={"alternatives": []}),
-                                    "origin": (req.lat, req.lng), "profile": _profile_key(req.truck_profile)}
-
-    @staticmethod
-    def _remaining_s(cur: RouteInfo, lat: float, lng: float) -> float:
-        """Seconds left on the driven route from the truck's nearest vertex, the time spread by distance (the same
-        maths the app's ETA uses)."""
-        g = cur.geometry
-        if len(g) < 2:
-            return float(cur.duration_s)
-        here = _nearest_index(g, lat, lng)
-        legs = [haversine_km(g[i - 1][0], g[i - 1][1], g[i][0], g[i][1]) for i in range(1, len(g))]
-        total = sum(legs) or 1.0
-        return float(cur.duration_s) * (sum(legs[here:]) / total)
-
-    def _stop_detour(self, req: AgentRequest, sess: dict, added: int, route: RouteInfo) -> Optional[tuple[float, float]]:
-        """(extra seconds beyond the stop's own time, the rest of the trip before the stop) when a stop takes the
-        trip far out of the way; None when it is a reasonable stop or when the trip before is unknown. The new
-        route starts where the truck is, so it is compared with what was left of the old one from here, not
-        with the whole trip as planned."""
-        cached = sess.get("alternatives") or {}
-        cur = cached.get("current") if req.active_place and cached.get("place") == req.active_place.id else None
-        if cur is not None:
-            old = self._remaining_s(cur, req.lat, req.lng)
-        elif req.active_duration_min:
-            old = req.active_duration_min * 60.0  # the planned total: understates the detour, so asks less, never more
-        else:
-            return None
-        if old <= 0:
-            return None
-        extra = float(route.duration_s) - old - VIA_STOP_S * max(0, added)
-        return (extra, old) if extra > max(STOP_DETOUR_MIN_S, STOP_DETOUR_FRACTION * old) else None
 
     async def _add_stop(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
         place = req.active_place
@@ -1005,80 +616,6 @@ class LlmAgentProvider:
                                                 mi=_miles(route.distance_mi), dwell=dwell) + price_caveat(text, stop), route)
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
                              route=route, parking=approach.for_route(place, route), options=stops, source=self.source)
-
-    async def _clear_stops(self, req: AgentRequest, sess: dict, text: str, d: Optional[dict] = None) -> AgentResponse:
-        """"No stops, straight there" drops them all; "skip the Pilot" only the stop named."""
-        place = req.active_place
-        stops = self._stops(req, sess)
-        if not place or not stops:
-            return AgentResponse(status="chat", transcript=text, reply=VIA_NONE, source=self.source)
-        query = str((d or {}).get("query") or "").strip()
-        if not query and not ALL_STOPS.search(text):
-            # No query from the model: the driver's own object decides ("skip the truck stop" cleared every stop,
-            # the rest area too). Only what follows the order verb; "no stops" and the like clear them all below.
-            obj = ORDER_VERB.sub("", text, count=1)
-            if obj != text:
-                query = obj.strip()
-        named = stop_named(text, query, stops, place)
-        if named:
-            return await self._drop_stop(req, sess, named, stops, text)
-        if query and not ALL_STOPS.search(query) and not ALL_STOPS.search(text):
-            which = self._stop_meant(req, sess, query, stops)
-            if isinstance(which, Place):
-                return await self._drop_stop(req, sess, which, stops, text)
-            if which:  # more than one could be meant: the names, never a guess
-                names = [s.name.split(",")[0] for s in which]
-                return AgentResponse(status="chat", transcript=text, source=self.source,
-                                     reply=VIA_WHICH.format(names=", ".join(names[:-1]) + " or " + names[-1]))
-            if any(len(w) >= 3 for w in _name_tokens(query) & _name_tokens(place.name) - GENERIC_NAME_WORDS):  # "skip Reno"
-                return AgentResponse(status="chat", transcript=text, source=self.source,
-                                     reply=VIA_DEST_NOT_A_STOP.format(name=place.name.split(",")[0]))
-            # a place that is not one of the stops: keep them all
-            return AgentResponse(status="chat", transcript=text, reply=VIA_NOT_A_STOP.format(name=query),
-                                 source=self.source)
-        route = await self._route_with_stops(req, [])
-        self._remember_driven(req, sess, route)
-        sess.pop("via", None)  # after the route: a failed call must not forget stops the app still shows
-        reply = _with_warnings(VIA_CLEARED.format(time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi)), route)
-        return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
-                             route=route, parking=approach.for_route(place, route), source=self.source)
-
-    def _stop_meant(self, req: AgentRequest, sess: dict, query: str,
-                    stops: list[Place]) -> Optional[Place | list[Place]]:
-        """The stop a query that is no name means: by its order ("the last stop"), as the one just added ("that
-        stop"), or by its kind ("the truck stop"); a list when several could be meant, None when it means none."""
-        q = re.sub(r"^(?:the|my|our)\s+", "", query.strip().rstrip(".!?"), flags=re.I)
-        m = STOP_ORDER.match(q) or STOP_ORDER.match(query.strip())
-        if m:
-            n = {"first": 0, "next": 0, "second": 1, "third": 2, "last": len(stops) - 1}[m.group("ord").lower()]
-            return stops[n] if n < len(stops) else None
-        if THAT_STOP.match(q) or THAT_STOP.match(query.strip()):
-            return self._offered_stop(req, sess) or (stops[0] if len(stops) == 1 else stops)
-        for pattern, category in STOP_KIND:
-            if pattern.search(query):
-                of_kind = [s for s in stops if s.category == category]
-                if len(of_kind) == 1:
-                    return of_kind[0]
-                return of_kind or stops
-        return None
-
-    async def _drop_stop(self, req: AgentRequest, sess: dict, stop: Place, stops: list[Place],
-                         text: str) -> AgentResponse:
-        """One stop off the route, the others kept in their order."""
-        place = req.active_place
-        kept = [s for s in stops if s.id != stop.id]
-        route = await self._route_with_stops(req, kept)
-        self._remember_driven(req, sess, route)
-        if kept:  # after the route: a failed call must not forget stops the app still shows
-            sess["via"] = {"place": place.id, "stops": kept}
-        else:
-            sess.pop("via", None)
-        sess.pop("last_offer", None)
-        time_, mi = route.summary.split(" · ")[0], _miles(route.distance_mi)
-        rest = (VIA_LEFT if kept else VIA_STRAIGHT).format(time=time_, mi=mi)
-        reply = _with_warnings(VIA_SKIPPED.format(name=stop.name.split(",")[0]) + rest, route)
-        return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
-                             route=route, parking=approach.for_route(place, route), options=kept, source=self.source)
 
     async def _alternative(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
         """Next unused alternative route to the active destination; fetched fresh when the dialog has none."""
