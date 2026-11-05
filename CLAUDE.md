@@ -13,6 +13,8 @@ Voice copilot for truck drivers. `backend/` is FastAPI (agent, routing, places, 
 
 ## Commands
 
+A fresh worktree has no dependencies. Before running anything in it: `source ~/.venvs/truckbuddy/bin/activate` for the backend (`python` and `flake8` are not on the system PATH) and `cd frontend && yarn install --frozen-lockfile` for the app.
+
 ```bash
 # backend, offline (what CI runs, no keys, no network)
 cd backend && python -m pytest -n 0 -m "not live" -q tests
@@ -35,7 +37,7 @@ A change is done when all of these hold:
 2. New behaviour has a test. Spoken lines are asserted verbatim in backend tests, so a feature that silently stops talking fails.
 3. A change to the classifier prompt or intents went through the eval gate (`--compare`) or the PR says why it could not (no credits) and is labelled `eval`.
 4. A new backend feature sits behind an env flag read at call time, off by default unless Andrii said otherwise, and the flag is in the README table.
-5. A visible UI change has screenshots from the emulator in light and dark theme, and the `ui-reviewer` agent passed them.
+5. A visible UI change has screenshots from the emulator in light and dark theme, with no Expo dev menu or overlay on top, and the `ui-reviewer` agent passed them.
 6. A second agent reviewed the diff. The author never reviews its own work.
 
 ## Frontend rules (in-cab use)

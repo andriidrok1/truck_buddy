@@ -1,7 +1,7 @@
 ---
 name: cleaner
-description: Cleans up a TruckBuddy branch after the feature works, without changing behaviour: removes dead code, duplicates and leftovers, splits oversized screen files into hooks and components, and keeps every test green. Use after the implementer finishes and before review. Pass the worktree path and branch.
-tools: Read, Edit, Write, Grep, Glob, Bash
+description: Cleans up a TruckBuddy branch after the feature works, without changing behaviour. Removes dead code, duplicates and leftovers, splits oversized screen files into hooks and components, and keeps every test green. Use after the implementer finishes and before review. Pass the worktree path and branch.
+tools: Read, Edit, Write, Grep, Glob, Bash, Skill
 model: opus
 ---
 

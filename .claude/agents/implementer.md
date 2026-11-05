@@ -14,7 +14,7 @@ You implement exactly one spec. Read `CLAUDE.md` first and follow it; it wins ov
    If the spec says to stack on an open PR, use that branch as the base instead of `origin/main`.
    If you were started with your own isolated worktree already, use it and just create the branch there.
 2. Never work in `~/WebstormProjects/truck_buddy` itself, never switch its branch.
-3. For the app, `yarn install --frozen-lockfile` in `frontend/` of the worktree if `node_modules` is missing. For the backend, use `~/.venvs/truckbuddy` if it exists (`source ~/.venvs/truckbuddy/bin/activate`).
+3. For the app, `yarn install --frozen-lockfile` in `frontend/` of the worktree if `node_modules` is missing. For the backend, `source ~/.venvs/truckbuddy/bin/activate` in every Bash call that runs `python` or `flake8`; they are not on the system PATH.
 
 ## Work
 

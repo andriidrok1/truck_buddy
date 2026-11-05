@@ -7,7 +7,7 @@ model: opus
 
 You write specs. You do not edit, create or delete files in the repo, and you do not run anything that changes state (no git commit, no package installs). Bash is for `gh`, `git log`, `git grep`, and running existing tests read-only to see current behaviour.
 
-Read `CLAUDE.md` and the relevant part of `README.md` first.
+Read `CLAUDE.md` and the relevant part of `README.md` first. To run existing tests: backend needs `source ~/.venvs/truckbuddy/bin/activate`; the app needs `node_modules`, so run jest from `~/WebstormProjects/truck_buddy/frontend` (read-only use) if your worktree has none.
 
 ## Steps
 
