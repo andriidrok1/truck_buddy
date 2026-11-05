@@ -645,21 +645,24 @@ export default function MapScreen() {
     onThinking: setThinkingText,
     onHeard: (transcript) => setCaption({ reply: "…", heard: transcript }),
     onNotUnderstood: () => {
+      // Walkie-talkie: every tap that heard nothing says so, with its own sound (not the "sent" one).
+      voice.cue("miss");
       if (!captionRef.current) setCaption({ reply: MESSAGES.notUnderstood });
     },
     onError: (message) => setCaption(replyCaption(message)),
     onListenFailed: () => showToast(MESSAGES.notUnderstood),
     onResponse: (res, ctx) => applyResponse(res, ctx),
   });
-  // A nudge just played: a short mic window for the "yes" (the speech queue's onDone, registered above).
+  // A nudge just played (the speech queue's onDone, registered above): with autoListen a short mic window for
+  // the "yes"; in walkie-talkie mode nothing.
   useEffect(() => {
     nudgeAnswer.current = turn.nudgeOffer;
   });
 
   // ---- Nudges: while driving, every few minutes the backend may have something to offer (a
-  // break coming due, parking ahead). Each line is spoken as ambient; once it has played the mic
-  // opens for a few seconds (listenForAnswer) and the backend keeps the offer pending for the next
-  // turn of the same session, so "yes" is enough. Not offline, not before "Go". ----
+  // break coming due, parking ahead). Each line is spoken as ambient; the backend keeps the offer
+  // pending for the next turn of the same session, so a tap and "yes" is enough (walkie-talkie: the
+  // mic does not open by itself, turnMachine.ts). Not offline, not before "Go". ----
   const hasRoute = !!active;
   const nudgesOn = useNudgesEnabled();
   useEffect(() => {
@@ -777,6 +780,25 @@ export default function MapScreen() {
     }, []),
   );
 
+  // Keep the recorder armed while this screen is in front and the mic is allowed, so a tap records at once
+  // (useVoice.prepareIdle). It was wired as setPrewarm(micOk && focused && !wakeArmed) before the turn-machine
+  // move (112c7e1) and got lost there: every tap then switched the session and prepared from scratch. The
+  // permission check also tells useVoice it is granted, so the first tap skips that round trip too.
+  const { setPrewarm, micPermission } = voice;
+  useEffect(() => {
+    if (!focused) {
+      setPrewarm(false);
+      return;
+    }
+    let live = true;
+    micPermission()
+      .then((p) => live && setPrewarm(p === "granted"))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [focused, micCard, setPrewarm, micPermission]); // micCard: re-check once the driver allowed the mic
+
   const onAvatarPress = async () => {
     if (phase === "listening") {
       voice.finishListening();
@@ -785,10 +807,13 @@ export default function MapScreen() {
     // Barge-in: a tap while the copilot is still working drops that turn and listens again (same session,
     // so "no, the other one" lands where it should); useCopilotTurn does the dropping.
     voice.stopSpeaking();
-    const perm = await voice.micPermission();
-    if (perm !== "granted") {
-      setMicCard(perm);
-      return;
+    // The permission round trip only until it is known granted: the tap must start recording at once.
+    if (!voice.micKnownGranted()) {
+      const perm = await voice.micPermission();
+      if (perm !== "granted") {
+        setMicCard(perm);
+        return;
+      }
     }
     if (!turn.dialogId()) setCaption(null);
     turn.tap();
@@ -1302,6 +1327,7 @@ export default function MapScreen() {
       <CopilotSheet
         phase={phase}
         speaking={voice.speaking}
+        micLevel={voice.level}
         onShowOptions={() => setPhase("options")}
         thinkingText={thinkingText}
         options={options}
