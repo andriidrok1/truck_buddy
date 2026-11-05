@@ -66,7 +66,7 @@ const light = {
   userHalo: "rgba(0,122,255,0.18)",
   mapPlaceholder: "#EEF1F4",
   shadow: "#000000",
-  scrim: "rgba(0,0,0,0.04)",
+  scrim: "rgba(0,0,0,0.32)",
 
   // Driving banner: dark in both themes (in the dark theme a white banner was the brightest thing on a night
   // screen, UI review 2026-11-05), with its own button colour on top.
@@ -76,7 +76,7 @@ const light = {
   onNavButton: "#1C1C1E",
 
   // Switches: the off track and the thumb must read on a surfaceSecondary row in both themes.
-  switchTrackOff: "#C7C7CC",
+  switchTrackOff: "#AEAEB2", // white thumb on #C7C7CC was too pale to read as a switch (UI review 2026-11-05)
   switchThumb: "#FFFFFF",
 };
 

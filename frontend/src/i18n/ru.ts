@@ -271,6 +271,8 @@ export const RU: Record<string, string> = {
   "Motive API key": "API-ключ Motive",
   "Paste a new API key to replace": "Вставь новый API-ключ, чтобы заменить",
   "The key comes from the Motive Fleet Dashboard: Admin → API keys → create a key, then paste it here.": "Ключ берётся в Motive Fleet Dashboard: Admin → API keys → создай ключ и вставь сюда.",
+  "Your Motive API key stays in this phone's secure storage. It is sent only with your copilot requests so the copilot can read your hours, and is never stored on TruckBuddy servers. Remove it any time.":
+    "API-ключ Motive хранится в защищённом хранилище этого телефона. Он уходит только вместе с запросами к штурману, чтобы тот видел твои часы, и никогда не хранится на серверах TruckBuddy. Удалить его можно в любой момент.",
   "Connected": "Подключено",
   "Not connected": "Не подключено",
   "Appearance": "Оформление",

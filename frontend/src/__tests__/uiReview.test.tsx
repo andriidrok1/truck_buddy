@@ -127,3 +127,15 @@ describe("history empty and error states", () => {
     expect(screen.queryByTestId("history-retry")).toBeNull();
   });
 });
+
+describe("UI review 2026-11-05, second pass", () => {
+  test("the Motive key paragraph reads in Russian", () => {
+    expect(
+      t(
+        "Your Motive API key stays in this phone's secure storage. It is sent only with your copilot requests so the copilot can read your hours, and is never stored on TruckBuddy servers. Remove it any time.",
+        undefined,
+        "ru",
+      ),
+    ).toMatch(/^API-ключ Motive хранится/);
+  });
+});

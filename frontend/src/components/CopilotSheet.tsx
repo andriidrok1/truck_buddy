@@ -74,6 +74,12 @@ type Props = {
   panel?: ReactNode;
   /** A card on the map (truck height, microphone) is the one thing to answer now: the avatar steps back. */
   quiet?: boolean;
+  /** The "Routes" list (AlternativesSheet) while the driver picks a route: it takes the route card's place in the
+   *  sheet, so the map above keeps the lines being compared in view (UI review 2026-11-05, N7). */
+  routesPanel?: ReactNode;
+  /** The copilot's answer when the map has no room for the bubble (130 % font, a tall Russian route card): it is
+   *  shown at the top of the route card instead, so it is never on screen nowhere (UI review 2026-11-05, N1). */
+  replyInSheet?: string | null;
 };
 
 function SideButton({
@@ -155,7 +161,7 @@ function durationLabel(seconds: number) {
 }
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, micLevel, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel, quiet } = props;
+  const { phase, speaking, micLevel, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel, quiet, routesPanel, replyInSheet } = props;
   const tr = useT();
   const lang = useLang();
   const routesChip = active && !driving ? routesChipText(active.route) : null;
@@ -368,8 +374,14 @@ export function CopilotSheet(props: Props) {
             </Text>
           </View>
         )}
-        {navigating && active && !driving && (
+        {navigating && active && !driving && routesPanel && <View onLayout={onFirstLine}>{routesPanel}</View>}
+        {navigating && active && !driving && !routesPanel && (
           <View style={styles.navInfo}>
+            {!!replyInSheet && (
+              <Text testID="sheet-reply" style={[styles.sheetReply, { color: colors.onSurface }]}>
+                {replyInSheet}
+              </Text>
+            )}
             <View onLayout={onFirstLine}>
               <Text testID="route-summary" style={[styles.eta, { color: colors.onSurface }]}>
                 {active.route.summary}
@@ -472,7 +484,7 @@ export function CopilotSheet(props: Props) {
 
       {/* Go sits under the scrolling card, never inside it: with three stops, or at a 130 % font, the card
           outgrew the sheet and the main button was half under the bottom bar (QA 2026-10-31, Н9, Н25). */}
-      {navigating && active && !driving && (
+      {navigating && active && !driving && !routesPanel && (
         <PressableScale
           testID="go-button"
           accessibilityLabel="Go"
@@ -577,8 +589,8 @@ const styles = StyleSheet.create({
   goBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, height: 56, borderRadius: 28, marginTop: spacing.sm },
   goText: { fontFamily: fonts.bold, fontSize: 18 },
   inputRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.md },
-  input: { flex: 1, minWidth: 0, width: 0, minHeight: 52, borderRadius: 26, paddingHorizontal: spacing.lg, fontFamily: fonts.medium, fontSize: 16, ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}) },
-  roundBtn: { flexShrink: 0, width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center" },
+  input: { flex: 1, minWidth: 0, width: 0, minHeight: 56, borderRadius: 28, paddingHorizontal: spacing.lg, fontFamily: fonts.medium, fontSize: 16, ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}) },
+  roundBtn: { flexShrink: 0, width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
   sheet: {
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
@@ -591,6 +603,7 @@ const styles = StyleSheet.create({
   body: { flexGrow: 1, flexShrink: 1 },
   header: { minHeight: 36, justifyContent: "center" },
   title: { fontFamily: fonts.bold, fontSize: 22, textAlign: "center" },
+  sheetReply: { fontFamily: fonts.medium, fontSize: 17, lineHeight: 24, marginBottom: spacing.sm },
   lastReply: { fontFamily: fonts.regular, fontSize: 17, lineHeight: 24, textAlign: "center", marginTop: spacing.xs },
   listenRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.md },
   navInfo: { gap: 2 },

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "../i18n/Text";
 import Animated, { FadeInUp, FadeOutUp } from "react-native-reanimated";
@@ -43,6 +44,7 @@ export function CaptionBubble({
   maxHeight,
   sources,
   onDismiss,
+  onHeight,
 }: {
   text: string | null;
   heard?: string;
@@ -52,8 +54,13 @@ export function CaptionBubble({
   maxHeight?: number;
   sources?: MapsSource[];
   onDismiss?: () => void;
+  /** The bubble's drawn height (0 once it is gone), so the map can keep the destination out from under it. */
+  onHeight?: (h: number) => void;
 }) {
   const { colors } = useTheme();
+  useEffect(() => {
+    if (!text) onHeight?.(0);
+  }, [text, onHeight]);
   if (!text) return null;
   return (
     <Animated.View
@@ -63,8 +70,14 @@ export function CaptionBubble({
       style={[styles.captionWrap, { bottom }]}
       pointerEvents="box-none"
     >
-      <View testID="agent-reply-caption" style={[styles.caption, shadow(colors), { backgroundColor: colors.surface, maxHeight }]}>
-        <ScrollView style={styles.captionScroll} contentContainerStyle={styles.captionBody} showsVerticalScrollIndicator bounces={false}>
+      {/* A column with the scrolling answer on top and the note under it: the note never scrolls, so the
+          bubble's edge cannot cut it through the letters (UI review 2026-11-05, N4, ui2-speaking-dark). */}
+      <View
+        testID="agent-reply-caption"
+        onLayout={(e) => onHeight?.(e.nativeEvent.layout.height)}
+        style={[styles.caption, shadow(colors), { backgroundColor: colors.surface, maxHeight }]}
+      >
+        <ScrollView style={styles.captionScroll} contentContainerStyle={[styles.captionBody, onDismiss && styles.captionBodyDismiss]} showsVerticalScrollIndicator bounces={false}>
           {heard ? (
             <Text testID="heard-transcript" numberOfLines={1} style={[styles.heardText, { color: colors.onSurfaceSecondary }]}>
               You said: “{heard}”
@@ -73,20 +86,19 @@ export function CaptionBubble({
           <Text testID="agent-reply-text" style={[styles.captionText, { color: colors.onSurface }]}>
             {text}
           </Text>
-          {!!note && (
-            <Text testID="agent-reply-note" style={[styles.noteText, { color: colors.onSurfaceSecondary }]}>
-              {note}
-            </Text>
-          )}
           <MapsSources sources={sources} />
         </ScrollView>
+        {!!note && (
+          <Text testID="agent-reply-note" numberOfLines={2} style={[styles.noteText, { color: colors.onSurfaceSecondary }]}>
+            {note}
+          </Text>
+        )}
         {onDismiss && (
           <Pressable
             testID="agent-reply-dismiss"
             accessibilityRole="button"
             accessibilityLabel="Close the reply"
             onPress={onDismiss}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={styles.dismiss}
           >
             <Icon name="close" size={22} color={colors.onSurfaceSecondary} />
@@ -111,13 +123,15 @@ const styles = StyleSheet.create({
   },
   text: { fontFamily: fonts.semibold, fontSize: 14, flexShrink: 1 },
   captionWrap: { position: "absolute", left: spacing.lg, right: 88, alignItems: "flex-start" },
-  caption: { flexDirection: "row", alignItems: "flex-start", borderRadius: radius.lg, borderBottomLeftRadius: radius.sm },
-  captionScroll: { flexShrink: 1 },
-  captionBody: { paddingLeft: spacing.lg, paddingVertical: spacing.md },
+  caption: { borderRadius: radius.lg, borderBottomLeftRadius: radius.sm },
+  captionScroll: { flexGrow: 0, flexShrink: 1 },
+  captionBody: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  // Room on the right of the first lines for the 56 pt close button in the corner.
+  captionBodyDismiss: { paddingRight: 56 },
   captionText: { fontFamily: fonts.medium, fontSize: 17, lineHeight: 24 },
-  noteText: { fontFamily: fonts.regular, fontSize: 15, lineHeight: 21, marginTop: spacing.xs },
-  // 40 pt of icon area plus an 8 pt slop on each side: 56 pt to hit without a bulky button on the bubble.
-  dismiss: { width: 40, height: 40, alignItems: "center", justifyContent: "center", marginTop: spacing.xs, marginRight: spacing.xs },
+  noteText: { fontFamily: fonts.regular, fontSize: 15, lineHeight: 21, paddingHorizontal: spacing.lg, paddingBottom: spacing.md, marginTop: -spacing.xs },
+  // The whole 56 pt corner is the button (UI review 2026-11-05, N3: a 40 pt box was too small to hit at speed).
+  dismiss: { position: "absolute", top: 0, right: 0, width: 56, height: 56, alignItems: "center", justifyContent: "center" },
   heardText: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 18, marginBottom: 4 },
   tail: { width: 12, height: 12, marginLeft: 18, marginTop: -6, transform: [{ rotate: "45deg" }] },
 });

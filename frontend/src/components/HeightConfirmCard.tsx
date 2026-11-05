@@ -11,18 +11,20 @@ export const COMMON_HEIGHTS_IN = [162, 168] as const;
 
 const label = (inches: number) => `${Math.floor(inches / 12)}' ${inches % 12}"`;
 
-type Props = { bottom: number; current: number; onPick: (heightIn: number) => void; onOther: () => void };
+type Props = { bottom: number; current: number; onPick: (heightIn: number) => void; onOther: () => void; onHeight?: (h: number) => void };
 
 /** Asks the truck height until the driver answers (src/truck/heightConfirmed.ts). No "Not now": routes under
  *  bridges go by this number. One tap for the common heights, the truck screen for anything else. The three
  *  answers weigh the same: a filled 13'6" read as "already chosen" (UI review 2026-11-05), and nothing is chosen
  *  until the driver taps. `current` is only voiced to screen readers. */
-export function HeightConfirmCard({ bottom, current, onPick, onOther }: Props) {
+export function HeightConfirmCard({ bottom, current, onPick, onOther, onHeight }: Props) {
   const { colors } = useTheme();
   return (
     <Animated.View
       entering={FadeInDown.duration(240)}
       exiting={FadeOutDown.duration(180)}
+      // Its height lifts the Follow truck button above it (UI review 2026-11-05, M6).
+      onLayout={(e) => onHeight?.(e.nativeEvent.layout.height)}
       style={[styles.wrap, shadow(colors, 2), { bottom, backgroundColor: colors.surface }]}
       testID="height-confirm-card"
     >

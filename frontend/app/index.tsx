@@ -9,7 +9,7 @@ import * as Sentry from "@sentry/react-native";
 import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
 import { newSessionId, useCopilotTurn, type AnswerContext } from "@/src/dialog/useCopilotTurn";
 import { useFillers } from "@/src/dialog/useFillers";
-import { expireLine, hasExpiringLine, LINE_HOLD_MS, lineCaption, replyCaption, type Caption } from "@/src/dialog/caption";
+import { expireLine, hasExpiringLine, LINE_HOLD_MS, lineCaption, MIN_MAP_FOR_BUBBLE, replyCaption, replyOnMap, type Caption } from "@/src/dialog/caption";
 import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
 import { Icon } from "@/src/components/Icon";
@@ -68,10 +68,6 @@ function routeFailText(e: unknown): string {
   return isNoTruckRoute(e) ? "No truck route there from here. Try another destination or an address on a main road." : "Couldn't build a route. Try again.";
 }
 
-// Below this much visible map (layout units) the bubble would cover the route; the sheet shows the text.
-// The route card leaves about 220 at the default font, about 120 at 130 %.
-const MIN_MAP_FOR_BUBBLE = 180;
-
 const KEEP_AWAKE_TAG = "driving";
 
 // "End route" asks first while more than this is left of the drive.
@@ -122,10 +118,11 @@ export default function MapScreen() {
   const [topH, setTopH] = useState(140);
   const [sheetH, setSheetH] = useState(260);
   const { height: windowH } = useWindowDimensions();
-  const mapWindow = windowH - topH - sheetH; // the map the chrome leaves visible; small at 130 % font
   // The sheet's peek height while the driver has pulled it down; the map keeps sheetH as its inset
   // (no camera refit on a drag) but the chrome above the sheet moves down into the freed room.
   const [peekH, setPeekH] = useState<number | null>(null);
+  // The map the chrome leaves visible (small at 130 % font); a lowered sheet frees room for the bubble.
+  const mapWindow = windowH - topH - (peekH ?? sheetH);
   const chromeBottom = (peekH ?? sheetH) + spacing.lg;
   // Cards and the caption on the left also clear the map's attribution logo, which sits right above the sheet.
   const cardBottom = chromeBottom + spacing.lg;
@@ -159,6 +156,9 @@ export default function MapScreen() {
   /** A spoken line's caption; it never replaces an answer. */
   const showLine = (text: string) => setCaption((prev) => lineCaption(text, prev));
   const [micCard, setMicCard] = useState<Exclude<MicPermission, "granted"> | null>(null);
+  /** Drawn heights of the answer bubble and of the card on the map (height, mic): 0 when gone. */
+  const [bubbleH, setBubbleH] = useState(0);
+  const [cardH, setCardH] = useState(0);
   /** The "End the route to …?" question while it is up (ConfirmSheet), null otherwise. */
   const [endConfirm, setEndConfirm] = useState<string | null>(null);
   const [fit, setFit] = useState<{ key: string; points: LatLng[] }>({ key: "init", points: [] });
@@ -315,6 +315,19 @@ export default function MapScreen() {
   if (optionsFit !== optionsFitSeen) {
     setOptionsFitSeen(optionsFit);
     if (optionsFit) setFit({ key: optionsFit, points: [loc.coords, ...options] });
+  }
+
+  // Route preview: the answer bubble sits on the map right above the sheet, so the map's bottom padding takes
+  // it in and the route refits above it; the destination pin is never under the bubble (UI review 2026-11-05,
+  // M11). Dismissing the bubble gives the room back.
+  const previewing = phase === "navigating" && !!active && !driving;
+  const bubbleUp = !!caption && replyOnMap(mapWindow) && !routesOpen;
+  const mapBottom = sheetH + (previewing && bubbleUp && bubbleH > 0 ? bubbleH + 2 * spacing.lg : 0);
+  const previewFit = previewing && active ? `preview-${active.place.id}-${mapBottom}` : null;
+  const [previewFitSeen, setPreviewFitSeen] = useState(previewFit);
+  if (previewFit !== previewFitSeen) {
+    setPreviewFitSeen(previewFit);
+    if (previewFit && active) setFit({ key: previewFit, points: [loc.coords, active.place] });
   }
 
   const sayReply = (res: AgentResponse, isCurrent: () => boolean = () => true) => {
@@ -939,14 +952,14 @@ export default function MapScreen() {
   // driving flag are read from the trip store, so the one listener registered on mount never acts on a
   // stale closure.
   const backRefs = useRef({
-    state: { micCard: false, routesOpen: false, phase: "ready" as Phase },
+    state: { micCard: false, routesOpen: false, reply: false, phase: "ready" as Phase },
     cancel: () => {},
     closeOptions: () => {},
     endRoute: () => {},
   });
   useLayoutEffect(() => {
     backRefs.current = {
-      state: { micCard: !!micCard, routesOpen, phase },
+      state: { micCard: !!micCard, routesOpen, reply: !!caption, phase },
       cancel: () => {
         turn.cancel();
         voice.cancelRecording().catch(() => {});
@@ -968,6 +981,9 @@ export default function MapScreen() {
           return true;
         case "closeRoutes":
           setRoutesOpen(false);
+          return true;
+        case "closeReply":
+          setCaption(null);
           return true;
         case "cancelTurn":
           cancel();
@@ -1275,9 +1291,12 @@ export default function MapScreen() {
         driver={loc.coords}
         heading={loc.heading}
         places={places}
-        active={active}
+        // While the driver picks from the list (before Go), the map shows the choices only: the last preview's
+        // route and "Harbor Truck…" label stayed over the list (UI review 2026-11-05, M16). Its pin stays as one
+        // of the options.
+        active={phase === "options" && !driving ? null : active}
         topInset={topH}
-        bottomInset={sheetH}
+        bottomInset={mapBottom}
         fitKey={fit.key}
         fitPoints={fit.points}
         onCenterChange={(c) => (center.current = c)}
@@ -1343,20 +1362,22 @@ export default function MapScreen() {
             setTracking(true);
           }
         }}
-        containerStyle={[styles.recenter, { bottom: chromeBottom }]}
+        // Above the card on the map when one asks: under it, only the button's edge showed (UI review 2026-11-05, M6).
+        containerStyle={[styles.recenter, { bottom: (showHeightCard || micCard) && cardH > 0 ? cardBottom + cardH + spacing.sm : chromeBottom }]}
         style={[styles.recenterBtn, shadow(colors), { backgroundColor: following ? colors.info : colors.surface }]}
       >
         <Icon name={following ? "navigation-variant" : "crosshairs-gps"} size={24} color={following ? colors.onInfo : colors.info} />
       </PressableScale>
 
       <CaptionBubble
-        text={mapWindow >= MIN_MAP_FOR_BUBBLE ? (caption?.reply ?? null) : null}
+        text={bubbleUp ? (caption?.reply ?? null) : null}
         heard={caption?.heard}
         note={caption?.note}
         bottom={cardBottom}
         maxHeight={Math.max(MIN_MAP_FOR_BUBBLE - spacing.xxl, mapWindow * 0.55)}
         sources={caption?.sources}
         onDismiss={() => setCaption(null)}
+        onHeight={setBubbleH}
       />
 
       <CopilotSheet
@@ -1389,11 +1410,13 @@ export default function MapScreen() {
         wakePhrase={null}
         quiet={showHeightCard || !!micCard}
         panel={providers ? <ProvidersList data={providers} onRoute={(p) => onPlacePress(providerPlace(p))} /> : null}
+        routesPanel={
+          routesOpen && active && !driving && !!active.route.alternatives?.length ? (
+            <AlternativesSheet primary={active.route} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
+          ) : null
+        }
+        replyInSheet={caption?.kind === "reply" && !replyOnMap(mapWindow) ? caption.reply : null}
       />
-
-      {routesOpen && active && !driving && !!active.route.alternatives?.length && (
-        <AlternativesSheet primary={active.route} bottom={chromeBottom} top={topH + spacing.sm} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
-      )}
 
       {showHeightCard && (
         <HeightConfirmCard
@@ -1406,6 +1429,7 @@ export default function MapScreen() {
             if (changed && trip().active) reroute("profile"); // the route was planned for another height
           }}
           onOther={() => router.push("/truck-profile")}
+          onHeight={setCardH}
         />
       )}
 
@@ -1415,6 +1439,7 @@ export default function MapScreen() {
           bottom={cardBottom}
           onAllow={onAllowMic}
           onDismiss={() => setMicCard(null)}
+          onHeight={setCardH}
         />
       )}
 

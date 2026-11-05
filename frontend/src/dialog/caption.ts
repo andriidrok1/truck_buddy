@@ -38,3 +38,12 @@ export const expireLine = (prev: Caption | null): Caption | null => {
 
 /** Whether `c` has something that expires (a line, or a note under an answer). */
 export const hasExpiringLine = (c: Caption | null): boolean => !!c && (c.kind !== "reply" || c.note !== undefined);
+
+/** Below this much visible map (layout units) the bubble would cover the whole route; the route card shows the
+ *  answer at its top instead (CopilotSheet replyInSheet). The English route card leaves about 270 at the default
+ *  font; the Russian one, a line or two taller, about 180. The bar used to be 180 with nothing in the route card
+ *  to fall back on, so the Russian answer was on screen nowhere (UI review 2026-11-05, N1). */
+export const MIN_MAP_FOR_BUBBLE = 140;
+
+/** Whether the answer goes in the bubble over the map (true) or into the sheet (false). */
+export const replyOnMap = (mapWindow: number): boolean => mapWindow >= MIN_MAP_FOR_BUBBLE;

@@ -73,7 +73,7 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, bl
             accessibilityLabel="Where to?"
           />
           {!!text.trim() && (
-            <PressableScale testID="search-submit" accessibilityLabel="Search" onPress={submit} style={[styles.go, { backgroundColor: colors.brandPrimary }]}>
+            <PressableScale testID="search-submit" accessibilityLabel="Search" onPress={submit} hitSlop={8} style={[styles.go, { backgroundColor: colors.brandPrimary }]}>
               <Icon name="arrow-right" size={20} color={colors.onBrandPrimary} />
             </PressableScale>
           )}
@@ -139,6 +139,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   input: { flex: 1, minWidth: 0, height: 56, fontFamily: fonts.medium, fontSize: 17, ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}) },
+  // 40 pt circle inside the bar plus an 8 pt slop all round: a 56 pt target (UI review 2026-11-05, N9).
   go: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   circle: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
   hazmat: {

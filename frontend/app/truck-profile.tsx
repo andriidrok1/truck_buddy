@@ -454,6 +454,8 @@ export default function TruckProfileScreen() {
   );
 }
 
+const INPUT_BORDER = 1.5;
+
 const styles = StyleSheet.create({
   signOut: { height: 56, borderRadius: radius.pill, borderWidth: 1.5, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginTop: spacing.xl },
   signOutText: { fontFamily: fonts.semibold, fontSize: 16 },
@@ -469,7 +471,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   field: { gap: 6 },
   label: { fontFamily: fonts.medium, fontSize: 13 },
-  inputRow: { flexDirection: "row", alignItems: "center", height: 56, borderRadius: radius.md, paddingHorizontal: spacing.lg, borderWidth: 1.5, overflow: "hidden" },
+  // The border is inside the box: 56 + both borders leaves the field itself 56 tall (UI review 2026-11-05, N10: 53).
+  inputRow: { flexDirection: "row", alignItems: "center", height: 56 + 2 * INPUT_BORDER, borderRadius: radius.md, paddingHorizontal: spacing.lg, borderWidth: INPUT_BORDER, overflow: "hidden" },
   input: {
     flex: 1,
     minWidth: 0,
