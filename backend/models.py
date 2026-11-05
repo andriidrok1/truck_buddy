@@ -463,6 +463,13 @@ class CallCard(BaseModel):
     share_text: str
 
 
+class MapsSource(BaseModel):
+    """A Google Maps place citation of a grounded answer (services.maps_grounding): Google's terms want it shown right
+    under the answer, attributed to "Google Maps", one tap away."""
+    name: str
+    url: str
+
+
 class AgentResponse(BaseModel):
     status: AgentStatus
     transcript: str
@@ -476,6 +483,9 @@ class AgentResponse(BaseModel):
     end_conversation: bool = False  # the dialog reached its end (goodbye / done)
     actions: List[AppAction] = Field(default_factory=list)  # app controls to run (see services/controls.py)
     audio_url: Optional[str] = None  # relative path to the spoken reply (mp3)
+    # Set when the reply is a Google Maps grounded answer (what drivers say about a place): the reply is its exact
+    # text, and the app must show these links under it with "Google Maps" (Gemini API Additional Terms).
+    maps_sources: List[MapsSource] = Field(default_factory=list)
     audio_url_2: Optional[str] = None  # rest of the reply, generated in parallel
     reply_parts: List[str] = Field(default_factory=list)  # the text behind audio_url and audio_url_2, in order
     timings: dict[str, int] = Field(default_factory=dict)  # ms per pipeline stage (voice turns), n_* = counters

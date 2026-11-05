@@ -16,6 +16,8 @@ import { Icon } from "@/src/components/Icon";
 import MapLayer from "@/src/components/MapLayer";
 import type { MapLayerHandle } from "@/src/components/mapTypes";
 import { MicPermissionCard } from "@/src/components/MicPermissionCard";
+import { HeightConfirmCard } from "@/src/components/HeightConfirmCard";
+import { confirmHeight, isHeightConfirmed, useHeightConfirmed } from "@/src/truck/heightConfirmed";
 import { NavBanner } from "@/src/components/NavBanner";
 import { PressableScale } from "@/src/components/PressableScale";
 import { dial, ProvidersList } from "@/src/components/ProvidersList";
@@ -110,6 +112,7 @@ export default function MapScreen() {
   const loc = useDriverLocation();
   const voice = useVoice();
   const truck = useTruckProfile();
+  const heightConfirmed = useHeightConfirmed();
   const router = useRouter();
   const mapRef = useRef<MapLayerHandle>(null);
   const center = useRef<LatLng>(loc.coords);
@@ -314,7 +317,7 @@ export default function MapScreen() {
   }
 
   const sayReply = (res: AgentResponse, isCurrent: () => boolean = () => true) => {
-    setCaption(replyCaption(res.reply, res.transcript || undefined));
+    setCaption(replyCaption(res.reply, res.transcript || undefined, Date.now(), res.maps_sources));
     if (!res.audio_url) return Promise.resolve();
     // The playback timeouts are sized from the text behind each clip: the server says how it split
     // the reply when it can; older backends leave that to the sentence split.
@@ -337,7 +340,7 @@ export default function MapScreen() {
       if (!(await available)) {
         console.warn(`[voice] second half unavailable (${url2}); showing the full text instead`);
         next.remove();
-        setCaption(replyCaption(res.reply, res.transcript || undefined));
+        setCaption(replyCaption(res.reply, res.transcript || undefined, Date.now(), res.maps_sources));
         return;
       }
       if (!isCurrent()) {
@@ -646,21 +649,24 @@ export default function MapScreen() {
     onThinking: setThinkingText,
     onHeard: (transcript) => setCaption({ reply: "…", heard: transcript }),
     onNotUnderstood: () => {
+      // Walkie-talkie: every tap that heard nothing says so, with its own sound (not the "sent" one).
+      voice.cue("miss");
       if (!captionRef.current) setCaption({ reply: MESSAGES.notUnderstood });
     },
     onError: (message) => setCaption(replyCaption(message)),
     onListenFailed: () => showToast(MESSAGES.notUnderstood),
     onResponse: (res, ctx) => applyResponse(res, ctx),
   });
-  // A nudge just played: a short mic window for the "yes" (the speech queue's onDone, registered above).
+  // A nudge just played (the speech queue's onDone, registered above): with autoListen a short mic window for
+  // the "yes"; in walkie-talkie mode nothing.
   useEffect(() => {
     nudgeAnswer.current = turn.nudgeOffer;
   });
 
   // ---- Nudges: while driving, every few minutes the backend may have something to offer (a
-  // break coming due, parking ahead). Each line is spoken as ambient; once it has played the mic
-  // opens for a few seconds (listenForAnswer) and the backend keeps the offer pending for the next
-  // turn of the same session, so "yes" is enough. Not offline, not before "Go". ----
+  // break coming due, parking ahead). Each line is spoken as ambient; the backend keeps the offer
+  // pending for the next turn of the same session, so a tap and "yes" is enough (walkie-talkie: the
+  // mic does not open by itself, turnMachine.ts). Not offline, not before "Go". ----
   const hasRoute = !!active;
   const nudgesOn = useNudgesEnabled();
   useEffect(() => {
@@ -712,6 +718,11 @@ export default function MapScreen() {
   }, [driving, hasRoute, nudgesOn, say, turn]); // refs and a stable callback; `active` itself must not restart the timer
 
   const onGo = () => {
+    if (!isHeightConfirmed()) {
+      // Bridges on the route were checked for the default 13'6"; a taller truck must not drive it blind.
+      showToast("Tell me your truck height first: it decides which bridges are safe.", "info");
+      return;
+    }
     turn.pause();
     voice.stopSpeaking();
     setCaption(null);
@@ -778,6 +789,25 @@ export default function MapScreen() {
     }, []),
   );
 
+  // Keep the recorder armed while this screen is in front and the mic is allowed, so a tap records at once
+  // (useVoice.prepareIdle). It was wired as setPrewarm(micOk && focused && !wakeArmed) before the turn-machine
+  // move (112c7e1) and got lost there: every tap then switched the session and prepared from scratch. The
+  // permission check also tells useVoice it is granted, so the first tap skips that round trip too.
+  const { setPrewarm, micPermission } = voice;
+  useEffect(() => {
+    if (!focused) {
+      setPrewarm(false);
+      return;
+    }
+    let live = true;
+    micPermission()
+      .then((p) => live && setPrewarm(p === "granted"))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [focused, micCard, setPrewarm, micPermission]); // micCard: re-check once the driver allowed the mic
+
   const onAvatarPress = async () => {
     if (phase === "listening") {
       voice.finishListening();
@@ -786,10 +816,13 @@ export default function MapScreen() {
     // Barge-in: a tap while the copilot is still working drops that turn and listens again (same session,
     // so "no, the other one" lands where it should); useCopilotTurn does the dropping.
     voice.stopSpeaking();
-    const perm = await voice.micPermission();
-    if (perm !== "granted") {
-      setMicCard(perm);
-      return;
+    // The permission round trip only until it is known granted: the tap must start recording at once.
+    if (!voice.micKnownGranted()) {
+      const perm = await voice.micPermission();
+      if (perm !== "granted") {
+        setMicCard(perm);
+        return;
+      }
     }
     if (!turn.dialogId()) setCaption(null);
     turn.tap();
@@ -1186,10 +1219,16 @@ export default function MapScreen() {
       setVoiceGuidance: setVoiceOn,
       setHandsFree,
       setNudges: setNudgesEnabled,
-      saveProfile: (patch) => saveProfile({ ...getTruckProfile(), ...patch }),
+      saveProfile: (patch) => {
+        if (typeof patch.height_in === "number") confirmHeight(); // "my truck is 14 feet": an answer
+        return saveProfile({ ...getTruckProfile(), ...patch });
+      },
       unknownAction: (action) => tripLog.log("turn_unknown_action", { action }, trip().active?.trip_id),
       // Save first so the new route uses the new profile.
-      reroute: (patch) => saveProfile({ ...getTruckProfile(), ...patch }).then(() => reroute("profile")),
+      reroute: (patch) => {
+        if (typeof patch.height_in === "number") confirmHeight();
+        return saveProfile({ ...getTruckProfile(), ...patch }).then(() => reroute("profile"));
+      },
     });
   };
 
@@ -1298,11 +1337,12 @@ export default function MapScreen() {
         <Icon name={following ? "navigation-variant" : "crosshairs-gps"} size={24} color={following ? colors.onInfo : colors.info} />
       </PressableScale>
 
-      <CaptionBubble text={mapWindow >= MIN_MAP_FOR_BUBBLE ? (caption?.reply ?? null) : null} heard={caption?.heard} bottom={chromeBottom} />
+      <CaptionBubble text={mapWindow >= MIN_MAP_FOR_BUBBLE ? (caption?.reply ?? null) : null} heard={caption?.heard} bottom={chromeBottom} sources={caption?.sources} />
 
       <CopilotSheet
         phase={phase}
         speaking={voice.speaking}
+        micLevel={voice.level}
         onShowOptions={() => setPhase("options")}
         thinkingText={thinkingText}
         options={options}
@@ -1317,6 +1357,7 @@ export default function MapScreen() {
         onAvatarPress={onAvatarPress}
         onSubmitText={onSubmitText}
         lastReply={caption?.kind === "reply" ? caption.reply : null}
+        lastReplySources={caption?.kind === "reply" ? caption.sources : undefined}
         onClose={onClose}
         onEndRoute={onEndRoutePress}
         onRemoveStop={onRemoveStop}
@@ -1331,6 +1372,20 @@ export default function MapScreen() {
 
       {routesOpen && active && !driving && !!active.route.alternatives?.length && (
         <AlternativesSheet primary={active.route} bottom={chromeBottom} top={topH + spacing.sm} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
+      )}
+
+      {heightConfirmed === false && focused && !micCard && (
+        <HeightConfirmCard
+          bottom={chromeBottom}
+          current={truck.height_in}
+          onPick={async (h) => {
+            await confirmHeight();
+            const changed = h !== getTruckProfile().height_in;
+            await saveProfile({ ...getTruckProfile(), height_in: h });
+            if (changed && trip().active) reroute("profile"); // the route was planned for another height
+          }}
+          onOther={() => router.push("/truck-profile")}
+        />
       )}
 
       {micCard && (

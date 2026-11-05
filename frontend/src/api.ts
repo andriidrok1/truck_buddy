@@ -269,13 +269,15 @@ export const api = {
    * with `stt_confidence` (null when the recogniser reports none). `hint` = names to expect,
    * comma-separated (voice/sttHint.ts); the server takes at most 600 chars.
    */
-  transcribe: async (uri: string, signal?: AbortSignal, hint?: string) => {
+  /** `maybe`: the mic heard something but no clear speech (src/voice/endpointer.ts); the server returns an empty
+   *  transcript for a short low-confidence guess instead of a made-up "Thank you." */
+  transcribe: async (uri: string, signal?: AbortSignal, hint?: string, maybe = false) => {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
     const d = deadline(20000, signal); // upload + STT; the server itself gives up on STT after 12 s
     const t0 = Date.now();
     try {
       const res = await uploadForm(`${BASE}/voice/transcribe`, {
-        fields: hint ? { hint: hint.slice(0, 600) } : {},
+        fields: { ...(hint ? { hint: hint.slice(0, 600) } : {}), ...(maybe ? { maybe: "1" } : {}) },
         files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
         headers: { ...authHeader(), ...eldHeader() },
         signal: d.signal,

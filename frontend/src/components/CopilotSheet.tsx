@@ -3,15 +3,16 @@ import { Keyboard, Platform, Pressable, StyleSheet, TextInput, useWindowDimensio
 import { Text } from "../i18n/Text";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import { KeyboardStickyView } from "@/src/keyboard";
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from "react-native-reanimated";
 
 import { routesChipText } from "../geo/routeChoice";
 import type { OfflineMapState } from "../hooks/useOfflineMap";
 import { formatBytes } from "../map/bounds";
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
-import type { ActiveRoute, ParkingState, Phase, Place } from "../types";
+import type { ActiveRoute, MapsSource, ParkingState, Phase, Place } from "../types";
 import { Avatar } from "./Avatar";
 import { Icon } from "./Icon";
+import { MapsSources } from "./MapsSources";
 import { OptionsList } from "./OptionsList";
 import { ParkingLiveBadge } from "./ParkingLiveBadge";
 import { ParkingStatus } from "./ParkingStatus";
@@ -34,6 +35,8 @@ const PAN_FAIL_X: [number, number] = [-24, 24];
 type Props = {
   phase: Phase;
   speaking: boolean;
+  /** The mic level 0..1 while listening (useVoice), drives the waveform. */
+  micLevel?: SharedValue<number>;
   onShowOptions: () => void;
   thinkingText?: string;
   options: Place[];
@@ -50,6 +53,8 @@ type Props = {
   onSubmitText: (text: string) => void;
   /** The copilot's last answer, shown under the title while idle (the caption on the map fades). */
   lastReply?: string | null;
+  /** Google Maps links of a grounded last reply: shown under it (MapsSources). */
+  lastReplySources?: MapsSource[];
   onClose: () => void;
   onEndRoute: () => void;
   /** Drop one via stop (the route is re-planned without it). */
@@ -147,7 +152,7 @@ function durationLabel(seconds: number) {
 }
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel } = props;
+  const { phase, speaking, micLevel, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel } = props;
   const routesChip = active && !driving ? routesChipText(active.route) : null;
   const { colors } = useTheme();
   const navigating = phase === "navigating";
@@ -271,7 +276,7 @@ export function CopilotSheet(props: Props) {
 
   const caption =
     phase === "listening"
-      ? "Tap to stop"
+      ? "Tap to send"
       : phase === "thinking"
         ? "Thinking…"
         : speaking
@@ -324,6 +329,7 @@ export function CopilotSheet(props: Props) {
                 {lastReply}
               </Text>
             )}
+            {!!lastReply && <MapsSources sources={lastReplySources} center />}
           </View>
         )}
         {phase === "listening" && (
@@ -331,7 +337,7 @@ export function CopilotSheet(props: Props) {
             <Text testID="sheet-title" style={[styles.title, { color: colors.onSurface }]}>
               I&apos;m listening
             </Text>
-            <Waveform />
+            <Waveform level={micLevel} />
           </View>
         )}
         {phase === "thinking" && (
@@ -514,7 +520,6 @@ export function CopilotSheet(props: Props) {
             haptic("medium");
             onAvatarPress();
           }}
-          disabled={phase === "thinking"}
           style={styles.center}
         >
           <Avatar

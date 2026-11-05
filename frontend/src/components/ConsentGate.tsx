@@ -5,7 +5,7 @@ import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, View } from
 import { Text } from "../i18n/Text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { PRIVACY_URL } from "../constants";
+import { PRIVACY_URL, TERMS_URL } from "../constants";
 import { requestCode } from "../auth";
 import { giveConsent } from "../consent";
 import { fonts, radius, spacing, useTheme } from "../theme";
@@ -22,7 +22,12 @@ const ITEMS: { icon: string; title: string; body: string }[] = [
   {
     icon: "map-marker",
     title: "Your location goes to map services",
-    body: "Your position and truck size are sent to HERE, OpenRouteService, Google and OpenStreetMap to find stops and plan truck-safe routes.",
+    body: "Your position and truck size are sent to HERE, OpenRouteService, Google and OpenStreetMap to find stops and plan truck-safe routes. When you ask what drivers say about a place, its name and location go to Google Gemini.",
+  },
+  {
+    icon: "alert-outline",
+    title: "Road signs come first",
+    body: "Bridge heights, truck restrictions and parking can be missing or wrong. Posted signs and the law always win over the app, and you decide what is safe for your truck.",
   },
   {
     icon: "shield-check",
@@ -65,9 +70,14 @@ export function ConsentGate() {
       </ScrollView>
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg }]}>
         {/* In the footer, not at the end of the scroll: there it sat half under the button on a phone screen. */}
-        <PressableScale testID="consent-privacy-link" accessibilityRole="link" onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL).catch(() => {})}>
-          <Text style={[styles.link, styles.center, { color: colors.info }]}>Read the privacy policy</Text>
-        </PressableScale>
+        <View style={styles.links}>
+          <PressableScale testID="consent-privacy-link" accessibilityRole="link" onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL).catch(() => {})}>
+            <Text style={[styles.link, styles.center, { color: colors.info }]}>Privacy policy</Text>
+          </PressableScale>
+          <PressableScale testID="consent-terms-link" accessibilityRole="link" onPress={() => WebBrowser.openBrowserAsync(TERMS_URL).catch(() => {})}>
+            <Text style={[styles.link, styles.center, { color: colors.info }]}>Terms of use</Text>
+          </PressableScale>
+        </View>
         <PressableScale
           testID="consent-agree"
           accessibilityLabel="Agree and continue"
@@ -87,6 +97,7 @@ export function ConsentGate() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  links: { flexDirection: "row", justifyContent: "center", gap: spacing.xl },
   wrap: { alignItems: "center", paddingHorizontal: spacing.xl, gap: spacing.md, paddingBottom: spacing.md },
   avatar: { width: 96, height: 96, borderRadius: 48, marginBottom: spacing.sm },
   title: { fontFamily: fonts.bold, fontSize: 26, textAlign: "center" },

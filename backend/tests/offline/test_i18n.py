@@ -208,3 +208,18 @@ def test_yes_and_no_in_russian_and_ukrainian():
     assert not agent.bare_answer("да, а потом найди стоянку", agent.YES)
     assert agent.bare_answer("добавь", agent.VIA_FAR_YES) and agent.bare_answer("поехали", agent.DEST_YES)
     assert not agent.YES.match("дальше")  # "да" only as a whole word
+
+
+def test_a_google_maps_grounded_answer_is_never_translated(api_client, agent_sandbox, fake_http, monkeypatch):
+    """Gemini's grounded reviews answer may not be modified (Gemini API terms): in Russian it stays as returned."""
+    from models import Place
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini")
+    text = "Drivers say the lot fills up by 6 pm, but the showers are clean."
+    fake_http.add("generativelanguage.googleapis.com", "/v1beta/interactions", json={"steps": [{"type": "model_output", "content": [
+        {"type": "text", "text": text, "annotations": [{"type": "place_citation", "name": "Pilot", "url": "https://maps.google.com/?cid=9"}]}]}]})
+    agent_sandbox.llm.on(r"отзывы|говорят", {"intent": "reviews", "place_index": None})
+    pilot = Place(id="p9", name="Pilot Travel Center", category="truck_stop", lat=38.6, lng=-121.5)
+    r = api_client.post("/api/agent", json={"text": "что говорят водители про него", "lat": 38.5816, "lng": -121.4944,
+                                            "active_place": pilot.model_dump()}, headers={"X-Lang": "ru"})
+    assert r.status_code == 200, r.text
+    assert r.json()["reply"] == text and r.json()["maps_sources"]

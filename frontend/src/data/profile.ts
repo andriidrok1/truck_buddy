@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "../api";
 import { DEFAULT_TRUCK, ensureTruckProfile, getTruckProfile, saveTruckProfile, type TruckProfile } from "../hooks/useTruckProfile";
 import { queryClient } from "../query-client";
+import { confirmHeight } from "../truck/heightConfirmed";
 import { storage } from "../utils/storage";
 import type { TripEventRow } from "../api";
 
@@ -60,6 +61,7 @@ export async function fetchProfile(): Promise<TruckProfile> {
     if (edits !== before) return getTruckProfile(); // the driver saved while this was in flight: theirs is newer
     // A fleet's truck: mid-trip the phone's sizes are the trip's (a swapped trailer) and the truck's stored sizes
     // must not undo them; between trips the truck's come back (decision 2026-11-02, bug 2).
+    if (source === "vehicle") confirmHeight(); // the fleet set this truck's sizes
     if (source === "vehicle" && midTrip()) return getTruckProfile();
     const cur = getTruckProfile();
     const merged = { ...cur, ...remote };

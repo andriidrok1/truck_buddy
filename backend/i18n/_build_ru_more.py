@@ -1,3 +1,4 @@
+# flake8: noqa  (a data list executed by i18n/build_ru.py, which supplies t, T, MI and the rest)
 MI = "{mi|plural:миля,мили,миль}"
 MI_GEN = "{mi|plural:мили,миль,миль}"
 MI_PREP = "{mi|plural:миле,милях,милях}"

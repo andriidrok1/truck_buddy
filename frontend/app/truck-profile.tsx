@@ -20,6 +20,7 @@ import { Chip, PrefsForm, type Prefs } from "@/src/components/PrefsForm";
 import { formatBytes } from "@/src/map/bounds";
 import { setSim } from "@/src/sim";
 import { truckErrors, truckFromInputs } from "@/src/truck/validate";
+import { confirmHeight } from "@/src/truck/heightConfirmed";
 import { fonts, radius, spacing, useTheme, setThemePref, useThemePref, type ThemePref } from "@/src/theme";
 import { LANGS, setLang, t, UK_READY, useLang } from "@/src/i18n";
 
@@ -152,6 +153,7 @@ export default function TruckProfileScreen() {
       ...sizes,
       hazmat,
     });
+    await confirmHeight(); // the driver saw and saved the height
     requestTruckReroute(); // the map reroutes an active route for the new size (silently)
     close();
   };
@@ -411,6 +413,10 @@ export default function TruckProfileScreen() {
         </PressableScale>
         <Text style={[styles.deleteNote, { color: colors.muted }]}>
           Erases everything stored for this device on our servers (conversation memory) and signs you out. The truck profile on this phone is reset too.
+        </Text>
+        {/* Credits the open place data asks for (backend/scripts/build_places.py: ODbL, CDLA, Apache-2.0). */}
+        <Text testID="data-credits" style={[styles.deleteNote, { color: colors.muted, marginTop: spacing.lg }]}>
+          Places: © OpenStreetMap contributors (ODbL), © Overture Maps Foundation, Foursquare, AllThePlaces, FHWA. What drivers say: Google Maps.
         </Text>
       </KeyboardAwareScrollView>
 

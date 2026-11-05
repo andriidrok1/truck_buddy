@@ -149,3 +149,34 @@ def test_bare_answers_with_filler_stay_answers():
     for text in ("No, take me to Fresno", "Right, actually find me a truck stop", "yes and find me a hotel there",
                  "no, I said Reno"):
         assert not agent.bare_answer(text, agent.YES) and not agent.bare_answer(text, agent.NO), text
+
+
+def test_noise_only_rules(monkeypatch):
+    monkeypatch.delenv("STT_MAYBE_MIN_CONFIDENCE", raising=False)
+    assert voice.noise_only("Thank you.", 0.95)  # the classic made-up line
+    assert voice.noise_only("", None)
+    assert voice.noise_only("Reno", 0.3) and not voice.noise_only("go", None)  # no logprobs: not judged on it
+    assert not voice.noise_only("yes", 0.9) and not voice.noise_only("Go.", 0.7)
+    assert not voice.noise_only("find me a truck stop", 0.2)  # three words and more are speech
+    monkeypatch.setenv("STT_MAYBE_MIN_CONFIDENCE", "0.95")
+    assert voice.noise_only("yes", 0.9)
+
+
+def _post(api_client, monkeypatch, text, conf, maybe):
+    async def fake(data, name, hint=None):
+        return Transcript(text, conf)
+
+    monkeypatch.setattr(voice, "transcribe_full", fake)
+    data = {"maybe": "1"} if maybe else {}
+    r = api_client.post("/api/voice/transcribe", files={"audio": ("a.m4a", b"abc", "audio/m4a")}, data=data)
+    assert r.status_code == 200
+    return r.json()["transcript"]
+
+
+def test_transcribe_maybe_drops_noise_keeps_words(api_client, monkeypatch):
+    assert _post(api_client, monkeypatch, "Thank you.", 0.9, maybe=True) == ""
+    assert _post(api_client, monkeypatch, "uh", 0.2, maybe=True) == ""
+    assert _post(api_client, monkeypatch, "Yes.", 0.88, maybe=True) == "Yes."
+    assert _post(api_client, monkeypatch, "take me to Reno", 0.3, maybe=True) == "take me to Reno"
+    # without the flag nothing changes (a clear recording that says "thank you" is the driver)
+    assert _post(api_client, monkeypatch, "Thank you.", 0.9, maybe=False) == "Thank you."

@@ -261,9 +261,11 @@ def add_later(driver: Optional[str], trip_id: Optional[str], kind: str, data: Op
     if rid:
         data.setdefault("req", rid)
 
+    at = _utcnow()  # stamped now: two events of one request keep their order however the tasks get scheduled
+
     async def _save():
         try:
-            await add(driver, [{"trip_id": trip_id, "kind": kind, "data": data}], source)
+            await add(driver, [{"trip_id": trip_id, "kind": kind, "data": data, "t": at}], source)
         except Exception as e:  # noqa: BLE001
             logger.warning("trip event save failed: %s", e)
 

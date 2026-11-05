@@ -4,7 +4,9 @@ import { Text } from "../i18n/Text";
 import Animated, { FadeInUp, FadeOutUp } from "react-native-reanimated";
 
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
+import type { MapsSource } from "../types";
 import { Icon } from "./Icon";
+import { MapsSources } from "./MapsSources";
 
 export type ToastData = { id: number; text: string; kind: "error" | "info" };
 
@@ -32,7 +34,7 @@ export function Toast({ toast, top }: { toast: ToastData | null; top: number }) 
 }
 
 /** The spoken line over the map: two lines by default so the route stays visible, a tap shows all of it. */
-export function CaptionBubble({ text, heard, bottom }: { text: string | null; heard?: string; bottom: number }) {
+export function CaptionBubble({ text, heard, bottom, sources }: { text: string | null; heard?: string; bottom: number; sources?: MapsSource[] }) {
   const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   if (!text) return null;
@@ -59,6 +61,7 @@ export function CaptionBubble({ text, heard, bottom }: { text: string | null; he
         <Text testID="agent-reply-text" numberOfLines={expanded ? undefined : 2} style={[styles.captionText, { color: colors.onSurface }]}>
           {text}
         </Text>
+        <MapsSources sources={sources} />
       </Pressable>
       <View style={[styles.tail, { backgroundColor: colors.surface }]} />
     </Animated.View>

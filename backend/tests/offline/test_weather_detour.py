@@ -199,14 +199,16 @@ def test_a_storm_after_the_truck_is_through_gets_a_heads_up():
 
 def test_the_dialog_says_the_later_storm_when_nothing_is_on_the_way_now(agent_sandbox, fake_http, monkeypatch):
     fake_http.add("router.hereapi.com", "/v8/routes", json=ROUTE)
-    later = _alert("Winter Storm Warning", LAST, onset=(datetime.now(PT) + timedelta(hours=20)).isoformat(),
-                   ends=(datetime.now(PT) + timedelta(hours=40)).isoformat(), area="Reno Area")
+    # Tomorrow 6 am, whatever the time now: "now + 20 h" read "starts 8:36 pm" when CI ran after midnight.
+    onset = (datetime.now(PT) + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
+    later = _alert("Winter Storm Warning", LAST, onset=onset.isoformat(), ends=(onset + timedelta(hours=20)).isoformat(),
+                   area="Reno Area")
     monkeypatch.setattr(weather, "alerts_along", _by_geometry([later], [], []))
     agent_sandbox.llm.on(r"take me to reno", {"intent": "go", "query": "Reno, NV"})
     agent_sandbox.geocode["reno"] = [RENO]
     res = run(agent_sandbox.provider().handle(AgentRequest(text="take me to Reno", session_id="wl", **SAC), None))
     assert res.route.weather == [] and res.route.weather_known and len(res.route.weather_later) == 1
-    assert "Heads up, a Winter Storm Warning near Reno Area starts tomorrow " in res.reply
+    assert "Heads up, a Winter Storm Warning near Reno Area starts tomorrow 6 am" in res.reply
     assert "you're through there by" in res.reply and "around it" not in res.reply
 
 

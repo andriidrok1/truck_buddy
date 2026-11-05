@@ -12,20 +12,24 @@ import * as Haptics from "expo-haptics";
 import { acquireAudioSession, releaseAudioSession } from "./audioSession";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
+import { useSharedValue, type SharedValue } from "react-native-reanimated";
+
+import { createEndpointer, MAX_MS } from "../voice/endpointer";
 
 export type MicPermission = "granted" | "ask" | "blocked";
 
-const SPEECH_DB = -38; // starting value before calibration (quiet cab)
-const SILENCE_DB = -45; // lower bound for "pause"
-// Speech = this far above the measured cab noise. No absolute floor on top: at highway speed the cab
-// meters around -30 dBFS and a fixed -38 lower bound would put the threshold above normal speech.
-const SPEECH_OVER_FLOOR = 8;
-const SILENCE_OVER_FLOOR = 4;
-const CALIBRATE_MS = 400; // the first part of each listen measures the cab noise
-const SUSTAIN_MS = 300; // speech only counts after this long above the threshold
-const DROP_FROM_VOICE_DB = 14; // this far under the driver's average voice = a pause, whatever the cab noise
-const POLL_MS = 100;
+// End of the turn lives in src/voice/endpointer.ts (pure, tested); this hook only polls the meter and acts.
+const POLL_MS = 50;
+const NO_METER_MS = 10000; // a device without a level meter: fixed answer window
 const CHIME = require("../../assets/sounds/chime.mp3");
+const CUES = {
+  sent: require("../../assets/sounds/sent.mp3"),
+  miss: require("../../assets/sounds/miss.mp3"),
+  tick: require("../../assets/sounds/tick.mp3"),
+} as const;
+export type Cue = keyof typeof CUES;
+/** A recording with no clear speech but something in it: the server decides (api.transcribe `maybe`). */
+export type MaybeRecording = { uri: string; maybe: true };
 
 // iOS: shouldRouteThroughEarpiece false = .defaultToSpeaker whenever the session is playAndRecord.
 // The recorder's prepare reuses the options of the last mode, so it must follow RECORD_MODE.
@@ -42,6 +46,18 @@ const PLAYBACK_MODE = {
 } as const;
 
 type ListenOptions = { maxMs?: number; silenceMs?: number; startTimeoutMs?: number; chime?: boolean };
+
+/** A short sound and a haptic, fire and forget. "sent" and "miss" play once the mic is off; "start" and "tick"
+ *  play while recording (short and quiet: the recogniser ignores them). */
+function playCue(cue: Cue | "start") {
+  const c = createAudioPlayer(cue === "start" ? CHIME : CUES[cue]);
+  if (cue === "start") c.volume = 0.6;
+  c.play();
+  setTimeout(() => c.remove(), 1500);
+  if (cue === "start") return; // the tap itself already buzzed (CopilotSheet), the instant the finger landed
+  const h = cue === "miss" ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning) : Haptics.impactAsync(cue === "tick" ? Haptics.ImpactFeedbackStyle.Light : Haptics.ImpactFeedbackStyle.Medium);
+  h.catch(() => {});
+}
 
 // 16 kHz mono AAC: Whisper resamples to 16 kHz anyway, and the upload is ~4x smaller.
 const SPEECH_PRESET = {
@@ -67,15 +83,21 @@ export function useVoice() {
     finishNow.current = true;
   }, []);
   const [speaking, setSpeaking] = useState(false);
+  /** The mic permission as last seen (micPermission / requestMic): once granted, a tap skips the round trip. */
+  const micGranted = useRef(false);
 
   const micPermission = useCallback(async (): Promise<MicPermission> => {
     const p = await getRecordingPermissionsAsync();
+    micGranted.current = p.granted;
     if (p.granted) return "granted";
     return p.canAskAgain ? "ask" : "blocked";
   }, []);
+  /** Granted as far as this session knows: the tap skips the permission round trip. */
+  const micKnownGranted = useCallback(() => micGranted.current, []);
 
   const requestMic = useCallback(async (): Promise<MicPermission> => {
     const p = await requestRecordingPermissionsAsync();
+    micGranted.current = p.granted;
     if (p.granted) return "granted";
     return p.canAskAgain ? "ask" : "blocked";
   }, []);
@@ -117,6 +139,18 @@ export function useVoice() {
   // end re-arms the recorder (RECORD_MODE) and the next clip switches back (PLAYBACK_MODE).
   const playbackHold = useRef(false);
   const audioGen = useRef(0);
+  /** The audio mode last set: a tap on an idle, already-armed mic skips the session switch (≈100 ms on iOS). */
+  const modeNow = useRef<"record" | "playback" | null>(null);
+  const setMode = useCallback(async (m: "record" | "playback") => {
+    await setAudioModeAsync(m === "record" ? RECORD_MODE : PLAYBACK_MODE);
+    modeNow.current = m;
+  }, []);
+  /** Live input level 0..1 while recording, for the sheet's meter (a shared value: 20 updates a second must
+   *  not re-render the map screen). */
+  const level: SharedValue<number> = useSharedValue(0);
+  const setLevel = useCallback((v: number) => {
+    level.set(v);
+  }, [level]);
   const prepareIdle = useCallback(async () => {
     if (Platform.OS === "web" || !prewarm.current || playbackHold.current || prepared.current || recorder.isRecording || player.current) return;
     const gen = audioGen.current;
@@ -124,7 +158,7 @@ export function useVoice() {
     try {
       const p = await getRecordingPermissionsAsync();
       if (!p.granted || stale()) return;
-      await setAudioModeAsync(RECORD_MODE);
+      await setMode("record");
       if (stale()) return;
       try {
         await ensurePrepared();
@@ -141,7 +175,7 @@ export function useVoice() {
     } catch (e) {
       console.log(`[voice] idle prepare failed: ${String(e)}`);
     }
-  }, [recorder, ensurePrepared]);
+  }, [recorder, ensurePrepared, setMode]);
 
   const stopSpeaking = useCallback(() => {
     const p = player.current;
@@ -180,130 +214,133 @@ export function useVoice() {
   /** The mic is open (a clip starting now would flip the session under the recording). */
   const isRecording = useCallback(() => recorder.isRecording, [recorder]);
 
+  /** Starts recording as fast as the platform allows: no session switch when the idle mic is already armed
+   *  (prepareIdle), no permission round trip (the screen checks once). Returns ms from the call to record(). */
   const startRecording = useCallback(async () => {
+    const t0 = Date.now();
     stopSpeaking();
     audioGen.current++;
     await acquireAudioSession();
-    await setAudioModeAsync(RECORD_MODE);
+    if (modeNow.current !== "record") await setMode("record");
     await ensurePrepared();
     prepared.current = false;
     recorder.record();
-  }, [recorder, stopSpeaking, ensurePrepared]);
+    return Date.now() - t0;
+  }, [recorder, stopSpeaking, ensurePrepared, setMode]);
 
   // Returns the local file uri, or null if nothing was recorded.
   const stopRecording = useCallback(async (): Promise<string | null> => {
     if (!recorder.isRecording) return recorder.uri ?? null;
     await recorder.stop();
-    await setAudioModeAsync(PLAYBACK_MODE);
+    setLevel(0);
+    await setMode("playback");
     // No re-prepare here: the reply comes next and must play in the playback session.
     // The recorder is prepared again once it finishes (stopSpeaking) or when idle.
     return recorder.uri ?? null;
-  }, [recorder]);
+  }, [recorder, setMode, setLevel]);
 
   const cancelRecording = useCallback(async () => {
     listenToken.current++;
     if (recorder.isRecording) await recorder.stop();
-    await setAudioModeAsync(PLAYBACK_MODE);
+    setLevel(0);
+    await setMode("playback");
     prepareIdle(); // idle again; any reply that starts meanwhile cancels this (audioGen)
-  }, [recorder, prepareIdle]);
+  }, [recorder, prepareIdle, setMode, setLevel]);
 
   /**
-   * Hands-free answer: records until the driver stops talking.
-   * The first ~400 ms calibrate the noise floor (speech = floor + 8 dB, pause = floor + 4 dB but not
-   * below the quiet-cab value); speech counts after 300 ms above the threshold.
-   * Resolves the file uri, "silent" if nobody spoke, or "cancelled".
+   * One turn of the driver: records from the tap until the end of the phrase (src/voice/endpointer.ts: a pause
+   * after speech, the 30 s cap) or a second tap (finishListening). The chime and the start haptic come after
+   * record(), so words said with the tap are kept. Resolves the file uri; `{uri, maybe}` when there was sound
+   * but no clear speech (the server decides); "silent" if nothing at all; or "cancelled".
    */
   const listen = useCallback(
-    async ({ maxMs = 15000, silenceMs = 1600, startTimeoutMs = 7000, chime = true }: ListenOptions = {}) => {
+    async ({ maxMs = MAX_MS, silenceMs, startTimeoutMs, chime = true }: ListenOptions = {}): Promise<string | MaybeRecording | "silent" | "cancelled"> => {
       const token = ++listenToken.current;
       finishNow.current = false;
-      await startRecording();
-      if (chime) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-        const c = createAudioPlayer(CHIME);
-        c.play();
-        setTimeout(() => c.remove(), 1500);
-      }
+      const armMs = await startRecording();
+      if (chime) playCue("start");
+      const ep = createEndpointer({ maxMs, endSilenceMs: silenceMs, startTimeoutMs });
       const t0 = Date.now();
-      let spoke = false;
-      let quietSince = 0;
-      let loudSince = 0;
-      let voiceSum = 0; // the driver's speech level this turn (average)
-      let voiceN = 0;
+      const meter: number[] = []; // dB per poll, for tuning the thresholds on recorded cab profiles (PR 3)
       let hasMeter = false;
-      const calib: number[] = [];
-      let speechDb = SPEECH_DB;
-      let silenceDb = SILENCE_DB;
-      let calibrated = false;
-      let peak = -160;
-      let sum = 0;
-      let n = 0;
+      let rearmed = false;
+      let sawRecording = false; // the recorder really ran at some poll (else the file is not this turn's)
       let ended = "max";
+      let maybe = false;
       while (listenToken.current === token) {
         await new Promise((r) => setTimeout(r, POLL_MS));
         if (listenToken.current !== token) break;
+        // `recorder.isRecording` is the native recorder's own state. The status object's isRecording is not: on iOS
+        // it says "recording" once record() was called, even when AVAudioRecorder refused to start.
+        const running = recorder.isRecording;
+        if (running) sawRecording = true;
         if (finishNow.current) {
-          spoke = true;
           ended = "tap";
+          maybe = hasMeter && !ep.stats().spoke; // a tap on a recording with no clear speech: the server decides
           break;
         }
-        const db = recorder.getStatus().metering;
-        const now = Date.now();
+        const status = recorder.getStatus();
+        const db = status.metering;
+        const t = Date.now() - t0;
+        if (!rearmed && t >= 300 && !running) {
+          // The fast start skipped the session switch on a mic that looked armed; if the recorder did not start,
+          // do the full switch once (the old path) instead of recording nothing.
+          rearmed = true;
+          console.log("[voice] recorder not running after the fast start: re-arming");
+          try {
+            await setMode("record");
+            await ensurePrepared();
+            prepared.current = false;
+            recorder.record();
+          } catch (e) {
+            console.log(`[voice] re-arm failed: ${String(e)}`);
+          }
+          continue;
+        }
         if (typeof db === "number" && Number.isFinite(db)) {
           hasMeter = true;
-          peak = Math.max(peak, db);
-          sum += db;
-          n++;
-          if (!calibrated) {
-            calib.push(db);
-            if (now - t0 < CALIBRATE_MS) continue;
-            // Quietest sample = the cab noise (the chime or an early word only raise the others).
-            const floor = Math.min(...calib);
-            speechDb = floor + SPEECH_OVER_FLOOR;
-            silenceDb = Math.max(SILENCE_DB, floor + SILENCE_OVER_FLOOR);
-            calibrated = true;
-            console.log(`[voice] calibrated floor=${floor.toFixed(1)} speech>${speechDb.toFixed(1)} silence<${silenceDb.toFixed(1)} samples=${calib.map((v) => v.toFixed(0)).join(",")}`);
+          meter.push(Math.round(db));
+          setLevel(Math.max(0, Math.min(1, (db + 60) / 45)));
+          const d = ep.push(db, t);
+          if (d === "warn") playCue("tick");
+          else if (d === "send") {
+            ended = ep.stats().reason ?? "silence";
+            break;
+          } else if (d === "maybe") {
+            ended = "maybe";
+            maybe = true;
+            break;
+          } else if (d === "silent") {
+            ended = "silent";
+            break;
           }
-          if (db > speechDb) {
-            loudSince = loudSince || now;
-            if (now - loudSince >= SUSTAIN_MS) spoke = true;
-            if (spoke) {
-              voiceSum += db;
-              voiceN++;
-            }
-            quietSince = 0;
-          } else {
-            loudSince = 0;
-            // Pause = below the floor-based level, or well under the driver's average voice (loud cab
-            // noise that never drops to the floor must not keep the mic open for 15 s).
-            const voiceDb = voiceN ? voiceSum / voiceN : -160;
-            if (spoke && (db < silenceDb || db < voiceDb - DROP_FROM_VOICE_DB)) {
-              quietSince = quietSince || now;
-              if (now - quietSince >= silenceMs) {
-                ended = "silence";
-                break;
-              }
-            }
-          }
-        }
-        if (!spoke && hasMeter && now - t0 > startTimeoutMs) {
-          console.log(`[voice] no speech: peak=${peak.toFixed(1)} avg=${n ? (sum / n).toFixed(1) : "-"} speech>${speechDb.toFixed(1)}`);
-          await cancelRecording();
-          return "silent" as const;
-        }
-        // No level meter on this device: fixed answer window.
-        if (!hasMeter && now - t0 > 7000) {
-          spoke = true;
+        } else if (!hasMeter && t > NO_METER_MS) {
           ended = "no-meter";
           break;
+        } else if (t >= maxMs) {
+          ended = "cap";
+          break;
         }
-        if (now - t0 > maxMs) break;
       }
-      if (listenToken.current !== token) return "cancelled" as const;
-      console.log(`[voice] turn end=${ended} ms=${Date.now() - t0} peak=${peak.toFixed(1)} voice=${voiceN ? (voiceSum / voiceN).toFixed(1) : "-"} avg=${n ? (sum / n).toFixed(1) : "-"} speech>${speechDb.toFixed(1)} silence<${silenceDb.toFixed(1)} silenceMs=${silenceMs}`);
-      return (await stopRecording()) ?? ("silent" as const);
+      if (listenToken.current !== token) return "cancelled";
+      const st = ep.stats();
+      console.log(`[voice] turn end=${ended} ms=${Date.now() - t0} arm=${armMs} noise=${st.noiseDb.toFixed(0)} voice=${st.voiceDb === null ? "-" : st.voiceDb.toFixed(0)} peak=${st.peakDb.toFixed(0)}`);
+      if (meter.length) console.log(`[voice] meter step=${POLL_MS} ${meter.join(",")}`);
+      if (ended === "silent") {
+        await cancelRecording();
+        return "silent";
+      }
+      if (!sawRecording && !recorder.isRecording) {
+        // Never recorded this turn: the file on disk is an old one. Fail the listen (a toast, no stale replay).
+        await cancelRecording();
+        throw new Error("recorder never started");
+      }
+      const uri = await stopRecording();
+      if (!uri) return "silent";
+      playCue("sent");
+      return maybe ? { uri, maybe: true } : uri;
     },
-    [recorder, startRecording, stopRecording, cancelRecording],
+    [recorder, startRecording, stopRecording, cancelRecording, setLevel, setMode, ensurePrepared],
   );
 
   const play = useCallback(
@@ -335,13 +372,15 @@ export function useVoice() {
       // That leaves no prepared recorder behind, so the next tap prepares it again.
       prepared.current = false;
       acquireAudioSession()
-        .then(() => setAudioModeAsync(PLAYBACK_MODE))
+        // Only while this clip is still the one to play: a tap that cut it meanwhile owns the session now, and a
+        // late playback mode would stop its recording (iOS stops recorders when recording is disallowed).
+        .then(() => (player.current === p ? setMode("playback") : undefined))
         .catch((e) => console.log(`[voice] playback mode failed: ${String(e)}`))
         .finally(() => {
           if (player.current === p) p.play();
         });
     },
-    [stopSpeaking],
+    [stopSpeaking, setMode],
   );
 
   /** Creates a paused player so the file is already buffered when it's time to play it. */
@@ -386,6 +425,9 @@ export function useVoice() {
 
   return {
     micPermission,
+    micKnownGranted,
+    cue: playCue,
+    level,
     requestMic,
     startRecording,
     stopRecording,

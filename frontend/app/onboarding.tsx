@@ -19,6 +19,7 @@ import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
 import { truckErrors, truckFromInputs } from "@/src/truck/validate";
 import { LANGS, setLang, t, UK_READY, useLang, type Lang } from "@/src/i18n";
+import { confirmHeight } from "@/src/truck/heightConfirmed";
 
 type Step = "name" | "truck" | "prefs" | "done";
 type Mode = "speaking" | "listening" | "thinking" | "waiting";
@@ -258,7 +259,7 @@ export default function Onboarding() {
       }
       setMode("thinking");
       try {
-        const out = await api.onboardingParse(res, s);
+        const out = await api.onboardingParse(typeof res === "string" ? res : res.uri, s);
         if (run.current !== token) return;
         const got = Object.keys(out.updates).length > 0;
         const saidNone = s === "prefs" && /\b(no|none|nothing|nope|that's it|all good)\b/i.test(out.transcript);
@@ -351,6 +352,7 @@ export default function Onboarding() {
       const t = truckFrom(feet, inches, trailer, weight);
       if (!t) return;
       applyUpdates(t);
+      confirmHeight(); // Next on the truck step is an answer; Skip is not (the map asks again)
     }
     if (step === "done") {
       finish(draftRef.current);

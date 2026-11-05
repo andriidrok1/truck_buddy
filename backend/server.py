@@ -24,7 +24,7 @@ from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import approach, approach_api, auth, chains, i18n, db, fleet_api, kv, leader, memory, onboarding, parking_store, parking_warm, reqid, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services import approach, approach_api, auth, chains, db, fleet_api, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
 from services.http import client as http_client  # noqa: E402
 from services.logs import said, transcripts_on  # noqa: E402
 from services.settings import settings  # noqa: E402
@@ -416,6 +416,11 @@ async def satellite(lat: float = Query(..., ge=-90, le=90), lng: float = Query(.
 async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = None) -> AgentResponse:
     if driver and req.session_id:
         req.session_id = f"{driver}:{req.session_id}"[:64]  # sessions can't be shared across drivers
+    if not quota.take_turn(driver, getattr(driver, "role", "driver")):
+        # Free release: the day's copilot turns are spent (services/quota.py). Said, not an error screen.
+        logger.info("turn budget spent for %s", driver)
+        return await _speak(AgentResponse(status="chat", transcript=req.text, reply=quota.OUT_OF_TURNS,
+                                          source="quota"), speak)
     res = await get_agent_provider().handle(req, driver)
     logger.info("agent text=%s status=%s place=%s", said(req.text), res.status, res.place.name if res.place else None)
     return await _speak(res, speak)
@@ -424,7 +429,9 @@ async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = Non
 async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
     # The driver's language (services/i18n.py): the reply and the UI message as they will be shown and said.
     if i18n.lang() != "en":
-        if res.reply:
+        # A Google Maps grounded answer (what drivers say, services/maps_grounding.py) is said exactly as Google
+        # returned it: their terms forbid changing it, so it stays English (the tool answers only in English).
+        if res.reply and not res.maps_sources:
             res.reply = await i18n.localize(res.reply)
         if res.message:
             res.message = await i18n.localize(res.message)
@@ -623,8 +630,12 @@ async def voice_turn(
 
 @api.post("/voice/transcribe")
 async def voice_transcribe(audio: UploadFile = File(...), hint: Optional[str] = Form(None, max_length=600),
-                           lang: Optional[str] = Form(None, max_length=10)):
-    """Step 1 of a voice turn: speech -> text (the app shows it right away, then calls /agent?speak=true)."""
+                           maybe: Optional[str] = Form(None, max_length=8), lang: Optional[str] = Form(None, max_length=10)):
+    """Step 1 of a voice turn: speech -> text (the app shows it right away, then calls /agent?speak=true).
+
+    `maybe=1`: the app's mic heard sound but no clear speech (src/voice/endpointer.ts). A short, unsure or
+    made-up-from-noise transcript then comes back empty, so the agent never answers a "Thank you." nobody said.
+    `lang` (or the X-Lang header): the recogniser's language and prompt (services/voice.stt_language_and_prompt)."""
     timing.begin()
     i18n.use_lang(lang)  # the recogniser's language and prompt (services/voice.stt_language_and_prompt)
     with timing.stage("upload"):
@@ -647,9 +658,13 @@ async def voice_transcribe(audio: UploadFile = File(...), hint: Optional[str] = 
     except Exception:
         logger.exception("transcription failed")
         text = ""
+    dropped = False
+    if maybe in ("1", "true") and text and voice.noise_only(text, confidence):
+        dropped = True
+        text = ""
     t = timing.current()
-    logger.info("voice transcribe bytes=%d transcript=%s confidence=%s %s", len(data), said(text), confidence,
-                " ".join(f"{k}={v}" for k, v in t.items()))
+    logger.info("voice transcribe bytes=%d transcript=%s confidence=%s maybe=%s dropped=%s %s", len(data), said(text),
+                confidence, bool(maybe), dropped, " ".join(f"{k}={v}" for k, v in t.items()))
     return {"transcript": text, "stt_confidence": confidence, "timings": t}
 
 

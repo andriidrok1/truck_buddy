@@ -1,3 +1,4 @@
+# flake8: noqa  (a data list executed by i18n/build_ru.py, which supplies t, T, MI and the rest)
 T3 = []
 def t(en, ru, part=False):
     T3.append({"en": en, "ru": ru, **({"part": True} if part else {})})

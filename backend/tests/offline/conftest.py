@@ -30,12 +30,17 @@ OFFLINE_ENV = {
     "RATE_LIMIT_PER_MIN": "0",
     "HERE_API_KEY": "test-here",
     "GOOGLE_MAPS_API_KEY": "",  # mock places provider; tests that want Google install FakePlaces instead
+    "PLACES_PROVIDER": "",  # the default rule (mock here); test_own_places sets "own" itself
+    "GEMINI_API_KEY": "",  # no Maps grounding unless a test turns it on (test_maps_grounding)
     "OPENAI_API_KEY": "test-openai",
     "PARKING_WARM": "0",
     "DEV_DOCS": "0",
     # The TPIMS poller starts with every TestClient; a first poll that lands after a test installed fake_http shows
     # up in its calls[0] (test_tpims turns it on itself).
     "TPIMS_ENABLED": "0",
+    # Daily budgets off: a module-scoped client makes hundreds of turns as one driver (test_quota turns them on).
+    "TURNS_PER_DAY": "0",
+    "SAT_NEW_PER_DAY": "0",
 }
 
 
