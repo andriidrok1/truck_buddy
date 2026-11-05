@@ -259,6 +259,7 @@ class RouteRequest(BaseModel):
 
 class NudgeRequest(BaseModel):
     """The app's periodic "anything to say?" while driving (every few minutes)."""
+    lang: Optional[str] = Field(None, max_length=10)  # the driver's language, as in AgentRequest
     lat: float = Field(ge=-90, le=90)
     lng: float = Field(ge=-180, le=180)
     driving: bool = True
@@ -378,6 +379,8 @@ class AgentRequest(BaseModel):
     # ahead). A dialog that starts after a restart has no route of its own; these rebuild the real one.
     route_handle: Optional[str] = Field(None, max_length=8192)
     route_via: List[List[float]] = Field(default_factory=list, max_length=MAX_VIA)
+    # The driver's language (en | ru | uk; anything else is en): the copilot answers in it (services/i18n.py).
+    lang: Optional[str] = Field(None, max_length=10)
     # The same stops as places, in route order (2026-11-02: the trip lives on the phone). When the app sends it, it is
     # the truth for the route's stops, also in a dialog that starts after a restart; an older app sends none.
     route_stops: List[Place] = Field(default_factory=list, max_length=MAX_ROUTE_STOPS)

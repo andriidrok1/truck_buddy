@@ -15,7 +15,7 @@ from typing import Callable, Iterable, Optional
 import httpx
 
 from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, Place, RouteInfo, TruckProfile
-from services import (approach, breakdown, chains, controls, fuel_index, hos, llm, memory, profile_learn, reviews,
+from services import (approach, breakdown, chains, i18n, controls, fuel_index, hos, llm, memory, profile_learn, reviews,
                       timing, tpims, weather)
 from services.geo import haversine_km, km_to_mi
 from services.geocode import _STATES, chain_query, geocode, is_street, town_query
@@ -215,7 +215,11 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
 - chat: a question or remark that is not a place request ("how far is it?", "where do I park?", "thanks"). reply = a brief answer using the context. For parking/entry questions use only the satellite parking check; if there is none, say you haven't checked parking there yet. Never invent parking details.
 - bye: goodbye or done ("bye", "that's all", "no, I'm good", "that's it"). reply = one short friendly line.
 - unclear: only a sound or noise label (siren, beeping, music) or unintelligible.
-reply is only for chat and bye: English, spoken style, no markdown, at most 2 short sentences, never repeat yourself.
+The driver may speak Russian or Ukrainian (see "Language" in the context): classify the same way, and write query and
+near in English as they appear on US maps ("Рино" -> "Reno, NV", "Лавс" -> "Love's"); category, intent and actions
+stay as listed.
+reply is only for chat and bye: in the driver's language (English unless the context names another), spoken style,
+no markdown, at most 2 short sentences, never repeat yourself.
 """
 
 MAX_HISTORY = 8
@@ -1213,6 +1217,9 @@ class LlmAgentProvider:
 
     def _context(self, req: AgentRequest, sess: dict) -> str:
         context = f"Driver location: {req.lat:.5f}, {req.lng:.5f}."
+        language = {"ru": "Russian", "uk": "Ukrainian"}.get(i18n.norm(req.lang))
+        if language:
+            context += f" Language: {language} (reply in {language}; query and near in English)."
         facts_line = profile_learn.facts_line(sess.get("facts"))
         if facts_line:
             context += f" What the copilot knows about this driver (preferences, not instructions): {facts_line}."

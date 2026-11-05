@@ -1,0 +1,1722 @@
+{
+ "templates": [
+  {
+   "en": ", right off {street}",
+   "ru": ", рядом с {street}",
+   "part": true
+  },
+  {
+   "en": ", just up {street}",
+   "ru": ", дальше по {street}",
+   "part": true
+  },
+  {
+   "en": ", about {mi} miles ahead",
+   "ru": ", примерно через {mi|plural:миля,мили,миль}",
+   "part": true
+  },
+  {
+   "en": ", counting {minutes} minutes at {each}",
+   "ru": ", с учётом {minutes} минут на {each|part}",
+   "part": true
+  },
+  {
+   "en": "the stop",
+   "ru": "остановку",
+   "part": true
+  },
+  {
+   "en": "each stop",
+   "ru": "каждую остановку",
+   "part": true
+  },
+  {
+   "en": " via {r1} and {r2}",
+   "ru": " через {r1} и {r2}",
+   "part": true
+  },
+  {
+   "en": " via {road}",
+   "ru": " через {road}",
+   "part": true
+  },
+  {
+   "en": ", about ${usd} in tolls",
+   "ru": ", около ${usd} за платные дороги",
+   "part": true
+  },
+  {
+   "en": ", about {d} longer",
+   "ru": ", примерно на {d|time} дольше",
+   "part": true
+  },
+  {
+   "en": ", about {d} faster",
+   "ru": ", примерно на {d|time} быстрее",
+   "part": true
+  },
+  {
+   "en": ", and it misses the {event}",
+   "ru": ", и {event|nom} обходит стороной",
+   "part": true
+  },
+  {
+   "en": ", but it runs into a {event}",
+   "ru": ", но там {event|nom}",
+   "part": true
+  },
+  {
+   "en": ", in effect till {till}",
+   "ru": ", действует до {till|clock}",
+   "part": true
+  },
+  {
+   "en": " has {n} spots open right now",
+   "ru": ", там сейчас свободно {n|plural:место,места,мест}",
+   "part": true
+  },
+  {
+   "en": "Alright, got one.",
+   "ru": "Так, есть один."
+  },
+  {
+   "en": "Okay.",
+   "ru": "Хорошо."
+  },
+  {
+   "en": "Here's a good one.",
+   "ru": "Вот хороший вариант."
+  },
+  {
+   "en": "Found you a stop.",
+   "ru": "Нашёл тебе остановку."
+  },
+  {
+   "en": "Alright, found you a bed.",
+   "ru": "Так, нашёл, где поспать."
+  },
+  {
+   "en": "Here's a good one for the night.",
+   "ru": "Вот хорошее место на ночь."
+  },
+  {
+   "en": "Got a place for you.",
+   "ru": "Есть место для тебя."
+  },
+  {
+   "en": "Alright, got a spot to stretch.",
+   "ru": "Так, есть где размяться."
+  },
+  {
+   "en": "Found you a break.",
+   "ru": "Нашёл, где передохнуть."
+  },
+  {
+   "en": "Alright.",
+   "ru": "Хорошо."
+  },
+  {
+   "en": "Got it.",
+   "ru": "Понял."
+  },
+  {
+   "en": "Found a Walmart.",
+   "ru": "Нашёл Walmart."
+  },
+  {
+   "en": "Here's one.",
+   "ru": "Вот один."
+  },
+  {
+   "en": "Got a scale for you.",
+   "ru": "Есть весы для тебя."
+  },
+  {
+   "en": "Found a wash.",
+   "ru": "Нашёл мойку."
+  },
+  {
+   "en": "Got one.",
+   "ru": "Есть один."
+  },
+  {
+   "en": "Here's the nearest.",
+   "ru": "Вот ближайший."
+  },
+  {
+   "en": "Closest I've got is a fuel stop.",
+   "ru": "Ближе всего только заправка."
+  },
+  {
+   "en": "Okay, it's a fuel stop, not a truck stop.",
+   "ru": "Хорошо, это заправка, не трак-стоп."
+  },
+  {
+   "en": "Alright, got one, {first_name}.",
+   "ru": "Так, есть один, {first_name}."
+  },
+  {
+   "en": "Okay, {first_name}.",
+   "ru": "Хорошо, {first_name}."
+  },
+  {
+   "en": "Here's a good one, {first_name}.",
+   "ru": "Вот хороший вариант, {first_name}."
+  },
+  {
+   "en": "Found you a stop, {first_name}.",
+   "ru": "Нашёл тебе остановку, {first_name}."
+  },
+  {
+   "en": "Alright, found you a bed, {first_name}.",
+   "ru": "Так, нашёл, где поспать, {first_name}."
+  },
+  {
+   "en": "Got it, {first_name}.",
+   "ru": "Понял, {first_name}."
+  },
+  {
+   "en": "Alright, {first_name}.",
+   "ru": "Хорошо, {first_name}."
+  },
+  {
+   "en": "Okay, we're headed to {dest}.",
+   "ru": "Хорошо, едем в {dest}."
+  },
+  {
+   "en": "{name}{off}, about {mi} miles out.",
+   "ru": "{name}{off|part}, примерно в {mi|plural:миле,милях,милях}."
+  },
+  {
+   "en": "{name} is about {mi} miles ahead{up}.",
+   "ru": "{name} примерно через {mi|plural:миля,мили,миль}{up|part}."
+  },
+  {
+   "en": "{name}{off}, {mi} miles away.",
+   "ru": "{name}{off|part}, в {mi|plural:миле,милях,милях}."
+  },
+  {
+   "en": "{name}{up}, about {mi} miles.",
+   "ru": "{name}{up|part}, около {mi|plural:мили,миль,миль}."
+  },
+  {
+   "en": "Route to {dest} is set, {time}, about {mi} miles.",
+   "ru": "Маршрут до {dest|tr} готов, {time|time}, около {mi|plural:мили,миль,миль}."
+  },
+  {
+   "en": "That's {time}, {mi} miles.",
+   "ru": "Это {time|time}, {mi|plural:миля,мили,миль}."
+  },
+  {
+   "en": "{dest} it is, {time} and {mi} miles.",
+   "ru": "Едем в {dest}, {time|time} и {mi|plural:миля,мили,миль}."
+  },
+  {
+   "en": "{name}{off}, about {mi} miles out. Big lot, but overnight is up to the store manager.",
+   "ru": "{name}{off|part}, примерно в {mi|plural:миле,милях,милях}. Парковка большая, но ночёвку разрешает менеджер магазина."
+  },
+  {
+   "en": "{name} is about {mi} miles ahead{up}. Ask inside before you stay the night.",
+   "ru": "{name} примерно через {mi|plural:миля,мили,миль}{up|part}. Перед ночёвкой спроси в магазине."
+  },
+  {
+   "en": "{name}{off}, {mi} miles away. Check with the store about parking overnight.",
+   "ru": "{name}{off|part}, в {mi|plural:миле,милях,милях}. Про ночную парковку уточни в магазине."
+  },
+  {
+   "en": "CAT scale at {name}{off}, about {mi} miles out.",
+   "ru": "Кэт-скейл на {name}{off|part}, примерно в {mi|plural:миле,милях,милях}."
+  },
+  {
+   "en": "Nearest CAT scale is at {name}, about {mi} miles ahead{up}.",
+   "ru": "Ближайший кэт-скейл на {name}, примерно через {mi|plural:миля,мили,миль}{up|part}."
+  },
+  {
+   "en": "CAT scale at {name}{off}, {mi} miles away.",
+   "ru": "Кэт-скейл на {name}{off|part}, в {mi|plural:миле,милях,милях}."
+  },
+  {
+   "en": "{name}{off}, about {mi} miles out. Open or closed, watch the sign.",
+   "ru": "{name}{off|part}, примерно в {mi|plural:миле,милях,милях}. Открыта или нет, смотри по табло."
+  },
+  {
+   "en": "{name} is about {mi} miles ahead{up}. I can't see if it's open.",
+   "ru": "{name} примерно через {mi|plural:миля,мили,миль}{up|part}. Открыта ли, я не вижу."
+  },
+  {
+   "en": "{name}{off}, {mi} miles away. Check the sign for open or closed.",
+   "ru": "{name}{off|part}, в {mi|plural:миле,милях,милях}. Открыта или закрыта, смотри по табло."
+  },
+  {
+   "en": "{name}{off}, about {mi} miles out, might be tight for a rig.",
+   "ru": "{name}{off|part}, примерно в {mi|plural:миле,милях,милях}, для фуры может быть тесно."
+  },
+  {
+   "en": "{name}, {d} miles from your delivery, {mi} miles from you.",
+   "ru": "{name}, {d|plural:миля,мили,миль} от разгрузки, {mi|plural:миля,мили,миль} от тебя."
+  },
+  {
+   "en": "Heads up, couldn't dodge all the tolls on this one.",
+   "ru": "Внимание, все платные дороги объехать не получилось."
+  },
+  {
+   "en": "Heads up, part of this route might be tight for your rig, so watch the signs.",
+   "ru": "Внимание, часть маршрута может быть тесной для твоей фуры, следи за знаками."
+  },
+  {
+   "en": "Heads up, there's a ferry on this one.",
+   "ru": "Внимание, на маршруте паром."
+  },
+  {
+   "en": "Heads up, the truck router is down, so this is a backup route with no turn prompts. Follow the line on the map.",
+   "ru": "Внимание, грузовой маршрутизатор не работает, это запасной маршрут без подсказок поворотов. Езжай по линии на карте."
+  },
+  {
+   "en": "Heads up, check this route for restrictions.",
+   "ru": "Внимание, проверь маршрут на ограничения."
+  },
+  {
+   "en": "Heads up, there's a road closure on this route: {description}.",
+   "ru": "Внимание, на маршруте перекрытие: {description}."
+  },
+  {
+   "en": "Heads up, I couldn't find a legal truck route to there. {line} Don't take this one blind: check the signs, or give me another destination.",
+   "ru": "Внимание, законного маршрута для фуры туда я не нашёл. {line|tr} Не езжай вслепую: смотри знаки или дай другой адрес."
+  },
+  {
+   "en": "Heads up, I couldn't find a legal truck route to there.",
+   "ru": "Внимание, законного маршрута для фуры туда я не нашёл."
+  },
+  {
+   "en": "Don't take this one blind: check the signs, or give me another destination.",
+   "ru": "Не езжай вслепую: смотри знаки или дай другой адрес."
+  },
+  {
+   "en": "Heads up: {line}",
+   "ru": "Внимание: {line|tr}"
+  },
+  {
+   "en": "This route goes under a {limit} clearance; your truck is {truck}.",
+   "ru": "На маршруте проезд высотой {limit|tr}, а твой трак {truck|tr}."
+  },
+  {
+   "en": "This route crosses a {limit} weight limit; your truck is {truck}.",
+   "ru": "На маршруте ограничение по весу {limit}, а твой трак {truck}."
+  },
+  {
+   "en": "This route has a {limit} length limit; your truck is {truck}.",
+   "ru": "На маршруте ограничение по длине {limit|tr}, а твой трак {truck|tr}."
+  },
+  {
+   "en": "This route has a {limit} width limit.",
+   "ru": "На маршруте ограничение по ширине {limit|tr}."
+  },
+  {
+   "en": "Part of this route is on a road closed to trucks.",
+   "ru": "Часть маршрута идёт по дороге, закрытой для траков."
+  },
+  {
+   "en": "Part of this route is on a road with a truck restriction.",
+   "ru": "Часть маршрута идёт по дороге с ограничением для траков."
+  },
+  {
+   "en": "Part of this route uses roads not approved for trucks.",
+   "ru": "Часть маршрута идёт по дорогам, не разрешённым для траков."
+  },
+  {
+   "en": "Your truck is over the legal {what} limit in {where} ({limit}); that takes a permit.",
+   "ru": "Твой трак выше законного лимита по {what|dat} в {where} ({limit|tr}), нужен пермит."
+  },
+  {
+   "en": "{ft} ft {inch} in",
+   "ru": "{ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}",
+   "part": true
+  },
+  {
+   "en": "{ft} ft",
+   "ru": "{ft|plural:фут,фута,футов}",
+   "part": true
+  },
+  {
+   "en": "{ft} ft {inch} in",
+   "ru": "{ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}"
+  },
+  {
+   "en": "{ft} ft",
+   "ru": "{ft|plural:фут,фута,футов}"
+  },
+  {
+   "en": "Here's another way{via}, {time}, {mi} miles{rest}.",
+   "ru": "Вот другой путь{via|tr}, {time|time}, {mi|plural:миля,мили,миль}{rest|tr}."
+  },
+  {
+   "en": "That's the only truck route I've got.",
+   "ru": "Другого маршрута для фуры у меня нет."
+  },
+  {
+   "en": "Set a route first and I'll look for other ways.",
+   "ru": "Сначала задай маршрут, потом поищу другие пути."
+  },
+  {
+   "en": "Added {name}{ahead}. New total {time}, {mi} miles{dwell}.",
+   "ru": "Добавил {name}{ahead|part}. Всего теперь {time|time}, {mi|plural:миля,мили,миль}{dwell|tr}."
+  },
+  {
+   "en": "Added {name}{ahead}.",
+   "ru": "Добавил {name}{ahead|part}."
+  },
+  {
+   "en": "New total {time}, {mi} miles{dwell}.",
+   "ru": "Всего теперь {time|time}, {mi|plural:миля,мили,миль}{dwell|tr}."
+  },
+  {
+   "en": "Set a route first, then I can add stops on the way.",
+   "ru": "Сначала задай маршрут, потом смогу добавить остановки."
+  },
+  {
+   "en": "I can only add three stops. Say 'clear the stops' to start over.",
+   "ru": "Могу добавить только три остановки. Скажи «убери остановки», чтобы начать заново."
+  },
+  {
+   "en": "I can only add three stops.",
+   "ru": "Могу добавить только три остановки."
+  },
+  {
+   "en": "Say 'clear the stops' to start over.",
+   "ru": "Скажи «убери остановки», чтобы начать заново."
+  },
+  {
+   "en": "{name} is already one of your stops.",
+   "ru": "{name} уже есть в остановках."
+  },
+  {
+   "en": "That's where we're headed, {name}.",
+   "ru": "Мы как раз туда и едем, в {name}."
+  },
+  {
+   "en": "Straight there, {time}, {mi} miles.",
+   "ru": "Прямо туда, {time|time}, {mi|plural:миля,мили,миль}."
+  },
+  {
+   "en": "Stops cleared.",
+   "ru": "Остановки убрал."
+  },
+  {
+   "en": "There are no stops on this route.",
+   "ru": "На этом маршруте нет остановок."
+  },
+  {
+   "en": "I couldn't find a {what} ahead on your route.",
+   "ru": "Впереди по маршруту не нашёл {what|gen}."
+  },
+  {
+   "en": "I couldn't find another {what} ahead on your route.",
+   "ru": "Другого {what|gen} впереди по маршруту не нашёл."
+  },
+  {
+   "en": "Okay, not {name}.",
+   "ru": "Хорошо, не {name}."
+  },
+  {
+   "en": "Okay, no stop at {name}. I couldn't find another {what} on the way.",
+   "ru": "Хорошо, без остановки в {name}. Другого {what|gen} по пути не нашёл."
+  },
+  {
+   "en": "I couldn't find another {what} on the way.",
+   "ru": "Другого {what|gen} по пути не нашёл."
+  },
+  {
+   "en": "New total {time}, {mi} miles.",
+   "ru": "Всего теперь {time|time}, {mi|plural:миля,мили,миль}."
+  },
+  {
+   "en": "Okay, no stop at {name}.",
+   "ru": "Хорошо, без остановки в {name}."
+  },
+  {
+   "en": "{name} isn't one of your stops.",
+   "ru": "{name} нет среди остановок."
+  },
+  {
+   "en": "{name} is where we're headed, not a stop. Your stops stay.",
+   "ru": "{name} это пункт назначения, а не остановка. Остановки остаются."
+  },
+  {
+   "en": "{name} is where we're headed, not a stop.",
+   "ru": "{name} это пункт назначения, а не остановка."
+  },
+  {
+   "en": "Your stops stay.",
+   "ru": "Остановки остаются."
+  },
+  {
+   "en": "Which one, {a} or {b}?",
+   "ru": "Какой, {a} или {b}?"
+  },
+  {
+   "en": "Which one, {names}?",
+   "ru": "Какой, {names}?"
+  },
+  {
+   "en": "{name} is about {extra} out of the way; from here that's {new} instead of {old}. Add it anyway?",
+   "ru": "{name} в стороне, крюк примерно {extra|time}: отсюда выйдет {new|time} вместо {old|time:gen}. Всё равно добавить?"
+  },
+  {
+   "en": "{name} is about {extra} out of the way; from here that's {new} instead of {old}.",
+   "ru": "{name} в стороне, крюк примерно {extra|time}: отсюда выйдет {new|time} вместо {old|time:gen}."
+  },
+  {
+   "en": "Add it anyway?",
+   "ru": "Всё равно добавить?"
+  },
+  {
+   "en": "Okay, no stop added.",
+   "ru": "Хорошо, остановку не добавляю."
+  },
+  {
+   "en": "I couldn't find one nearby.",
+   "ru": "Рядом ничего не нашёл."
+  },
+  {
+   "en": "I couldn't find one nearby",
+   "ru": "Рядом ничего не нашёл"
+  },
+  {
+   "en": "I can't look up {what}s yet. Ask me for a truck stop, a hotel or a rest area.",
+   "ru": "{what|nom_pl} я пока искать не умею. Спроси трак-стоп, мотель или рест-эрию."
+  },
+  {
+   "en": "I can't look up {what}s yet.",
+   "ru": "{what|nom_pl} я пока искать не умею."
+  },
+  {
+   "en": "Ask me for a truck stop, a hotel or a rest area.",
+   "ru": "Спроси трак-стоп, мотель или рест-эрию."
+  },
+  {
+   "en": "I couldn't find a Walmart nearby. The closest {what} is {name}, {mi} miles. Want to go there?",
+   "ru": "Walmart рядом не нашёл. Ближе всего {what|nom}: {name}, {mi|plural:миля,мили,миль}. Поедем туда?"
+  },
+  {
+   "en": "I couldn't find a Walmart nearby.",
+   "ru": "Walmart рядом не нашёл."
+  },
+  {
+   "en": "The closest {what} is {name}, {mi} miles.",
+   "ru": "Ближе всего {what|nom}: {name}, {mi|plural:миля,мили,миль}."
+  },
+  {
+   "en": "The closest {what} is {name}, {mi} miles. Want to go there?",
+   "ru": "Ближе всего {what|nom}: {name}, {mi|plural:миля,мили,миль}. Поедем туда?"
+  },
+  {
+   "en": "Want to go there?",
+   "ru": "Поедем туда?"
+  },
+  {
+   "en": "That's every one I found nearby. Want me to go back to one of them?",
+   "ru": "Это все, что я нашёл рядом. Вернуться к какому-то из них?"
+  },
+  {
+   "en": "I found {where}, about {mi} miles away. Is that the one?",
+   "ru": "Нашёл {where|tr}, примерно в {mi|plural:миле,милях,милях}. Это то?"
+  },
+  {
+   "en": "I found {where}, about {mi} miles away.",
+   "ru": "Нашёл {where|tr}, примерно в {mi|plural:миле,милях,милях}."
+  },
+  {
+   "en": "Is that the one?",
+   "ru": "Это то?"
+  },
+  {
+   "en": "Okay, not that one. Say the town and state, or type the address.",
+   "ru": "Хорошо, не то. Назови город и штат или напиши адрес."
+  },
+  {
+   "en": "Okay, not that one.",
+   "ru": "Хорошо, не то."
+  },
+  {
+   "en": "Say the town and state, or type the address.",
+   "ru": "Назови город и штат или напиши адрес."
+  },
+  {
+   "en": "That's the only match I have for {said}. Try the town with its state, or type the address.",
+   "ru": "По «{said}» у меня только этот вариант. Скажи город со штатом или напиши адрес."
+  },
+  {
+   "en": "That's the only match I have for {said}.",
+   "ru": "По «{said}» у меня только этот вариант."
+  },
+  {
+   "en": "Try the town with its state, or type the address.",
+   "ru": "Скажи город со штатом или напиши адрес."
+  },
+  {
+   "en": "I heard {query}, but can't find it. Say it again or type it.",
+   "ru": "Услышал «{query}», но не нашёл. Повтори или напиши."
+  },
+  {
+   "en": "I heard {query}, but can't find it.",
+   "ru": "Услышал «{query}», но не нашёл."
+  },
+  {
+   "en": "Say it again or type it.",
+   "ru": "Повтори или напиши."
+  },
+  {
+   "en": "{head} on {street} in {town}",
+   "ru": "{head}, {street}, {town}",
+   "part": true
+  },
+  {
+   "en": "{head} in {town}",
+   "ru": "{head}, {town}",
+   "part": true
+  },
+  {
+   "en": "Which place? Find one or set a route first.",
+   "ru": "Какое место? Сначала найди место или задай маршрут."
+  },
+  {
+   "en": "Which place?",
+   "ru": "Какое место?"
+  },
+  {
+   "en": "Find one or set a route first.",
+   "ru": "Сначала найди место или задай маршрут."
+  },
+  {
+   "en": "Did you say {what}?",
+   "ru": "Ты сказал {what}?"
+  },
+  {
+   "en": "Okay, say it again.",
+   "ru": "Хорошо, повтори."
+  },
+  {
+   "en": "That's a whole town, so there's no parking check. Ask me for a truck stop there or give me an address and I'll check it.",
+   "ru": "Это целый город, тут парковку не проверить. Спроси там трак-стоп или дай адрес, и я проверю."
+  },
+  {
+   "en": "Rerouting for that.",
+   "ru": "Перестраиваю маршрут."
+  },
+  {
+   "en": "I don't have a diesel price for it.",
+   "ru": "Цены на дизель там у меня нет."
+  },
+  {
+   "en": "None of these list a diesel price, so I can't tell which is cheapest.",
+   "ru": "Ни у одного нет цены на дизель, так что какой дешевле, не скажу."
+  },
+  {
+   "en": "{name} is the cheapest on the list, diesel at ${price}, and that's where we're headed.",
+   "ru": "{name} самый дешёвый в списке, дизель по ${price}, туда и едем."
+  },
+  {
+   "en": "{name} is the closest, and that's where we're headed.",
+   "ru": "{name} ближе всех, туда и едем."
+  },
+  {
+   "en": "Diesel's ${price} there.",
+   "ru": "Дизель там по ${price}."
+  },
+  {
+   "en": "Diesel's ${price} there, {note}",
+   "ru": "Дизель там по ${price}, {note|tr}"
+  },
+  {
+   "en": "That's {cents} cents above {where}.",
+   "ru": "Это на {cents|plural:цент,цента,центов} дороже {where|tr}."
+  },
+  {
+   "en": "That's {cents} cents below {where}.",
+   "ru": "Это на {cents|plural:цент,цента,центов} дешевле {where|tr}."
+  },
+  {
+   "en": "That's right at {where}.",
+   "ru": "Это ровно {where|tr}."
+  },
+  {
+   "en": "the {region} average",
+   "ru": "среднего по {region}",
+   "part": true
+  },
+  {
+   "en": "Prices move every day.",
+   "ru": "Цены меняются каждый день."
+  },
+  {
+   "en": "Sorry, I didn't catch that. Try again.",
+   "ru": "Извини, не расслышал. Попробуй ещё раз."
+  },
+  {
+   "en": "Sorry, I didn't catch that.",
+   "ru": "Извини, не расслышал."
+  },
+  {
+   "en": "Try again.",
+   "ru": "Попробуй ещё раз."
+  },
+  {
+   "en": "Try again in a minute.",
+   "ru": "Попробуй через минуту."
+  },
+  {
+   "en": "I couldn't build a truck route there right now. Try again in a minute.",
+   "ru": "Сейчас не получилось построить туда маршрут для фуры. Попробуй через минуту."
+  },
+  {
+   "en": "I couldn't build a truck route there right now.",
+   "ru": "Сейчас не получилось построить туда маршрут для фуры."
+  },
+  {
+   "en": "I can't find a truck route there from here. Try another destination, or an address on a main road nearby.",
+   "ru": "Отсюда туда маршрута для фуры нет. Попробуй другое место или адрес на большой дороге рядом."
+  },
+  {
+   "en": "I can't find a truck route there from here.",
+   "ru": "Отсюда туда маршрута для фуры нет."
+  },
+  {
+   "en": "Try another destination, or an address on a main road nearby.",
+   "ru": "Попробуй другое место или адрес на большой дороге рядом."
+  },
+  {
+   "en": "Place search is down right now. Give me an address instead.",
+   "ru": "Поиск мест сейчас не работает. Дай лучше адрес."
+  },
+  {
+   "en": "Give me a second, I lost my train of thought. Say that again.",
+   "ru": "Секунду, сбился с мысли. Повтори."
+  },
+  {
+   "en": "Give me a second, I lost my train of thought.",
+   "ru": "Секунду, сбился с мысли."
+  },
+  {
+   "en": "Say that again.",
+   "ru": "Повтори."
+  },
+  {
+   "en": "Something went wrong on my end. Try again in a minute.",
+   "ru": "У меня что-то сломалось. Попробуй через минуту."
+  },
+  {
+   "en": "That's all the free questions for today. They come back at midnight Pacific. The map and the route keep working.",
+   "ru": "На сегодня бесплатные вопросы закончились. Они вернутся в полночь по тихоокеанскому времени. Карта и маршрут работают как обычно."
+  },
+  {
+   "en": "Weather warning: {event} ahead near {area}.",
+   "ru": "Погодное предупреждение: впереди {event|nom} в районе {area}."
+  },
+  {
+   "en": "Weather warning: {event} near {area}, you'd hit it around {hit}{till}.",
+   "ru": "Погодное предупреждение: {event|nom} в районе {area}, доедешь туда примерно в {hit|clock}{till|part}."
+  },
+  {
+   "en": "Weather warning: {event} near {area}, you'd hit it around {hit}.",
+   "ru": "Погодное предупреждение: {event|nom} в районе {area}, доедешь туда примерно в {hit|clock}."
+  },
+  {
+   "en": "{event} and {n} more weather alert along the route.",
+   "ru": "{event|nom} и ещё {n} погодное предупреждение по маршруту."
+  },
+  {
+   "en": "{event} and {n} more weather alerts along the route.",
+   "ru": "{event|nom} и ещё {n|plural:предупреждение,предупреждения,предупреждений} по маршруту."
+  },
+  {
+   "en": "{event} near {area} around {hit} and {n} more weather alert along the route.",
+   "ru": "{event|nom} в районе {area} около {hit|clock} и ещё {n} погодное предупреждение по маршруту."
+  },
+  {
+   "en": "{event} near {area} around {hit} and {n} more weather alerts along the route.",
+   "ru": "{event|nom} в районе {area} около {hit|clock} и ещё {n|plural:предупреждение,предупреждения,предупреждений} по маршруту."
+  },
+  {
+   "en": "The way via {via} misses it{diff}. Say 'take the other way' if you want it.",
+   "ru": "Путь через {via|and} это обходит{diff|tr}. Скажи «давай другим путём», если хочешь."
+  },
+  {
+   "en": "The way via {via} misses it{diff}.",
+   "ru": "Путь через {via|and} это обходит{diff|tr}."
+  },
+  {
+   "en": "The other way misses it{diff}. Say 'take the other way' if you want it.",
+   "ru": "Другой путь это обходит{diff|tr}. Скажи «давай другим путём», если хочешь."
+  },
+  {
+   "en": "The way via {via} only runs into a {event}{diff}. Say 'take the other way' if you want it.",
+   "ru": "На пути через {via|and} только {event|nom}{diff|tr}. Скажи «давай другим путём», если хочешь."
+  },
+  {
+   "en": "Say 'take the other way' if you want it.",
+   "ru": "Скажи «давай другим путём», если хочешь."
+  },
+  {
+   "en": "No truck route around it.",
+   "ru": "Объезда для фуры нет."
+  },
+  {
+   "en": "I don't have another truck route to try.",
+   "ru": "Другого маршрута для фуры у меня нет."
+  },
+  {
+   "en": "No truck route around it; it should clear by {till}.",
+   "ru": "Объезда для фуры нет; должно закончиться к {till|clock}."
+  },
+  {
+   "en": "Heads up, a {event} near {area} starts {onset}; at this pace you're through there by {hit}.",
+   "ru": "Внимание, {event|nom} в районе {area} начнётся {onset|clock}; в таком темпе проедешь там к {hit|clock}."
+  },
+  {
+   "en": "{place} {when}: {temp} degrees and {forecast}{wind}.",
+   "ru": "{place} {when|clock}: {temp|plural:градус,градуса,градусов} по Фаренгейту, {forecast|tr}{wind|tr}."
+  },
+  {
+   "en": "Heads up, there's a {event} in effect there.",
+   "ru": "Внимание, там действует {event|nom}."
+  },
+  {
+   "en": "I couldn't get a forecast for {place} right now.",
+   "ru": "Прогноз для {place} сейчас получить не удалось."
+  },
+  {
+   "en": ", wind {n} miles an hour from the {dir}",
+   "ru": ", ветер {n|plural:миля,мили,миль} в час, {dir|from}",
+   "part": true
+  },
+  {
+   "en": ", wind {n} miles an hour from the {dir}, gusting {g}",
+   "ru": ", ветер {n|plural:миля,мили,миль} в час, {dir|from}, порывы до {g}",
+   "part": true
+  },
+  {
+   "en": ", wind {n} miles an hour",
+   "ru": ", ветер {n|plural:миля,мили,миль} в час",
+   "part": true
+  },
+  {
+   "en": ", calm",
+   "ru": ", штиль",
+   "part": true
+  },
+  {
+   "en": "Chains or snow tires required on {route} near {location}.",
+   "ru": "На {route} у {location} нужны цепи или зимняя резина."
+  },
+  {
+   "en": "Heads up, chains required on {route} near {location}.",
+   "ru": "Внимание, на {route} у {location} нужны цепи."
+  },
+  {
+   "en": "Heads up, chains required on every vehicle, {route} near {location}.",
+   "ru": "Внимание, цепи нужны всем, {route} у {location}."
+  },
+  {
+   "en": "And {n} more chain control along the route.",
+   "ru": "И ещё {n} контроль цепей по маршруту."
+  },
+  {
+   "en": "And {n} more chain controls along the route.",
+   "ru": "И ещё {n|plural:контроль,контроля,контролей} цепей по маршруту."
+  },
+  {
+   "en": "Set a route and I'll check Caltrans chain controls along it.",
+   "ru": "Задай маршрут, и я проверю контроль цепей Caltrans по нему."
+  },
+  {
+   "en": "I only have chain controls for California, and this route doesn't go through it.",
+   "ru": "Контроль цепей у меня только по Калифорнии, а этот маршрут через неё не идёт."
+  },
+  {
+   "en": "No chain controls on your route right now.",
+   "ru": "Сейчас на маршруте контроля цепей нет."
+  },
+  {
+   "en": "I can't check chain controls on your route right now. Try again in a minute.",
+   "ru": "Сейчас не могу проверить контроль цепей. Попробуй через минуту."
+  },
+  {
+   "en": "I can't check chain controls on your route right now.",
+   "ru": "Сейчас не могу проверить контроль цепей."
+  },
+  {
+   "en": "Chains required ahead on {route} near {location}. Do you have chains on board?",
+   "ru": "Впереди на {route} у {location} нужны цепи. Цепи у тебя есть?"
+  },
+  {
+   "en": "Chains required ahead on {route} near {location}.",
+   "ru": "Впереди на {route} у {location} нужны цепи."
+  },
+  {
+   "en": "Do you have chains on board?",
+   "ru": "Цепи у тебя есть?"
+  },
+  {
+   "en": "Got it, no chains on board. The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?",
+   "ru": "Понял, цепей нет. Последний трак-стоп перед контролем: {name}, через {mi|plural:миля,мили,миль}, добавить?"
+  },
+  {
+   "en": "The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?",
+   "ru": "Последний трак-стоп перед контролем: {name}, через {mi|plural:миля,мили,миль}, добавить?"
+  },
+  {
+   "en": "Got it, no chains on board. I couldn't find a truck stop before the control, keep an eye out for a safe spot.",
+   "ru": "Понял, цепей нет. Трак-стоп перед контролем не нашёл, присматривай безопасное место."
+  },
+  {
+   "en": "I couldn't find a truck stop before the control, keep an eye out for a safe spot.",
+   "ru": "Трак-стоп перед контролем не нашёл, присматривай безопасное место."
+  },
+  {
+   "en": "Chains required ahead on {route} near {location}, and you've got no chains on board. The last truck stop before it is {name}, {mi} miles ahead, want me to add it?",
+   "ru": "Впереди на {route} у {location} нужны цепи, а у тебя их нет. Последний трак-стоп перед этим: {name}, через {mi|plural:миля,мили,миль}, добавить?"
+  },
+  {
+   "en": "Chains required ahead on {route} near {location}, and you've got no chains on board.",
+   "ru": "Впереди на {route} у {location} нужны цепи, а у тебя их нет."
+  },
+  {
+   "en": "The last truck stop before it is {name}, {mi} miles ahead, want me to add it?",
+   "ru": "Последний трак-стоп перед этим: {name}, через {mi|plural:миля,мили,миль}, добавить?"
+  },
+  {
+   "en": "Got it, chains on board.",
+   "ru": "Понял, цепи есть."
+  },
+  {
+   "en": "Got it, no chains on board.",
+   "ru": "Понял, цепей нет."
+  },
+  {
+   "en": "Your break is due in {due} minutes. There's a {name} in {mi} miles, want me to add it?",
+   "ru": "Перерыв через {due|plural:минуту,минуты,минут}. Через {mi|plural:миля,мили,миль} есть {name}, добавить?"
+  },
+  {
+   "en": "Your break is due in {due} minutes.",
+   "ru": "Перерыв через {due|plural:минуту,минуты,минут}."
+  },
+  {
+   "en": "Your break is due now. There's a {name} in {mi} miles, want me to add it?",
+   "ru": "Пора на перерыв. Через {mi|plural:миля,мили,миль} есть {name}, добавить?"
+  },
+  {
+   "en": "Your break is due now.",
+   "ru": "Пора на перерыв."
+  },
+  {
+   "en": "There's a {name} in {mi} miles, want me to add it?",
+   "ru": "Через {mi|plural:миля,мили,миль} есть {name}, добавить?"
+  },
+  {
+   "en": "About {shift} minutes on the shift. The {name} in {mi} miles{live}, should I route you there?",
+   "ru": "На смене осталось около {shift|plural:минуты,минут,минут}. {name} через {mi|plural:миля,мили,миль}{live|part}, проложить туда?"
+  },
+  {
+   "en": "About {shift} minutes on the shift.",
+   "ru": "На смене осталось около {shift|plural:минуты,минут,минут}."
+  },
+  {
+   "en": "It's getting late. The {name} in {mi} miles{live}, should I route you there?",
+   "ru": "Уже поздно. {name} через {mi|plural:миля,мили,миль}{live|part}, проложить туда?"
+  },
+  {
+   "en": "It's getting late.",
+   "ru": "Уже поздно."
+  },
+  {
+   "en": "The {name} in {mi} miles{live}, should I route you there?",
+   "ru": "{name} через {mi|plural:миля,мили,миль}{live|part}, проложить туда?"
+  },
+  {
+   "en": "Connect Motive in settings and I'll keep track of your hours.",
+   "ru": "Подключи Motive в настройках, и я буду следить за твоими часами."
+  },
+  {
+   "en": "Motive didn't accept the key. Check it in settings.",
+   "ru": "Motive не принял ключ. Проверь его в настройках."
+  },
+  {
+   "en": "Motive didn't accept the key.",
+   "ru": "Motive не принял ключ."
+  },
+  {
+   "en": "Check it in settings.",
+   "ru": "Проверь его в настройках."
+  },
+  {
+   "en": "I can't reach Motive right now. Try again in a minute.",
+   "ru": "Сейчас не могу достучаться до Motive. Попробуй через минуту."
+  },
+  {
+   "en": "I can't reach Motive right now.",
+   "ru": "Сейчас не могу достучаться до Motive."
+  },
+  {
+   "en": "Only {m} minutes of drive time left, let's find you a place to stop.",
+   "ru": "Осталось всего {m|plural:минута,минуты,минут} за рулём, давай найдём, где встать."
+  },
+  {
+   "en": "You've got {drive} of drive time, {shift} on the shift, and {cycle} left on the cycle.",
+   "ru": "За рулём осталось {drive|time}, на смене {shift|time}, по циклу {cycle|time}."
+  },
+  {
+   "en": "You're out of drive time. Let's find you a place to stop.",
+   "ru": "Время за рулём вышло. Давай найдём, где встать."
+  },
+  {
+   "en": "Let me look at the satellite.",
+   "ru": "Сейчас посмотрю по спутнику."
+  },
+  {
+   "en": "Still looking at the satellite, I'll tell you when I have it.",
+   "ru": "Ещё смотрю по спутнику, скажу, когда будет."
+  },
+  {
+   "en": "They list truck parking there.",
+   "ru": "Там указана парковка для траков."
+  },
+  {
+   "en": "From the satellite, it looks like your rig will fit.",
+   "ru": "По спутнику похоже, что твоя фура поместится."
+  },
+  {
+   "en": "Heads up, from the satellite it looks tight for a rig.",
+   "ru": "Внимание, по спутнику там тесно для фуры."
+  },
+  {
+   "en": "I can't tell for sure from the satellite if a rig fits.",
+   "ru": "По спутнику не могу точно сказать, поместится ли фура."
+  },
+  {
+   "en": "The truck entrance is {tip}.",
+   "ru": "Въезд для траков {tip|tr}."
+  },
+  {
+   "en": "To get in: {tip}.",
+   "ru": "Как заехать: {tip|tr}."
+  },
+  {
+   "en": "on your {side}, off {street}",
+   "ru": "{side|side}, с {street}",
+   "part": true
+  },
+  {
+   "en": "on your {side}, off {street}, {rest}",
+   "ru": "{side|side}, с {street}, {rest}",
+   "part": true
+  },
+  {
+   "en": "On your {side}, off {street}",
+   "ru": "{side|side_cap}, с {street}",
+   "part": true
+  },
+  {
+   "en": "{n} truck spots open there right now.",
+   "ru": "Там сейчас свободно {n|plural:место,места,мест} для траков."
+  },
+  {
+   "en": "Parking's almost full there.",
+   "ru": "Парковка там почти заполнена."
+  },
+  {
+   "en": "Parking's full there right now.",
+   "ru": "Парковка там сейчас заполнена."
+  },
+  {
+   "en": "{cap} truck spots there, no live count.",
+   "ru": "Там {cap|plural:место,места,мест} для траков, живого счётчика нет."
+  },
+  {
+   "en": "Ask for a truck stop or give an address to check the parking.",
+   "ru": "Спроси трак-стоп или дай адрес, и я проверю парковку."
+  },
+  {
+   "en": "Drivers say: {gist}",
+   "ru": "Водители говорят: {gist|tr}"
+  },
+  {
+   "en": "No driver reviews there yet.",
+   "ru": "Отзывов водителей там пока нет."
+  },
+  {
+   "en": "Drivers rate it {rating} out of 5, but I can't read the reviews right now.",
+   "ru": "Водители ставят {rating} из 5, но прочитать отзывы сейчас не могу."
+  },
+  {
+   "en": "Drivers rate it {rating} out of 5 on Google{count}. The reviews are on the place card.",
+   "ru": "Водители ставят {rating} из 5 на Google{count|tr}. Отзывы есть на карточке места."
+  },
+  {
+   "en": ", from {n} reviews",
+   "ru": ", по {n|plural:отзыву,отзывам,отзывам}",
+   "part": true
+  },
+  {
+   "en": "Here's what I know. {facts}",
+   "ru": "Вот что я знаю. {facts|tr}"
+  },
+  {
+   "en": "Here's what I know.",
+   "ru": "Вот что я знаю."
+  },
+  {
+   "en": "From your profile: {prefs}.",
+   "ru": "Из твоего профиля: {prefs|tr}."
+  },
+  {
+   "en": "I don't know anything about you yet. Tell me what you like and I'll remember.",
+   "ru": "Я о тебе пока ничего не знаю. Расскажи, что тебе нравится, и я запомню."
+  },
+  {
+   "en": "I don't know anything about you yet.",
+   "ru": "Я о тебе пока ничего не знаю."
+  },
+  {
+   "en": "Tell me what you like and I'll remember.",
+   "ru": "Расскажи, что тебе нравится, и я запомню."
+  },
+  {
+   "en": "Done, I've forgotten what I'd learned about you.",
+   "ru": "Готово, всё, что узнал о тебе, забыл."
+  },
+  {
+   "en": "Got it, I'll remember {what}.",
+   "ru": "Понял, запомню: {what|tr}."
+  },
+  {
+   "en": "Got it, I'll stop suggesting {chain}.",
+   "ru": "Понял, больше не буду предлагать {chain}."
+  },
+  {
+   "en": "You've stopped at {places}.",
+   "ru": "Ты останавливался в {places|tr}."
+  },
+  {
+   "en": "{name} {n} times",
+   "ru": "{name} {n|plural:раз,раза,раз}",
+   "part": true
+  },
+  {
+   "en": "{name} once",
+   "ru": "{name} один раз",
+   "part": true
+  },
+  {
+   "en": "You like {x}.",
+   "ru": "Тебе нравится {x|and}."
+  },
+  {
+   "en": "You'd rather skip {x}.",
+   "ru": "Ты не любишь {x|and}."
+  },
+  {
+   "en": "You avoid {x}.",
+   "ru": "Ты избегаешь {x|tr}."
+  },
+  {
+   "en": "You like short answers.",
+   "ru": "Ты любишь короткие ответы."
+  },
+  {
+   "en": "You stop for the night at {x}.",
+   "ru": "На ночь ты встаёшь на {x|tr}."
+  },
+  {
+   "en": "you like {x}",
+   "ru": "тебе нравится {x|and}",
+   "part": true
+  },
+  {
+   "en": ", you like {x}",
+   "ru": ", тебе нравится {x|and}",
+   "part": true
+  },
+  {
+   "en": ", you avoid {x}",
+   "ru": ", ты избегаешь {x|tr}",
+   "part": true
+  },
+  {
+   "en": ", you'd rather skip {x}",
+   "ru": ", ты не любишь {x|and}",
+   "part": true
+  },
+  {
+   "en": ", you stop for the night at {x}",
+   "ru": ", на ночь встаёшь на {x|tr}",
+   "part": true
+  },
+  {
+   "en": "you avoid {x}",
+   "ru": "ты избегаешь {x|tr}",
+   "part": true
+  },
+  {
+   "en": "toll roads",
+   "ru": "платных дорог",
+   "part": true
+  },
+  {
+   "en": "tolls",
+   "ru": "платных дорог",
+   "part": true
+  },
+  {
+   "en": "truck stops",
+   "ru": "трак-стопах",
+   "part": true
+  },
+  {
+   "en": "There's no route yet. Where do you want to go?",
+   "ru": "Маршрута пока нет. Куда едем?"
+  },
+  {
+   "en": "We're already rolling.",
+   "ru": "Мы уже едем."
+  },
+  {
+   "en": "Alright, let's roll.",
+   "ru": "Хорошо, поехали."
+  },
+  {
+   "en": "Okay, route ended.",
+   "ru": "Хорошо, маршрут завершён."
+  },
+  {
+   "en": "There's no active route right now.",
+   "ru": "Сейчас активного маршрута нет."
+  },
+  {
+   "en": "Here are the other options.",
+   "ru": "Вот другие варианты."
+  },
+  {
+   "en": "I don't have other options right now.",
+   "ru": "Других вариантов сейчас нет."
+  },
+  {
+   "en": "Here's the whole route.",
+   "ru": "Вот весь маршрут."
+  },
+  {
+   "en": "There's no route to show yet.",
+   "ru": "Показывать пока нечего, маршрута нет."
+  },
+  {
+   "en": "Back on you.",
+   "ru": "Снова на тебе."
+  },
+  {
+   "en": "Zooming in.",
+   "ru": "Приближаю."
+  },
+  {
+   "en": "Zooming out.",
+   "ru": "Отдаляю."
+  },
+  {
+   "en": "Okay, I'll call out the turns.",
+   "ru": "Хорошо, буду подсказывать повороты."
+  },
+  {
+   "en": "Okay, turn directions are muted.",
+   "ru": "Хорошо, подсказки поворотов выключены."
+  },
+  {
+   "en": "Hands-free listening isn't available in this version yet. Tap the copilot when you need me.",
+   "ru": "В этой версии слушать без кнопки я пока не умею. Нажми на меня, когда понадоблюсь."
+  },
+  {
+   "en": "Okay. Tap the copilot when you need me.",
+   "ru": "Хорошо. Нажми на меня, когда понадоблюсь."
+  },
+  {
+   "en": "That height doesn't look right. It has to be between 5 feet and 16 foot 11.",
+   "ru": "Высота какая-то не та. Она должна быть от 5 футов до 16 футов 11 дюймов."
+  },
+  {
+   "en": "The trailer has to be between 10 and 65 feet.",
+   "ru": "Трейлер должен быть от 10 до 65 футов."
+  },
+  {
+   "en": "The weight has to be between 5,000 and 200,000 pounds.",
+   "ru": "Вес должен быть от 5000 до 200000 фунтов."
+  },
+  {
+   "en": "Hazmat is on, I'll keep you on hazmat-legal roads.",
+   "ru": "Hazmat включён, поведу по дорогам, где hazmat разрешён."
+  },
+  {
+   "en": "Hazmat is off.",
+   "ru": "Hazmat выключен."
+  },
+  {
+   "en": "I'll avoid toll roads.",
+   "ru": "Буду объезжать платные дороги."
+  },
+  {
+   "en": "Toll roads are fine now.",
+   "ru": "Платные дороги теперь можно."
+  },
+  {
+   "en": "I'll avoid ferries and tunnels.",
+   "ru": "Буду объезжать паромы и тоннели."
+  },
+  {
+   "en": "Ferries and tunnels are fine now.",
+   "ru": "Паромы и тоннели теперь можно."
+  },
+  {
+   "en": "You already have eight favorites. Remove one first.",
+   "ru": "У тебя уже восемь любимых. Сначала убери одну."
+  },
+  {
+   "en": "Break reminders are off.",
+   "ru": "Напоминания о перерыве выключены."
+  },
+  {
+   "en": "Break reminders can be every 1 to 14 hours.",
+   "ru": "Напоминать о перерыве можно раз в 1–14 часов."
+  },
+  {
+   "en": "Chains on board, yes or no?",
+   "ru": "Цепи есть, да или нет?"
+  },
+  {
+   "en": "Suggestions on or off?",
+   "ru": "Подсказки включить или выключить?"
+  },
+  {
+   "en": "I'll speak up with suggestions again.",
+   "ru": "Снова буду подсказывать."
+  },
+  {
+   "en": "Okay, I'll stop suggesting things.",
+   "ru": "Хорошо, больше не буду ничего предлагать."
+  },
+  {
+   "en": "Rerouting for that.",
+   "ru": "Перестраиваю маршрут."
+  },
+  {
+   "en": "Height is now {ft} foot {inch}.",
+   "ru": "Высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}."
+  },
+  {
+   "en": "Height is now {ft} feet.",
+   "ru": "Высота теперь {ft|plural:фут,фута,футов}."
+  },
+  {
+   "en": "Trailer is now {n} feet.",
+   "ru": "Трейлер теперь {n|plural:фут,фута,футов}."
+  },
+  {
+   "en": "Weight is now {n} pounds.",
+   "ru": "Вес теперь {n|plural:фунт,фунта,фунтов}."
+  },
+  {
+   "en": "Got it, I'll call you {name}.",
+   "ru": "Понял, буду звать тебя {name}."
+  },
+  {
+   "en": "{name} is already a favorite.",
+   "ru": "{name} уже в любимых."
+  },
+  {
+   "en": "Added {name} to your favorites.",
+   "ru": "Добавил {name} в любимые."
+  },
+  {
+   "en": "Removed {name} from your favorites.",
+   "ru": "Убрал {name} из любимых."
+  },
+  {
+   "en": "{name} isn't in your favorites.",
+   "ru": "{name} нет в любимых."
+  },
+  {
+   "en": "I'll remind you to take a break every {n} hours.",
+   "ru": "Буду напоминать о перерыве каждые {n|plural:час,часа,часов}."
+  },
+  {
+   "en": "I'll remind you to take a break every {n} hour.",
+   "ru": "Буду напоминать о перерыве каждый час."
+  },
+  {
+   "en": "Done, {items}.",
+   "ru": "Готово: {items|tr}."
+  },
+  {
+   "en": "Done. {rest}",
+   "ru": "Готово. {rest|tr}"
+  },
+  {
+   "en": ", height is now {ft} foot {inch}",
+   "ru": ", высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}",
+   "part": true
+  },
+  {
+   "en": ", height is now {ft} feet",
+   "ru": ", высота теперь {ft|plural:фут,фута,футов}",
+   "part": true
+  },
+  {
+   "en": ", trailer is now {n} feet",
+   "ru": ", трейлер теперь {n|plural:фут,фута,футов}",
+   "part": true
+  },
+  {
+   "en": ", weight is now {n} pounds",
+   "ru": ", вес теперь {n|plural:фунт,фунта,фунтов}",
+   "part": true
+  },
+  {
+   "en": ", hazmat is on, I'll keep you on hazmat-legal roads",
+   "ru": ", hazmat включён, поведу по дорогам, где он разрешён",
+   "part": true
+  },
+  {
+   "en": ", hazmat is off",
+   "ru": ", hazmat выключен",
+   "part": true
+  },
+  {
+   "en": ", I'll avoid toll roads",
+   "ru": ", буду объезжать платные дороги",
+   "part": true
+  },
+  {
+   "en": ", toll roads are fine now",
+   "ru": ", платные дороги теперь можно",
+   "part": true
+  },
+  {
+   "en": ", I'll avoid ferries and tunnels",
+   "ru": ", буду объезжать паромы и тоннели",
+   "part": true
+  },
+  {
+   "en": ", ferries and tunnels are fine now",
+   "ru": ", паромы и тоннели теперь можно",
+   "part": true
+  },
+  {
+   "en": ", got it, chains on board",
+   "ru": ", цепи есть",
+   "part": true
+  },
+  {
+   "en": ", got it, no chains on board",
+   "ru": ", цепей нет",
+   "part": true
+  },
+  {
+   "en": ", break reminders are off",
+   "ru": ", напоминания о перерыве выключены",
+   "part": true
+  },
+  {
+   "en": ", got it, I'll call you {name}",
+   "ru": ", буду звать тебя {name}",
+   "part": true
+  },
+  {
+   "en": ", added {name} to your favorites",
+   "ru": ", добавил {name} в любимые",
+   "part": true
+  },
+  {
+   "en": ", removed {name} from your favorites",
+   "ru": ", убрал {name} из любимых",
+   "part": true
+  },
+  {
+   "en": ", I'll remind you to take a break every {n} hours",
+   "ru": ", буду напоминать о перерыве каждые {n|plural:час,часа,часов}",
+   "part": true
+  },
+  {
+   "en": "height is now {ft} foot {inch}",
+   "ru": "высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}",
+   "part": true
+  },
+  {
+   "en": "height is now {ft} feet",
+   "ru": "высота теперь {ft|plural:фут,фута,футов}",
+   "part": true
+  },
+  {
+   "en": "Okay. Give me a minute, I'll check who's around and what drivers say about them.",
+   "ru": "Хорошо. Дай минуту, посмотрю, кто есть рядом и что о них говорят водители."
+  },
+  {
+   "en": "Give me a minute, I'll check who's around and what drivers say about them.",
+   "ru": "Дай минуту, посмотрю, кто есть рядом и что о них говорят водители."
+  },
+  {
+   "en": "They don't mention that, ask when you call.",
+   "ru": "Об этом они не пишут, спроси, когда будешь звонить."
+  },
+  {
+   "en": "I couldn't find anyone nearby who works on trucks. Want me to look for a tow instead?",
+   "ru": "Рядом никого, кто работает с траками, не нашёл. Поискать эвакуатор?"
+  },
+  {
+   "en": "I couldn't pull reviews, here's who's nearby.",
+   "ru": "Отзывы получить не удалось, вот кто есть рядом."
+  },
+  {
+   "en": "None of them say they come out to you, so you'd have to get to them.",
+   "ru": "Никто из них не пишет, что выезжает, так что придётся доехать самому."
+  },
+  {
+   "en": "Tap one to call, or ask me anything about them.",
+   "ru": "Нажми, чтобы позвонить, или спроси меня о них."
+  },
+  {
+   "en": "Sorry, the search took too long. Want me to try again?",
+   "ru": "Извини, поиск занял слишком долго. Попробовать ещё раз?"
+  },
+  {
+   "en": "Which tire, steer, drive or trailer? And can you roll on it or you need them to come out?",
+   "ru": "Какое колесо: рулевое, ведущее или на трейлере? И доедешь сам или нужен выезд?"
+  },
+  {
+   "en": "Which tire, steer, drive or trailer?",
+   "ru": "Какое колесо: рулевое, ведущее или на трейлере?"
+  },
+  {
+   "en": "And can you roll on it or you need them to come out?",
+   "ru": "И доедешь сам или нужен выезд?"
+  },
+  {
+   "en": "Can it still drive, or does it need to come to you?",
+   "ru": "Ехать ещё можешь или нужен выезд к тебе?"
+  },
+  {
+   "en": "Okay, I'll look for a shop you can roll to.",
+   "ru": "Хорошо, поищу мастерскую, до которой доедешь."
+  },
+  {
+   "en": "Okay, I'll look for someone who can come out to you.",
+   "ru": "Хорошо, поищу тех, кто выезжает к тебе."
+  },
+  {
+   "en": "Okay, I'll look for someone who can come out to you, tell them which tire when you call.",
+   "ru": "Хорошо, поищу тех, кто выезжает к тебе, а какое колесо, скажешь им по телефону."
+  },
+  {
+   "en": "Nobody posts prices, you'll have to ask. Tap one to call.",
+   "ru": "Цен никто не пишет, придётся спросить. Нажми, чтобы позвонить."
+  },
+  {
+   "en": "Tap one to call.",
+   "ru": "Нажми, чтобы позвонить."
+  },
+  {
+   "en": "That's everyone I found who works on trucks around here. Want me to look for a tow instead?",
+   "ru": "Это все, кто работает с траками поблизости. Поискать эвакуатор?"
+  },
+  {
+   "en": "None of them mention {what}. Want me to call {name}, the top pick?",
+   "ru": "Никто из них не упоминает {what}. Позвонить {name}, лучшему варианту?"
+  },
+  {
+   "en": "Calling {name}.",
+   "ru": "Звоню {name}."
+  },
+  {
+   "en": "Sorry, I lost that. Tell me again what happened?",
+   "ru": "Извини, потерял нить. Расскажи ещё раз, что случилось?"
+  },
+  {
+   "en": "No demo places here. Demo data covers the Bay Area and Sacramento.",
+   "ru": "Здесь демо-мест нет. Демо-данные только по Bay Area и Сакраменто."
+  },
+  {
+   "en": "I don't have {what} data loaded yet.",
+   "ru": "Данных по {what|dat} у меня пока нет."
+  },
+  {
+   "en": "The closest is {name}, {mi} miles.",
+   "ru": "Ближайший: {name}, {mi|plural:миля,мили,миль}."
+  },
+  {
+   "en": "The closest is {name}, {mi} miles. Want to go there?",
+   "ru": "Ближайший: {name}, {mi|plural:миля,мили,миль}. Поедем туда?"
+  },
+  {
+   "en": "{event} near {area}.",
+   "ru": "{event|nom} в районе {area}."
+  }
+ ],
+ "words": {
+  "truck stop": {
+   "nom": "трак-стоп",
+   "acc": "трак-стоп",
+   "gen": "трак-стопа",
+   "dat": "трак-стопам",
+   "nom_pl": "Трак-стопы"
+  },
+  "rest area": {
+   "nom": "рест-эрия",
+   "acc": "рест-эрию",
+   "gen": "рест-эрии",
+   "dat": "рест-эриям",
+   "nom_pl": "Рест-эрии"
+  },
+  "hotel": {
+   "nom": "мотель",
+   "acc": "мотель",
+   "gen": "мотеля",
+   "dat": "мотелям",
+   "nom_pl": "Мотели"
+  },
+  "motel": {
+   "nom": "мотель",
+   "acc": "мотель",
+   "gen": "мотеля",
+   "dat": "мотелям",
+   "nom_pl": "Мотели"
+  },
+  "walmart": {
+   "nom": "Walmart",
+   "acc": "Walmart",
+   "gen": "Walmart",
+   "dat": "Walmart",
+   "nom_pl": "Walmart"
+  },
+  "cat scale": {
+   "nom": "кэт-скейл",
+   "acc": "кэт-скейл",
+   "gen": "кэт-скейла",
+   "dat": "кэт-скейлам",
+   "nom_pl": "Кэт-скейлы"
+  },
+  "truck wash": {
+   "nom": "мойка",
+   "acc": "мойку",
+   "gen": "мойки",
+   "dat": "мойкам",
+   "nom_pl": "Мойки"
+  },
+  "weigh station": {
+   "nom": "весовая",
+   "acc": "весовую",
+   "gen": "весовой",
+   "dat": "весовым",
+   "nom_pl": "Весовые"
+  },
+  "fuel stop": {
+   "nom": "заправка",
+   "acc": "заправку",
+   "gen": "заправки",
+   "dat": "заправкам",
+   "nom_pl": "Заправки"
+  },
+  "height": {
+   "dat": "высоте"
+  },
+  "weight": {
+   "dat": "весу"
+  },
+  "length": {
+   "dat": "длине"
+  },
+  "width": {
+   "dat": "ширине"
+  },
+  "east": {
+   "from": "восточный"
+  },
+  "west": {
+   "from": "западный"
+  },
+  "north": {
+   "from": "северный"
+  },
+  "south": {
+   "from": "южный"
+  },
+  "northeast": {
+   "from": "северо-восточный"
+  },
+  "northwest": {
+   "from": "северо-западный"
+  },
+  "southeast": {
+   "from": "юго-восточный"
+  },
+  "southwest": {
+   "from": "юго-западный"
+  },
+  "left": {
+   "side": "слева",
+   "side_cap": "Слева"
+  },
+  "right": {
+   "side": "справа",
+   "side_cap": "Справа"
+  },
+  "sunny": "солнечно",
+  "mostly sunny": "в основном солнечно",
+  "partly sunny": "переменная облачность",
+  "clear": "ясно",
+  "mostly clear": "в основном ясно",
+  "partly cloudy": "переменная облачность",
+  "mostly cloudy": "в основном облачно",
+  "cloudy": "облачно",
+  "rain": "дождь",
+  "light rain": "небольшой дождь",
+  "rain showers": "ливни",
+  "chance rain showers": "возможны ливни",
+  "slight chance rain showers": "небольшая вероятность ливней",
+  "showers and thunderstorms": "ливни и грозы",
+  "chance showers and thunderstorms": "возможны ливни и грозы",
+  "snow": "снег",
+  "light snow": "небольшой снег",
+  "chance snow": "возможен снег",
+  "snow showers": "снегопад",
+  "fog": "туман",
+  "patchy fog": "местами туман",
+  "areas of fog": "местами туман",
+  "windy": "ветрено",
+  "breezy": "ветрено",
+  "no details": "без подробностей",
+  "rain and snow": "дождь со снегом",
+  "high wind warning": "штормовое предупреждение о ветре",
+  "high wind watch": "возможен сильный ветер",
+  "wind advisory": "предупреждение о ветре",
+  "extreme wind warning": "предупреждение об экстремальном ветре",
+  "winter storm warning": "предупреждение о зимнем шторме",
+  "winter storm watch": "возможен зимний шторм",
+  "winter weather advisory": "предупреждение о зимней погоде",
+  "blizzard warning": "предупреждение о метели",
+  "ice storm warning": "предупреждение о гололёде",
+  "snow squall warning": "предупреждение о снежном шквале",
+  "freezing rain advisory": "предупреждение о ледяном дожде",
+  "freezing fog advisory": "предупреждение о ледяном тумане",
+  "dense fog advisory": "предупреждение о густом тумане",
+  "dust storm warning": "предупреждение о пыльной буре",
+  "blowing dust advisory": "предупреждение о пыльном ветре",
+  "dust advisory": "предупреждение о пыли",
+  "flash flood warning": "предупреждение о внезапном наводнении",
+  "flood warning": "предупреждение о наводнении",
+  "extreme cold warning": "предупреждение о сильном морозе",
+  "tornado warning": "предупреждение о торнадо",
+  "severe thunderstorm warning": "предупреждение о сильной грозе",
+  "hurricane warning": "предупреждение об урагане",
+  "hurricane watch": "возможен ураган",
+  "tropical storm warning": "предупреждение о тропическом шторме",
+  "tropical storm watch": "возможен тропический шторм",
+  "storm surge warning": "предупреждение о штормовом нагоне",
+  "hurricane force wind warning": "предупреждение об ураганном ветре",
+  "avalanche warning": "предупреждение о лавинах",
+  "dense smoke advisory": "предупреждение о густом дыме"
+ }
+}

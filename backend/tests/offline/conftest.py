@@ -10,6 +10,7 @@ Environment is set here, before any `services.*` import: `services.auth` binds R
 import time and `server` loads .env, so the order matters.
 """
 import asyncio
+import os
 import json
 import re
 from dataclasses import dataclass, field
@@ -283,3 +284,37 @@ def sqlite_store(tmp_path, monkeypatch):
     run(memory.close())
     yield tmp_path / "mem.sqlite"
     run(memory.close())
+
+
+# ---- i18n corpus: I18N_CAPTURE=<file> records every reply the agent and the nudges produce in this run (one JSON
+# line each), so scripts/i18n_coverage.py can tell which of them the translation catalog does not cover yet.
+if os.environ.get("I18N_CAPTURE"):
+    import functools as _ft
+    import json as _json
+
+    from services import agent as _agent_mod, nudges as _nudges_mod
+
+    def _capture(kind: str, text: Optional[str]) -> None:
+        if text:
+            with open(os.environ["I18N_CAPTURE"], "a") as f:
+                f.write(_json.dumps({"kind": kind, "text": text}) + "\n")
+
+    _orig_handle = _agent_mod.LlmAgentProvider.handle
+
+    @_ft.wraps(_orig_handle)
+    async def _handle(self, req, driver=None):
+        res = await _orig_handle(self, req, driver)
+        _capture("reply", res.reply)
+        _capture("message", res.message)
+        return res
+
+    _agent_mod.LlmAgentProvider.handle = _handle
+    _orig_compute = _nudges_mod.compute
+
+    async def _compute(req, sess, motive_key):
+        out = await _orig_compute(req, sess, motive_key)
+        for n in out:
+            _capture("nudge", n.text)
+        return out
+
+    _nudges_mod.compute = _compute

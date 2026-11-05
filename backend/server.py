@@ -24,7 +24,7 @@ from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import approach, approach_api, auth, chains, db, fleet_api, kv, leader, memory, onboarding, parking_store, parking_warm, reqid, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services import approach, approach_api, auth, chains, i18n, db, fleet_api, kv, leader, memory, onboarding, parking_store, parking_warm, reqid, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
 from services.http import client as http_client  # noqa: E402
 from services.logs import said, transcripts_on  # noqa: E402
 from services.settings import settings  # noqa: E402
@@ -311,6 +311,7 @@ async def build_route(req: RouteRequest, driver: str = Depends(auth.require_driv
 async def nudges_endpoint(req: NudgeRequest, request: Request, driver: str = Depends(auth.require_driver)):
     """Anything the copilot wants to say on its own right now (break due, parking before the shift ends)."""
     _require_us(req.lat, req.lng)
+    i18n.set_lang(req.lang)
     req.motive_key, req.motive_user = await motive_auth(request, driver)
     req.truck_profile = await tenancy.effective_profile(driver, req.truck_profile)
     if req.session_id:
@@ -331,6 +332,9 @@ async def nudges_endpoint(req: NudgeRequest, request: Request, driver: str = Dep
             await store.save(req.session_id, state)  # a nudge offer becomes the next turn's pending answer
         except Exception as e:  # noqa: BLE001
             logger.warning("dialog state save failed for %s: %s", req.session_id, e)
+    if i18n.lang() != "en":
+        for n in out:
+            n.text = await i18n.localize(n.text)
     return NudgeResponse(nudges=out)
 
 
@@ -417,6 +421,12 @@ async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = Non
 
 
 async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
+    # The driver's language (services/i18n.py): the reply and the UI message as they will be shown and said.
+    if i18n.lang() != "en":
+        if res.reply:
+            res.reply = await i18n.localize(res.reply)
+        if res.message:
+            res.message = await i18n.localize(res.message)
     if speak and res.reply:
         # The first clip (first clause, or first sentence with TTS_CLAUSE_SPLIT=0) is spoken as soon as it's
         # ready; the rest is generated in parallel and the app plays it right after.
@@ -467,6 +477,7 @@ def _finish(res: AgentResponse, extra: Optional[dict] = None, driver: Optional[s
 async def agent(req: AgentRequest, request: Request, speak: bool = Query(False),
                 driver: str = Depends(auth.require_driver)):
     timing.begin()
+    i18n.set_lang(req.lang)
     req.motive_key, req.motive_user = await motive_auth(request, driver)
     req.truck_profile = await tenancy.effective_profile(driver, req.truck_profile)
     sid = req.session_id
@@ -565,10 +576,12 @@ async def voice_turn(
     active_distance_mi: Optional[float] = Form(None, ge=0),
     active_duration_min: Optional[int] = Form(None, ge=0),
     trip_id: Optional[str] = Form(None, max_length=64),  # the app's id of the drive (trip events)
+    lang: Optional[str] = Form(None, max_length=10),  # the driver's language (services/i18n.py)
     driver: str = Depends(auth.require_driver),
     request: Request = None,
 ):
     timing.begin()
+    i18n.set_lang(lang)
     with timing.stage("upload"):
         data = await audio.read()
     if not data:
@@ -601,14 +614,16 @@ async def voice_turn(
     key, user = await motive_auth(request, driver)
     req = AgentRequest(text=text, lat=lat, lng=lng, active_place=current, truck_profile=truck, session_id=session_id,
                        active_distance_mi=active_distance_mi, active_duration_min=active_duration_min,
-                       stt_confidence=confidence, trip_id=trip_id, motive_key=key, motive_user=user)
+                       stt_confidence=confidence, trip_id=trip_id, motive_key=key, motive_user=user, lang=lang)
     return _finish(await _run_agent(req, speak=True, driver=driver), None, driver, trip_id, session_id, (lat, lng))
 
 
 @api.post("/voice/transcribe")
-async def voice_transcribe(audio: UploadFile = File(...), hint: Optional[str] = Form(None, max_length=600)):
+async def voice_transcribe(audio: UploadFile = File(...), hint: Optional[str] = Form(None, max_length=600),
+                           lang: Optional[str] = Form(None, max_length=10)):
     """Step 1 of a voice turn: speech -> text (the app shows it right away, then calls /agent?speak=true)."""
     timing.begin()
+    i18n.set_lang(lang)  # the recogniser's language and prompt (services/voice.stt_language_and_prompt)
     with timing.stage("upload"):
         data = await audio.read()
     if not data:
