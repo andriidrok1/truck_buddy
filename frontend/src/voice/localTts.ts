@@ -5,6 +5,10 @@
 
 import * as Speech from "expo-speech";
 
+import { getLang } from "../i18n";
+
+const VOICE_LANG = { en: "en-US", ru: "ru-RU", uk: "uk-UA" } as const;
+
 const RATE = 0.95;
 
 /** Speaks `text` and resolves when it is done (or after `maxMs`, or at once if the engine refuses). */
@@ -23,7 +27,7 @@ export function speakLocal(text: string, maxMs = 15000): Promise<void> {
     }, maxMs);
     try {
       Speech.speak(text.slice(0, Speech.maxSpeechInputLength || 4000), {
-        language: "en-US",
+        language: VOICE_LANG[getLang()],
         rate: RATE,
         onDone: finish,
         onStopped: finish,

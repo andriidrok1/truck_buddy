@@ -1,6 +1,7 @@
 import { Image } from "expo-image";
 import { useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, StyleSheet, View } from "react-native";
+import { Text } from "../i18n/Text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { apiUrl } from "../api";

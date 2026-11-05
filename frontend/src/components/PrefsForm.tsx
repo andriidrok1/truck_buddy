@@ -1,7 +1,8 @@
 // The driver's route preferences as one form: toll roads, ferries and tunnels, favourite truck stop chains,
 // break reminder. Shared by the onboarding step and the truck profile screen, so a choice made on day one
 // can be changed later (QA 2026-10-28, U10).
-import { ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Switch, View } from "react-native";
+import { Text } from "../i18n/Text";
 
 import type { TruckProfile } from "../hooks/useTruckProfile";
 import { fonts, radius, spacing, useTheme } from "../theme";

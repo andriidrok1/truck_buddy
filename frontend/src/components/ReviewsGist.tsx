@@ -1,4 +1,5 @@
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, View } from "react-native";
+import { Text } from "../i18n/Text";
 
 import { fonts, spacing, useTheme } from "../theme";
 import type { Review } from "../types";

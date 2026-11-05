@@ -1,6 +1,7 @@
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { BackHandler, Platform, StyleSheet, Text, TextInput, View } from "react-native";
+import { BackHandler, Platform, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "@/src/i18n/Text";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,6 +18,7 @@ import { setOnboarded, useTruckProfile, type TruckProfile } from "@/src/hooks/us
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
 import { truckErrors, truckFromInputs } from "@/src/truck/validate";
+import { LANGS, setLang, t, UK_READY, useLang, type Lang } from "@/src/i18n";
 
 type Step = "name" | "truck" | "prefs" | "done";
 type Mode = "speaking" | "listening" | "thinking" | "waiting";
@@ -28,8 +30,12 @@ const toInt = (s: string) => parseInt(s.replace(/[^0-9]/g, ""), 10);
 // Rough speaking time, used as a fallback when audio can't autoplay.
 const speechMs = (text: string) => Math.min(20000, 1500 + text.length * 65);
 
-/** What the copilot says out loud. */
+/** What the copilot says out loud, in the driver's language (src/i18n). */
 function spoken(step: Step, name: string) {
+  return t(spokenEn(step, name));
+}
+
+function spokenEn(step: Step, name: string) {
   const who = name ? `, ${name}` : "";
   switch (step) {
     case "name":
@@ -84,6 +90,7 @@ function FieldError({ text, testID }: { text?: string; testID: string }) {
 export default function Onboarding() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const lang = useLang();
   const { colors } = useTheme();
   const saved = useTruckProfile();
   const voice = useVoice();
@@ -352,6 +359,16 @@ export default function Onboarding() {
     advance(step);
   };
 
+  // The language the copilot speaks from here on: say the current question again in it.
+  const onLang = (l: Lang) => {
+    if (l === lang) return;
+    setLang(l);
+    stopTurn();
+    setHeard(null);
+    const token = ++run.current;
+    setTimeout(() => converse(step, token), 0); // after the store update, so spoken() reads the new language
+  };
+
   const onSkip = () => finish({ ...draftRef.current, ...(truckFrom(feet, inches, trailer, weight) ?? {}) });
 
   const onAllowMic = async () => {
@@ -376,6 +393,15 @@ export default function Onboarding() {
             <View key={s} style={[styles.dot, { backgroundColor: i <= idx ? colors.info : colors.surfaceTertiary, width: i === idx ? 24 : 8 }]} />
           ))}
         </View>
+        {step === "name" && (
+          <View style={styles.langRow}>
+            {LANGS.filter((l) => l.code !== "uk" || UK_READY).map((l) => (
+              <PressableScale key={l.code} testID={`onboarding-lang-${l.code}`} onPress={() => onLang(l.code)} style={styles.skip}>
+                <Text style={[styles.skipText, { color: lang === l.code ? colors.info : colors.onSurfaceSecondary }]}>{l.label}</Text>
+              </PressableScale>
+            ))}
+          </View>
+        )}
         {step !== "done" && (
           <PressableScale testID="onboarding-skip-button" onPress={onSkip} style={styles.skip}>
             <Text style={[styles.skipText, { color: colors.onSurfaceSecondary }]}>Skip</Text>
@@ -434,7 +460,7 @@ export default function Onboarding() {
               testID="onboarding-name-input"
               value={draft.driver_name ?? ""}
               onChangeText={(v) => set({ driver_name: v.slice(0, 40) })}
-              placeholder="Your first name"
+              placeholder={t("Your first name")}
               placeholderTextColor={colors.muted}
               autoCapitalize="words"
               autoFocus
@@ -505,6 +531,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, minHeight: 56 },
   dots: { flexDirection: "row", gap: 6, alignItems: "center" },
   dot: { height: 8, borderRadius: 4 },
+  langRow: { flexDirection: "row", alignItems: "center" },
   skip: { minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.sm },
   skipText: { fontFamily: fonts.semibold, fontSize: 15 },
   content: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.lg },

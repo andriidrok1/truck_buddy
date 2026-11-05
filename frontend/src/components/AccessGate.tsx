@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { ActivityIndicator, Image, Platform, StyleSheet, Text, TextInput } from "react-native";
+import { ActivityIndicator, Image, Platform, StyleSheet, TextInput } from "react-native";
+import { Text } from "../i18n/Text";
 import { KeyboardAwareScrollView } from "@/src/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { redeemAccessCode } from "../api";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import { PressableScale } from "./PressableScale";
+import { t } from "../i18n";
 
 /** The driver enters an access code (tester code, or the shared code when open sign-up is off).
  *  `onSkip` adds a "Continue without a code" link. */
@@ -46,7 +48,7 @@ export function AccessGate({ onSkip }: { onSkip?: () => void }) {
           setCode(t);
           setError("");
         }}
-        placeholder="Access code"
+        placeholder={t("Access code")}
         placeholderTextColor={colors.muted}
         autoCapitalize="characters"
         autoCorrect={false}

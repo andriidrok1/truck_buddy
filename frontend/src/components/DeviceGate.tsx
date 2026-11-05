@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, StyleSheet, View } from "react-native";
+import { Text } from "../i18n/Text";
 
 import { CodeRequiredError, registerDevice } from "../api";
 import { codeRequested, requestCode } from "../auth";

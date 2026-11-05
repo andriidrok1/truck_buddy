@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "../i18n/Text";
 
 import { categoryColor, categoryIcon } from "../constants";
 import { fonts, radius, shadow, useTheme } from "../theme";

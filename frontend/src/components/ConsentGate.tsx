@@ -1,7 +1,8 @@
 import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
 import { useState } from "react";
-import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "../i18n/Text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PRIVACY_URL } from "../constants";

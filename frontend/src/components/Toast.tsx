@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "../i18n/Text";
 import Animated, { FadeInUp, FadeOutUp } from "react-native-reanimated";
 
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";

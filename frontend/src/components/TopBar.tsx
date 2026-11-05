@@ -1,10 +1,12 @@
 import { useRef, useState, type ElementRef, type MutableRefObject } from "react";
-import { Keyboard, Platform, StyleSheet, Text, TextInput, View } from "react-native";
+import { Keyboard, Platform, StyleSheet, TextInput, View } from "react-native";
+import { Text } from "../i18n/Text";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
+import { t } from "../i18n";
 
 type Props = {
   topInset: number;
@@ -62,7 +64,7 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, bl
             onChangeText={setText}
             onSubmitEditing={submit}
             onFocus={onFocus}
-        placeholder={destination ? `To: ${destination.split(",")[0]}` : "Where to?"}
+        placeholder={destination ? t("To: {name}", { name: destination.split(",")[0] }) : t("Where to?")}
             placeholderTextColor={destination ? colors.onSurface : colors.muted}
             returnKeyType="search"
             autoCorrect={false}

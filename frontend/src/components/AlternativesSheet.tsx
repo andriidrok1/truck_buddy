@@ -1,4 +1,5 @@
-import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
+import { Text } from "../i18n/Text";
 import Animated, { FadeInDown, FadeOutDown } from "react-native-reanimated";
 
 import { alternativeLabel } from "../geo/routeChoice";

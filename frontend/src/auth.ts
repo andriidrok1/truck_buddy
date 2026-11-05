@@ -1,3 +1,4 @@
+import { getLang } from "./i18n";
 import { useEffect, useState } from "react";
 
 import { storage } from "./utils/storage";
@@ -54,7 +55,8 @@ export async function setToken(t: string | null, r: "driver" | "tester" = "drive
   emit();
 }
 
-export const authHeader = (): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {});
+// Every authenticated request also says the driver's language (backend services/i18n.LangMiddleware).
+export const authHeader = (): Record<string, string> => ({ ...(token ? { Authorization: `Bearer ${token}` } : {}), "X-Lang": getLang() });
 
 /** "loading" until the stored token is read, then whether the driver has entered the access code. */
 export function useAuthState(): "loading" | "in" | "out" {

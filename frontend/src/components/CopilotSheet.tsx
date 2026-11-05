@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View, type LayoutChangeEvent } from "react-native";
+import { Keyboard, Platform, Pressable, StyleSheet, TextInput, useWindowDimensions, View, type LayoutChangeEvent } from "react-native";
+import { Text } from "../i18n/Text";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import { KeyboardStickyView } from "@/src/keyboard";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
@@ -19,6 +20,7 @@ import { ReviewsGist } from "./ReviewsGist";
 import { Waveform } from "./Waveform";
 import { entrySpot, routeEndsAt } from "../utils/entry";
 import { dragHeight, sheetHeights, snapTarget, stateHeight, type SheetHeights, type SnapState } from "../utils/sheetSnap";
+import { t } from "../i18n";
 
 /** Sheet height while nothing pins it: whatever the content needs (Yoga treats this as no cap). */
 const AUTO_MAX_HEIGHT = 100000;
@@ -469,7 +471,7 @@ export function CopilotSheet(props: Props) {
             onBlur={() => {
               if (!draft.trim()) setTyping(false);
             }}
-            placeholder="Type a request…"
+            placeholder={t("Type a request…")}
             placeholderTextColor={colors.onSurfaceSecondary}
             returnKeyType="send"
             autoFocus

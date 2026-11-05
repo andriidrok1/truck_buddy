@@ -57,6 +57,7 @@ import { RECORD_DRIVES, recorder } from "@/src/geo/driveRecorder";
 import { subscribeReplay, takeReplayRequest } from "@/src/geo/replayRequest";
 import { startPositionHeartbeat, startTripLog, stopTripLog, tripLog } from "@/src/net/tripEvents";
 import { playTrace } from "@/src/sim";
+import { t } from "@/src/i18n";
 
 /** Toast for a failed /route: the router's "no truck route" is a destination problem, not a retry. */
 function routeFailText(e: unknown): string {
@@ -857,9 +858,9 @@ export default function MapScreen() {
   const onEndRoutePress = () => {
     const name = trip().active?.place.name.split(",")[0] ?? "this route";
     if (!trip().driving || guidance.remainingS < END_CONFIRM_ABOVE_S) return onEndRoute();
-    Alert.alert(`End the route to ${name}?`, undefined, [
-      { text: "Keep driving", style: "cancel" },
-      { text: "End route", style: "destructive", onPress: onEndRoute },
+    Alert.alert(t("End the route to {name}?", { name }), undefined, [
+      { text: t("Keep driving"), style: "cancel" },
+      { text: t("End route"), style: "destructive", onPress: onEndRoute },
     ]);
   };
 
