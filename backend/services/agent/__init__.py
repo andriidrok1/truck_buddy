@@ -9,7 +9,7 @@ import logging
 import math
 import os
 import re
-from typing import Callable, Iterable, Optional
+from typing import Callable, Optional
 
 import httpx
 
@@ -17,7 +17,7 @@ from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, MapsSource, 
 from services import (approach, breakdown, chains, controls, fuel_index, hos, i18n, llm, maps_grounding, memory,
                       profile_learn, reviews, timing, tpims, weather)
 from services.geo import haversine_km, km_to_mi
-from services.geocode import _STATES, chain_query, geocode, is_street, town_query
+from services.geocode import geocode, is_street
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
 from services.parking import cached_parking, check_parking, is_town, listed_in_data
 from services.places import get_places_provider
@@ -29,16 +29,33 @@ from services.flags import on
 from services.logs import said
 from services.speech_text import fit_reply, hours_minutes as _minutes_said
 from services.timing import stage
+# The agent's parts live in submodules; everything they define stays importable from services.agent.
+from services.agent.prompt import (  # noqa: F401
+    SYSTEM, SYSTEM_STATIC, PROMPT_VERSION, PROMPT_CACHE_KEY, prompt_messages)
+from services.agent.phrases import (  # noqa: F401
+    _CONTROL_PHRASES, control_phrase, PARK_WORDS, BED_WORDS, _STREET_ONLY, _ZIP_COUNTRY, with_city, city_of, GOODBYE,
+    CHAIN_QUESTION, YES_RU_UK, NO_RU_UK, DEST_YES, VIA_FAR_YES, YES_PATTERNS, YES, NO, ANSWER_FILLER, bare_answer,
+    PRICE_WORDS, CHEAPEST, FUEL_WORDS, CHEAPEST_ASK, ELSEWHERE, NOT_ELSEWHERE, CHEAPEST_NEAR_MI, asks_cheapest,
+    list_is_near, ON_THE_WAY, STOP_CATEGORIES, REJECT_PLACE, DROP_ORDER, TAKE_OFF, NOT_A_STOP_OBJECT, ALL_STOPS,
+    STOP_ORDER, THAT_STOP, STOP_KIND, ANOTHER, ROAD_WORDS, LIST_REF, ORDINALS, NOT_A_PLACE, REMEMBER, ROAD_PREFS,
+    BYE_PHRASE, numbered, list_reference, _NAME_TOKEN, _name_tokens, named_place, NAME_LIKE, name_like,
+    GENERIC_NAME_WORDS, named_in_text, stop_named, stop_to_drop, reject_or_reference_guard, pick_place, ORDER_VERB)
+from services.agent.driver_name import (  # noqa: F401
+    NAME_EVERY, NAME_MIN_WORDS, _SENTENCE_START, _INTERJECTION, _address, _a_place, _cut, GREETING, SHORT_LEAD,
+    _vocatives, without_name, name_policy)
+from services.agent.replies import (  # noqa: F401
+    NOT_UNDERSTOOD, ROUTE_DOWN, NO_TRUCK_ROUTE, PLACES_DOWN, LLM_DOWN, SOMETHING_BROKE, NO_PLACES, CATEGORY_OFF,
+    NO_WALMART, ALL_REJECTED, heard_not_found, _COUNTRY, _town, _in_town, _street, _speak_street, _label_parts,
+    spoken_where, _tokens, _names_match, dest_check, arrival_street, _miles, TEMPLATES, NOTICES, CLOSURE, ALT_REPLY,
+    NO_ALT, TILL_SAID, CHAINS_NO_ROUTE, CHAINS_OUTSIDE, CHAINS_NONE, CHAINS_DOWN, ALT_NO_ROUTE, VIA_ADDED, VIA_DWELL,
+    VIA_NO_ROUTE, VIA_FULL, VIA_DUPLICATE, VIA_IS_DESTINATION, VIA_STRAIGHT, VIA_CLEARED, VIA_NONE, VIA_NONE_AHEAD,
+    VIA_NO_OTHER, VIA_REJECTED, VIA_DROPPED, VIA_LEFT, VIA_SKIPPED, VIA_NOT_A_STOP, VIA_DEST_NOT_A_STOP, VIA_WHICH,
+    VIA_FAR, VIA_FAR_NO, DEST_FAR_MI, DEST_CHECK, DEST_NO, DEST_ONLY, STREET_WORDS, WHICH_PLACE, CONFIRM, CONFIRM_NO,
+    _alt_reply, _notice, RESTRICTED_SPEECH, LEGAL_SPEECH, _route_warning, _with_warnings, _diesel_note, NO_PRICE,
+    NO_PRICES, NO_PRICES_OFFER, NO_PRICES_KEEP, ALREADY_CHEAPEST, price_caveat, _diesel_sentence, _rating_note)
 
 logger = logging.getLogger("truckbuddy.agent")
 
-NOT_UNDERSTOOD = "Sorry, I didn't catch that. Try again."
-ROUTE_DOWN = "I couldn't build a truck route there right now. Try again in a minute."
-NO_TRUCK_ROUTE = ("I can't find a truck route there from here. Try another destination, or an address on a main "
-                  "road nearby.")
-PLACES_DOWN = "Place search is down right now. Give me an address instead."
-LLM_DOWN = "Give me a second, I lost my train of thought. Say that again."
-SOMETHING_BROKE = "Something went wrong on my end. Try again in a minute."
 CLASSIFY_TIMEOUT_S = 20
 
 
@@ -80,45 +97,12 @@ def _profile_key(t: TruckProfile) -> tuple:
     return (t.height_in, t.trailer_ft, t.weight_lb, t.hazmat, t.avoid_tolls, t.avoid_ferries_tunnels)
 
 
-# Control phrases the model sometimes returns as a destination (or only as a reply).
-_CONTROL_PHRASES: list[tuple[re.Pattern, dict]] = [
-    (re.compile(r"\b(?:start|begin)\s+(?:the\s+)?(?:route|ride|trip|navigation|driving)\b|\blet'?s\s+go\b|"
-                r"\bgo\s+ahead\b|\bthe\s+stars\s+are\s+out\b", re.I), {"type": "start_navigation"}),
-    (re.compile(r"\b(?:stop|end|cancel)\s+(?:the\s+)?(?:route|ride|trip|navigation)\b", re.I), {"type": "end_route"}),
-    (re.compile(r"\bturn\s+(?:the\s+)?directions\s+off\b|\bturn\s+off\s+(?:the\s+)?directions\b|\bmute\b", re.I),
-     {"type": "voice_guidance", "value": False}),
-    (re.compile(r"\bturn\s+(?:the\s+)?directions\s+on\b|\bturn\s+on\s+(?:the\s+)?directions\b", re.I),
-     {"type": "voice_guidance", "value": True}),
-    (re.compile(r"\bre-?center\b", re.I), {"type": "recenter"}),
-]
-
-
-def control_phrase(text: str) -> Optional[dict]:
-    """The control a phrase asks for, if it is only a control (no digits, no place-like proper nouns)."""
-    if not text or re.search(r"\d", text):
-        return None
-    for rx, action in _CONTROL_PHRASES:
-        m = rx.search(text)
-        if not m:
-            continue
-        rest = (text[:m.start()] + " " + text[m.end():]).strip(" .,!?")
-        words = rest.split()
-        if len(words) <= 3 and not any(w[0].isupper() for w in words[1:] if w[0].isalpha()):
-            return action
-    return None
-
-
-NO_PLACES = "I couldn't find one nearby"
 CATEGORY_WORD = {"truck_stop": "truck stop", "hotel": "hotel", "rest_area": "rest area", "walmart": "Walmart",
                  "cat_scale": "CAT scale", "truck_wash": "truck wash", "weigh_station": "weigh station"}
 CORE_CATEGORIES = ("truck_stop", "hotel", "rest_area")
 EXTRA_CATEGORIES = ("walmart", "cat_scale", "truck_wash", "weigh_station")
 # Satellite parking checks only where a truck would park; a scale or a wash is not a place to spend the night.
 PARKING_CATEGORIES = {"truck_stop", "hotel", "rest_area", "walmart", "destination"}
-PARK_WORDS = re.compile(r"\b(park|parking|overnight|shut ?down|lay ?over|sleep in (?:the|my) (?:truck|cab|sleeper))\b", re.I)
-BED_WORDS = re.compile(r"\b(hotel|motel|room|bed|shower|inn|lodge)\b", re.I)
-CATEGORY_OFF = "I can't look up {what}s yet. Ask me for a truck stop, a hotel or a rest area."
-NO_WALMART = "I couldn't find a Walmart nearby. The closest {what} is {name}, {mi} miles. Want to go there?"
 
 
 def enabled_categories() -> tuple[str, ...]:
@@ -126,32 +110,6 @@ def enabled_categories() -> tuple[str, ...]:
     Off by default until the app knows how to draw them."""
     extra = {c.strip() for c in os.environ.get("CATEGORIES_EXTRA", "").split(",") if c.strip()}
     return CORE_CATEGORIES + tuple(c for c in EXTRA_CATEGORIES if c in extra or "all" in extra)
-
-
-ALL_REJECTED = "That's every one I found nearby. Want me to go back to one of them?"
-_STREET_ONLY = re.compile(r"^\s*\d+[a-z]?\s+[\w .'-]+$", re.I)  # "2828 El Centro Rd" (no town after a comma)
-_ZIP_COUNTRY = re.compile(r"^\s*(?:[A-Z]{2}(?:\s+\d{5}(?:-\d{4})?)?|\d{5}|United States|USA)\s*$")
-
-
-def heard_not_found(query: str) -> str:
-    """Reads back what was heard and offers typing."""
-    return f"I heard {query}, but can't find it. Say it again or type it."
-
-
-def with_city(query: str, city: Optional[str]) -> str:
-    """Street address alone after a turn that named a city: search it in that city."""
-    return f"{query}, {city}" if city and _STREET_ONLY.match(query) else query
-
-
-def city_of(query: str, place: Place) -> Optional[str]:
-    """Town named in this turn ("Reno, NV" or "..., Sacramento, CA"), for a follow-up street address."""
-    parts = [p.strip() for p in query.split(",") if p.strip()]
-    if parts and not re.search(r"\d", parts[0]):  # a town ("Reno, NV"), not a landmark that geocoded elsewhere
-        return query if place.name.split(",")[0].strip().lower() == parts[0].lower() else None
-    if len(parts) > 1 and re.search(r"\d", parts[0]):
-        rest = [p for p in parts[1:] if not _ZIP_COUNTRY.match(p)]
-        return ", ".join(rest) or None
-    return None
 
 
 MODEL = ("openai", "gpt-5.4-mini")
@@ -174,57 +132,10 @@ def is_fuel_stop(p: Place) -> bool:
 
 CATEGORIES = CORE_CATEGORIES + EXTRA_CATEGORIES  # all the classifier may name; enabled_categories() gates
 
-SYSTEM = """You are TruckBuddy, a hands-free voice copilot for a long-haul truck driver who is driving.
-Each message starts with the truck (height, trailer, weight, hazmat) and the driver's preferences; use them.
-
-The driver's words come from speech recognition in a noisy cab, so they may be misheard. Read them by what
-makes sense for a trucker and act on the corrected meaning, e.g. "I need a few" = "I need fuel",
-"the stars are out" / "start the ride" = "start the route", "rest a ride" = "rest area", "diesel" heard as
-"these all". Only fix words that clearly don't fit; never invent a destination. If you can't tell, use "unclear".
-
-Classify the driver's LAST utterance and answer with JSON only, no other text:
-{{"intent": "find"|"go"|"pick"|"alternative"|"add_stop"|"clear_stops"|"reviews"|"weather"|"hos"|"memory"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|"walmart"|"cat_scale"|"truck_wash"|"weigh_station"|null, "near": string|null, "query": string|null, "when": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
-
-- find: the driver needs a place. Pick the category yourself, never ask:
-  truck_stop = fuel, diesel, DEF, food, showers, truck stop;
-  hotel = sleep, tired, overnight, bed, motel, hotel, room;
-  rest_area = quick break, stretch, restroom, short nap, rest area;
-  walmart = a Walmart, "park at a Walmart", overnight in a Walmart lot;
-  cat_scale = CAT scale, certified scale, weigh the load or axles;
-  truck_wash = truck wash, wash the truck or trailer, Blue Beacon;
-  weigh_station = weigh station, scale house, DOT inspection station, port of entry, chicken coop.
-  near = the address, town or landmark the driver wants it close to ("find a truck stop near 2828 El Centro Rd" ->
-  "2828 El Centro Rd"; "where can I park close to my delivery in Stockton" -> "Stockton, CA"; "staging near the
-  shipper on Maritime St" -> "Maritime St"); digits for numbers; null when they mean near themselves/on the way.
-  For a follow-up like "and a hotel there", repeat the near point used before.
-  "park near X" / "where can I park close to my delivery in X" / "staging near X" = find truck_stop with near X
-  (never rest_area or parking for these).
-- go: the driver names a destination (city, address, business, landmark: "take me to Reno", "go to 1200 Main St Dallas"). query = the destination, e.g. "Reno, NV". Write numbers as digits ("2828 El Centro Rd, Sacramento"). If the driver gives only a street address and named a town earlier in the conversation, add that town to query.
-- pick: the driver refers to a place found earlier in this conversation ("the second one", "the Pilot", "not that one", "something else", "another one", "something closer", "the cheapest diesel": lowest "diesel $" in the list). place_index = the number of the best matching place in "Places found earlier" (1, 2, 3...), never the current route. These are about PLACES even while a route is active and alternative routes exist: "not that one" / "something else" / "the second one" are never alternative and never go ("nothing else" / "that's all" / "I'm good" are bye, not pick). If no earlier place fits, use find with the same category instead.
-- alternative: a different ROAD to the SAME destination, only when the driver talks about the road, way or route itself ("another way", "take the other way", "different route", "is there a faster way", "can we skip the grade", "go around that", "go around the storm"). Never a new place; a rejected place ("not that one") is pick. Only meaningful while a route is active; otherwise answer as chat.
-- add_stop: a stop ON THE WAY to the current destination, keeping that destination ("stop at the Pilot in Fernley on the way", "swing by Love's first", "add a fuel stop", "cheapest diesel on my route", "fuel on the way", "I need a rest area before that"). query = the place or address named (digits for numbers), else category = the kind of stop (truck_stop for fuel/food/showers, rest_area, hotel); never both null. Only while a route is active; with no route it's a plain find or go.
-- clear_stops: drop the stops added on the way ("skip the stops", "forget the stop", "no stops, straight there"). For one stop named ("skip the Pilot", "drop the Love's stop"), query = that stop's name; null for all of them.
-- reviews: what other drivers say about a place ("what do drivers say about it", "is it any good", "reviews for the Pilot", "how are the showers there"). place_index = the place asked about from "Places found earlier", or null for the current route / the last one mentioned.
-- memory: what the copilot remembers about the driver ("what do you know about me", "what have you learned about me") -> query = "show"; or erasing it ("forget that", "forget what you know about me", "stop remembering") -> query = "forget".
-- hos: the driver's hours of service ("how many hours do I have", "how much drive time is left", "when do I have to stop", "where's my clock at", "how long till my break"). No other fields.
-- weather: the weather or wind at a place and time ("weather in Reno at 3pm", "how's the wind over Donner tonight", "is it snowing ahead", "what's it like at the destination"). query = the place named (null for here, or for the destination when they say there/ahead), when = the time words as said ("3pm", "tonight", "tomorrow morning", null for now).
-{controls}
-{parking}
-{breakdown}
-- chat: a question or remark that is not a place request ("how far is it?", "where do I park?", "thanks"). reply = a brief answer using the context. For parking/entry questions use only the satellite parking check; if there is none, say you haven't checked parking there yet. Never invent parking details.
-- bye: goodbye or done ("bye", "that's all", "no, I'm good", "that's it"). reply = one short friendly line.
-- unclear: only a sound or noise label (siren, beeping, music) or unintelligible.
-The driver may speak Russian or Ukrainian (see "Language" in the context): classify the same way, and write query and
-near in English as they appear on US maps ("Рино" -> "Reno, NV", "Лавс" -> "Love's"); category, intent and actions
-stay as listed.
-reply is only for chat and bye: in the driver's language (English unless the context names another), spoken style,
-no markdown, at most 2 short sentences, never repeat yourself.
-"""
 
 MAX_HISTORY = 8
 PAST_TURNS = 80  # long-term memory fed to a new dialog (the driver's lines among the last 80 stored turns)
 _SESSIONS = session_store.memory_sessions()  # the memory store's dialogs (tests look them up here)
-GOODBYE = re.compile(r"\b(bye|goodbye|that's all|that is all|that's it|i'm good|im good|no thanks|nothing else|see you)\b", re.I)
 
 
 FIT_STATUSES = ("chat", "no_results", "not_understood")  # free text; route/options/confirm lines stay whole
@@ -296,397 +207,11 @@ def _background(coro) -> None:
     _background_task(asyncio.create_task(coro))
 
 
-_COUNTRY = re.compile(r"^(?:USA|US|United States(?: of America)?)$", re.I)
-
-
-def _town(address: Optional[str]) -> str:
-    """"3645 W Capitol Ave, West Sacramento, CA 95691, USA" -> "West Sacramento, CA"; "Reno, NV, USA" -> "Reno, NV"."""
-    parts = [x.strip() for x in (address or "").split(",") if x.strip() and not _COUNTRY.match(x.strip())]
-    if len(parts) < 2:
-        return ""
-    state = parts[-1].split()[0] if parts[-1].split() else ""
-    if not re.fullmatch(r"[A-Z]{2}", state):
-        return ""
-    return f"{parts[-2]}, {state}"
-
-
-def _in_town(p: Place) -> str:
-    town = _town(p.address)
-    return f" in {town}" if town and town.split(",")[0].lower() not in p.name.lower() else ""
-
-
-def _street(address: Optional[str]) -> str:
-    """Landmark for speech: the street/exit without the house number, or ''."""
-    if not address:
-        return ""
-    first = address.split(",")[0].strip()
-    first = re.sub(r"^\d+[\w-]*\s+", "", first)  # drop the house number
-    return first if first and not first[0].isdigit() else ""
-
-
-def _speak_street(s: str) -> str:
-    """'N Pima Rd' -> 'North Pima Road' (whole words, case-insensitive); a '#123' suite is dropped."""
-    s = re.sub(r"\s*#\S+", "", s)
-    return " ".join(STREET_WORDS.get(w.lower().rstrip("."), w) for w in s.split())
-
-
-def _label_parts(place: Place) -> tuple[list[str], Optional[str]]:
-    """The comma parts of the place's name and address without ZIP and country, and the two-letter state when one
-    of the parts carries it ('Payson, Phoenix, AZ 85086, United States' -> (['Payson', 'Phoenix'], 'AZ'))."""
-    parts, state = [], None
-    for raw in f"{place.name}, {place.address or ''}".split(","):
-        p = raw.strip()
-        if not p:
-            continue
-        m = re.match(r"^([A-Za-z]{2})(?:\s+\d{5}(?:-\d{4})?)?$", p)  # "AZ 85086", "Az"
-        if m and m.group(1).lower() in _STATES:
-            state = state or m.group(1).upper()
-            continue
-        if _ZIP_COUNTRY.match(p):
-            continue
-        if p not in parts:
-            parts.append(p)
-    return parts, state
-
-
-def spoken_where(place: Place) -> str:
-    """Where the place really is, for speech. A town: 'Payson, Arizona'. A street or an address: 'Payson in
-    Phoenix, Arizona', '2828 El Centro Road in Sacramento, California'. A business: 'Cave Creek Az on North Pima
-    Road in Scottsdale, Arizona'. A name with nothing after it stays as it is ('Reno')."""
-    parts, state = _label_parts(place)
-    state_name = _STATES.get((state or "").lower(), "").title() if state else ""
-    if is_town(place):
-        head = parts[0] if parts else place.name.split(",")[0]
-        return f"{head}, {state_name}" if state_name else head
-    if not parts:
-        return place.name.split(",")[0]
-    head, rest = re.sub(r"\s*#\S+", "", parts[0]).strip(), parts[1:]  # "Pilot Travel Center #123" -> no number
-    if not rest:
-        return head
-    town = rest[-1]
-    street = _speak_street(_street(rest[0]) or rest[0]) if len(rest) > 1 else ""  # no house number on the street
-    # a street-type title ("Payson", "2828 El Centro Rd") reads with its words spelled out too
-    if is_street(place) or head[:1].isdigit():
-        head = _speak_street(head)
-    where = f"{head} on {street} in {town}" if street else f"{head} in {town}"
-    return f"{where}, {state_name}" if state_name else where
-
-
-def _tokens(s: str) -> list[str]:
-    words = re.findall(r"[a-z0-9']+", s.lower())
-    return [w for w in words if w not in ("the", "a", "an")]
-
-
-def _names_match(query: str, place: Place) -> bool:
-    """The letters agree: every word of what was said (before the first comma) is in the place's name, or the
-    place's own first part is wholly in what was said. 'Payson' ~ 'Payson, AZ' yes; 'Payson, AZ' ~ 'Cave Creek, Az' no."""
-    said = _tokens(query.split(",")[0])
-    name = _tokens(place.name)
-    first = _tokens(place.name.split(",")[0])
-    if not said or not name:
-        return False
-    return all(w in name for w in said) or (bool(first) and all(w in said for w in first))
-
-
-def dest_check(query: str, place: Place) -> Optional[str]:
-    """Why this geocode should be read back before routing, or None when it is plainly what was said."""
-    far = (place.distance_mi or 0) > DEST_FAR_MI
-    same = _names_match(query, place)
-    if chain_query(query) and is_town(place):
-        return "chain_to_town"
-    if town_query(query) and not is_town(place) and (is_street(place) or far or not same):
-        return "town_to_other"
-    if far and not same:
-        return "far_other_name"
-    return None
-
-
-def arrival_street(place: Place, route: RouteInfo) -> str:
-    """The street the driver turns off to get in: the last maneuver's street when the route knows it (the
-    same one the entry tip on the card names), else the street of the address."""
-    ap = route.approach
-    if ap and ap.street:
-        return re.sub(r"\s*\([^)]*\)", "", ap.street).strip() or _street(place.address)  # "(US-395-BR)" is for the card
-    return _street(place.address)
-
-
-def _miles(mi: float) -> str:
-    return f"{mi:.1f}".removesuffix(".0") if mi < 10 else f"{mi:,.0f}"
-
-
-# (intro, body): the short intro is the first spoken part; variants rotate per dialog.
-TEMPLATES = {
-    "truck_stop": [
-        ("Alright, got one", "{name}{off}, about {mi} miles out."),
-        ("Okay", "{name} is about {mi} miles ahead{up}."),
-        ("Here's a good one", "{name}{off}, {mi} miles away."),
-        ("Found you a stop", "{name}{up}, about {mi} miles."),
-    ],
-    "hotel": [
-        ("Alright, found you a bed", "{name}{off}, about {mi} miles out."),
-        ("Okay", "{name} is about {mi} miles ahead{up}."),
-        ("Here's a good one for the night", "{name}{off}, {mi} miles away."),
-        ("Got a place for you", "{name}{up}, about {mi} miles."),
-    ],
-    "rest_area": [
-        ("Alright, got a spot to stretch", "{name}{off}, about {mi} miles out."),
-        ("Okay", "{name} is about {mi} miles ahead{up}."),
-        ("Here's a good one", "{name}{off}, {mi} miles away."),
-        ("Found you a break", "{name}{up}, about {mi} miles."),
-    ],
-    "destination": [
-        ("Alright", "Route to {dest} is set, {time}, about {mi} miles."),
-        ("Okay, we're headed to {dest}", "That's {time}, {mi} miles."),
-        ("Got it", "{dest} it is, {time} and {mi} miles."),
-    ],
-    "walmart": [
-        ("Found a Walmart", "{name}{off}, about {mi} miles out. Big lot, but overnight is up to the store manager."),
-        ("Okay", "{name} is about {mi} miles ahead{up}. Ask inside before you stay the night."),
-        ("Here's one", "{name}{off}, {mi} miles away. Check with the store about parking overnight."),
-    ],
-    "cat_scale": [
-        ("Got a scale for you", "CAT scale at {name}{off}, about {mi} miles out."),
-        ("Okay", "Nearest CAT scale is at {name}, about {mi} miles ahead{up}."),
-        ("Here's one", "CAT scale at {name}{off}, {mi} miles away."),
-    ],
-    "truck_wash": [
-        ("Found a wash", "{name}{off}, about {mi} miles out."),
-        ("Okay", "{name} is about {mi} miles ahead{up}."),
-        ("Here's one", "{name}{off}, {mi} miles away."),
-    ],
-    "weigh_station": [
-        ("Got one", "{name}{off}, about {mi} miles out. Open or closed, watch the sign."),
-        ("Okay", "{name} is about {mi} miles ahead{up}. I can't see if it's open."),
-        ("Here's the nearest", "{name}{off}, {mi} miles away. Check the sign for open or closed."),
-    ],
-    # truck_stop results that are really gas stations: honest wording.
-    "fuel_stop": [
-        ("Closest I've got is a fuel stop", "{name}{off}, about {mi} miles out, might be tight for a rig."),
-        ("Okay, it's a fuel stop, not a truck stop", "{name} is about {mi} miles ahead{up}."),
-    ],
-}
-NOTICES = (
-    ("toll", "Heads up, couldn't dodge all the tolls on this one."),
-    ("restricted", "Heads up, part of this route might be tight for your rig, so watch the signs."),
-    ("ferry", "Heads up, there's a ferry on this one."),
-    ("backup route", "Heads up, the truck router is down, so this is a backup route with no turn prompts. Follow the line on the map."),
-)
-CLOSURE = "Heads up, there's a road closure on this route: {description}."
-ALT_REPLY = "Here's another way{via}, {time}, {mi} miles{tolls}."
-NO_ALT = "That's the only truck route I've got."
-TILL_SAID = ", in effect till "  # the warning line already names the end: the detour line must not repeat it
-CHAIN_QUESTION = re.compile(r"\bchain[ -]?(?:control|law|requirement|restriction)s?\b|\bchains?\s+(?:ahead|required|needed|on the (?:pass|route|way)|up ahead)\b|\b(?:any|are there|is there|do I need)\b.*\bchains?\b", re.I)
-CHAINS_NO_ROUTE = "Set a route and I'll check Caltrans chain controls along it."
-CHAINS_OUTSIDE = "I only have chain controls for California, and this route doesn't go through it."
-CHAINS_NONE = "No chain controls on your route right now."
-CHAINS_DOWN = "I can't check chain controls on your route right now. Try again in a minute."
-ALT_NO_ROUTE = "Set a route first and I'll look for other ways."
-VIA_ADDED = "Added {name}{ahead}. New total {time}, {mi} miles{dwell}."
-VIA_DWELL = ", counting {minutes} minutes at {each}"  # HERE adds VIA_STOP_S per stop; the total looked wrong without it (H9)
-VIA_NO_ROUTE = "Set a route first, then I can add stops on the way."
-VIA_FULL = "I can only add three stops. Say 'clear the stops' to start over."
-VIA_DUPLICATE = "{name} is already one of your stops."
-VIA_IS_DESTINATION = "That's where we're headed, {name}."
-VIA_STRAIGHT = "Straight there, {time}, {mi} miles."
-VIA_CLEARED = "Stops cleared. " + VIA_STRAIGHT
-VIA_NONE = "There are no stops on this route."
-VIA_NONE_AHEAD = "I couldn't find a {what} ahead on your route."
-VIA_NO_OTHER = "I couldn't find another {what} ahead on your route."
-VIA_REJECTED = "Okay, not {name}. "
-VIA_DROPPED = "Okay, no stop at {name}. I couldn't find another {what} on the way. "
-VIA_LEFT = "New total {time}, {mi} miles."
-VIA_SKIPPED = "Okay, no stop at {name}. "
-VIA_NOT_A_STOP = "{name} isn't one of your stops."
-VIA_DEST_NOT_A_STOP = "{name} is where we're headed, not a stop. Your stops stay."
-VIA_WHICH = "Which one, {names}?"
-# A stop that is nowhere near the way (the geocoder put "the Pilot in Fernley" in Wells, 300 miles past Reno,
-# and the dialog added it without a word, 2026-11-01): ask before the route changes.
-VIA_FAR = "{name} is about {extra} out of the way; from here that's {new} instead of {old}. Add it anyway?"
-VIA_FAR_NO = "Okay, no stop added."
-# A geocode that may not be what the driver meant ("Payson, AZ" -> a street in Phoenix or a business in Cave Creek,
-# "Pilot" -> the hamlet of Pilot, NV; stand 2026-11-01): the reply names where the place really is, and when the
-# match is far or named differently the copilot asks before the route is built.
-DEST_FAR_MI = 50.0
-DEST_CHECK = "I found {where}, about {mi} miles away. Is that the one?"
-DEST_NO = "Okay, not that one. Say the town and state, or type the address."
-DEST_ONLY = "That's the only match I have for {said}. Try the town with its state, or type the address."
-# Russian and Ukrainian answers too (services/i18n.py): a "да" to "Did you say Reno?" went to the classifier as a new
-# request and the question was lost (review 2026-11-05).
-YES_RU_UK = r"да|ага|угу|давай|конечно|точно|верно|правильно|так точно|ок(?:ей)?|хорошо|так|авжеж|звісно|добре|вірно"
-NO_RU_UK = r"нет|неа|не надо|не то|не туда|ні|нє|не треба"
-DEST_YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|correct|right|that's (?:it|right|the one)|that one|"
-                      r"go ahead|do it|take me there|fine|туда|поехали|вези|" + YES_RU_UK + r")\b", re.I)
-STREET_WORDS = {"st": "Street", "ave": "Avenue", "rd": "Road", "blvd": "Boulevard", "dr": "Drive", "hwy": "Highway",
-                "fwy": "Freeway", "pkwy": "Parkway", "ln": "Lane", "ct": "Court", "pl": "Place", "trl": "Trail",
-                "cir": "Circle", "n": "North", "s": "South", "e": "East", "w": "West", "ne": "Northeast",
-                "nw": "Northwest", "se": "Southeast", "sw": "Southwest"}
-VIA_FAR_YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|add it|go ahead|do it|please do|fine|добавь|добавляй|"
-                         r"додай|" + YES_RU_UK + r")\b", re.I)
-# A pending question names its extra "yes" pattern instead of carrying the regex (the state is stored as JSON).
-YES_PATTERNS = {"via_far_yes": VIA_FAR_YES, "dest_yes": DEST_YES}
 STOP_DETOUR_MIN_S = 45 * 60  # a stop costing more than this beyond its own 30 minutes...
 STOP_DETOUR_FRACTION = 0.5  # ...and more than half the trip so far is asked about first
-WHICH_PLACE = "Which place? Find one or set a route first."
-# Low-confidence transcripts of a destination or a place name get one "Did you say ...?" before anything is acted on.
-CONFIRM = "Did you say {what}?"
-CONFIRM_NO = "Okay, say it again."
-YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|correct|right|that's right|that's it|sure|affirmative|" + YES_RU_UK + r")\b",
-                 re.I)
-NO = re.compile(r"^\s*(?:no|nope|nah|wrong|that's wrong|not that|negative|" + NO_RU_UK + r")\b", re.I)
-# Words that may follow a yes or a no and still leave it a plain answer ("yeah, that's it", "nope, not that one").
-# Anything else is a new request in the same breath ("No, take me to Fresno", "Right, actually find me a truck
-# stop") and goes to the classifier: the first was answered "say it again", the second drove to the pending
-# destination (review 2026-11-02, bug 17).
-ANSWER_FILLER = {"yes", "yeah", "yep", "yup", "sure", "ok", "okay", "right", "correct", "exactly", "affirmative", "no",
-                 "nope", "nah", "negative", "not", "wrong", "that", "that's", "thats", "this", "it", "is", "one", "the",
-                 "please", "thanks", "thank", "you", "go", "ahead", "do", "take", "me", "there", "add", "and", "let's",
-                 "lets", "sounds", "good", "great", "fine", "perfect", "cool", "man", "buddy", "sir", "boss",
-                 # Russian / Ukrainian
-                 "да", "ага", "угу", "давай", "конечно", "точно", "верно", "правильно", "хорошо", "ок", "окей", "так",
-                 "нет", "неа", "не", "надо", "то", "это", "оно", "он", "она", "туда", "поехали", "вези", "добавь",
-                 "добавляй", "пожалуйста", "спасибо", "брат", "братан", "шеф", "отлично", "супер", "норм", "нормально",
-                 "ні", "нє", "треба", "авжеж", "звісно", "добре", "вірно", "додай", "дякую", "будь", "ласка"}
-
-
-def bare_answer(text: str, rx: re.Pattern) -> bool:
-    """The pattern answers the question and nothing but filler comes after it."""
-    m = rx.match(text or "")
-    if not m:
-        return False
-    # words of any script: "нет, поехали во Фресно" is a new request, not a bare "no"
-    return all(w in ANSWER_FILLER for w in re.findall(r"[^\W\d_']+(?:'[^\W\d_]+)?", text[m.end():].lower()))
-
-
-def _alt_reply(route: RouteInfo, current: Optional[RouteInfo] = None) -> str:
-    """"Here's another way via I-80 and CA-89, 4 h 33 min, 204 miles, about 1 h 42 min longer.": the difference
-    to the route the driver is on is what decides, so it is said when it is five minutes or more."""
-    via = f" via {' and '.join(route.labels[:2])}" if route.labels else ""
-    tolls = f", about ${route.tolls_usd:,.0f} in tolls" if route.tolls_usd else ""
-    diff = ""
-    if current is not None:
-        d = route.duration_min - current.duration_min
-        if abs(d) >= 5:
-            diff = f", about {_minutes_said(abs(d))} {'longer' if d > 0 else 'faster'}"
-        # The weather is why most drivers ask: say when the other way misses it, or runs into it. Only
-        # a completed lookup counts as clear; an unknown road gets no claim of being clear. Weather the new
-        # road is known to have is said whatever we know about the old one (QA review 2026-11-01).
-        on_current = {a.id for a in current.weather}
-        new_weather = [a for a in route.weather if a.id not in on_current]
-        if current.weather and route.weather_known and not route.weather:
-            diff += f", and it misses the {current.weather[0].event}"
-        elif new_weather:
-            diff += f", but it runs into a {new_weather[0].event}"
-    return ALT_REPLY.format(via=via, time=route.summary.split(" · ")[0], mi=_miles(route.distance_mi), tolls=tolls + diff)
 
 
 _turns: dict = {"n": 0}  # rotation when there's no dialog session
-
-
-def _notice(raw: str) -> str:
-    low = raw.lower()
-    return next((say for key, say in NOTICES if key in low), "Heads up, check this route for restrictions.")
-
-
-RESTRICTED_SPEECH = ("Heads up, I couldn't find a legal truck route to there. {line} Don't take this one blind: "
-                     "check the signs, or give me another destination.")
-LEGAL_SPEECH = "Heads up: {line}"
-
-
-def _route_warning(route: RouteInfo) -> str:
-    """One spoken heads-up for a new route. A route that breaks the truck's restrictions (the router found
-    no compliant one) comes first and in full, with the limit and the truck's own number; then a closure;
-    then a router notice; nothing when there's none of those."""
-    closed = next((i for i in route.incidents if i.closed), None)
-    closure = CLOSURE.format(description=closed.description) if closed else ""
-    if route.restricted and route.notices:
-        line = route.notices[0]
-        said = (LEGAL_SPEECH if route.restricted == "legal" else RESTRICTED_SPEECH).format(line=line)
-        return f"{said} {closure}" if closure else said  # a closure on top of a restriction is still said
-    if closure:
-        return closure
-    return _notice(route.notices[0]) if route.notices else ""
-
-
-def _with_warnings(reply: str, route: RouteInfo, *lines: Optional[str]) -> str:
-    """A route answer followed by what the driver must hear about that route: the restriction / closure / router
-    notice warning, then any further lines (chain controls, weather, a preference just learned). Every answer that
-    builds a route ends through here: "park near my delivery in Stockton" said only the name and the miles over a
-    route under a low bridge, and the stop answers said nothing either (review 2026-11-02, bug 14)."""
-    return " ".join(p.strip() for p in (reply, _route_warning(route), *lines) if p and p.strip())
-
-
-def _diesel_note(p: Place) -> str:
-    """Price tag for the model's place list, so "the cheapest diesel" resolves to a place_index."""
-    if p.diesel_price is None:
-        return ""
-    return f", diesel ${p.diesel_price:.2f}" + ("" if p.diesel_kind == "truck" else " (car pumps)")
-
-
-PRICE_WORDS = re.compile(r"\b(cheap(?:est|er)?|price|prices|cost|how much)\b", re.I)
-NO_PRICE = " I don't have a diesel price for it."
-NO_PRICES = "None of these list a diesel price, so I can't tell which is cheapest."
-# "I can check the cheapest one in the list if you want" was an offer of nothing (QA 2026-11-02): the closest is
-# what there is to offer, and "yes" goes there.
-NO_PRICES_OFFER = NO_PRICES + " The closest is {name}, {mi} miles. Want to go there?"
-NO_PRICES_KEEP = NO_PRICES + " {name} is the closest, and that's where we're headed."
-CHEAPEST = re.compile(r"\bcheap(?:est|er)\b", re.I)
-FUEL_WORDS = re.compile(r"\b(?:diesel|fuel|gas|def)\b", re.I)
-ALREADY_CHEAPEST = "{name} is the cheapest on the list, diesel at ${price:.2f}, and that's where we're headed."
-# "Where's the cheapest diesel" asks which listed place is cheapest; "is diesel cheaper in Oregon" and "fuel was
-# cheaper yesterday huh" are talk, and the list answered them by moving the route (review 2026-11-02).
-CHEAPEST_ASK = re.compile(
-    r"\b(?:where|which|what|who)(?:'?s|'?re| is| are| one| has| place)?\b[^.!?]*\bcheapest\b"  # a question
-    r"|^(?:(?:ok(?:ay)?|so|and|just|please|alright)[, ]+)*(?:(?:take|get|route) me to |go to |find (?:me )?|"
-    r"give me |show me |let'?s (?:go to |do )?|i (?:want|need) )?(?:the )?cheapest\b"  # "cheapest diesel", "take me to the cheapest"
-    r"|\bthe cheapest (?:one|place|stop)\b", re.I)
-# "the cheapest diesel in Reno": another place than the list's, the model's search is the answer
-ELSEWHERE = re.compile(r"\b(?:in|near|around|at|by|toward|towards|outside|across)\s+(?:the\s+)?(?P<w>[a-z0-9']+)", re.I)
-NOT_ELSEWHERE = {"here", "there", "list", "area", "town", "city", "one", "ones", "place", "places", "stop", "stops",
-                 "them", "it", "these", "those", "this", "that", "moment", "minute", "least", "all", "my", "our"}
-CHEAPEST_NEAR_MI = 30.0  # a list whose nearest place is farther than this from the truck was searched somewhere else
-
-
-def asks_cheapest(text: str, places: list[Place]) -> bool:
-    """The driver asks which listed place is cheapest and names no other place or region."""
-    if not CHEAPEST_ASK.search(text or ""):
-        return False
-    listed = set().union(*(_name_tokens(p.name) for p in places)) if places else set()
-    return not any(m.group("w").lower() not in NOT_ELSEWHERE and not (_name_tokens(m.group("w")) & listed)
-                   for m in ELSEWHERE.finditer(text))
-
-
-def list_is_near(lat: float, lng: float, places: list[Place]) -> bool:
-    """The list was found around where the truck is now (it is not a list from 150 miles back)."""
-    return bool(places) and km_to_mi(min(haversine_km(lat, lng, p.lat, p.lng) for p in places)) <= CHEAPEST_NEAR_MI
-
-
-# A fuel/rest stop asked for "on my route" while a route is active is a stop on the way, never a new destination.
-ON_THE_WAY = re.compile(r"\b(?:on|along) (?:my|the|our) (?:route|way)\b|\ben route\b|\bon the way\b"
-                        r"|\bbefore (?:I|we) (?:get|arrive)\b", re.I)
-STOP_CATEGORIES = {"truck_stop", "rest_area", "cat_scale", "truck_wash", "weigh_station", "walmart"}
-
-
-def price_caveat(text: str, place: Optional[Place]) -> str:
-    """The driver asked about the price and the place has none: say so instead of going quiet about it."""
-    if not place or place.category != "truck_stop" or place.diesel_price is not None:
-        return ""
-    return NO_PRICE if PRICE_WORDS.search(text or "") else ""
-
-
-def _diesel_sentence(place: Place, regional: str = "") -> str:
-    """Spoken price for a fuel-type place (+ the regional comparison when known); nothing without a fresh price."""
-    if place.diesel_price is None or place.category != "truck_stop":
-        return ""
-    if place.diesel_kind == "truck":
-        return f" Diesel's ${place.diesel_price:.2f} there.{regional}"
-    return f" Diesel's ${place.diesel_price:.2f} at the car pumps, truck lanes may differ.{regional}"
-
-
-def _rating_note(p: Place) -> str:
-    """For the model's place list: ", 4.3 stars (120 reviews)" so "is it any good?" has something to go on."""
-    if p.rating is None:
-        return ""
-    return f", {p.rating:.1f} stars" + (f" ({p.rating_count} reviews)" if p.rating_count else "")
 
 
 def _route_reply(place: Place, route: RouteInfo, n: int = 0, driver: Optional[str] = None,
@@ -713,312 +238,6 @@ def _route_head(place: Place, route: RouteInfo, n: int = 0, driver: Optional[str
     first_name = (driver or "").split(" ")[0]
     out = f"{intro}, {first_name}. " if first_name and n % 3 == 2 else f"{intro}. "
     return out + body.format(**vals) + _diesel_sentence(place, regional) + tpims.sentence(place)
-
-
-# The driver's name: the profile line asks the model for "now and then" and it said "Mike" in three replies of four
-# (QA 2026-11-02). The turn decides: at most once in NAME_EVERY replies of a dialog, never in a short reply, and
-# every other direct address ("Mike, ...", "..., Mike.", "Thanks Mike!") is cut out of whatever was written.
-# Only a vocative is an address: the name used to go wherever it was the last word before a comma or a full stop,
-# and drivers are called Austin, Jackson and Will ("heading to, 240 miles", "Sounds good, I.", review 2026-11-02).
-NAME_EVERY = 4
-NAME_MIN_WORDS = 6
-_SENTENCE_START = r"(?:^|(?<=[.!?])\s+)"
-# what opens a sentence before the name in "Thanks Mike!", "No problem, Mike, I've got it", "Okay, Rob."
-_INTERJECTION = (r"(?i:hey|hi|hello|thanks|thank you|okay|ok|alright|all right|sure(?: thing)?|no problem|you bet|"
-                 r"got it|roger(?: that)?|copy(?: that)?|will do|sounds good|(?:good )?(?:morning|afternoon|evening|night)|"
-                 r"yes|yeah|yep|no|nope|well)")
-
-
-def _address(name: str) -> re.Pattern:
-    """Case-sensitive: "Will" is a name, "will" is not."""
-    n = re.escape(name)
-    return re.compile(rf"(?P<lead>{_SENTENCE_START}(?:(?i:hey|hi|hello),?\s+)?{n}\s*[,!.]\s*)"  # "Hey Mike, you've got..."
-                      rf"|{_SENTENCE_START}{_INTERJECTION}(?P<inter>,?\s+{n})(?=\s*[,.!?])"  # "Thanks Mike!", "Okay, Rob."
-                      rf"|(?P<tail>\s*,\s*{n})(?=[.!?](?:\s|$)|\s*$|\s*[\u2014\u2013]|\s+-\s)")  # "Sure thing, Mike." / "..., Mike \u2014"
-
-
-def _a_place(text: str, name: str, places: Iterable[Place]) -> bool:
-    """The name is a town or a word of a place: one of the dialog's ("Jackson, MS") or written as one ("Austin, TX")."""
-    if re.search(rf"\b{re.escape(name)},?\s+[A-Z]{{2}}\b", text):
-        return True
-    word = name.lower()
-    return any(word in _name_tokens(f"{p.name} {p.address or ''}") for p in places if p)
-
-
-def _cut(text: str, spans: list[re.Match]) -> str:
-    for m in reversed(spans):
-        if m.group("lead") is not None:  # the sentence now starts with what followed the name
-            rest = text[m.end():]
-            rest = rest[:1].upper() + rest[1:]
-            text = text[:m.start()] + (" " if m.start() > 0 else "") + rest
-        else:
-            g = "inter" if m.group("inter") is not None else "tail"
-            text = text[:m.start(g)] + text[m.end(g):]
-    return text
-
-
-GREETING = re.compile(r"(?i:hey|hi|hello|thanks|thank you|good (?:morning|afternoon|evening|night))$")
-SHORT_LEAD = 3  # "You're welcome, Austin." / "Doing good, Austin.": a social phrase this short before ", Name" is an address
-
-
-def _vocatives(text: str, name: str, places: Iterable[Place]) -> list[re.Match]:
-    """Where the reply addresses the driver. When the name is also a place here ("Austin" driving to Austin), a
-    ", Austin." at the end of a sentence may be the town, so only the plain addresses go: "Hey Austin,", "Thanks
-    Austin!", and ", Austin" after a phrase of at most SHORT_LEAD words. Skipping them all kept the name in every
-    small-talk reply (stand 2026-11-02: three in a row)."""
-    if not name or not text:
-        return []
-    spans = list(_address(name).finditer(text))
-    if not _a_place(text, name, places):
-        return spans
-
-    def plain(m: re.Match) -> bool:
-        if m.group("lead") is not None:  # "Austin, TX is 240 miles out" is the town
-            return not re.match(r"[A-Z]{2}\b", text[m.end():])
-        if m.group("inter") is not None:  # "Thanks Austin!" is him; "Okay, Jackson." may answer "take me to Jackson"
-            return bool(GREETING.match(text[m.start():m.start("inter")].strip()))
-        lead = re.split(r"[.!?]\s+", text[:m.start("tail")])[-1]
-        return len(lead.split()) <= SHORT_LEAD
-
-    return [m for m in spans if plain(m)]
-
-
-def without_name(text: str, name: str, places: Iterable[Place] = ()) -> str:
-    """The reply with no direct address to the driver."""
-    return _cut(text, _vocatives(text, name, list(places)))
-
-
-def name_policy(text: str, name: str, allowed: bool, places: Iterable[Place] = ()) -> tuple[str, bool]:
-    """(the reply, whether it still addresses the driver): the first address is kept only when the dialog is due
-    one and the reply is long enough to carry it; the rest go. A name that is not an address is left alone and
-    does not count as one."""
-    spans = _vocatives(text, name, list(places))
-    if not spans:
-        return text, False
-    keep = allowed and len(_cut(text, spans).split()) >= NAME_MIN_WORDS
-    return _cut(text, spans[1:] if keep else spans), keep
-
-
-# "Not that one" and friends: the driver turns a PLACE down. With a route active the classifier sometimes
-# reads it as "another road" (it sees "N alternative routes not yet offered"); the words decide instead.
-REJECT_PLACE = re.compile(
-    r"\b(?:not (?:that|this) one|something else|somewhere else|another one|a different one|different one|"
-    r"(?:the )?next one|not there|no,? not that)\b", re.I)
-# "Skip the Pilot", "drop the Love's stop", "take the Pilot off": an order about one of the route's stops. The verb
-# leads the sentence and the stop is its object; "can I drop my trailer at the Pilot", "what time should I take off
-# from the Pilot" and "drop the load in Fernley" dropped the stop too (review 2026-11-02).
-DROP_ORDER = re.compile(
-    r"^(?:(?:ok(?:ay)?|yeah|yes|no|so|and|please|let'?s|just|go ahead and|can you|could you|would you|will you)\s+)*"
-    r"(?P<verb>skip|drop|remove|cancel|scratch|forget|take|no stop at|don'?t stop at|not stopping at)\b(?P<obj>.*)$", re.I)
-TAKE_OFF = re.compile(r"^\s+off\b(?!\s+from)|\boff(?:\s+(?:the|my)\s+(?:route|list|trip))?\s*$", re.I)
-NOT_A_STOP_OBJECT = re.compile(r"\b(?:trailers?|loads?|freight|cargo|reefer|pallets?|time)\b"
-                               r"|\b\d{1,2}(?::\d\d)?\s*(?:am|pm|a\.m\.|p\.m\.|o'?clock)\b|\b(?:noon|midnight)\b", re.I)
-# What the model puts in clear_stops' query besides a name (review 2026-11-02: "truck stop", "my stops", "the last
-# stop", "straight there" were each "X isn't one of your stops"). All of them:
-ALL_STOPS = re.compile(r"^(?:the |all |both |my |of |these |those )*(?:stops?|all|both|everything|them)$"
-                       r"|\b(?:all|both|my|the|these|those|no|any) (?:of (?:the |my )?)?stops\b|\bstraight (?:there|through|to)\b",
-                       re.I)
-STOP_ORDER = re.compile(r"^(?:the )?(?P<ord>first|last|next|second|third)(?: one| stop)?$", re.I)
-THAT_STOP = re.compile(r"^(?:that|this|it|the one you (?:just )?added)(?: one| stop)?$", re.I)
-STOP_KIND = ((re.compile(r"\b(?:truck|fuel|gas|diesel) stop\b|\btravel (?:center|plaza)\b|^fuel$", re.I), "truck_stop"),
-             (re.compile(r"\brest (?:area|stop)\b", re.I), "rest_area"),
-             (re.compile(r"\b(?:hotel|motel)\b", re.I), "hotel"),
-             (re.compile(r"\b(?:cat )?scale\b", re.I), "cat_scale"),
-             (re.compile(r"\btruck wash\b", re.I), "truck_wash"),
-             (re.compile(r"\bwalmart\b", re.I), "walmart"))
-# "Add another truck stop", "a different one", "one more": a stop besides those on the route.
-ANOTHER = re.compile(r"\b(?:another|different|one more|other|else|second|extra)\b", re.I)
-ROAD_WORDS = re.compile(r"\b(?:way|road|route|highway|freeway|interstate|detour|grade|pass|toll)s?\b", re.I)
-# "The second one", "number two", "the last one": a reference into the list, never something to geocode
-# (HERE once turned "the second one" into W 21st Pl, The Dalles, OR, 598 miles out).
-LIST_REF = re.compile(
-    r"^(?:the |that |this |number |no\.? ?|#)?"
-    r"(?P<ord>first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|one|two|three|four|five|1|2|3|4|5|last|closest|nearest)"
-    r"(?: one| place| stop| option)?\.?$", re.I)
-ORDINALS = {"first": 1, "1st": 1, "one": 1, "1": 1, "second": 2, "2nd": 2, "two": 2, "2": 2, "third": 3, "3rd": 3,
-            "three": 3, "3": 3, "fourth": 4, "4th": 4, "four": 4, "4": 4, "fifth": 5, "5th": 5, "five": 5, "5": 5}
-# A bare pronoun or deictic the model turned into a destination: nothing to geocode either.
-NOT_A_PLACE = re.compile(r"^(?:that|this|it|there|here|that one|this one|the other one|other one)\.?$", re.I)
-# "Remember I like Pilot", "keep in mind I hate tolls": the driver's own word for a like or a dislike.
-REMEMBER = re.compile(r"\b(?:remember|keep in mind|make a note|note that|don'?t forget)\b", re.I)
-# Road preferences said in words: (pattern, how it is remembered, the profile switch it also sets).
-ROAD_PREFS = ((re.compile(r"\btolls?\b|\btoll ?roads?\b", re.I), "tolls", "avoid_tolls"),
-              (re.compile(r"\bferr(?:y|ies)\b|\btunnels?\b", re.I), "ferries and tunnels", "avoid_ferries_tunnels"),
-              (re.compile(r"\bdowntown\b|\bcity driving\b", re.I), "downtown", None),
-              (re.compile(r"\bnight driving\b|\bdriving at night\b", re.I), "night driving", None))
-# "Nothing else" is the end of the conversation; next to "something else" the model can read it as a pick.
-BYE_PHRASE = re.compile(r"^(?:no,? )?(?:nothing else|that'?s (?:all|it)|i'?m (?:good|all set)|all set|no thanks?)[.!]?$", re.I)
-
-
-def numbered(places: list[Place], current_id: Optional[str], screen: Optional[list[str]] = None) -> list[Place]:
-    """The dialog's places in the order the model numbers them: the cards on screen in screen order (ui.option_ids,
-    when the app sends them), then the other options in the order the app got them, then the current route. The
-    model's list used to start with the current route while the cards do not, and "the second one" took the first
-    card (QA 2026-11-02, bug 6)."""
-    others = [p for p in places if p.id != current_id]
-    by_id = {p.id: p for p in others}
-    shown = [by_id[i] for i in dict.fromkeys(screen or []) if i in by_id]
-    return shown + [p for p in others if p not in shown] + [p for p in places if p.id == current_id]
-
-
-def list_reference(query: str, places: list[Place], current_id: Optional[str],
-                   screen: Optional[list[str]] = None) -> Optional[int]:
-    """1-based index into numbered(places) for "the second one" & co, counted over the places the driver can
-    see (the cards on screen when the app names them, else the options; the current route excluded, as on the
-    options list); None when the query is not a reference."""
-    m = LIST_REF.match((query or "").strip())
-    if not m:
-        return None
-    order = numbered(places, current_id, screen)
-    on_screen = [p for p in order if p.id in set(screen or []) and p.id != current_id]
-    shown = on_screen or [p for p in places if p.id != current_id] or list(places)
-    if not shown:
-        return None
-    word = m.group("ord").lower()
-    if word == "last":
-        chosen = shown[-1]
-    elif word in ("closest", "nearest"):
-        chosen = min(shown, key=lambda p: p.distance_mi if p.distance_mi is not None else 1e9)
-    else:
-        n = ORDINALS.get(word)
-        if not n or n > len(shown):
-            return None
-        chosen = shown[n - 1]
-    return order.index(chosen) + 1
-
-
-_NAME_TOKEN = re.compile(r"[a-z0-9]+")
-
-
-def _name_tokens(s: str) -> set[str]:
-    """Lowercase words, apostrophes dropped, a plural "s" trimmed: the model said "Roady's Truck Stops"."""
-    return {w[:-1] if len(w) > 3 and w.endswith("s") else w for w in _NAME_TOKEN.findall((s or "").lower().replace("'", ""))}
-
-
-def named_place(query: str, places: list[Place]) -> Optional[Place]:
-    """The listed place the driver named ("the 49er", "the Pilot"), or None. Every word of the query has to
-    be in the place name, and at least one of them must not be a word of the address (the town): "take me
-    to Sacramento" never matches "Sacramento 49er Travel Plaza", "the 49er" does. Geocoding "49er" gave a
-    street in Placerville (QA 2026-10-31, H9)."""
-    words = _name_tokens(re.sub(r"^\s*(?:the|a|an)\s+", "", query or "", flags=re.I))
-    if not words:
-        return None
-    for p in places:
-        name = _name_tokens(p.name)
-        if words <= name and words - _name_tokens(p.address or ""):
-            return p
-    return None
-
-
-NAME_LIKE = re.compile(r"^(?:the\s+)?[A-Za-z0-9&'.\- ]{2,40}$")
-
-
-def name_like(query: str) -> bool:
-    """"the 49er", "Roady's", "Pilot": a short name without a house number or a street word, the kind of query
-    that is a truck stop's name, not an address."""
-    q = (query or "").strip()
-    if not NAME_LIKE.match(q) or len(q.split()) > 3:
-        return False
-    if re.match(r"^\d+\s", q) or re.search(r"\b(?:st|street|ave|avenue|rd|road|blvd|hwy|highway|dr|drive|way|exit|mile)\b", q, re.I):
-        return False
-    return True
-
-
-GENERIC_NAME_WORDS = {"truck", "stop", "stops", "travel", "center", "centre", "plaza", "inn", "motel", "hotel",
-                      "rest", "area", "the", "and", "of", "at", "north", "south", "east", "west", "northbound",
-                      "southbound", "eastbound", "westbound", "station", "fuel", "gas", "diesel"}
-
-
-def named_in_text(text: str, places: list[Place]) -> Optional[Place]:
-    """The listed place whose own word the driver said ("stop at the 49er on the way" -> the 49er), or None.
-    A word counts when it is the place's, not its town's and not a generic ("truck stop", "travel plaza")."""
-    said = _name_tokens(text)
-    for p in places:
-        own = {w for w in _name_tokens(p.name) - _name_tokens(p.address or "") - GENERIC_NAME_WORDS if len(w) >= 3}
-        if own & said:
-            return p
-    return None
-
-
-def stop_named(text: str, query: str, stops: list[Place], dest: Optional[Place] = None) -> Optional[Place]:
-    """The route's stop the driver named ("skip the Pilot", "drop the Fernley stop"), or None. Only the stops are
-    candidates, so the town counts too (named_in_text leaves out words of the address: "Pilot" is a word of
-    "100 Pilot Rd"), except the destination's words ("no stops, straight to Reno" keeps no Reno stop); the stop
-    with the most words said wins, the first in route order on a tie."""
-    said_words = (_name_tokens(text) | _name_tokens(query)) - (_name_tokens(dest.name) if dest else set())
-    best, hits = None, 0
-    for s in stops:
-        own = {w for w in _name_tokens(s.name) - GENERIC_NAME_WORDS if len(w) >= 3}
-        n = len(own & said_words)
-        if n > hits:
-            best, hits = s, n
-    return best
-
-
-def stop_to_drop(text: str, stops: list[Place], dest: Optional[Place] = None) -> Optional[Place]:
-    """The route's stop an order in the text leaves out ("skip the Pilot", "cancel the Fernley stop"), or None."""
-    for clause in re.split(r"[.!?;,]+|\bthen\b", text or ""):
-        m = DROP_ORDER.match(clause.strip())
-        if not m:
-            continue
-        obj = m.group("obj")
-        if m.group("verb").lower() == "take" and not TAKE_OFF.search(obj):
-            continue
-        if NOT_A_STOP_OBJECT.search(obj):
-            continue
-        stop = stop_named(obj, "", stops, dest)
-        if stop:
-            return stop
-    return None
-
-
-def reject_or_reference_guard(intent: str, d: dict, text: str, places: list[Place],
-                              active: Optional[Place], screen: Optional[list[str]] = None) -> tuple[str, dict]:
-    """Rewrites two classifier mistakes before anything acts on them:
-    - alternative + a rejection phrase (and no road word) -> pick without an index (= the next place);
-    - go + a list reference ("the second one", place_index given) -> pick with that index;
-    - go + a bare pronoun -> not_understood instead of a geocode of "that".
-    Everything else passes through untouched."""
-    current_id = active.id if active else None
-    if intent == "pick" and BYE_PHRASE.match(text.strip()):
-        logger.info("agent pick %s is a goodbye -> bye", said(text))
-        return "bye", {**d, "intent": "bye", "place_index": None}
-    if intent == "pick" and places and LIST_REF.match(text.strip()):
-        # "the second one" is counted here, not by the model (QA 2026-11-02, bug 6)
-        ref = list_reference(text.strip(), places, current_id, screen)
-        if ref is not None and ref != d.get("place_index"):
-            logger.info("agent pick %s: the model said %s, the list says %s", said(text), d.get("place_index"), ref)
-            return "pick", {**d, "place_index": ref}
-    if intent == "alternative" and places and REJECT_PLACE.search(text) and not ROAD_WORDS.search(text):
-        logger.info("agent alternative %s reads as a rejected place -> pick", said(text))
-        return "pick", {**d, "intent": "pick", "place_index": None}
-    if intent == "go":
-        query = str(d.get("query") or "").strip()
-        ref = list_reference(query, places, current_id, screen) if places else None
-        if ref is None and places and LIST_REF.match(text.strip()):
-            ref = list_reference(text.strip(), places, current_id, screen)
-        if ref is not None:
-            logger.info("agent go %s is a list reference -> pick %s", said(query or text), ref)
-            return "pick", {**d, "intent": "pick", "place_index": ref}
-        idx = d.get("place_index")
-        if places and isinstance(idx, int) and 1 <= idx <= len(places) and (not query or LIST_REF.match(query) or NOT_A_PLACE.match(query)):
-            logger.info("agent go with place_index=%s and no real destination -> pick", idx)
-            return "pick", {**d, "intent": "pick", "place_index": idx}
-        if LIST_REF.match(query) or NOT_A_PLACE.match(query):
-            logger.info("agent go %r is not a place; nothing to pick from", query)
-            return ("pick", {**d, "intent": "pick", "place_index": None}) if places else ("not_understood", d)
-    return intent, d
-
-
-def pick_place(d: dict, places: list[Place], current_id: Optional[str] = None,
-               screen: Optional[list[str]] = None) -> Optional[Place]:
-    """Resolves the model's 1-based place_index into a place found earlier, numbered as the model saw them."""
-    try:
-        i = int(d.get("place_index"))
-    except (TypeError, ValueError):
-        return None
-    order = numbered(places, current_id, screen)
-    return order[i - 1] if 1 <= i <= len(order) else None
 
 
 def _id(place: Optional[Place]) -> Optional[str]:
@@ -1082,20 +301,6 @@ def choose_place(found: list[Place], truck: TruckProfile, exclude: set[str],
     return min(good or ok, key=dist)
 
 
-# The system prompt is byte-identical for every driver and every turn, so OpenAI's prompt cache serves it
-# (0.1x input price on the cached prefix, faster first token). Everything that varies, the truck, the
-# preferences and the conversation context, travels in the user message, in that order.
-SYSTEM_STATIC = SYSTEM.format(controls=controls.PROMPT, parking=approach.PROMPT, breakdown=breakdown.PROMPT)
-PROMPT_VERSION = 5  # bump when SYSTEM changes, so the cache key and the eval baseline move together
-PROMPT_CACHE_KEY = f"agent-v{PROMPT_VERSION}"
-
-
-def prompt_messages(text: str, context: str, truck: TruckProfile) -> tuple[str, str]:
-    """(system, user) for the classifier."""
-    user = f"Truck: {truck.label}. Driver preferences: {truck.prefs_label}.\n[{context}]\nDriver said: {text}"
-    return SYSTEM_STATIC, user
-
-
 async def classify(text: str, context: str, truck: TruckProfile) -> dict:
     system, user = prompt_messages(text, context, truck)
     with stage("llm_round_1"):
@@ -1106,10 +311,6 @@ async def classify(text: str, context: str, truck: TruckProfile) -> dict:
 # Memory reads that outlived the first turn of a dialog, per process (an asyncio.Task cannot live in the stored
 # DialogState). The next turn in this process adopts the result; another worker simply reads again.
 _past_tasks: dict[str, asyncio.Task] = {}
-
-
-# "skip / drop / cancel ..." at the start of the driver's words, for reading the stop meant from what follows.
-ORDER_VERB = re.compile(r"^\s*(?:please\s+|let'?s\s+|just\s+|go ahead and\s+)?(?:skip|drop|cancel|remove|ditch|lose)\s+", re.I)
 
 
 class LlmAgentProvider:
