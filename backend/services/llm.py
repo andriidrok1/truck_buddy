@@ -1,5 +1,7 @@
 """OpenAI client shared by the agent, voice and helper services (key: OPENAI_API_KEY)."""
+import json
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -59,3 +61,14 @@ async def complete_full(system: str, text: str, model: str = "gpt-5.4-mini", ima
 async def complete(system: str, text: str, model: str = "gpt-5.4-mini", image_b64: Optional[str] = None) -> str:
     """One system + user turn; returns the reply text."""
     return (await complete_full(system, text, model, image_b64)).text
+
+
+def json_object(raw: str) -> dict:
+    """The JSON object in a model's answer (the first "{" to the last "}"), or {} when there is none or it is not
+    an object."""
+    m = re.search(r"\{.*\}", raw or "", re.S)
+    try:
+        data = json.loads(m.group(0)) if m else {}
+    except json.JSONDecodeError:
+        data = {}
+    return data if isinstance(data, dict) else {}

@@ -86,17 +86,8 @@ _JOBS: dict[str, "asyncio.Task[AgentResponse]"] = {}
 _tasks: set = set()
 
 
-def _parse(raw: str) -> dict:
-    m = re.search(r"\{.*\}", raw or "", re.S)
-    try:
-        d = json.loads(m.group(0)) if m else {}
-    except json.JSONDecodeError:
-        d = {}
-    return d if isinstance(d, dict) else {}
-
-
 async def _llm(system: str, text: str, timeout: float = 25) -> dict:  # first call per process is a ~13 s cold start
-    return _parse(await asyncio.wait_for(llm.complete(system, text, MODEL[1]), timeout=timeout))
+    return llm.json_object(await asyncio.wait_for(llm.complete(system, text, MODEL[1]), timeout=timeout))
 
 
 def needs_question(d: dict) -> Optional[str]:

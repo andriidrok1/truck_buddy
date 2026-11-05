@@ -5,7 +5,6 @@ found earlier in this dialog; chat/bye -> the model's short reply from the same 
 Route answers are templated (one sentence) and parking directions follow from the app.
 """
 import asyncio
-import json
 import logging
 import math
 import os
@@ -1088,15 +1087,6 @@ def choose_place(found: list[Place], truck: TruckProfile, exclude: set[str],
     return min(good or ok, key=dist)
 
 
-def _parse(raw: str) -> dict:
-    m = re.search(r"\{.*\}", raw or "", re.S)
-    try:
-        data = json.loads(m.group(0)) if m else {}
-    except json.JSONDecodeError:
-        data = {}
-    return data if isinstance(data, dict) else {}
-
-
 # The system prompt is byte-identical for every driver and every turn, so OpenAI's prompt cache serves it
 # (0.1x input price on the cached prefix, faster first token). Everything that varies, the truck, the
 # preferences and the conversation context, travels in the user message, in that order.
@@ -1115,7 +1105,7 @@ async def classify(text: str, context: str, truck: TruckProfile) -> dict:
     system, user = prompt_messages(text, context, truck)
     with stage("llm_round_1"):
         res = await llm.complete_full(system, user, MODEL[1], cache_key=PROMPT_CACHE_KEY)
-    return _parse(res.text)
+    return llm.json_object(res.text)
 
 
 # Memory reads that outlived the first turn of a dialog, per process (an asyncio.Task cannot live in the stored
