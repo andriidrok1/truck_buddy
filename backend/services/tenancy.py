@@ -343,18 +343,6 @@ async def sub_by_refresh(refresh_hash: str) -> Optional[str]:
     return await pool.fetchval("SELECT sub FROM devices WHERE refresh_hash = $1", refresh_hash)
 
 
-async def refresh_hash_of(sub: str) -> Optional[str]:
-    k = db.store()
-    if k == "off":
-        return None
-    if k == "sqlite":
-        row = await db._sq_run(lambda con: con.execute(
-            "SELECT refresh_hash FROM devices WHERE sub = ?", (sub,)).fetchone())
-        return row[0] if row else None
-    pool = await db._db()
-    return await pool.fetchval("SELECT refresh_hash FROM devices WHERE sub = $1", sub)
-
-
 # ---- truck profile -------------------------------------------------------------------------------------------
 
 _profiles: dict[str, tuple[Optional[TruckProfile], float]] = {}  # sub -> (profile, monotonic time)

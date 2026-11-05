@@ -24,9 +24,7 @@ from typing import Optional
 
 from services import db, tenancy
 
-JWT_DAYS = 30  # access token; the refresh token (REFRESH_DAYS) gets a new one
-REFRESH_DAYS = 365
-LEGACY_OK = True  # tokens issued before refresh tokens existed (365-day access) stay valid until they expire
+JWT_DAYS = 30  # access token; the refresh token gets a new one
 
 
 class Principal(str):
