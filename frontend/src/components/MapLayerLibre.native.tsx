@@ -6,7 +6,8 @@
 // tiles from it by itself; nothing here knows about packs.
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "../i18n/Text";
 
 import { loadMapLibre } from "../map/libre";
 import { OPENFREEMAP_ATTRIBUTION, OPENFREEMAP_DARK_STYLE, OPENFREEMAP_STYLE } from "../map/provider";

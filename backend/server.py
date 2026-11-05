@@ -24,7 +24,7 @@ from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import approach, approach_api, auth, chains, db, fleet_api, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services import approach, approach_api, auth, chains, db, fleet_api, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
 from services.http import client as http_client  # noqa: E402
 from services.logs import said, transcripts_on  # noqa: E402
 from services.settings import settings  # noqa: E402
@@ -301,16 +301,17 @@ async def build_route(req: RouteRequest, driver: str = Depends(auth.require_driv
     # and never the route itself.
     await _advisories(route, WEATHER_BUDGET_S, WEATHER_BUDGET_S)
     if req.skip_parking:  # breakdown providers: the driver needs the shop, no parking check at all
-        return RouteResponse(place=place, route=route, parking=None)
+        return RouteResponse(place=place, route=i18n.localize_route(route), parking=None)
     parking = approach.for_route(place, route)
     approach.background(check_parking(place, route.approach))  # don't wait for the satellite; app re-asks /parking
-    return RouteResponse(place=place, route=route, parking=parking)
+    return RouteResponse(place=place, route=i18n.localize_route(route), parking=await i18n.localize_parking(parking))
 
 
 @api.post("/nudges", response_model=NudgeResponse)
 async def nudges_endpoint(req: NudgeRequest, request: Request, driver: str = Depends(auth.require_driver)):
     """Anything the copilot wants to say on its own right now (break due, parking before the shift ends)."""
     _require_us(req.lat, req.lng)
+    req.lang = i18n.use_lang(req.lang)
     req.motive_key, req.motive_user = await motive_auth(request, driver)
     req.truck_profile = await tenancy.effective_profile(driver, req.truck_profile)
     if req.session_id:
@@ -331,6 +332,9 @@ async def nudges_endpoint(req: NudgeRequest, request: Request, driver: str = Dep
             await store.save(req.session_id, state)  # a nudge offer becomes the next turn's pending answer
         except Exception as e:  # noqa: BLE001
             logger.warning("dialog state save failed for %s: %s", req.session_id, e)
+    if i18n.lang() != "en":
+        for n in out:
+            n.text = await i18n.localize(n.text)
     return NudgeResponse(nudges=out)
 
 
@@ -364,7 +368,8 @@ async def reroute(req: RerouteRequest, driver: str = Depends(auth.require_driver
     # The new route needs its own alerts and chain controls, or the advisories vanish after a reroute; the
     # driver is off the route while this runs, so the budget is shorter.
     await _advisories(route, REROUTE_ADVISORY_BUDGET_S, 0)
-    return RouteResponse(place=req.place, route=route, parking=approach.for_route(req.place, route))
+    return RouteResponse(place=req.place, route=i18n.localize_route(route),
+                         parking=await i18n.localize_parking(approach.for_route(req.place, route)))
 
 
 def _reroute_event(driver: str, req: RerouteRequest, ok: bool, error: Optional[str] = None) -> None:
@@ -396,7 +401,7 @@ async def _advisories(route: RouteInfo, budget_s: float, alt_budget_s: float) ->
 @api.post("/parking", response_model=ParkingCheck)
 async def parking_check(req: ParkingRequest):
     _require_us(req.place.lat, req.place.lng)  # each new coordinate is a satellite fetch + a vision call
-    return await check_parking(req.place, req.approach)
+    return await i18n.localize_parking(await check_parking(req.place, req.approach))
 
 
 @api.get("/satellite")  # behind the token: the thumbnail is loaded with the auth header
@@ -422,6 +427,16 @@ async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = Non
 
 
 async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
+    # The driver's language (services/i18n.py): the reply and the UI message as they will be shown and said.
+    if i18n.lang() != "en":
+        # A Google Maps grounded answer (what drivers say, services/maps_grounding.py) is said exactly as Google
+        # returned it: their terms forbid changing it, so it stays English (the tool answers only in English).
+        if res.reply and not res.maps_sources:
+            res.reply = await i18n.localize(res.reply)
+        if res.message:
+            res.message = await i18n.localize(res.message)
+        res.route = i18n.localize_route(res.route)
+        res.parking = await i18n.localize_parking(res.parking)
     if speak and res.reply:
         # The first clip (first clause, or first sentence with TTS_CLAUSE_SPLIT=0) is spoken as soon as it's
         # ready; the rest is generated in parallel and the app plays it right after.
@@ -472,6 +487,7 @@ def _finish(res: AgentResponse, extra: Optional[dict] = None, driver: Optional[s
 async def agent(req: AgentRequest, request: Request, speak: bool = Query(False),
                 driver: str = Depends(auth.require_driver)):
     timing.begin()
+    req.lang = i18n.use_lang(req.lang)  # the body's field, else the X-Lang header; the model is told either way
     req.motive_key, req.motive_user = await motive_auth(request, driver)
     req.truck_profile = await tenancy.effective_profile(driver, req.truck_profile)
     sid = req.session_id
@@ -570,10 +586,12 @@ async def voice_turn(
     active_distance_mi: Optional[float] = Form(None, ge=0),
     active_duration_min: Optional[int] = Form(None, ge=0),
     trip_id: Optional[str] = Form(None, max_length=64),  # the app's id of the drive (trip events)
+    lang: Optional[str] = Form(None, max_length=10),  # the driver's language (services/i18n.py)
     driver: str = Depends(auth.require_driver),
     request: Request = None,
 ):
     timing.begin()
+    lang = i18n.use_lang(lang)
     with timing.stage("upload"):
         data = await audio.read()
     if not data:
@@ -606,18 +624,20 @@ async def voice_turn(
     key, user = await motive_auth(request, driver)
     req = AgentRequest(text=text, lat=lat, lng=lng, active_place=current, truck_profile=truck, session_id=session_id,
                        active_distance_mi=active_distance_mi, active_duration_min=active_duration_min,
-                       stt_confidence=confidence, trip_id=trip_id, motive_key=key, motive_user=user)
+                       stt_confidence=confidence, trip_id=trip_id, motive_key=key, motive_user=user, lang=lang)
     return _finish(await _run_agent(req, speak=True, driver=driver), None, driver, trip_id, session_id, (lat, lng))
 
 
 @api.post("/voice/transcribe")
 async def voice_transcribe(audio: UploadFile = File(...), hint: Optional[str] = Form(None, max_length=600),
-                           maybe: Optional[str] = Form(None, max_length=8)):
+                           maybe: Optional[str] = Form(None, max_length=8), lang: Optional[str] = Form(None, max_length=10)):
     """Step 1 of a voice turn: speech -> text (the app shows it right away, then calls /agent?speak=true).
 
     `maybe=1`: the app's mic heard sound but no clear speech (src/voice/endpointer.ts). A short, unsure or
-    made-up-from-noise transcript then comes back empty, so the agent never answers a "Thank you." nobody said."""
+    made-up-from-noise transcript then comes back empty, so the agent never answers a "Thank you." nobody said.
+    `lang` (or the X-Lang header): the recogniser's language and prompt (services/voice.stt_language_and_prompt)."""
     timing.begin()
+    i18n.use_lang(lang)  # the recogniser's language and prompt (services/voice.stt_language_and_prompt)
     with timing.stage("upload"):
         data = await audio.read()
     if not data:
@@ -811,4 +831,5 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Request-Id"],
 )
+app.add_middleware(i18n.LangMiddleware)  # X-Lang: the driver's language for every endpoint (services/i18n.py)
 app.add_middleware(reqid.RequestIdMiddleware)  # outermost: the id is set before anything else runs

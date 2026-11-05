@@ -1,4 +1,5 @@
-import { ActivityIndicator, StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
+import { ActivityIndicator, StyleSheet, View, type LayoutChangeEvent } from "react-native";
+import { Text } from "../i18n/Text";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { categoryColor, categoryIcon } from "../constants";

@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "../i18n/Text";
 import Animated, { FadeInRight, FadeInUp, ZoomIn } from "react-native-reanimated";
 
 import type { Advisory } from "../geo/advisories";

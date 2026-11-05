@@ -1,4 +1,5 @@
-import { Linking, StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, View } from "react-native";
+import { Text } from "../i18n/Text";
 import Animated, { FadeInDown, FadeOutDown } from "react-native-reanimated";
 
 import { MESSAGES } from "../constants";

@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { Text } from "../i18n/Text";
 
 import { parkingBadgeText, showsParkingBadge, TREND_ICON } from "../geo/parkingBadge";
 import { fonts, radius, useTheme } from "../theme";

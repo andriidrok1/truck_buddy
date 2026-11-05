@@ -124,14 +124,36 @@ async def transcribe(data: bytes, filename: str, hint: Optional[str] = None) -> 
     return (await transcribe_full(data, filename, hint)).text
 
 
+# A Russian- or Ukrainian-speaking driver says the places and roads in English ("найди Love's на I-80"): the
+# recogniser gets no fixed language (a forced "ru" spells Love's as Лавс) and a prompt in the driver's language
+# with the English names in it, which sets both the language and the spelling.
+PROMPT_RU = ("Дальнобойщик говорит со штурманом по-русски, названия по-английски: найди Love's на I-80, стоянка для "
+             "фур, Pilot, Flying J, rest area, CAT scale.")
+PROMPT_UK = ("Далекобійник говорить зі штурманом українською, назви англійською: знайди Love's на I-80, стоянка для "
+             "фур, Pilot, Flying J, rest area, CAT scale.")
+
+
+def stt_language_and_prompt(hint: Optional[str]) -> tuple[Optional[str], str]:
+    from services import i18n  # lazy: keep voice importable on its own
+
+    code = i18n.lang()
+    base = stt_prompt(hint)
+    if code == "ru":
+        return None, f"{PROMPT_RU} {base}"
+    if code == "uk":
+        return None, f"{PROMPT_UK} {base}"
+    return "en", base
+
+
 async def transcribe_full(data: bytes, filename: str, hint: Optional[str] = None) -> Transcript:
     stt = llm.client().audio.transcriptions
-    prompt = stt_prompt(hint)
+    language, prompt = stt_language_and_prompt(hint)
+    lang_arg = {"language": language} if language else {}
     try:
         buf = io.BytesIO(data)
         buf.name = filename
         res = await asyncio.wait_for(
-            stt.create(file=buf, model=STT_MODEL, response_format="json", language="en",
+            stt.create(file=buf, model=STT_MODEL, response_format="json", **lang_arg,
                        prompt=prompt, temperature=0.0, include=["logprobs"]),
             STT_TIMEOUT_S)
         return Transcript(_clean((getattr(res, "text", "") or "").strip()),
@@ -144,7 +166,7 @@ async def transcribe_full(data: bytes, filename: str, hint: Optional[str] = None
     buf.name = filename
     try:
         res = await asyncio.wait_for(
-            stt.create(file=buf, model="whisper-1", response_format="verbose_json", language="en", prompt=prompt),
+            stt.create(file=buf, model="whisper-1", response_format="verbose_json", **lang_arg, prompt=prompt),
             STT_TIMEOUT_S)
     except asyncio.TimeoutError:
         raise SttTimeout(f"whisper-1 took longer than {STT_TIMEOUT_S:.0f}s")
@@ -281,6 +303,22 @@ async def _eleven(text: str, voice_id: str, previous_text: Optional[str] = None,
 
 # gpt-4o-mini-tts takes a speaking-style instruction (tts-1 ignores it).
 INSTRUCTIONS = "Calm, warm, confident co-pilot talking to a truck driver on the road. Natural pace, clear and friendly."
+# Russian / Ukrainian lines (services.i18n): the same voice in the driver's language, the English place and road
+# names inside them (Love's, Pilot, I-80) said the American way, as drivers say them.
+INSTRUCTIONS_RU = ("Спокойный, тёплый, уверенный штурман говорит с дальнобойщиком в дороге, по-русски, естественно и "
+                   "чётко. Английские названия мест и трасс (Love's, Pilot, I-80) произноси по-американски.")
+INSTRUCTIONS_UK = ("Спокійний, теплий, впевнений штурман говорить з далекобійником у дорозі, українською, природно і "
+                   "чітко. Англійські назви місць і трас (Love's, Pilot, I-80) вимовляй по-американськи.")
+
+
+def instructions_for(text: str) -> str:
+    """The TTS style for this line, by its script: Ukrainian letters, other Cyrillic, else English."""
+    if re.search(r"[ІіЇїЄєҐґ]", text or ""):
+        return INSTRUCTIONS_UK
+    if re.search(r"[А-Яа-яЁё]", text or ""):
+        return INSTRUCTIONS_RU
+    return INSTRUCTIONS
+
 
 # OpenAI TTS is quiet and uneven: gpt-4o-mini-tts/sage measures -31 to -35 LUFS raw depending on the sentence
 # (tts-1 was ~-26), ElevenLabs ~-15, so on a phone speaker in a cab it is barely audible. The spec
@@ -330,7 +368,7 @@ async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str
     if audio is None:
         model = model or fallback_model()
         try:
-            extra = {"instructions": INSTRUCTIONS} if model == "gpt-4o-mini-tts" else {}
+            extra = {"instructions": instructions_for(text)} if model == "gpt-4o-mini-tts" else {}
             res = await llm.client().audio.speech.create(input=text, model=model, voice=voice or DEFAULT_VOICE,
                                                          response_format="mp3", **extra)
             audio = res.content
@@ -561,7 +599,7 @@ async def _gain_pipe(src, out: "asyncio.Queue[Optional[bytes]]") -> None:
 async def _openai_stream(text: str):
     """Raw mp3 chunks from gpt-4o-mini-tts as they are generated."""
     model = STREAM_MODEL
-    extra = {"instructions": INSTRUCTIONS} if model == "gpt-4o-mini-tts" else {}
+    extra = {"instructions": instructions_for(text)} if model == "gpt-4o-mini-tts" else {}
     async with llm.client().audio.speech.with_streaming_response.create(
             input=text, model=model, voice=DEFAULT_VOICE, response_format="mp3", stream_format="audio",
             **extra) as resp:

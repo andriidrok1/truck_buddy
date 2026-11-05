@@ -1,6 +1,7 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Alert, Platform, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { Alert, Platform, StyleSheet, Switch, TextInput, View } from "react-native";
+import { Text } from "@/src/i18n/Text";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -21,6 +22,7 @@ import { setSim } from "@/src/sim";
 import { truckErrors, truckFromInputs } from "@/src/truck/validate";
 import { confirmHeight } from "@/src/truck/heightConfirmed";
 import { fonts, radius, spacing, useTheme, setThemePref, useThemePref, type ThemePref } from "@/src/theme";
+import { LANGS, setLang, t, UK_READY, useLang } from "@/src/i18n";
 
 
 function Field({
@@ -65,9 +67,9 @@ const confirmDelete = (onYes: () => void) => {
     if (window.confirm(DELETE_MSG)) onYes();
     return;
   }
-  Alert.alert("Delete my data?", DELETE_MSG, [
-    { text: "Cancel", style: "cancel" },
-    { text: "Delete", style: "destructive", onPress: onYes },
+  Alert.alert(t("Delete my data?"), t(DELETE_MSG), [
+    { text: t("Cancel"), style: "cancel" },
+    { text: t("Delete"), style: "destructive", onPress: onYes },
   ]);
 };
 
@@ -76,7 +78,7 @@ const deleteMyData = async () => {
   try {
     await api.clearMemory();
   } catch {
-    Alert.alert("Couldn't reach the server", "Your data is still there. Check your connection and try again.");
+    Alert.alert(t("Couldn't reach the server"), t("Your data is still there. Check your connection and try again."));
     return;
   }
   await resetProfile();
@@ -104,6 +106,7 @@ export default function TruckProfileScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const themePref = useThemePref();
+  const lang = useLang();
   const truck = useTruckProfile();
   const handsFree = useHandsFree();
   const speedAlerts = useSpeedAlerts();
@@ -189,7 +192,7 @@ export default function TruckProfileScreen() {
               testID="truck-name-input"
               value={name}
               onChangeText={(v) => setName(v.slice(0, 40))}
-              placeholder="First name"
+              placeholder={t("First name")}
               placeholderTextColor={colors.muted}
               autoCapitalize="words"
               autoCorrect={false}
@@ -263,6 +266,15 @@ export default function TruckProfileScreen() {
           />
         </View>
 
+        {/* The copilot's language: the app, the voice and the server's answers (src/i18n). Ukrainian is listed only
+            once it has its own texts: a Ukrainian driver must never be answered in Russian. */}
+        <Text style={[styles.section, { color: colors.onSurface }]}>Language</Text>
+        <View style={styles.row}>
+          {LANGS.filter((l) => l.code !== "uk" || UK_READY).map((l) => (
+            <Chip key={l.code} label={l.label} on={lang === l.code} onPress={() => setLang(l.code)} testID={`lang-${l.code}`} />
+          ))}
+        </View>
+
         <Text style={[styles.section, { color: colors.onSurface }]}>Appearance</Text>
         <View style={styles.row}>
           {THEME_CHOICES.map((c) => (
@@ -287,7 +299,7 @@ export default function TruckProfileScreen() {
               testID="eld-key-input"
               value={eldDraft}
               onChangeText={setEldDraft}
-              placeholder={eldConnected ? "Paste a new API key to replace" : "Motive API key"}
+              placeholder={t(eldConnected ? "Paste a new API key to replace" : "Motive API key")}
               placeholderTextColor={colors.muted}
               secureTextEntry
               autoCapitalize="none"

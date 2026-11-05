@@ -649,6 +649,10 @@ export interface paths {
         /**
          * Voice Transcribe
          * @description Step 1 of a voice turn: speech -> text (the app shows it right away, then calls /agent?speak=true).
+         *
+         *     `maybe=1`: the app's mic heard sound but no clear speech (src/voice/endpointer.ts). A short, unsure or
+         *     made-up-from-noise transcript then comes back empty, so the agent never answers a "Thank you." nobody said.
+         *     `lang` (or the X-Lang header): the recogniser's language and prompt (services/voice.stt_language_and_prompt).
          */
         post: operations["voice_transcribe_api_voice_transcribe_post"];
         delete?: never;
@@ -696,6 +700,8 @@ export interface components {
             active_place?: components["schemas"]["Place"] | null;
             /** Active Speed Limit Mph */
             active_speed_limit_mph?: number | null;
+            /** Lang */
+            lang?: string | null;
             /** Lat */
             lat: number;
             /** Lng */
@@ -832,6 +838,10 @@ export interface components {
             audio: string;
             /** Hint */
             hint?: string | null;
+            /** Lang */
+            lang?: string | null;
+            /** Maybe */
+            maybe?: string | null;
         };
         /** Body_voice_turn_api_voice_post */
         Body_voice_turn_api_voice_post: {
@@ -846,6 +856,8 @@ export interface components {
              * Format: binary
              */
             audio: string;
+            /** Lang */
+            lang?: string | null;
             /** Lat */
             lat: number;
             /** Lng */
@@ -1042,6 +1054,8 @@ export interface components {
              * @default true
              */
             driving: boolean;
+            /** Lang */
+            lang?: string | null;
             /** Lat */
             lat: number;
             /** Lng */

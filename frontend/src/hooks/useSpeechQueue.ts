@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { absoluteUrl, api } from "../api";
 import { logAnnouncement, type AnnouncementKind } from "../dev/announcements";
+import { t } from "../i18n";
 import { speakLocal, stopLocal } from "../voice/localTts";
 import { preempts, SpeechQueue, type DropReason, type QueuedSpeech, type SpeechItem } from "../voice/queue";
 import { isOnline } from "./useOnline";
@@ -111,7 +112,9 @@ export function useSpeechQueue(
 
   const say = useCallback(
     (text: string, opts: SayOptions) => {
-      const item = q.enqueue({ text, ...opts }, Date.now());
+      // The driver's language, here so the cloud voice, the offline phone voice and the caption all get it
+      // (src/i18n: "In 500 feet, turn left onto …" -> "Через 500 футов, …"; server replies are already translated).
+      const item = q.enqueue({ text: t(text), ...opts }, Date.now());
       const cur = playing.current;
       if (cur && preempts(cur, item)) {
         if (__DEV__) logAnnouncement(`${cur.text} (cut off)`, "skipped");

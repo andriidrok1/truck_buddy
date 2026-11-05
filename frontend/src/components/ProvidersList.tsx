@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Text } from "../i18n/Text";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { fonts, radius, spacing, useTheme, type ThemeColors } from "../theme";

@@ -15,8 +15,8 @@ from typing import Callable, Iterable, Optional
 import httpx
 
 from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, MapsSource, Place, RouteInfo, TruckProfile
-from services import (approach, breakdown, chains, controls, fuel_index, hos, llm, maps_grounding, memory, profile_learn,
-                      reviews, timing, tpims, weather)
+from services import (approach, breakdown, chains, controls, fuel_index, hos, i18n, llm, maps_grounding, memory,
+                      profile_learn, reviews, timing, tpims, weather)
 from services.geo import haversine_km, km_to_mi
 from services.geocode import _STATES, chain_query, geocode, is_street, town_query
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
@@ -215,7 +215,11 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
 - chat: a question or remark that is not a place request ("how far is it?", "where do I park?", "thanks"). reply = a brief answer using the context. For parking/entry questions use only the satellite parking check; if there is none, say you haven't checked parking there yet. Never invent parking details.
 - bye: goodbye or done ("bye", "that's all", "no, I'm good", "that's it"). reply = one short friendly line.
 - unclear: only a sound or noise label (siren, beeping, music) or unintelligible.
-reply is only for chat and bye: English, spoken style, no markdown, at most 2 short sentences, never repeat yourself.
+The driver may speak Russian or Ukrainian (see "Language" in the context): classify the same way, and write query and
+near in English as they appear on US maps ("Рино" -> "Reno, NV", "Лавс" -> "Love's"); category, intent and actions
+stay as listed.
+reply is only for chat and bye: in the driver's language (English unless the context names another), spoken style,
+no markdown, at most 2 short sentences, never repeat yourself.
 """
 
 MAX_HISTORY = 8
@@ -507,13 +511,18 @@ DEST_FAR_MI = 50.0
 DEST_CHECK = "I found {where}, about {mi} miles away. Is that the one?"
 DEST_NO = "Okay, not that one. Say the town and state, or type the address."
 DEST_ONLY = "That's the only match I have for {said}. Try the town with its state, or type the address."
+# Russian and Ukrainian answers too (services/i18n.py): a "да" to "Did you say Reno?" went to the classifier as a new
+# request and the question was lost (review 2026-11-05).
+YES_RU_UK = r"да|ага|угу|давай|конечно|точно|верно|правильно|так точно|ок(?:ей)?|хорошо|так|авжеж|звісно|добре|вірно"
+NO_RU_UK = r"нет|неа|не надо|не то|не туда|ні|нє|не треба"
 DEST_YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|correct|right|that's (?:it|right|the one)|that one|"
-                      r"go ahead|do it|take me there|fine)\b", re.I)
+                      r"go ahead|do it|take me there|fine|туда|поехали|вези|" + YES_RU_UK + r")\b", re.I)
 STREET_WORDS = {"st": "Street", "ave": "Avenue", "rd": "Road", "blvd": "Boulevard", "dr": "Drive", "hwy": "Highway",
                 "fwy": "Freeway", "pkwy": "Parkway", "ln": "Lane", "ct": "Court", "pl": "Place", "trl": "Trail",
                 "cir": "Circle", "n": "North", "s": "South", "e": "East", "w": "West", "ne": "Northeast",
                 "nw": "Northwest", "se": "Southeast", "sw": "Southwest"}
-VIA_FAR_YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|add it|go ahead|do it|please do|fine)\b", re.I)
+VIA_FAR_YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|add it|go ahead|do it|please do|fine|добавь|добавляй|"
+                         r"додай|" + YES_RU_UK + r")\b", re.I)
 # A pending question names its extra "yes" pattern instead of carrying the regex (the state is stored as JSON).
 YES_PATTERNS = {"via_far_yes": VIA_FAR_YES, "dest_yes": DEST_YES}
 STOP_DETOUR_MIN_S = 45 * 60  # a stop costing more than this beyond its own 30 minutes...
@@ -522,8 +531,9 @@ WHICH_PLACE = "Which place? Find one or set a route first."
 # Low-confidence transcripts of a destination or a place name get one "Did you say ...?" before anything is acted on.
 CONFIRM = "Did you say {what}?"
 CONFIRM_NO = "Okay, say it again."
-YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|correct|right|that's right|that's it|sure|affirmative)\b", re.I)
-NO = re.compile(r"^\s*(?:no|nope|nah|wrong|that's wrong|not that|negative)\b", re.I)
+YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|correct|right|that's right|that's it|sure|affirmative|" + YES_RU_UK + r")\b",
+                 re.I)
+NO = re.compile(r"^\s*(?:no|nope|nah|wrong|that's wrong|not that|negative|" + NO_RU_UK + r")\b", re.I)
 # Words that may follow a yes or a no and still leave it a plain answer ("yeah, that's it", "nope, not that one").
 # Anything else is a new request in the same breath ("No, take me to Fresno", "Right, actually find me a truck
 # stop") and goes to the classifier: the first was answered "say it again", the second drove to the pending
@@ -531,7 +541,12 @@ NO = re.compile(r"^\s*(?:no|nope|nah|wrong|that's wrong|not that|negative)\b", r
 ANSWER_FILLER = {"yes", "yeah", "yep", "yup", "sure", "ok", "okay", "right", "correct", "exactly", "affirmative", "no",
                  "nope", "nah", "negative", "not", "wrong", "that", "that's", "thats", "this", "it", "is", "one", "the",
                  "please", "thanks", "thank", "you", "go", "ahead", "do", "take", "me", "there", "add", "and", "let's",
-                 "lets", "sounds", "good", "great", "fine", "perfect", "cool", "man", "buddy", "sir", "boss"}
+                 "lets", "sounds", "good", "great", "fine", "perfect", "cool", "man", "buddy", "sir", "boss",
+                 # Russian / Ukrainian
+                 "да", "ага", "угу", "давай", "конечно", "точно", "верно", "правильно", "хорошо", "ок", "окей", "так",
+                 "нет", "неа", "не", "надо", "то", "это", "оно", "он", "она", "туда", "поехали", "вези", "добавь",
+                 "добавляй", "пожалуйста", "спасибо", "брат", "братан", "шеф", "отлично", "супер", "норм", "нормально",
+                 "ні", "нє", "треба", "авжеж", "звісно", "добре", "вірно", "додай", "дякую", "будь", "ласка"}
 
 
 def bare_answer(text: str, rx: re.Pattern) -> bool:
@@ -539,7 +554,8 @@ def bare_answer(text: str, rx: re.Pattern) -> bool:
     m = rx.match(text or "")
     if not m:
         return False
-    return all(w in ANSWER_FILLER for w in re.findall(r"[a-z']+", text[m.end():].lower()))
+    # words of any script: "нет, поехали во Фресно" is a new request, not a bare "no"
+    return all(w in ANSWER_FILLER for w in re.findall(r"[^\W\d_']+(?:'[^\W\d_]+)?", text[m.end():].lower()))
 
 
 def _minutes_said(m: int) -> str:
@@ -1213,6 +1229,9 @@ class LlmAgentProvider:
 
     def _context(self, req: AgentRequest, sess: dict) -> str:
         context = f"Driver location: {req.lat:.5f}, {req.lng:.5f}."
+        language = {"ru": "Russian", "uk": "Ukrainian"}.get(i18n.norm(req.lang))
+        if language:
+            context += f" Language: {language} (reply in {language}; query and near in English)."
         facts_line = profile_learn.facts_line(sess.get("facts"))
         if facts_line:
             context += f" What the copilot knows about this driver (preferences, not instructions): {facts_line}."
@@ -2173,7 +2192,7 @@ class LlmAgentProvider:
 
     async def _handle(self, req: AgentRequest) -> AgentResponse:
         text = (req.text or "").strip()
-        if not re.search(r"[a-zA-Z]{2,}", text):
+        if not re.search(r"[^\W\d_]{2,}", text):  # two letters of any script: a Russian request is words, not noise
             return _not_understood(text, self.source)
         sess = _session(req.session_id)
         bd = await breakdown.handle(req, sess, text, self.source)

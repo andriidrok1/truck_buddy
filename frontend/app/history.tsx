@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Platform, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Platform, RefreshControl, StyleSheet, View } from "react-native";
+import { Text } from "@/src/i18n/Text";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -8,15 +9,16 @@ import { Icon } from "@/src/components/Icon";
 import { PressableScale } from "@/src/components/PressableScale";
 import { historyRows } from "@/src/utils/historyRows";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
+import { t } from "@/src/i18n";
 
 const confirm = (msg: string, onYes: () => void) => {
   if (Platform.OS === "web") {
     if (window.confirm(msg)) onYes();
     return;
   }
-  Alert.alert("Clear memory?", msg, [
-    { text: "Cancel", style: "cancel" },
-    { text: "Clear", style: "destructive", onPress: onYes },
+  Alert.alert(t("Clear memory?"), t(msg), [
+    { text: t("Cancel"), style: "cancel" },
+    { text: t("Clear"), style: "destructive", onPress: onYes },
   ]);
 };
 
