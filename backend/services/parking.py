@@ -22,7 +22,7 @@ from typing import Optional
 from services.http import client
 
 from models import NearbyLot, ParkingCheck, ParkingSpot, Place
-from services import llm, osm_access, parking_ground, parking_store
+from services import llm, osm_access, parking_ground, parking_store, quota
 
 logger = logging.getLogger("truckbuddy.parking")
 
@@ -307,6 +307,12 @@ async def _check_parking(place: Place, force: bool = False) -> ParkingCheck:
     failed = _fail_cache.get(k)
     if failed and time.monotonic() - failed[0] < FAIL_TTL_S:
         return failed[1]
+    if not quota.take_satellite():
+        # The day's new checks are spent (services/quota.py): nothing cached, so tomorrow checks it for real.
+        logger.info("satellite budget spent; %s not checked", place.name)
+        if listed:
+            return ParkingCheck(verdict=LISTED[0], label=LISTED[1], reason=LISTED[2], source="place_data")
+        return ParkingCheck(verdict="unclear", label="Truck parking unclear", reason=quota.SAT_SKIPPED, source="none")
     path = image_path(place.lat, place.lng)
     try:
         img = await fetch_satellite(place.lat, place.lng)

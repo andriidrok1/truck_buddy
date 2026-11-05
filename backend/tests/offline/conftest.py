@@ -37,6 +37,9 @@ OFFLINE_ENV = {
     # The TPIMS poller starts with every TestClient; a first poll that lands after a test installed fake_http shows
     # up in its calls[0] (test_tpims turns it on itself).
     "TPIMS_ENABLED": "0",
+    # Daily budgets off: a module-scoped client makes hundreds of turns as one driver (test_quota turns them on).
+    "TURNS_PER_DAY": "0",
+    "SAT_NEW_PER_DAY": "0",
 }
 
 
