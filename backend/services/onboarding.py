@@ -50,10 +50,11 @@ def _clean(data: dict) -> dict:
 
 
 async def extract(step: Step, text: str) -> dict:
-    if not re.search(r"[a-zA-Z0-9]{2,}", text or ""):
+    if not re.search(r"\w{2,}", text or ""):  # any script: "Михаил" is an answer (a Latin-only check dropped it)
         return {}
     try:
-        raw = await llm.complete("You extract structured data from a truck driver's spoken answer. Reply with JSON only.",
+        raw = await llm.complete("You extract structured data from a truck driver's spoken answer, which may be in English, "
+                                 "Russian or Ukrainian (keep a name in the script it was said in). Reply with JSON only.",
                                  f"{PROMPTS[step]}\n\nDriver said: {text}")
         m = re.search(r"\{.*\}", raw or "", re.S)
         return _clean(json.loads(m.group(0)) if m else {})

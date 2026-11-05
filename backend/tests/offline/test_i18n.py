@@ -163,3 +163,10 @@ def test_x_lang_header_sets_the_language():
     client.get("/probe")
     client.get("/probe", headers={"X-Lang": "uk"})
     assert seen == ["ru", "en", "uk"]
+
+
+def test_onboarding_takes_a_cyrillic_answer(fake_llm):
+    from services import onboarding
+    fake_llm.on(r"Михаил", '{"driver_name": "Михаил"}')
+    assert run(onboarding.extract("name", "Меня зовут Михаил")) == {"driver_name": "Михаил"}
+    assert run(onboarding.extract("name", "...")) == {}
