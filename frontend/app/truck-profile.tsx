@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Alert, Platform, StyleSheet, Switch, TextInput, View } from "react-native";
+import { Alert, Platform, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "@/src/i18n/Text";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,6 +17,7 @@ import { DEFAULT_TRUCK, useTruckProfile, type TruckProfile } from "@/src/hooks/u
 import { useTripStore } from "@/src/state/tripStore";
 import { requestTruckReroute, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts } from "@/src/state/settingsStore";
 import { Chip, PrefsForm, type Prefs } from "@/src/components/PrefsForm";
+import { ThemedSwitch } from "@/src/components/ThemedSwitch";
 import { formatBytes } from "@/src/map/bounds";
 import { setSim } from "@/src/sim";
 import { truckErrors, truckFromInputs } from "@/src/truck/validate";
@@ -70,6 +71,19 @@ const confirmDelete = (onYes: () => void) => {
   Alert.alert(t("Delete my data?"), t(DELETE_MSG), [
     { text: t("Cancel"), style: "cancel" },
     { text: t("Delete"), style: "destructive", onPress: onYes },
+  ]);
+};
+
+const RESET_MSG = "Height, trailer, weight, hazmat and your name go back to the defaults. Nothing is saved until you tap Save truck.";
+
+const confirmReset = (onYes: () => void) => {
+  if (Platform.OS === "web") {
+    if (window.confirm(RESET_MSG)) onYes();
+    return;
+  }
+  Alert.alert(t("Reset to defaults?"), t(RESET_MSG), [
+    { text: t("Cancel"), style: "cancel" },
+    { text: t("Reset"), style: "destructive", onPress: onYes },
   ]);
 };
 
@@ -174,9 +188,7 @@ export default function TruckProfileScreen() {
           <Icon name="arrow-left" size={24} color={colors.onSurface} />
         </PressableScale>
         <Text style={[styles.title, { color: colors.onSurface }]}>Your truck</Text>
-        <PressableScale testID="truck-profile-reset-button" onPress={onReset} style={styles.reset}>
-          <Text style={[styles.resetText, { color: colors.info }]}>Reset</Text>
-        </PressableScale>
+        <View style={styles.back} />
       </View>
 
       <KeyboardAwareScrollView bottomOffset={96} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -221,13 +233,11 @@ export default function TruckProfileScreen() {
             <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Hazardous materials</Text>
             <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>Avoid tunnels and roads closed to hazmat</Text>
           </View>
-          <Switch
+          <ThemedSwitch
             testID="truck-hazmat-switch"
             value={hazmat}
             onValueChange={setHazmat}
-            trackColor={{ true: colors.warning, false: colors.surfaceTertiary }}
-            thumbColor={colors.surface}
-            {...(Platform.OS === "web" ? { activeThumbColor: colors.surface } : {})}
+            onColor={colors.warning}
           />
         </View>
 
@@ -240,13 +250,11 @@ export default function TruckProfileScreen() {
                 Start the copilot with a wake word instead of a tap
               </Text>
             </View>
-            <Switch
+            <ThemedSwitch
               testID="hands-free-switch"
               value={handsFree}
               onValueChange={setHandsFree}
-              trackColor={{ true: colors.brandPrimary, false: colors.surfaceTertiary }}
-              thumbColor={colors.surface}
-              {...(Platform.OS === "web" ? { activeThumbColor: colors.surface } : {})}
+              onColor={colors.brandPrimary}
             />
           </View>
         )}
@@ -256,13 +264,11 @@ export default function TruckProfileScreen() {
             <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Speed limit alerts</Text>
             <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>Say so after 10 s more than 5 mph over the posted limit</Text>
           </View>
-          <Switch
+          <ThemedSwitch
             testID="speed-alerts-switch"
             value={speedAlerts}
             onValueChange={setSpeedAlerts}
-            trackColor={{ true: colors.brandPrimary, false: colors.surfaceTertiary }}
-            thumbColor={colors.surface}
-            {...(Platform.OS === "web" ? { activeThumbColor: colors.surface } : {})}
+            onColor={colors.brandPrimary}
           />
         </View>
 
@@ -384,6 +390,18 @@ export default function TruckProfileScreen() {
           </Text>
         )}
 
+        {/* Reset lives down here with a confirmation: a text link in the header was small and wiped the form in one
+            tap (UI review 2026-11-05). It only resets the form; nothing is saved until Save truck. */}
+        <PressableScale
+          testID="truck-profile-reset-button"
+          accessibilityLabel="Reset truck to defaults"
+          onPress={() => confirmReset(onReset)}
+          style={[styles.signOut, { borderColor: colors.border }]}
+        >
+          <Icon name="restore" size={20} color={colors.onSurface} />
+          <Text style={[styles.signOutText, { color: colors.onSurface }]}>Reset to defaults</Text>
+        </PressableScale>
+
         {/* Only a driver who typed an access code has somewhere to sign out to; open sign-ups don't. */}
         {signedInWithCode() && (
           <PressableScale
@@ -437,15 +455,13 @@ export default function TruckProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  signOut: { height: 52, borderRadius: radius.pill, borderWidth: 1.5, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginTop: spacing.xl },
+  signOut: { height: 56, borderRadius: radius.pill, borderWidth: 1.5, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginTop: spacing.xl },
   signOutText: { fontFamily: fonts.semibold, fontSize: 16 },
   deleteNote: { fontFamily: fonts.regular, fontSize: 13, textAlign: "center", marginTop: spacing.sm, paddingHorizontal: spacing.lg },
   root: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, gap: spacing.md },
-  back: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
+  back: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
   title: { flex: 1, fontFamily: fonts.bold, fontSize: 22 },
-  reset: { minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.sm },
-  resetText: { fontFamily: fonts.semibold, fontSize: 15 },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xl, gap: spacing.md },
   hint: { fontFamily: fonts.regular, fontSize: 14, lineHeight: 20 },
   section: { fontFamily: fonts.bold, fontSize: 16, marginTop: spacing.sm },
@@ -469,9 +485,9 @@ const styles = StyleSheet.create({
   switchSub: { fontFamily: fonts.regular, fontSize: 13, marginTop: 2 },
   eldBox: { borderRadius: radius.md, padding: spacing.lg, gap: spacing.md },
   eldStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  eldBtn: { flex: 1, height: 48, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
+  eldBtn: { flex: 1, height: 56, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
   eldBtnText: { fontFamily: fonts.semibold, fontSize: 15 },
-  packDelete: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  packDelete: { width: 56, height: 56, alignItems: "center", justifyContent: "center" },
   error: { fontFamily: fonts.medium, fontSize: 13 },
   footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   save: { height: 56, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },

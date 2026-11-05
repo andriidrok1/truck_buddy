@@ -1,24 +1,41 @@
-import { lineCaption, replyCaption, replyEnded, REPLY_HOLD_MS } from "../dialog/caption";
+import { expireLine, hasExpiringLine, lineCaption, replyCaption } from "../dialog/caption";
 
 describe("caption", () => {
-  test("a turn call queued behind a long answer does not cover it right after it was said", () => {
-    const answer = replyCaption("Got it, 48-foot trailer. I'll keep that in mind.", undefined, 0);
-    const ended = replyEnded(answer, 5000); // the answer took 5 s to say
-    expect(lineCaption("In 500 feet, turn left", ended, 6000)).toBe(ended);
-    expect(lineCaption("In 500 feet, turn left", ended, 5000 + REPLY_HOLD_MS)).toEqual({ reply: "In 500 feet, turn left", kind: "line", at: 5000 + REPLY_HOLD_MS });
+  test("a spoken line never replaces the answer, however long after it comes", () => {
+    const answer = replyCaption("Alright, got one. Harbor Truck and Auto Plaza, right off Harbor Blvd, about 11 minutes.", "where can I park tonight", 0);
+    const later = lineCaption("Parking looks good there.", answer, 60_000);
+    expect(later.reply).toBe(answer.reply);
+    expect(later.heard).toBe("where can I park tonight");
+    expect(later.kind).toBe("reply");
+    expect(later.note).toBe("Parking looks good there.");
   });
-  test("only the answer's own end starts the hold", () => {
-    const ended = replyEnded(replyCaption("Got it.", undefined, 0), 2000);
-    expect(replyEnded(ended, 9000)).toBe(ended);
-    expect(lineCaption("Turn left", ended, 2000 + REPLY_HOLD_MS).reply).toBe("Turn left");
+
+  test("the note under an answer expires, the answer stays", () => {
+    const answer = replyCaption("Got it, 48-foot trailer.", undefined, 0);
+    expect(hasExpiringLine(answer)).toBe(false);
+    expect(expireLine(answer)).toBe(answer);
+    const withNote = lineCaption("In 500 feet, turn left", answer, 5000);
+    expect(hasExpiringLine(withNote)).toBe(true);
+    const after = expireLine(withNote);
+    expect(after?.reply).toBe("Got it, 48-foot trailer.");
+    expect(after?.note).toBeUndefined();
+    expect(hasExpiringLine(after)).toBe(false);
   });
-  test("one line replaces another at once", () => {
+
+  test("a new answer replaces the old one and drops its note", () => {
+    const first = lineCaption("Rerouting.", replyCaption("First answer.", undefined, 0), 100);
+    const second = replyCaption("Second answer.", undefined, 200);
+    expect(second.reply).toBe("Second answer.");
+    expect(second.note).toBeUndefined();
+    expect(first.reply).toBe("First answer.");
+  });
+
+  test("lines without an answer replace each other and then go", () => {
     const first = lineCaption("Rerouting.", null, 0);
-    expect(lineCaption("In 500 feet, turn left", first, 100).reply).toBe("In 500 feet, turn left");
-  });
-  test("the end of a spoken line changes nothing", () => {
-    const line = lineCaption("Rerouting.", null, 0);
-    expect(replyEnded(line, 4000)).toBe(line);
-    expect(replyEnded(null)).toBeNull();
+    const second = lineCaption("In 500 feet, turn left", first, 100);
+    expect(second).toEqual({ reply: "In 500 feet, turn left", kind: "line", at: 100 });
+    expect(hasExpiringLine(second)).toBe(true);
+    expect(expireLine(second)).toBeNull();
+    expect(expireLine(null)).toBeNull();
   });
 });

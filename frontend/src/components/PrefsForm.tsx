@@ -1,12 +1,13 @@
 // The driver's route preferences as one form: toll roads, ferries and tunnels, favourite truck stop chains,
 // break reminder. Shared by the onboarding step and the truck profile screen, so a choice made on day one
 // can be changed later (QA 2026-10-28, U10).
-import { ScrollView, StyleSheet, Switch, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Text } from "../i18n/Text";
 
 import type { TruckProfile } from "../hooks/useTruckProfile";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import { PressableScale } from "./PressableScale";
+import { ThemedSwitch } from "./ThemedSwitch";
 
 export const CHAINS = ["Pilot", "Flying J", "Love's", "TA", "Petro", "Sapp Bros", "Kwik Trip", "Buc-ee's"];
 export const BREAKS: (number | null)[] = [null, 2, 3, 4, 6, 8];
@@ -18,7 +19,7 @@ export function ToggleRow({ title, value, onChange, testID }: { title: string; v
   return (
     <PressableScale testID={`${testID}-row`} onPress={() => onChange(!value)} style={[styles.toggle, { backgroundColor: colors.surfaceSecondary }]}>
       <Text style={[styles.toggleTitle, { color: colors.onSurface }]}>{title}</Text>
-      <Switch testID={testID} value={value} onValueChange={onChange} trackColor={{ true: colors.info, false: colors.surfaceTertiary }} />
+      <ThemedSwitch testID={testID} value={value} onValueChange={onChange} />
     </PressableScale>
   );
 }
@@ -47,7 +48,7 @@ export function PrefsForm({ value, onChange }: { value: Prefs; onChange: (patch:
       <ToggleRow title="Avoid toll roads" value={!!value.avoid_tolls} onChange={(v) => onChange({ avoid_tolls: v })} testID="pref-avoid-tolls-switch" />
       <ToggleRow title="Avoid ferries and tunnels" value={!!value.avoid_ferries_tunnels} onChange={(v) => onChange({ avoid_ferries_tunnels: v })} testID="pref-avoid-ferries-switch" />
       <Text style={[styles.section, { color: colors.onSurface }]}>Favorite truck stops</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+      <View style={styles.chips}>
         {CHAINS.map((c) => (
           <Chip
             key={c}
@@ -57,13 +58,13 @@ export function PrefsForm({ value, onChange }: { value: Prefs; onChange: (patch:
             onPress={() => onChange({ favorite_chains: chains.includes(c) ? chains.filter((x) => x !== c) : [...chains, c] })}
           />
         ))}
-      </ScrollView>
+      </View>
       <Text style={[styles.section, { color: colors.onSurface }]}>Break reminder</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+      <View style={styles.chips}>
         {BREAKS.map((b) => (
           <Chip key={String(b)} label={b ? `Every ${b} h` : "Off"} on={(value.break_hours ?? null) === b} testID={`pref-break-${b ?? "off"}`} onPress={() => onChange({ break_hours: b })} />
         ))}
-      </ScrollView>
+      </View>
     </View>
   );
 }
@@ -73,7 +74,8 @@ const styles = StyleSheet.create({
   toggle: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md, borderRadius: radius.md, paddingHorizontal: spacing.lg, minHeight: 56 },
   toggleTitle: { fontFamily: fonts.semibold, fontSize: 16, flexShrink: 1 },
   section: { fontFamily: fonts.bold, fontSize: 15, marginTop: spacing.xs },
-  chips: { gap: spacing.sm, paddingRight: spacing.lg },
-  chip: { flexShrink: 0, height: 44, borderRadius: radius.pill, borderWidth: 1.5, paddingHorizontal: spacing.lg, justifyContent: "center" },
-  chipText: { fontFamily: fonts.semibold, fontSize: 14 },
+  // Wrapped rows, not a sideways scroll: a chip cut at the edge ("Petro", "Every 8 h") hid that there was more.
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  chip: { flexShrink: 0, height: 56, borderRadius: radius.pill, borderWidth: 1.5, paddingHorizontal: spacing.lg, justifyContent: "center" },
+  chipText: { fontFamily: fonts.semibold, fontSize: 16 },
 });

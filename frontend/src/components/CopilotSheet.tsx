@@ -8,7 +8,7 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, type S
 import { routesChipText } from "../geo/routeChoice";
 import type { OfflineMapState } from "../hooks/useOfflineMap";
 import { formatBytes } from "../map/bounds";
-import { fonts, radius, shadow, spacing, useTheme } from "../theme";
+import { fontFor, fonts, radius, shadow, spacing, useTheme } from "../theme";
 import type { ActiveRoute, MapsSource, ParkingState, Phase, Place } from "../types";
 import { Avatar } from "./Avatar";
 import { Icon } from "./Icon";
@@ -21,7 +21,8 @@ import { ReviewsGist } from "./ReviewsGist";
 import { Waveform } from "./Waveform";
 import { entrySpot, routeEndsAt } from "../utils/entry";
 import { dragHeight, sheetHeights, snapTarget, stateHeight, type SheetHeights, type SnapState } from "../utils/sheetSnap";
-import { t } from "../i18n";
+import { t, useLang, useT } from "../i18n";
+import { placeTagLine } from "../utils/placeTags";
 
 /** Sheet height while nothing pins it: whatever the content needs (Yoga treats this as no cap). */
 const AUTO_MAX_HEIGHT = 100000;
@@ -71,6 +72,8 @@ type Props = {
   wakePhrase?: string | null;
   /** Breakdown results (phase "providers"). */
   panel?: ReactNode;
+  /** A card on the map (truck height, microphone) is the one thing to answer now: the avatar steps back. */
+  quiet?: boolean;
 };
 
 function SideButton({
@@ -89,8 +92,8 @@ function SideButton({
   const { colors } = useTheme();
   return (
     <PressableScale testID={testID} accessibilityLabel={label} onPress={onPress} style={styles.side} haptic={danger ? "heavy" : "light"}>
-      <View style={[styles.sideCircle, { backgroundColor: colors.surfaceSecondary }]}>
-        <Icon name={icon} size={24} color={danger ? colors.error : colors.onSurface} />
+      <View style={[styles.sideCircle, { backgroundColor: danger ? colors.error : colors.surfaceSecondary }]}>
+        <Icon name={icon} size={24} color={danger ? colors.onError : colors.onSurface} />
       </View>
       <Text style={[styles.sideLabel, { color: danger ? colors.error : colors.onSurfaceSecondary }]}>{label}</Text>
     </PressableScale>
@@ -152,7 +155,9 @@ function durationLabel(seconds: number) {
 }
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, micLevel, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel } = props;
+  const { phase, speaking, micLevel, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel, quiet } = props;
+  const tr = useT();
+  const lang = useLang();
   const routesChip = active && !driving ? routesChipText(active.route) : null;
   const { colors } = useTheme();
   const navigating = phase === "navigating";
@@ -325,7 +330,7 @@ export function CopilotSheet(props: Props) {
               Ask your copilot
             </Text>
             {!!lastReply && (
-              <Text testID="sheet-last-reply" numberOfLines={3} style={[styles.lastReply, { color: colors.onSurfaceSecondary }]}>
+              <Text testID="sheet-last-reply" style={[styles.lastReply, { color: colors.onSurfaceSecondary }]}>
                 {lastReply}
               </Text>
             )}
@@ -359,7 +364,7 @@ export function CopilotSheet(props: Props) {
               </Text>
             </View>
             <Text testID="remaining-info" numberOfLines={1} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
-              {durationLabel(remaining.s)} · {(remaining.m / 1609.34).toFixed(remaining.m < 16093 ? 1 : 0)} mi · {active.place.name}
+              {`${tr(durationLabel(remaining.s))} · ${tr(`${(remaining.m / 1609.34).toFixed(remaining.m < 16093 ? 1 : 0)} mi`)} · ${active.place.name}`}
             </Text>
           </View>
         )}
@@ -405,7 +410,7 @@ export function CopilotSheet(props: Props) {
             <View style={styles.tagRow}>
               <Icon name={active.place.tags.length ? "truck" : "map-marker-outline"} size={18} color={colors.onSurfaceSecondary} />
               <Text testID="route-place-tags" numberOfLines={1} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
-                {active.place.tags.length ? active.place.tags.join(" · ") : active.place.address ?? (active.place.category === "destination" ? "Destination" : "Address unknown")}
+                {active.place.tags.length ? placeTagLine(active.place.tags, tr) : active.place.address ?? (active.place.category === "destination" ? "Destination" : "Address unknown")}
               </Text>
             </View>
             {!!active.stops?.length && (
@@ -426,21 +431,35 @@ export function CopilotSheet(props: Props) {
             {!!active.place.reviews?.length && <ReviewsGist reviews={active.place.reviews} />}
             <ParkingLiveBadge place={active.place} />
             {active.place.category !== "service" && <ParkingStatus parking={active.parking} place={active.place} route={active.route.geometry} />}
+            {/* Before Go the one primary action is Go: the other routes and the other places are two quiet
+                buttons of the same weight, full 56 pt (UI review 2026-11-05: 31 pt text links). */}
             {(options.length > 0 || routesChip) && (
               <View style={styles.linkRow}>
                 {routesChip && (
-                  <Pressable testID="routes-chip" accessibilityLabel="Other routes" onPress={onShowRoutes} hitSlop={8} style={[styles.routesChip, { borderColor: colors.info }]}>
-                    <Icon name="directions-fork" size={16} color={colors.info} />
-                    <Text style={[styles.otherText, { color: colors.info }]}>{routesChip}</Text>
-                  </Pressable>
+                  <PressableScale
+                    testID="routes-chip"
+                    accessibilityLabel="Other routes"
+                    onPress={onShowRoutes}
+                    containerStyle={styles.linkItem}
+                    style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
+                  >
+                    <Icon name="directions-fork" size={20} color={colors.onSurface} />
+                    <Text numberOfLines={1} style={[styles.linkText, { color: colors.onSurface }]}>{routesChip}</Text>
+                  </PressableScale>
                 )}
                 {options.length > 0 && (
-                  <Pressable testID="other-options-button" onPress={onShowOptions} hitSlop={8} style={styles.otherBtn}>
-                    <Text style={[styles.otherText, { color: colors.info }]}>
-                      See {options.length} other option{options.length > 1 ? "s" : ""}
+                  <PressableScale
+                    testID="other-options-button"
+                    accessibilityLabel="Other places"
+                    onPress={onShowOptions}
+                    containerStyle={styles.linkItem}
+                    style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
+                  >
+                    <Icon name="format-list-bulleted" size={20} color={colors.onSurface} />
+                    <Text numberOfLines={1} style={[styles.linkText, { color: colors.onSurface }]}>
+                      {options.length === 1 ? "1 other place" : `${options.length} other places`}
                     </Text>
-                    <Icon name="chevron-right" size={18} color={colors.info} />
-                  </Pressable>
+                  </PressableScale>
                 )}
               </View>
             )}
@@ -481,7 +500,7 @@ export function CopilotSheet(props: Props) {
             placeholderTextColor={colors.onSurfaceSecondary}
             returnKeyType="send"
             autoFocus
-            style={[styles.input, { backgroundColor: colors.surfaceSecondary, color: colors.onSurface }]}
+            style={[styles.input, { backgroundColor: colors.surfaceSecondary, color: colors.onSurface, fontFamily: fontFor(fonts.medium, lang) }]}
           />
           <PressableScale
             testID="copilot-send-button"
@@ -520,7 +539,7 @@ export function CopilotSheet(props: Props) {
             haptic("medium");
             onAvatarPress();
           }}
-          style={styles.center}
+          style={[styles.center, quiet && styles.quiet]}
         >
           <Avatar
             size={navigating || phase === "options" || phase === "providers" ? 72 : 104}
@@ -542,7 +561,9 @@ export function CopilotSheet(props: Props) {
         {(phase === "listening" || phase === "thinking") && (
           <SideButton icon="close" label="Close" testID="close-listening-button" onPress={onClose} />
         )}
-        {navigating && <SideButton icon="close" label="End route" testID="end-route-button" onPress={onEndRoute} danger />}
+        {/* Before Go there is no route to end yet: "Cancel" drops the preview; "End route" is for driving. */}
+        {navigating && !driving && active && <SideButton icon="close" label="Cancel" testID="cancel-route-button" onPress={onEndRoute} />}
+        {navigating && (driving || !active) && <SideButton icon="close" label="End route" testID="end-route-button" onPress={onEndRoute} danger />}
       </View>
       )}
     </Animated.View>
@@ -553,7 +574,7 @@ export function CopilotSheet(props: Props) {
 const styles = StyleSheet.create({
   wrap: { position: "absolute", left: 0, right: 0, bottom: 0 },
   driveInfo: { alignItems: "center", gap: 2 },
-  goBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, height: 52, borderRadius: 26, marginTop: spacing.sm },
+  goBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, height: 56, borderRadius: 28, marginTop: spacing.sm },
   goText: { fontFamily: fonts.bold, fontSize: 18 },
   inputRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.md },
   input: { flex: 1, minWidth: 0, width: 0, minHeight: 52, borderRadius: 26, paddingHorizontal: spacing.lg, fontFamily: fonts.medium, fontSize: 16, ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}) },
@@ -570,7 +591,7 @@ const styles = StyleSheet.create({
   body: { flexGrow: 1, flexShrink: 1 },
   header: { minHeight: 36, justifyContent: "center" },
   title: { fontFamily: fonts.bold, fontSize: 22, textAlign: "center" },
-  lastReply: { fontFamily: fonts.regular, fontSize: 15, lineHeight: 21, textAlign: "center", marginTop: spacing.xs },
+  lastReply: { fontFamily: fonts.regular, fontSize: 17, lineHeight: 24, textAlign: "center", marginTop: spacing.xs },
   listenRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.md },
   navInfo: { gap: 2 },
   eta: { fontFamily: fonts.extrabold, fontSize: 24, letterSpacing: -0.3 },
@@ -585,10 +606,11 @@ const styles = StyleSheet.create({
   stopsLabel: { fontFamily: fonts.medium, fontSize: 13 },
   stopChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingLeft: spacing.sm, paddingRight: 6, height: 28, borderRadius: radius.pill, maxWidth: 200 },
   stopName: { fontFamily: fonts.semibold, fontSize: 13, flexShrink: 1 },
-  linkRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  routesChip: { flexDirection: "row", alignItems: "center", gap: 4, height: 32, paddingHorizontal: spacing.sm, borderRadius: radius.pill, borderWidth: 1 },
-  otherBtn: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", minHeight: 44, gap: 2 },
-  offlineBtn: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", alignSelf: "flex-start", gap: 6, minHeight: 32, paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1, marginTop: spacing.xs },
+  linkRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },
+  linkItem: { flex: 1 },
+  linkBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, height: 56, paddingHorizontal: spacing.md, borderRadius: radius.md },
+  linkText: { fontFamily: fonts.semibold, fontSize: 16, flexShrink: 1 },
+  offlineBtn: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", alignSelf: "flex-start", gap: 6, minHeight: 48, paddingHorizontal: spacing.md, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1, marginTop: spacing.xs },
   progressTrack: { width: "100%", height: 3, borderRadius: 2, overflow: "hidden" },
   progressFill: { height: 3 },
   otherText: { fontFamily: fonts.bold, fontSize: 14 },
@@ -597,6 +619,7 @@ const styles = StyleSheet.create({
   sideCircle: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
   sideLabel: { fontFamily: fonts.medium, fontSize: 12 },
   center: { alignItems: "center" },
+  quiet: { opacity: 0.45 },
   captionRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
   caption: { fontFamily: fonts.medium, fontSize: 13 },
   wakeDot: { width: 8, height: 8, borderRadius: 4 },

@@ -1,6 +1,7 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import Animated, { FadeInDown, FadeOutDown } from "react-native-reanimated";
 
+import { Text } from "../i18n/Text";
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
@@ -13,7 +14,9 @@ const label = (inches: number) => `${Math.floor(inches / 12)}' ${inches % 12}"`;
 type Props = { bottom: number; current: number; onPick: (heightIn: number) => void; onOther: () => void };
 
 /** Asks the truck height until the driver answers (src/truck/heightConfirmed.ts). No "Not now": routes under
- *  bridges go by this number. One tap for the common heights, the truck screen for anything else. */
+ *  bridges go by this number. One tap for the common heights, the truck screen for anything else. The three
+ *  answers weigh the same: a filled 13'6" read as "already chosen" (UI review 2026-11-05), and nothing is chosen
+ *  until the driver taps. `current` is only voiced to screen readers. */
 export function HeightConfirmCard({ bottom, current, onPick, onOther }: Props) {
   const { colors } = useTheme();
   return (
@@ -37,11 +40,12 @@ export function HeightConfirmCard({ bottom, current, onPick, onOther }: Props) {
             key={h}
             testID={`height-confirm-${h}`}
             accessibilityLabel={`My truck is ${Math.floor(h / 12)} feet ${h % 12} inches`}
+            accessibilityHint={h === current ? "Saved in your truck profile now" : undefined}
             onPress={() => onPick(h)}
             containerStyle={styles.flex}
-            style={[styles.btn, { backgroundColor: h === current ? colors.brandPrimary : colors.surfaceSecondary }]}
+            style={[styles.btn, { backgroundColor: colors.surfaceSecondary, borderColor: colors.borderStrong }]}
           >
-            <Text style={[styles.btnText, { color: h === current ? colors.onBrandPrimary : colors.onSurface }]}>{label(h)}</Text>
+            <Text style={[styles.btnText, { color: colors.onSurface }]}>{label(h)}</Text>
           </PressableScale>
         ))}
         <PressableScale
@@ -49,7 +53,7 @@ export function HeightConfirmCard({ bottom, current, onPick, onOther }: Props) {
           accessibilityLabel="Another height"
           onPress={onOther}
           containerStyle={styles.flex}
-          style={[styles.btn, { backgroundColor: colors.surfaceSecondary }]}
+          style={[styles.btn, { backgroundColor: colors.surfaceSecondary, borderColor: colors.borderStrong }]}
         >
           <Text style={[styles.btnText, { color: colors.onSurface }]}>Other</Text>
         </PressableScale>
@@ -62,8 +66,8 @@ const styles = StyleSheet.create({
   wrap: { position: "absolute", left: spacing.lg, right: spacing.lg, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.md },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   iconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-  text: { flex: 1, fontFamily: fonts.semibold, fontSize: 16, lineHeight: 22 },
+  text: { flex: 1, fontFamily: fonts.semibold, fontSize: 17, lineHeight: 23 },
   flex: { flex: 1 },
-  btn: { height: 56, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
-  btnText: { fontFamily: fonts.bold, fontSize: 16 },
+  btn: { height: 56, borderRadius: radius.md, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  btnText: { fontFamily: fonts.bold, fontSize: 17 },
 });

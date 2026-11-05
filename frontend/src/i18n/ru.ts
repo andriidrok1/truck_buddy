@@ -306,4 +306,48 @@ export const RU: Record<string, string> = {
   // ---- height card ----
   "How tall is your truck? I plan routes under bridges by it.": "Какая высота у твоего трака? По ней я строю маршруты под мостами.",
   "Other": "Другая",
+
+  // ---- UI review fixes (2026-11-05) ----
+  "Couldn't load your conversations.": "Не получилось загрузить разговоры.",
+  "Retry": "Повторить",
+  "1 other place": "Ещё 1 место",
+  "{n} other places": "Ещё {n|plural:место,места,мест}",
+  "Other places": "Другие места",
+  "1 place nearby": "Рядом 1 место",
+  "{n} places nearby": "Рядом {n|plural:место,места,мест}",
+  "Route to {name}": "Маршрут до {name}",
+  "Close the reply": "Закрыть ответ",
+  "Reset to defaults": "Сбросить по умолчанию",
+  "Reset to defaults?": "Сбросить по умолчанию?",
+  "Reset truck to defaults": "Сбросить трак по умолчанию",
+  "Height, trailer, weight, hazmat and your name go back to the defaults. Nothing is saved until you tap Save truck.":
+    "Высота, трейлер, вес, hazmat и имя вернутся к значениям по умолчанию. Ничего не сохранится, пока не нажмёшь «Сохранить трак».",
+  "{n} mph": "{n} миль/ч",
+
+  // ---- units: route summary from the server ("11 min · 4.5 mi"), distances, durations ----
+  "{h} h {m} min · {d} mi": "{h} ч {m} мин · {d|plural:миля,мили,миль}",
+  "{h} h · {d} mi": "{h} ч · {d|plural:миля,мили,миль}",
+  "{n} min · {d} mi": "{n} мин · {d|plural:миля,мили,миль}",
+  "{h} h {m} min": "{h} ч {m} мин",
+  "{n} min": "{n} мин",
+  "{h} h": "{h} ч",
+  "{d} mi": "{d|plural:миля,мили,миль}",
+  "ft": "фт",
+  "in": "дюйм",
+  "lb": "фунт",
+
+  // ---- place tags (backend/scripts/build_places.py, services/places.py), one tag at a time ----
+  "Truck diesel": "Дизель для траков",
+  "Diesel": "Дизель",
+  "DEF": "DEF",
+  "Showers": "Душ",
+  "Truck wash": "Мойка траков",
+  "Laundry": "Прачечная",
+  "Restrooms": "Туалеты",
+  "Truck access": "Проезд для траков",
+  "Truck parking": "Парковка для траков",
+  "Truck parking nearby": "Парковка для траков рядом",
+  "Parking": "Парковка",
+  "53 ft parking": "Парковка для 53 футов",
+  "{n} truck spots": "{n|plural:место,места,мест} для траков",
 };

@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, type MemoryTurn } from "@/src/api";
 import { Icon } from "@/src/components/Icon";
+import { HistoryEmpty } from "@/src/components/HistoryEmpty";
 import { PressableScale } from "@/src/components/PressableScale";
 import { historyRows } from "@/src/utils/historyRows";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
@@ -69,6 +70,12 @@ export default function HistoryScreen() {
   );
 
   const rows = useMemo(() => historyRows(turns ?? []), [turns]);
+  const [retrying, setRetrying] = useState(false);
+  const retry = async () => {
+    setRetrying(true);
+    await load();
+    setRetrying(false);
+  };
 
   const clear = () =>
     confirm("Your copilot will forget everything you've talked about.", async () => {
@@ -92,6 +99,9 @@ export default function HistoryScreen() {
 
       {turns === null ? (
         <ActivityIndicator style={styles.center} color={colors.muted} />
+      ) : rows.length === 0 ? (
+        // Outside the list: an inverted list flips its empty component too (mirrored on Android, review 2026-11-05).
+        <HistoryEmpty error={error} retrying={retrying} onRetry={retry} />
       ) : (
         // Inverted: the newest turn sits at the bottom from the first frame. scrollToEnd on layout ran before
         // the rows were measured and the screen opened with the last two messages below the fold (QA 2026-11-02).
@@ -102,14 +112,6 @@ export default function HistoryScreen() {
           keyExtractor={(r) => r.key}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
           contentContainerStyle={[styles.list, { paddingTop: footerH + spacing.md }]}
-          ListEmptyComponent={
-            <View style={[styles.empty, styles.upright]}>
-              <Icon name="chat-outline" size={40} color={colors.muted} />
-              <Text style={[styles.emptyText, { color: colors.onSurfaceSecondary }]}>
-                {error ? "Couldn't load your conversations. Pull to retry." : "Nothing yet. Talk to your copilot and it will remember."}
-              </Text>
-            </View>
-          }
           renderItem={({ item: row }) => {
             if (row.kind === "day") {
               return (
@@ -150,7 +152,7 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
-  circle: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
+  circle: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
   title: { fontFamily: fonts.bold, fontSize: 18 },
   center: { marginTop: spacing.xxxl },
   list: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.sm, flexGrow: 1 },
@@ -160,10 +162,7 @@ const styles = StyleSheet.create({
   text: { fontFamily: fonts.regular, fontSize: 16, lineHeight: 22 },
   time: { fontFamily: fonts.regular, fontSize: 11, opacity: 0.7 },
   day: { fontFamily: fonts.semibold, fontSize: 12, textAlign: "center", marginTop: spacing.md, marginBottom: spacing.xs, textTransform: "uppercase", letterSpacing: 0.6 },
-  upright: { transform: [{ scaleY: -1 }] }, // the empty state is not a row: an inverted list draws it upside down
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md, paddingHorizontal: spacing.xxl, paddingTop: spacing.xxxl },
-  emptyText: { fontFamily: fonts.medium, fontSize: 15, textAlign: "center" },
   footer: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
-  clear: { height: 52, borderRadius: radius.pill, borderWidth: 1.5, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm },
+  clear: { height: 56, borderRadius: radius.pill, borderWidth: 1.5, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm },
   clearText: { fontFamily: fonts.semibold, fontSize: 16 },
 });

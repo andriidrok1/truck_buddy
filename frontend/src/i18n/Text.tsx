@@ -4,8 +4,9 @@
 // already in Russian). Children that are elements are left alone.
 
 import { forwardRef, type ElementRef } from "react";
-import { Text as RNText, type TextProps } from "react-native";
+import { StyleSheet, Text as RNText, type TextProps } from "react-native";
 
+import { fontFor } from "../theme";
 import { t, useLang } from ".";
 
 function translateChildren(children: TextProps["children"], lang: ReturnType<typeof useLang>): TextProps["children"] {
@@ -17,10 +18,18 @@ function translateChildren(children: TextProps["children"], lang: ReturnType<typ
   return children;
 }
 
+/** The style with its font family swapped for one that has the language's letters (theme.ts fontFor). */
+function localStyle(style: TextProps["style"], lang: ReturnType<typeof useLang>): TextProps["style"] {
+  if (lang === "en" || !style) return style;
+  const family = StyleSheet.flatten(style)?.fontFamily;
+  const local = fontFor(family, lang);
+  return local === family ? style : [style, { fontFamily: local }];
+}
+
 export const Text = forwardRef<ElementRef<typeof RNText>, TextProps>(function Text(props, ref) {
   const lang = useLang();
   return (
-    <RNText ref={ref} {...props}>
+    <RNText ref={ref} {...props} style={localStyle(props.style, lang)}>
       {translateChildren(props.children, lang)}
     </RNText>
   );

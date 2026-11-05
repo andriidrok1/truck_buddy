@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
-import { Keyboard } from "react-native";
+import { Keyboard, StyleSheet } from "react-native";
 
 import { CopilotSheet } from "../components/CopilotSheet";
 
@@ -120,5 +120,58 @@ describe("CopilotSheet text mode", () => {
     expect(screen.getByTestId("sheet-body").props.scrollEnabled).toBe(false);
     await fireEvent(body, "contentSizeChange", 390, 640);
     expect(screen.getByTestId("sheet-body").props.scrollEnabled).toBe(true);
+  });
+});
+
+// UI review 2026-11-05 (ui-route-preview-light.png): Go is the one primary action before driving; the other
+// routes and places are two 56 pt buttons; there is no "End route" before Go, only Cancel.
+describe("CopilotSheet route preview", () => {
+  const active = {
+    place: { id: "p1", name: "Harbor Truck and Auto Plaza", category: "truck_stop", lat: 38.58, lng: -121.53, tags: ["DEF", "24/7", "7 truck spots", "9163722893"] },
+    route: { summary: "11 min · 4.5 mi", distance_mi: 4.5, duration_min: 11, geometry: [], alternatives: [{ summary: "13 min · 5 mi" }, { summary: "14 min · 5 mi" }] },
+    parking: null,
+  } as unknown as import("../types").ActiveRoute;
+  const preview = (driving: boolean, onEndRoute = noop) => (
+    <CopilotSheet
+      phase="navigating"
+      speaking={false}
+      onShowOptions={noop}
+      options={[active.place, active.place, active.place, active.place]}
+      parking={{}}
+      onOptionParking={noop}
+      onOptionRoute={noop}
+      active={active}
+      driving={driving}
+      remaining={driving ? { m: 7242, s: 660 } : null}
+      onGo={noop}
+      bottomInset={0}
+      onAvatarPress={noop}
+      onSubmitText={noop}
+      onClose={noop}
+      onEndRoute={onEndRoute}
+      onShowRoutes={noop}
+      onLayout={noop}
+    />
+  );
+
+  test("before Go: Cancel instead of End route, routes and places as 56 pt buttons, a readable tag line", async () => {
+    const onEnd = jest.fn();
+    await render(preview(false, onEnd));
+    expect(screen.queryByTestId("end-route-button")).toBeNull();
+    await fireEvent.press(screen.getByTestId("cancel-route-button"));
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    for (const id of ["routes-chip", "other-options-button", "go-button"]) {
+      // PressableScale: the testID is on the Pressable, the size on the view inside it.
+      const inner = screen.getByTestId(id).children[0] as unknown as { props: { style: unknown } };
+      expect(StyleSheet.flatten(inner.props.style as never).height).toBeGreaterThanOrEqual(56);
+    }
+    expect(screen.getByText("4 other places")).toBeTruthy();
+    expect(screen.getByTestId("route-place-tags").props.children).toBe("DEF · 24/7 · 7 truck spots · (916) 372-2893");
+  });
+
+  test("driving: End route is there, Cancel is gone", async () => {
+    await render(preview(true));
+    expect(screen.getByTestId("end-route-button")).toBeTruthy();
+    expect(screen.queryByTestId("cancel-route-button")).toBeNull();
   });
 });

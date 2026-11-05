@@ -1,8 +1,9 @@
-import { ActivityIndicator, StyleSheet, View, type LayoutChangeEvent } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View, type LayoutChangeEvent } from "react-native";
 import { Text } from "../i18n/Text";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { categoryColor, categoryIcon } from "../constants";
+import { useT } from "../i18n";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import type { ParkingState, Place } from "../types";
 import { Icon } from "./Icon";
@@ -22,9 +23,7 @@ type Props = {
 
 function Rating({ place }: { place: Place }) {
   const { colors } = useTheme();
-  if (place.rating == null) {
-    return <Text testID={`option-rating-${place.id}`} style={[styles.meta, { color: colors.muted }]}>No rating yet</Text>;
-  }
+  if (place.rating == null) return null; // "No rating yet" on every card was noise (UI review 2026-11-05)
   return (
     <View style={styles.ratingRow}>
       <Icon name="star" size={16} color={colors.warning} />
@@ -38,16 +37,24 @@ function Rating({ place }: { place: Place }) {
   );
 }
 
+/** One place. The card itself is the route target (a tap anywhere routes there); only the best match, first in
+ *  the list, carries the filled Route button, the others an outlined one, so the screen has one primary action
+ *  instead of a black button on every card (UI review 2026-11-05). */
 function OptionCard({ place, state, onParking, onRoute, index }: { place: Place; state?: ParkingState; onParking: () => void; onRoute: () => void; index: number }) {
   const { colors } = useTheme();
+  const tr = useT();
+  const primary = index === 0;
   const tint = categoryColor(colors, place.category);
   const description = place.summary || place.address;
   const gist = reviewsGistLine(place.reviews, place.rating);
   return (
-    <Animated.View
-      entering={FadeInDown.delay(index * 50).duration(220)}
+    <Animated.View entering={FadeInDown.delay(index * 50).duration(220)}>
+    <Pressable
       testID={`option-card-${place.id}`}
-      style={[styles.card, { backgroundColor: colors.surfaceSecondary }]}
+      accessibilityRole="button"
+      accessibilityLabel={`Route to ${place.name}`}
+      onPress={onRoute}
+      style={({ pressed }) => [styles.card, { backgroundColor: colors.surfaceSecondary, opacity: pressed ? 0.85 : 1 }]}
     >
       <View style={styles.topRow}>
         <View style={[styles.catIcon, { backgroundColor: tint }]}>
@@ -60,8 +67,9 @@ function OptionCard({ place, state, onParking, onRoute, index }: { place: Place;
           <View style={styles.metaRow}>
             <Rating place={place} />
             {place.distance_mi != null && (
-              <Text style={[styles.meta, { color: colors.onSurfaceSecondary }]}>
-                <Text style={{ color: colors.muted }}>·</Text> {place.distance_mi.toFixed(1)} mi
+              <Text testID={`option-distance-${place.id}`} style={[styles.meta, { color: colors.onSurfaceSecondary }]}>
+                {place.rating != null ? "· " : ""}
+                {tr(`${place.distance_mi.toFixed(1)} mi`)}
               </Text>
             )}
             {place.diesel_price != null && (
@@ -93,12 +101,12 @@ function OptionCard({ place, state, onParking, onRoute, index }: { place: Place;
           onPress={onParking}
           disabled={state?.loading}
           containerStyle={styles.btnItem}
-          style={[styles.btn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          style={[styles.btn, { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}
         >
           {state?.loading ? (
             <ActivityIndicator size="small" color={colors.onSurface} />
           ) : (
-            <Icon name="satellite-variant" size={18} color={colors.onSurface} />
+            <Icon name="satellite-variant" size={20} color={colors.onSurface} />
           )}
           <Text style={[styles.btnText, { color: colors.onSurface }]}>
             {state?.loading ? "Checking…" : state?.result ? "Parking checked" : "See parking"}
@@ -108,12 +116,13 @@ function OptionCard({ place, state, onParking, onRoute, index }: { place: Place;
           testID={`option-route-button-${place.id}`}
           onPress={onRoute}
           containerStyle={styles.btnItem}
-          style={[styles.btn, { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary }]}
+          style={[styles.btn, primary ? { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary } : { backgroundColor: colors.surface, borderColor: colors.borderStrong }]}
         >
-          <Icon name="directions" size={18} color={colors.onBrandPrimary} />
-          <Text style={[styles.btnText, { color: colors.onBrandPrimary }]}>Route</Text>
+          <Icon name="directions" size={20} color={primary ? colors.onBrandPrimary : colors.onSurface} />
+          <Text style={[styles.btnText, { color: primary ? colors.onBrandPrimary : colors.onSurface }]}>Route</Text>
         </PressableScale>
       </View>
+    </Pressable>
     </Animated.View>
   );
 }
@@ -124,7 +133,7 @@ export function OptionsList({ options, parking, onParking, onRoute, onTitleLayou
   return (
     <View testID="options-list">
       <Text testID="options-title" onLayout={onTitleLayout} style={[styles.title, { color: colors.onSurface }]}>
-        {options.length} found nearby
+        {options.length === 1 ? "1 place nearby" : `${options.length} places nearby`}
       </Text>
       <View style={styles.list}>
         {options.map((p, i) => (
@@ -142,7 +151,7 @@ const styles = StyleSheet.create({
   topRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   catIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   titleCol: { flex: 1 },
-  name: { fontFamily: fonts.bold, fontSize: 16 },
+  name: { fontFamily: fonts.bold, fontSize: 17 },
   metaRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 4, marginTop: 2 },
   ratingRow: { flexDirection: "row", alignItems: "center", gap: 3 },
   ratingText: { fontFamily: fonts.semibold, fontSize: 14 },
@@ -152,7 +161,7 @@ const styles = StyleSheet.create({
   btnRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
   btnItem: { flex: 1 },
   btn: {
-    height: 48,
+    height: 56,
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -160,5 +169,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: spacing.sm,
   },
-  btnText: { fontFamily: fonts.bold, fontSize: 14 },
+  btnText: { fontFamily: fonts.bold, fontSize: 16 },
 });

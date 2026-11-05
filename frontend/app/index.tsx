@@ -1,7 +1,7 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
-import { Alert, AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
+import { AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as Sentry from "@sentry/react-native";
@@ -9,7 +9,7 @@ import * as Sentry from "@sentry/react-native";
 import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
 import { newSessionId, useCopilotTurn, type AnswerContext } from "@/src/dialog/useCopilotTurn";
 import { useFillers } from "@/src/dialog/useFillers";
-import { lineCaption, replyCaption, replyEnded, type Caption } from "@/src/dialog/caption";
+import { expireLine, hasExpiringLine, LINE_HOLD_MS, lineCaption, replyCaption, type Caption } from "@/src/dialog/caption";
 import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
 import { Icon } from "@/src/components/Icon";
@@ -23,6 +23,7 @@ import { PressableScale } from "@/src/components/PressableScale";
 import { dial, ProvidersList } from "@/src/components/ProvidersList";
 import { RestoredBanner } from "@/src/components/RestoredBanner";
 import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
+import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
 import { isTester } from "@/src/auth";
@@ -42,6 +43,7 @@ import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
 import { saveProfile, setMidTripCheck } from "@/src/data/profile";
 import { getTruckProfile, isOnboarded, truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
+import { askWithDeadline } from "@/src/voice/micAsk";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
 import { providerPlace, restoreSavedTrip, selectPlaces, startTripPersistence, stopsAhead, useTripStore, viaOf } from "@/src/state/tripStore";
@@ -125,6 +127,8 @@ export default function MapScreen() {
   // (no camera refit on a drag) but the chrome above the sheet moves down into the freed room.
   const [peekH, setPeekH] = useState<number | null>(null);
   const chromeBottom = (peekH ?? sheetH) + spacing.lg;
+  // Cards and the caption on the left also clear the map's attribution logo, which sits right above the sheet.
+  const cardBottom = chromeBottom + spacing.lg;
   const active = useTripStore((s) => s.active);
   const driving = useTripStore((s) => s.driving);
   const options = useTripStore((s) => s.options);
@@ -148,12 +152,15 @@ export default function MapScreen() {
     }
   };
   const [toast, setToast] = useState<ToastData | null>(null);
-  // kind "reply" = the copilot's answer, kept until the next turn (a driver who looks later must still
-  // see it); kind "line" = a spoken line (turn, nudge, parking tip), gone 8 s after it is said.
+  // kind "reply" = the copilot's answer, kept until the driver dismisses it or the next answer comes (a driver
+  // who looks later must still see it); kind "line" = a spoken line (turn, nudge, parking tip), gone 8 s after
+  // it is said. A line during an answer shows as a note under it (src/dialog/caption.ts).
   const [caption, setCaption] = useState<Caption | null>(null);
-  /** A spoken line's caption; it never covers an answer said less than REPLY_HOLD_MS ago. */
+  /** A spoken line's caption; it never replaces an answer. */
   const showLine = (text: string) => setCaption((prev) => lineCaption(text, prev));
   const [micCard, setMicCard] = useState<Exclude<MicPermission, "granted"> | null>(null);
+  /** The "End the route to …?" question while it is up (ConfirmSheet), null otherwise. */
+  const [endConfirm, setEndConfirm] = useState<string | null>(null);
   const [fit, setFit] = useState<{ key: string; points: LatLng[] }>({ key: "init", points: [] });
   const [thinkingText, setThinkingText] = useState<string | undefined>(undefined);
   const setDriving = (v: boolean) => trip().setDriving(v);
@@ -249,16 +256,10 @@ export default function MapScreen() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // The answer's hold over spoken lines starts when its audio ends, not when it arrived.
-  const wasSpeaking = useRef(false);
+  // A spoken line (or the note under an answer) goes LINE_HOLD_MS after it was said; the answer itself stays.
   useEffect(() => {
-    if (wasSpeaking.current && !voice.speaking) setCaption((prev) => replyEnded(prev));
-    wasSpeaking.current = voice.speaking;
-  }, [voice.speaking]);
-
-  useEffect(() => {
-    if (!caption || voice.speaking || caption.kind === "reply") return; // answers stay until the next turn
-    const t = setTimeout(() => setCaption(null), 8000);
+    if (!hasExpiringLine(caption) || voice.speaking) return;
+    const t = setTimeout(() => setCaption((prev) => expireLine(prev)), LINE_HOLD_MS);
     return () => clearTimeout(t);
   }, [caption, voice.speaking]);
 
@@ -808,6 +809,19 @@ export default function MapScreen() {
     };
   }, [focused, micCard, setPrewarm, micPermission]); // micCard: re-check once the driver allowed the mic
 
+  // Back from Settings (or from a system dialog that answered after the card gave up): the mic is allowed now,
+  // so the card has nothing left to ask.
+  useEffect(() => {
+    if (!micCard || !appActive || !focused) return;
+    let live = true;
+    micPermission()
+      .then((p) => live && p === "granted" && setMicCard(null))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [micCard, appActive, focused, micPermission]);
+
   const onAvatarPress = async () => {
     if (phase === "listening") {
       voice.finishListening();
@@ -829,15 +843,12 @@ export default function MapScreen() {
   };
 
   const onAllowMic = async () => {
-    // A request that never answers (seen in Expo Go) must not leave the card dead: after 5 s it is
-    // treated as blocked, and the card offers Settings.
-    const perm = await Promise.race([
-      voice.requestMic(),
-      new Promise<MicPermission>((r) => setTimeout(() => r("blocked"), 5000)),
-    ]);
+    // A request that never answers (seen in Expo Go) must not leave the card dead: after 5 s the card
+    // offers Settings, but a late "granted" still closes it (src/voice/micAsk.ts).
+    const { perm, late } = await askWithDeadline<MicPermission>(() => voice.requestMic(), 5000, () => setMicCard("blocked"), "blocked");
     if (perm === "granted") {
       setMicCard(null);
-      turn.tap();
+      if (!late) turn.tap();
     } else {
       // Asked once with context; after that only Settings can fix it.
       setMicCard("blocked");
@@ -891,10 +902,7 @@ export default function MapScreen() {
   const onEndRoutePress = () => {
     const name = trip().active?.place.name.split(",")[0] ?? "this route";
     if (!trip().driving || guidance.remainingS < END_CONFIRM_ABOVE_S) return onEndRoute();
-    Alert.alert(t("End the route to {name}?", { name }), undefined, [
-      { text: t("Keep driving"), style: "cancel" },
-      { text: t("End route"), style: "destructive", onPress: onEndRoute },
-    ]);
+    setEndConfirm(t("End the route to {name}?", { name }));
   };
 
   const onEndRoute = () => {
@@ -1257,6 +1265,9 @@ export default function MapScreen() {
     }
   };
 
+  // The height card waits while the mic card asks, and while the copilot listens or thinks (one thing at a time).
+  const showHeightCard = heightConfirmed === false && focused && !micCard && phase !== "listening" && phase !== "thinking";
+
   return (
     <View style={[styles.root, { backgroundColor: colors.mapPlaceholder }]} testID="map-screen">
       <MapLayer
@@ -1301,7 +1312,8 @@ export default function MapScreen() {
         topInset={insets.top}
         truckLabel={truckLabel(truck)}
         hazmat={truck.hazmat}
-        destination={active?.place.name ?? null}
+        // While the driver picks from the list, the pill must not say "To: <the first pick>" over it.
+        destination={phase === "options" ? null : (active?.place.name ?? null)}
         onSearch={(q) =>
           // A bare place ("Reno") becomes "Take me to Reno"; a full request ("I need fuel") goes as typed.
           onSubmitText(/\b(?:i|i'm|me|my|need|find|take|go|where|show|get|park|near|any|truck ?stops?|hotels?|motels?|rest ?areas?|fuel|diesel|gas|parking)\b/i.test(q) ? q : `Take me to ${q}`)
@@ -1337,7 +1349,15 @@ export default function MapScreen() {
         <Icon name={following ? "navigation-variant" : "crosshairs-gps"} size={24} color={following ? colors.onInfo : colors.info} />
       </PressableScale>
 
-      <CaptionBubble text={mapWindow >= MIN_MAP_FOR_BUBBLE ? (caption?.reply ?? null) : null} heard={caption?.heard} bottom={chromeBottom} sources={caption?.sources} />
+      <CaptionBubble
+        text={mapWindow >= MIN_MAP_FOR_BUBBLE ? (caption?.reply ?? null) : null}
+        heard={caption?.heard}
+        note={caption?.note}
+        bottom={cardBottom}
+        maxHeight={Math.max(MIN_MAP_FOR_BUBBLE - spacing.xxl, mapWindow * 0.55)}
+        sources={caption?.sources}
+        onDismiss={() => setCaption(null)}
+      />
 
       <CopilotSheet
         phase={phase}
@@ -1367,6 +1387,7 @@ export default function MapScreen() {
         onLayout={setSheetH}
         onPeekHeight={setPeekH}
         wakePhrase={null}
+        quiet={showHeightCard || !!micCard}
         panel={providers ? <ProvidersList data={providers} onRoute={(p) => onPlacePress(providerPlace(p))} /> : null}
       />
 
@@ -1374,9 +1395,9 @@ export default function MapScreen() {
         <AlternativesSheet primary={active.route} bottom={chromeBottom} top={topH + spacing.sm} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
       )}
 
-      {heightConfirmed === false && focused && !micCard && (
+      {showHeightCard && (
         <HeightConfirmCard
-          bottom={chromeBottom}
+          bottom={cardBottom}
           current={truck.height_in}
           onPick={async (h) => {
             await confirmHeight();
@@ -1391,7 +1412,7 @@ export default function MapScreen() {
       {micCard && (
         <MicPermissionCard
           state={micCard}
-          bottom={chromeBottom}
+          bottom={cardBottom}
           onAllow={onAllowMic}
           onDismiss={() => setMicCard(null)}
         />
@@ -1413,6 +1434,18 @@ export default function MapScreen() {
       )}
 
       <Toast toast={toast} top={topH + spacing.sm} />
+
+      <ConfirmSheet
+        testID="end-route-confirm"
+        title={endConfirm}
+        confirmLabel="End route"
+        cancelLabel="Keep driving"
+        onConfirm={() => {
+          setEndConfirm(null);
+          onEndRoute();
+        }}
+        onCancel={() => setEndConfirm(null)}
+      />
     </View>
   );
 }

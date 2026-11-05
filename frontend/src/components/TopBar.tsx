@@ -3,10 +3,10 @@ import { Keyboard, Platform, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "../i18n/Text";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
-import { fonts, radius, shadow, spacing, useTheme } from "../theme";
+import { fontFor, fonts, radius, shadow, spacing, useTheme } from "../theme";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
-import { t } from "../i18n";
+import { t, useLang } from "../i18n";
 
 type Props = {
   topInset: number;
@@ -34,6 +34,7 @@ type Props = {
 /** Google-Maps-style top: "Where to?" search bar, truck settings on the right, memory below it. */
 export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, blurGuard, onTruckPress, onHistoryPress, tester, simLabel, onTesterPress, isDemo, onLocationPress, onLayout }: Props) {
   const { colors } = useTheme();
+  const lang = useLang();
   const card = [shadow(colors), { backgroundColor: colors.surface }];
   const [text, setText] = useState("");
   const input = useRef<ElementRef<typeof TextInput>>(null);
@@ -68,7 +69,7 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, bl
             placeholderTextColor={destination ? colors.onSurface : colors.muted}
             returnKeyType="search"
             autoCorrect={false}
-            style={[styles.input, { color: colors.onSurface }]}
+            style={[styles.input, { color: colors.onSurface, fontFamily: fontFor(fonts.medium, lang) }]}
             accessibilityLabel="Where to?"
           />
           {!!text.trim() && (
@@ -153,7 +154,7 @@ const styles = StyleSheet.create({
   },
   second: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingHorizontal: spacing.lg, marginTop: spacing.md, gap: spacing.md },
   side: { gap: spacing.md },
-  small: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center", marginRight: 4 },
+  small: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
   demo: { height: 28, maxWidth: 260, borderRadius: radius.pill, flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.md, gap: 6, flexShrink: 1 },
   demoDot: { width: 8, height: 8, borderRadius: 4 },
   demoText: { fontFamily: fonts.medium, fontSize: 12 },

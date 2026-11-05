@@ -67,6 +67,17 @@ const light = {
   mapPlaceholder: "#EEF1F4",
   shadow: "#000000",
   scrim: "rgba(0,0,0,0.04)",
+
+  // Driving banner: dark in both themes (in the dark theme a white banner was the brightest thing on a night
+  // screen, UI review 2026-11-05), with its own button colour on top.
+  navBanner: "#1C1C1E",
+  onNavBanner: "#FFFFFF",
+  navButton: "#FFFFFF",
+  onNavButton: "#1C1C1E",
+
+  // Switches: the off track and the thumb must read on a surfaceSecondary row in both themes.
+  switchTrackOff: "#C7C7CC",
+  switchThumb: "#FFFFFF",
 };
 
 export type ThemeColors = typeof light;
@@ -125,6 +136,14 @@ const dark: ThemeColors = {
   mapPlaceholder: "#121214",
   shadow: "#000000",
   scrim: "rgba(0,0,0,0.4)",
+
+  navBanner: "#2C2C2E",
+  onNavBanner: "#F2F2F7",
+  navButton: "#48484A",
+  onNavButton: "#F2F2F7",
+
+  switchTrackOff: "#636366",
+  switchThumb: "#F2F2F7",
 };
 
 export const defaultScheme = "light" satisfies ColorScheme;
@@ -200,6 +219,23 @@ export const fonts = {
   bold: "PlusJakartaSans-Bold",
   extrabold: "PlusJakartaSans-ExtraBold",
 };
+
+/** Plus Jakarta Sans has no Cyrillic, so Android drew Russian in the system font at regular weight: bold
+ *  headings went flat and "Опасные грузы (hazmat)" mixed two fonts in one line (UI review 2026-11-05). In
+ *  Russian every weight maps to the same weight of Manrope, which has Cyrillic and a close geometric look. */
+export const cyrillicFonts: Record<string, string> = {
+  [fonts.regular]: "Manrope-Regular",
+  [fonts.medium]: "Manrope-Medium",
+  [fonts.semibold]: "Manrope-SemiBold",
+  [fonts.bold]: "Manrope-Bold",
+  [fonts.extrabold]: "Manrope-ExtraBold",
+};
+
+/** The font family to draw `family` with in `lang`. */
+export function fontFor(family: string | undefined, lang: string): string | undefined {
+  if (lang !== "ru" || !family) return family;
+  return cyrillicFonts[family] ?? family;
+}
 
 export function shadow(c: ThemeColors, level: 1 | 2 = 1) {
   return {
