@@ -71,6 +71,35 @@ HINT_MAX_CHARS = 200
 _HINT_OK = re.compile(r"[^A-Za-z0-9'&.\- ]+")
 
 
+# Short guesses the recognisers make up from noise (cab rumble, a cough, a door): seen in logs and known for the
+# Whisper family. Only dropped for doubtful recordings, never for a clear one.
+NOISE_GUESSES = {"thank you", "thanks", "thank you for watching", "thanks for watching", "you", "bye",
+                 "so", "uh", "um", "hmm", "mm", "oh", "the", "i"}
+
+
+def maybe_min_confidence() -> float:
+    """A doubtful recording's short transcript below this confidence is treated as noise. Env STT_MAYBE_MIN_CONFIDENCE."""
+    try:
+        return float(os.environ.get("STT_MAYBE_MIN_CONFIDENCE", "0.5"))
+    except ValueError:
+        return 0.5
+
+
+def noise_only(text: str, confidence: Optional[float]) -> bool:
+    """For a recording the app flagged as doubtful (sound, no clear speech): is this transcript noise, not words?
+    Two words or fewer that are a known noise guess, or that the model was sure of less than the threshold.
+    Longer text is speech."""
+    words = re.findall(r"[a-zA-Z']+", text.lower())
+    if not words:
+        return True
+    if len(words) > 2:
+        return False
+    if " ".join(words) in NOISE_GUESSES:
+        return True
+    # No confidence at all (a model without logprobs): keep it, the known noise lines are already out.
+    return confidence is not None and confidence < maybe_min_confidence()
+
+
 def stt_prompt(hint: Optional[str] = None) -> str:
     """The vocabulary hint for the recognizer: the fixed trucker list plus names from the active route
     (destination, the options on screen, towns), so "Lodi" is not heard as "lady". Capped and sanitised."""

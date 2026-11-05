@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View, type LayoutChangeEvent } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import { KeyboardStickyView } from "@/src/keyboard";
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from "react-native-reanimated";
 
 import { routesChipText } from "../geo/routeChoice";
 import type { OfflineMapState } from "../hooks/useOfflineMap";
@@ -33,6 +33,8 @@ const PAN_FAIL_X: [number, number] = [-24, 24];
 type Props = {
   phase: Phase;
   speaking: boolean;
+  /** The mic level 0..1 while listening (useVoice), drives the waveform. */
+  micLevel?: SharedValue<number>;
   onShowOptions: () => void;
   thinkingText?: string;
   options: Place[];
@@ -148,7 +150,7 @@ function durationLabel(seconds: number) {
 }
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel } = props;
+  const { phase, speaking, micLevel, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel } = props;
   const routesChip = active && !driving ? routesChipText(active.route) : null;
   const { colors } = useTheme();
   const navigating = phase === "navigating";
@@ -272,7 +274,7 @@ export function CopilotSheet(props: Props) {
 
   const caption =
     phase === "listening"
-      ? "Tap to stop"
+      ? "Tap to send"
       : phase === "thinking"
         ? "Thinking…"
         : speaking
@@ -333,7 +335,7 @@ export function CopilotSheet(props: Props) {
             <Text testID="sheet-title" style={[styles.title, { color: colors.onSurface }]}>
               I&apos;m listening
             </Text>
-            <Waveform />
+            <Waveform level={micLevel} />
           </View>
         )}
         {phase === "thinking" && (
@@ -516,7 +518,6 @@ export function CopilotSheet(props: Props) {
             haptic("medium");
             onAvatarPress();
           }}
-          disabled={phase === "thinking"}
           style={styles.center}
         >
           <Avatar

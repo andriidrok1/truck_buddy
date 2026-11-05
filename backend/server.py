@@ -606,8 +606,12 @@ async def voice_turn(
 
 
 @api.post("/voice/transcribe")
-async def voice_transcribe(audio: UploadFile = File(...), hint: Optional[str] = Form(None, max_length=600)):
-    """Step 1 of a voice turn: speech -> text (the app shows it right away, then calls /agent?speak=true)."""
+async def voice_transcribe(audio: UploadFile = File(...), hint: Optional[str] = Form(None, max_length=600),
+                           maybe: Optional[str] = Form(None, max_length=8)):
+    """Step 1 of a voice turn: speech -> text (the app shows it right away, then calls /agent?speak=true).
+
+    `maybe=1`: the app's mic heard sound but no clear speech (src/voice/endpointer.ts). A short, unsure or
+    made-up-from-noise transcript then comes back empty, so the agent never answers a "Thank you." nobody said."""
     timing.begin()
     with timing.stage("upload"):
         data = await audio.read()
@@ -629,9 +633,13 @@ async def voice_transcribe(audio: UploadFile = File(...), hint: Optional[str] = 
     except Exception:
         logger.exception("transcription failed")
         text = ""
+    dropped = False
+    if maybe in ("1", "true") and text and voice.noise_only(text, confidence):
+        dropped = True
+        text = ""
     t = timing.current()
-    logger.info("voice transcribe bytes=%d transcript=%s confidence=%s %s", len(data), said(text), confidence,
-                " ".join(f"{k}={v}" for k, v in t.items()))
+    logger.info("voice transcribe bytes=%d transcript=%s confidence=%s maybe=%s dropped=%s %s", len(data), said(text),
+                confidence, bool(maybe), dropped, " ".join(f"{k}={v}" for k, v in t.items()))
     return {"transcript": text, "stt_confidence": confidence, "timings": t}
 
 
