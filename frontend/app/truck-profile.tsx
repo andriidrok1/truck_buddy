@@ -400,6 +400,10 @@ export default function TruckProfileScreen() {
         <Text style={[styles.deleteNote, { color: colors.muted }]}>
           Erases everything stored for this device on our servers (conversation memory) and signs you out. The truck profile on this phone is reset too.
         </Text>
+        {/* Credits the open place data asks for (backend/scripts/build_places.py: ODbL, CDLA, Apache-2.0). */}
+        <Text testID="data-credits" style={[styles.deleteNote, { color: colors.muted, marginTop: spacing.lg }]}>
+          Places: © OpenStreetMap contributors (ODbL), © Overture Maps Foundation, Foursquare, AllThePlaces, FHWA.
+        </Text>
       </KeyboardAwareScrollView>
 
       <KeyboardStickyView offset={{ opened: insets.bottom }}>
