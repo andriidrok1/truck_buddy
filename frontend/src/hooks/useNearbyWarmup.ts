@@ -9,6 +9,9 @@ const trip = useTripStore.getState;
 
 type Fix = { coords: LatLng; isDemo: boolean; resolved: boolean };
 
+/** Within ~5 km of where the last look-around was made (a flat-earth check, lng shrunk by cos 37°). */
+const nearSpot = (spot: LatLng | null, at: LatLng) => !!spot && Math.hypot(spot.lat - at.lat, (spot.lng - at.lng) * 0.8) < 0.045;
+
 /**
  * Warm Places + parking caches around the driver: app on screen, no active route,
  * real GPS fix (or demo after location resolved), then again after moving ~5 km.
@@ -17,8 +20,7 @@ export function useWarmCaches(loc: Fix, appActive: boolean, active: ActiveRoute 
   const warmedAt = useRef<LatLng | null>(null);
   useEffect(() => {
     if (!appActive || active || (loc.isDemo && !loc.resolved)) return;
-    const w = warmedAt.current;
-    if (w && Math.hypot(w.lat - loc.coords.lat, (w.lng - loc.coords.lng) * 0.8) < 0.045) return;
+    if (nearSpot(warmedAt.current, loc.coords)) return;
     warmedAt.current = loc.coords;
     api.warm(loc.coords).catch(() => {});
   }, [loc.coords, loc.isDemo, loc.resolved, appActive, active]);
@@ -40,8 +42,7 @@ export function useStartPins(
   useEffect(() => {
     if (active || phase !== "ready" || optionsCount || providers || placesCount) return;
     if (loc.isDemo && !loc.resolved) return;
-    const e = startPinsEmptyAt.current;
-    if (e && Math.hypot(e.lat - loc.coords.lat, (e.lng - loc.coords.lng) * 0.8) < 0.045) return;
+    if (nearSpot(startPinsEmptyAt.current, loc.coords)) return;
     const at = loc.coords;
     let cancelled = false;
     api
