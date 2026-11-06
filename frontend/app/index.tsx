@@ -1,7 +1,7 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
-import { AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
+import { BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as Sentry from "@sentry/react-native";
@@ -35,11 +35,13 @@ import { farFromRoute } from "@/src/geo/guidance";
 import { startDriveTracking, stopDriveTracking } from "@/src/geo/driveTracking";
 import { arrivals, loadArrived, saveArrived } from "@/src/geo/arrival";
 import { createRerouteGate } from "@/src/geo/offroute";
+import { useAppActive } from "@/src/hooks/useAppActive";
 import { useBreakReminder } from "@/src/hooks/useBreakReminder";
 import { useDriveRecorder } from "@/src/hooks/useDriveRecorder";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
 import { useOfflineGuidance, type OfflineGuidance } from "@/src/hooks/useOfflineGuidance";
+import { useStartPins, useWarmCaches } from "@/src/hooks/useNearbyWarmup";
 import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
@@ -302,51 +304,10 @@ export default function MapScreen() {
 
   const fillers = useFillers(voice.playAndWait);
 
-  // Warm Places + parking caches around the driver: app on screen, no active route,
-  // real GPS fix (or demo after location resolved), then again after moving ~5 km.
-  const warmedAt = useRef<LatLng | null>(null);
-  const [appActive, setAppActive] = useState(AppState.currentState === "active");
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (s) => setAppActive(s === "active"));
-    return () => sub.remove();
-  }, []);
-  useEffect(() => {
-    if (!appActive || active || (loc.isDemo && !loc.resolved)) return;
-    const w = warmedAt.current;
-    if (w && Math.hypot(w.lat - loc.coords.lat, (w.lng - loc.coords.lng) * 0.8) < 0.045) return;
-    warmedAt.current = loc.coords;
-    api.warm(loc.coords).catch(() => {});
-  }, [loc.coords, loc.isDemo, loc.resolved, appActive, active]);
-
-  // The first map is not empty: while nothing is on it (no route, no search, no pins yet) the truck stops
-  // around the driver go on as pins, a tap routes there, and the camera widens once to show the nearest
-  // three. They make way for any search or route and come back when the map is empty again (QA 10-28, U4).
-  const startPinsEmptyAt = useRef<LatLng | null>(null); // where a fetch found nothing: no retry at the same spot
-  useEffect(() => {
-    if (active || phase !== "ready" || options.length || providers || places.length) return;
-    if (loc.isDemo && !loc.resolved) return;
-    const e = startPinsEmptyAt.current;
-    if (e && Math.hypot(e.lat - loc.coords.lat, (e.lng - loc.coords.lng) * 0.8) < 0.045) return;
-    const at = loc.coords;
-    let cancelled = false;
-    api
-      .places("truck_stop", at)
-      .then((res) => {
-        const t = trip();
-        if (cancelled || t.active || phaseRef.current !== "ready" || t.options.length) return;
-        if (!res.places.length) {
-          startPinsEmptyAt.current = at;
-          return;
-        }
-        const nearest = res.places.slice(0, 8);
-        t.setStartPins(nearest);
-        setFit({ key: `start-pins-${at.lat.toFixed(3)},${at.lng.toFixed(3)}`, points: [at, ...nearest.slice(0, 3)] });
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [active, phase, options.length, providers, places.length, loc.coords, loc.isDemo, loc.resolved]);
+  // Warm Places + parking caches around the driver; the truck stops around him as pins on an empty map.
+  const appActive = useAppActive();
+  useWarmCaches(loc, appActive, active);
+  useStartPins(loc, { active, phase, optionsCount: options.length, providers, placesCount: places.length }, phaseRef, setFit);
 
   /** Satellite parking check runs after the route is set; its directions are spoken when the reply ends. */
   const followParking = async (place: Place, replyDone: Promise<void>, isCurrent: () => boolean, approach = trip().active?.route.approach) => {
