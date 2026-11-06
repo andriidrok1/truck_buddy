@@ -994,11 +994,11 @@
   },
   {
    "en": "The truck entrance is {tip}.",
-   "ru": "Въезд для траков {tip|tr}."
+   "ru": "Въезд для траков {tip|mt}."
   },
   {
    "en": "To get in: {tip}.",
-   "ru": "Как заехать: {tip|tr}."
+   "ru": "Как заехать: {tip|mt}."
   },
   {
    "en": "on your {side}, off {street}",
@@ -1007,7 +1007,7 @@
   },
   {
    "en": "on your {side}, off {street}, {rest}",
-   "ru": "{side|side}, с {street}, {rest}",
+   "ru": "{side|side}, с {street}, {rest|mt}",
    "part": true
   },
   {
@@ -1055,7 +1055,7 @@
   },
   {
    "en": "Drivers say: {gist}",
-   "ru": "Водители говорят: {gist|tr}"
+   "ru": "Водители говорят: {gist|mt}"
   },
   {
    "en": "No driver reviews there yet.",
@@ -2060,6 +2060,30 @@
    "from": "юго-западный",
    "at": "к юго-западу",
    "to": "юго-запад"
+  },
+  "north-northeast": {
+   "from": "северо-северо-восточный"
+  },
+  "east-northeast": {
+   "from": "восточно-северо-восточный"
+  },
+  "east-southeast": {
+   "from": "восточно-юго-восточный"
+  },
+  "south-southeast": {
+   "from": "юго-юго-восточный"
+  },
+  "south-southwest": {
+   "from": "юго-юго-западный"
+  },
+  "west-southwest": {
+   "from": "западно-юго-западный"
+  },
+  "west-northwest": {
+   "from": "западно-северо-западный"
+  },
+  "north-northwest": {
+   "from": "северо-северо-западный"
   },
   "left": {
    "side": "слева",

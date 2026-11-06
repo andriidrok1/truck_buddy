@@ -108,3 +108,62 @@ def test_a_verdict_saved_in_russian_is_not_loaded(tmp_path, monkeypatch):
     (tmp_path / "a.json").write_text(json.dumps({"key": "1.00000,2.00000", "check": ru.model_dump(mode="json")}))
     (tmp_path / "b.json").write_text(json.dumps({"key": "3.00000,4.00000", "check": EN_JSON}))
     assert set(parking_store.load_all()) == {"3.00000,4.00000"}
+
+
+def _model_calls(fake_llm) -> list[str]:
+    return [text for system, text, _m in fake_llm.calls if system.startswith("Translate this line")]
+
+
+@pytest.mark.parametrize("line", [
+    "Alright. Route to Reno is set, 2 h 52 min, about 132 miles.",
+    "I found Pilot, Nevada, about 300 miles away. Is that the one?",
+    "Got it, I'll remember you don't like the 49er.",
+])
+def test_place_names_never_call_the_model(fake_llm, line):
+    """{x|tr} holds names: the catalog line is enough, no model round trip on the route confirmation (#126 review)."""
+    from conftest import run
+    got = run(i18n.localize(line, "ru"))
+    assert _model_calls(fake_llm) == []
+    assert re.search(r"[А-Яа-я]", got)
+
+
+def test_parking_card_model_calls_are_paid_once(api_client, cached, fake_llm):
+    """First Russian card: one call per model-written text, all at once. The repeat and the spoken answer reuse
+    them: the tips are not translated twice."""
+    body = {"place": PLACE.model_dump(mode="json")}
+    api_client.post("/api/parking", json=body, headers={"X-Lang": "ru"})
+    assert sorted(_model_calls(fake_llm)) == sorted(["The lot is small and tight", "Use the wide south driveway",
+                                                     "Park along the east side near existing trailers"])
+    fake_llm.calls.clear()
+    api_client.post("/api/parking", json=body, headers={"X-Lang": "ru"})
+    api_client.post("/api/parking/answer", json={**body, "wait_s": 1}, headers={"X-Lang": "ru"})
+    assert _model_calls(fake_llm) == []
+
+
+def test_slow_model_leaves_the_card_to_the_catalog(api_client, cached, fake_llm, monkeypatch):
+    """Over the card budget the catalog's lines are Russian and the model's stay English, never a hang."""
+    import asyncio
+    from services import llm
+
+    async def slow(system, text, *a, **k):
+        await asyncio.sleep(0.5)
+        return "медленно"
+
+    monkeypatch.setattr(llm, "complete", slow)
+    monkeypatch.setattr(i18n, "CARD_BUDGET_S", 0.05)
+    card = api_client.post("/api/parking", json={"place": PLACE.model_dump(mode="json")}, headers={"X-Lang": "ru"}).json()
+    assert card["label"] == "Скорее всего, фура не встанет (по спутнику)"
+    assert card["park_tip"] == EN.park_tip
+    assert card["reason"] == "The lot is small and tight; есть площадка с трейлерами к северу, похоже, общая стоянка."
+
+
+def test_wind_from_a_three_part_direction():
+    line = "Reno at 3 pm: 63 degrees and sunny, wind 15 miles an hour from the north-northwest."
+    assert i18n.translate(line, "ru") == ("Reno в 15:00: 63 градуса по Фаренгейту, солнечно, ветер 15 миль в час, "
+                                          "северо-северо-западный.")
+
+
+def test_no_double_period_after_a_model_translated_tip():
+    got = i18n.translate("To get in: Use the wide south driveway.", "ru",
+                         fallback=lambda s, c: "Заезжай через широкий южный въезд.")
+    assert got == "Как заехать: Заезжай через широкий южный въезд."
