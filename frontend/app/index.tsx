@@ -1,7 +1,7 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
-import { Alert, AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
+import { AppState, BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import * as Sentry from "@sentry/react-native";
@@ -9,7 +9,9 @@ import * as Sentry from "@sentry/react-native";
 import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
 import { newSessionId, useCopilotTurn, type AnswerContext } from "@/src/dialog/useCopilotTurn";
 import { useFillers } from "@/src/dialog/useFillers";
-import { lineCaption, replyCaption, replyEnded, type Caption } from "@/src/dialog/caption";
+import { bubbleRoom, expireLine, hasExpiringLine, LINE_HOLD_MS, lineCaption, replyCaption, replyPlacement, type Caption } from "@/src/dialog/caption";
+import { floatingBottom } from "@/src/state/floating";
+import { routeFitPoints } from "@/src/map/bounds";
 import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
 import { Icon } from "@/src/components/Icon";
@@ -23,6 +25,7 @@ import { PressableScale } from "@/src/components/PressableScale";
 import { dial, ProvidersList } from "@/src/components/ProvidersList";
 import { RestoredBanner } from "@/src/components/RestoredBanner";
 import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
+import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
 import { isTester } from "@/src/auth";
@@ -42,6 +45,7 @@ import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
 import { saveProfile, setMidTripCheck } from "@/src/data/profile";
 import { getTruckProfile, isOnboarded, truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
+import { askWithDeadline } from "@/src/voice/micAsk";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
 import { providerPlace, restoreSavedTrip, selectPlaces, startTripPersistence, stopsAhead, useTripStore, viaOf } from "@/src/state/tripStore";
@@ -65,10 +69,6 @@ import { t } from "@/src/i18n";
 function routeFailText(e: unknown): string {
   return isNoTruckRoute(e) ? "No truck route there from here. Try another destination or an address on a main road." : "Couldn't build a route. Try again.";
 }
-
-// Below this much visible map (layout units) the bubble would cover the route; the sheet shows the text.
-// The route card leaves about 220 at the default font, about 120 at 130 %.
-const MIN_MAP_FOR_BUBBLE = 180;
 
 const KEEP_AWAKE_TAG = "driving";
 
@@ -120,11 +120,14 @@ export default function MapScreen() {
   const [topH, setTopH] = useState(140);
   const [sheetH, setSheetH] = useState(260);
   const { height: windowH } = useWindowDimensions();
-  const mapWindow = windowH - topH - sheetH; // the map the chrome leaves visible; small at 130 % font
   // The sheet's peek height while the driver has pulled it down; the map keeps sheetH as its inset
   // (no camera refit on a drag) but the chrome above the sheet moves down into the freed room.
   const [peekH, setPeekH] = useState<number | null>(null);
+  // The map the chrome leaves visible (small at 130 % font); a lowered sheet frees room for the bubble.
+  const mapWindow = windowH - topH - (peekH ?? sheetH);
   const chromeBottom = (peekH ?? sheetH) + spacing.lg;
+  // Cards and the caption on the left also clear the map's attribution logo, which sits right above the sheet.
+  const cardBottom = chromeBottom + spacing.lg;
   const active = useTripStore((s) => s.active);
   const driving = useTripStore((s) => s.driving);
   const options = useTripStore((s) => s.options);
@@ -148,12 +151,23 @@ export default function MapScreen() {
     }
   };
   const [toast, setToast] = useState<ToastData | null>(null);
-  // kind "reply" = the copilot's answer, kept until the next turn (a driver who looks later must still
-  // see it); kind "line" = a spoken line (turn, nudge, parking tip), gone 8 s after it is said.
+  // kind "reply" = the copilot's answer, kept until the driver dismisses it or the next answer comes (a driver
+  // who looks later must still see it); kind "line" = a spoken line (turn, nudge, parking tip), gone 8 s after
+  // it is said. A line during an answer shows as a note under it (src/dialog/caption.ts).
   const [caption, setCaption] = useState<Caption | null>(null);
-  /** A spoken line's caption; it never covers an answer said less than REPLY_HOLD_MS ago. */
+  /** A spoken line's caption; it never replaces an answer. */
   const showLine = (text: string) => setCaption((prev) => lineCaption(text, prev));
   const [micCard, setMicCard] = useState<Exclude<MicPermission, "granted"> | null>(null);
+  /** Drawn heights of the answer bubble and of the card on the map (height, mic): 0 when gone. */
+  const [bubbleH, setBubbleH] = useState(0);
+  const [cardH, setCardH] = useState(0);
+  // Whether this screen is the one on top (not under the truck profile or history).
+  const [focused, setFocused] = useState(true);
+  /** The answer that did not fit whole in the bubble, and the room it had: it stays in the sheet until a new
+   *  answer comes or the bubble gets more room (the driver lowered the sheet). */
+  const [overflow, setOverflow] = useState<{ reply: string; room: number } | null>(null);
+  /** The "End the route to …?" question while it is up (ConfirmSheet), null otherwise. */
+  const [endConfirm, setEndConfirm] = useState<string | null>(null);
   const [fit, setFit] = useState<{ key: string; points: LatLng[] }>({ key: "init", points: [] });
   const [thinkingText, setThinkingText] = useState<string | undefined>(undefined);
   const setDriving = (v: boolean) => trip().setDriving(v);
@@ -249,16 +263,10 @@ export default function MapScreen() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // The answer's hold over spoken lines starts when its audio ends, not when it arrived.
-  const wasSpeaking = useRef(false);
+  // A spoken line (or the note under an answer) goes LINE_HOLD_MS after it was said; the answer itself stays.
   useEffect(() => {
-    if (wasSpeaking.current && !voice.speaking) setCaption((prev) => replyEnded(prev));
-    wasSpeaking.current = voice.speaking;
-  }, [voice.speaking]);
-
-  useEffect(() => {
-    if (!caption || voice.speaking || caption.kind === "reply") return; // answers stay until the next turn
-    const t = setTimeout(() => setCaption(null), 8000);
+    if (!hasExpiringLine(caption) || voice.speaking) return;
+    const t = setTimeout(() => setCaption((prev) => expireLine(prev)), LINE_HOLD_MS);
     return () => clearTimeout(t);
   }, [caption, voice.speaking]);
 
@@ -314,6 +322,49 @@ export default function MapScreen() {
   if (optionsFit !== optionsFitSeen) {
     setOptionsFitSeen(optionsFit);
     if (optionsFit) setFit({ key: optionsFit, points: [loc.coords, ...options] });
+  }
+
+  // Route preview: the answer bubble sits on the map right above the sheet, so the map's bottom padding takes
+  // it in and the route refits above it; the destination pin is never under the bubble (UI review 2026-11-05,
+  // M11). Dismissing the bubble gives the room back.
+  const previewing = phase === "navigating" && !!active && !driving;
+  // The height card waits while the mic card asks, and while the copilot listens or thinks (one thing at a time).
+  const showHeightCard = heightConfirmed === false && focused && !micCard && phase !== "listening" && phase !== "thinking";
+  const cardUp = (showHeightCard || !!micCard) && cardH > 0;
+  // The bubble sits above a card on the map, never under it: under the height card the whole answer was hidden
+  // (UI review 2026-11-05, third pass, M2).
+  const bubbleBottom = cardUp ? cardBottom + cardH + spacing.sm : cardBottom;
+  const room = bubbleRoom(mapWindow, bubbleBottom - (peekH ?? sheetH));
+  const overflowed = caption?.kind === "reply" && overflow?.reply === caption.reply && room <= overflow.room;
+  const replyPlace = replyPlacement({ mapWindow, room, overflowed, sheetHosts: phase === "ready" || previewing });
+  const bubbleUp = !!caption && replyPlace === "map" && !routesOpen;
+  const onBubbleFit = useCallback(
+    (fits: boolean) => {
+      if (!fits && caption?.kind === "reply") setOverflow({ reply: caption.reply, room });
+    },
+    [caption, room],
+  );
+  // Follow truck sits above the sheet (or above a card), and only where it clears the top bar's buttons.
+  const followBottom = floatingBottom({ windowH, topH, bottom: cardUp ? cardBottom + cardH + spacing.sm : chromeBottom });
+  const mapBottom = sheetH + (previewing && bubbleUp && bubbleH > 0 ? bubbleH + 2 * spacing.lg : 0);
+  const previewFit = previewing && active ? `preview-${active.place.id}-${mapBottom}` : null;
+  const [previewFitSeen, setPreviewFitSeen] = useState(previewFit);
+  if (previewFit !== previewFitSeen) {
+    setPreviewFitSeen(previewFit);
+    if (previewFit && active) setFit({ key: previewFit, points: [loc.coords, active.place] });
+  }
+  // While the driver picks a route, the other routes are on the map too (grey, under the blue current one) and
+  // the camera takes them all in: choosing between lines nobody can see was the M1 of the third review pass.
+  const altLines = useMemo(
+    () => (routesOpen && previewing && active?.route.alternatives?.length ? active.route.alternatives.map((r) => r.geometry) : undefined),
+    [routesOpen, previewing, active],
+  );
+  const altFit = altLines && active ? `routes-${active.place.id}-${altLines.length}-${sheetH}` : null;
+  const [altFitSeen, setAltFitSeen] = useState(altFit);
+  if (altFit !== altFitSeen) {
+    setAltFitSeen(altFit);
+    if (altFit && altLines && active) setFit({ key: altFit, points: [loc.coords, active.place, ...routeFitPoints([active.route.geometry, ...altLines])] });
+    else if (previewFit && active) setFit({ key: `${previewFit}-back`, points: [loc.coords, active.place] });
   }
 
   const sayReply = (res: AgentResponse, isCurrent: () => boolean = () => true) => {
@@ -781,7 +832,6 @@ export default function MapScreen() {
   };
 
   // Modal screens (onboarding, truck profile): a return re-plans with a changed truck (below).
-  const [focused, setFocused] = useState(true);
   useFocusEffect(
     useCallback(() => {
       setFocused(true);
@@ -808,6 +858,19 @@ export default function MapScreen() {
     };
   }, [focused, micCard, setPrewarm, micPermission]); // micCard: re-check once the driver allowed the mic
 
+  // Back from Settings (or from a system dialog that answered after the card gave up): the mic is allowed now,
+  // so the card has nothing left to ask.
+  useEffect(() => {
+    if (!micCard || !appActive || !focused) return;
+    let live = true;
+    micPermission()
+      .then((p) => live && p === "granted" && setMicCard(null))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [micCard, appActive, focused, micPermission]);
+
   const onAvatarPress = async () => {
     if (phase === "listening") {
       voice.finishListening();
@@ -829,15 +892,12 @@ export default function MapScreen() {
   };
 
   const onAllowMic = async () => {
-    // A request that never answers (seen in Expo Go) must not leave the card dead: after 5 s it is
-    // treated as blocked, and the card offers Settings.
-    const perm = await Promise.race([
-      voice.requestMic(),
-      new Promise<MicPermission>((r) => setTimeout(() => r("blocked"), 5000)),
-    ]);
+    // A request that never answers (seen in Expo Go) must not leave the card dead: after 5 s the card
+    // offers Settings, but a late "granted" still closes it (src/voice/micAsk.ts).
+    const { perm, late } = await askWithDeadline<MicPermission>(() => voice.requestMic(), 5000, () => setMicCard("blocked"), "blocked");
     if (perm === "granted") {
       setMicCard(null);
-      turn.tap();
+      if (!late) turn.tap();
     } else {
       // Asked once with context; after that only Settings can fix it.
       setMicCard("blocked");
@@ -891,10 +951,7 @@ export default function MapScreen() {
   const onEndRoutePress = () => {
     const name = trip().active?.place.name.split(",")[0] ?? "this route";
     if (!trip().driving || guidance.remainingS < END_CONFIRM_ABOVE_S) return onEndRoute();
-    Alert.alert(t("End the route to {name}?", { name }), undefined, [
-      { text: t("Keep driving"), style: "cancel" },
-      { text: t("End route"), style: "destructive", onPress: onEndRoute },
-    ]);
+    setEndConfirm(t("End the route to {name}?", { name }));
   };
 
   const onEndRoute = () => {
@@ -931,14 +988,14 @@ export default function MapScreen() {
   // driving flag are read from the trip store, so the one listener registered on mount never acts on a
   // stale closure.
   const backRefs = useRef({
-    state: { micCard: false, routesOpen: false, phase: "ready" as Phase },
+    state: { micCard: false, routesOpen: false, reply: false, phase: "ready" as Phase },
     cancel: () => {},
     closeOptions: () => {},
     endRoute: () => {},
   });
   useLayoutEffect(() => {
     backRefs.current = {
-      state: { micCard: !!micCard, routesOpen, phase },
+      state: { micCard: !!micCard, routesOpen, reply: !!caption, phase },
       cancel: () => {
         turn.cancel();
         voice.cancelRecording().catch(() => {});
@@ -960,6 +1017,9 @@ export default function MapScreen() {
           return true;
         case "closeRoutes":
           setRoutesOpen(false);
+          return true;
+        case "closeReply":
+          setCaption(null);
           return true;
         case "cancelTurn":
           cancel();
@@ -1264,9 +1324,13 @@ export default function MapScreen() {
         driver={loc.coords}
         heading={loc.heading}
         places={places}
-        active={active}
+        // While the driver picks from the list (before Go), the map shows the choices only: the last preview's
+        // route and "Harbor Truck…" label stayed over the list (UI review 2026-11-05, M16). Its pin stays as one
+        // of the options.
+        active={phase === "options" && !driving ? null : active}
+        alternatives={altLines}
         topInset={topH}
-        bottomInset={sheetH}
+        bottomInset={mapBottom}
         fitKey={fit.key}
         fitPoints={fit.points}
         onCenterChange={(c) => (center.current = c)}
@@ -1301,7 +1365,8 @@ export default function MapScreen() {
         topInset={insets.top}
         truckLabel={truckLabel(truck)}
         hazmat={truck.hazmat}
-        destination={active?.place.name ?? null}
+        // While the driver picks from the list, the pill must not say "To: <the first pick>" over it.
+        destination={phase === "options" ? null : (active?.place.name ?? null)}
         onSearch={(q) =>
           // A bare place ("Reno") becomes "Take me to Reno"; a full request ("I need fuel") goes as typed.
           onSubmitText(/\b(?:i|i'm|me|my|need|find|take|go|where|show|get|park|near|any|truck ?stops?|hotels?|motels?|rest ?areas?|fuel|diesel|gas|parking)\b/i.test(q) ? q : `Take me to ${q}`)
@@ -1318,26 +1383,41 @@ export default function MapScreen() {
       />
       )}
 
-      <PressableScale
-        testID="follow-button"
-        accessibilityLabel={following ? "Stop following" : "Follow truck"}
-        accessibilityState={{ selected: following }}
-        onPress={() => {
-          if (following) {
-            setTracking(false);
-            if (driving) setOverview(true);
-          } else {
-            setOverview(false);
-            setTracking(true);
-          }
-        }}
-        containerStyle={[styles.recenter, { bottom: chromeBottom }]}
-        style={[styles.recenterBtn, shadow(colors), { backgroundColor: following ? colors.info : colors.surface }]}
-      >
-        <Icon name={following ? "navigation-variant" : "crosshairs-gps"} size={24} color={following ? colors.onInfo : colors.info} />
-      </PressableScale>
+      {/* Hidden when the map window has no room for it under the top bar: it sat on the history button
+          (UI review 2026-11-05, third pass, M3). */}
+      {followBottom !== null && (
+        <PressableScale
+          testID="follow-button"
+          accessibilityLabel={following ? "Stop following" : "Follow truck"}
+          accessibilityState={{ selected: following }}
+          onPress={() => {
+            if (following) {
+              setTracking(false);
+              if (driving) setOverview(true);
+            } else {
+              setOverview(false);
+              setTracking(true);
+            }
+          }}
+          // Above the card on the map when one asks: under it, only the button's edge showed (UI review 2026-11-05, M6).
+          containerStyle={[styles.recenter, { bottom: followBottom }]}
+          style={[styles.recenterBtn, shadow(colors), { backgroundColor: following ? colors.info : colors.surface }]}
+        >
+          <Icon name={following ? "navigation-variant" : "crosshairs-gps"} size={24} color={following ? colors.onInfo : colors.info} />
+        </PressableScale>
+      )}
 
-      <CaptionBubble text={mapWindow >= MIN_MAP_FOR_BUBBLE ? (caption?.reply ?? null) : null} heard={caption?.heard} bottom={chromeBottom} sources={caption?.sources} />
+      <CaptionBubble
+        text={bubbleUp ? (caption?.reply ?? null) : null}
+        heard={caption?.heard}
+        note={caption?.note}
+        bottom={bubbleBottom}
+        maxHeight={room}
+        sources={caption?.sources}
+        onDismiss={() => setCaption(null)}
+        onHeight={setBubbleH}
+        onFit={onBubbleFit}
+      />
 
       <CopilotSheet
         phase={phase}
@@ -1367,16 +1447,19 @@ export default function MapScreen() {
         onLayout={setSheetH}
         onPeekHeight={setPeekH}
         wakePhrase={null}
+        quiet={showHeightCard || !!micCard}
         panel={providers ? <ProvidersList data={providers} onRoute={(p) => onPlacePress(providerPlace(p))} /> : null}
+        routesPanel={
+          routesOpen && active && !driving && !!active.route.alternatives?.length ? (
+            <AlternativesSheet primary={active.route} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
+          ) : null
+        }
+        replyInSheet={caption?.kind === "reply" && replyPlace === "sheet" ? caption.reply : null}
       />
 
-      {routesOpen && active && !driving && !!active.route.alternatives?.length && (
-        <AlternativesSheet primary={active.route} bottom={chromeBottom} top={topH + spacing.sm} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
-      )}
-
-      {heightConfirmed === false && focused && !micCard && (
+      {showHeightCard && (
         <HeightConfirmCard
-          bottom={chromeBottom}
+          bottom={cardBottom}
           current={truck.height_in}
           onPick={async (h) => {
             await confirmHeight();
@@ -1385,15 +1468,17 @@ export default function MapScreen() {
             if (changed && trip().active) reroute("profile"); // the route was planned for another height
           }}
           onOther={() => router.push("/truck-profile")}
+          onHeight={setCardH}
         />
       )}
 
       {micCard && (
         <MicPermissionCard
           state={micCard}
-          bottom={chromeBottom}
+          bottom={cardBottom}
           onAllow={onAllowMic}
           onDismiss={() => setMicCard(null)}
+          onHeight={setCardH}
         />
       )}
 
@@ -1413,6 +1498,18 @@ export default function MapScreen() {
       )}
 
       <Toast toast={toast} top={topH + spacing.sm} />
+
+      <ConfirmSheet
+        testID="end-route-confirm"
+        title={endConfirm}
+        confirmLabel="End route"
+        cancelLabel="Keep driving"
+        onConfirm={() => {
+          setEndConfirm(null);
+          onEndRoute();
+        }}
+        onCancel={() => setEndConfirm(null)}
+      />
     </View>
   );
 }

@@ -41,6 +41,9 @@ export type MapLayerProps = {
   heading: number | null;
   places: Place[];
   active: ActiveRoute | null;
+  /** The other routes' geometries while the driver picks one ([lat, lng] pairs): drawn grey under the active
+   *  route, which stays blue on top (UI review 2026-11-05, third pass, M1). */
+  alternatives?: [number, number][][];
   /** Space covered by the top overlay / bottom sheet, so fitting keeps content visible. */
   topInset: number;
   bottomInset: number;

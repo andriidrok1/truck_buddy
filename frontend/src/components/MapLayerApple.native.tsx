@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
+import { forwardRef, Fragment, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import { StyleSheet, useWindowDimensions } from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
 
@@ -41,7 +41,7 @@ export function ViewMarker({ children, redraw, ...rest }: React.ComponentProps<t
 }
 
 const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(props, ref) {
-  const { driver, heading, places, active, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch } = props;
+  const { driver, heading, places, active, alternatives, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch } = props;
   const { colors, scheme } = useTheme();
   const { width: winW, height: winH } = useWindowDimensions();
   const mapRef = useRef<MapView>(null);
@@ -162,6 +162,12 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
       }}
       onRegionChangeComplete={(r) => onCenterChange({ lat: r.latitude, lng: r.longitude })}
     >
+      {(alternatives ?? []).map((g, i) => (
+        <Fragment key={`alt-${i}`}>
+          <Polyline coordinates={g.map(([lat, lng]) => ({ latitude: lat, longitude: lng }))} strokeColor={colors.routeCasing} strokeWidth={9} />
+          <Polyline coordinates={g.map(([lat, lng]) => ({ latitude: lat, longitude: lng }))} strokeColor={colors.muted} strokeWidth={5} />
+        </Fragment>
+      ))}
       {active && (
         <>
           <Polyline coordinates={active.route.geometry.map(([lat, lng]) => ({ latitude: lat, longitude: lng }))} strokeColor={colors.routeCasing} strokeWidth={10} />

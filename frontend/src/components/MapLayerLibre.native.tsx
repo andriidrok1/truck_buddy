@@ -36,7 +36,7 @@ const DEFAULT_ZOOM = 15;
 const FIT_PADDING = { top: 48, right: 56, bottom: 48, left: 56 };
 
 const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayerLibre(props, ref) {
-  const { driver, heading, places, active, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch } = props;
+  const { driver, heading, places, active, alternatives, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch } = props;
   const { colors, scheme } = useTheme();
   const camera = useRef<CameraRef>(null);
   const map = useRef<MapRef>(null);
@@ -87,6 +87,10 @@ const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLaye
 
   const route = active?.route;
   const routeData = useMemo(() => (route ? lineFeature(route.geometry) : null), [route]);
+  const altData = useMemo<GeoJSON.FeatureCollection | null>(
+    () => (alternatives?.length ? { type: "FeatureCollection", features: alternatives.map((g) => lineFeature(g)) } : null),
+    [alternatives],
+  );
   const trafficData = useMemo<GeoJSON.FeatureCollection | null>(
     () => (route?.traffic?.length ? { type: "FeatureCollection", features: route.traffic.map((t) => lineFeature(t.points, { level: t.level })) } : null),
     [route],
@@ -118,6 +122,12 @@ const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLaye
       >
         <Camera ref={camera} initialViewState={{ center: toLngLat(driver), zoom: DEFAULT_ZOOM }} />
 
+        {altData && (
+          <GeoJSONSource id="alternatives" data={altData}>
+            <Layer id="alt-casing" type="line" source="alternatives" layout={{ "line-cap": "round", "line-join": "round" }} paint={{ "line-color": colors.routeCasing, "line-width": 9 }} />
+            <Layer id="alt-line" type="line" source="alternatives" layout={{ "line-cap": "round", "line-join": "round" }} paint={{ "line-color": colors.muted, "line-width": 5 }} />
+          </GeoJSONSource>
+        )}
         {routeData && (
           <GeoJSONSource id="route" data={routeData}>
             <Layer id="route-casing" type="line" source="route" layout={{ "line-cap": "round", "line-join": "round" }} paint={{ "line-color": colors.routeCasing, "line-width": 10 }} />

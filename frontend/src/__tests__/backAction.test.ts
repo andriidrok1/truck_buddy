@@ -20,4 +20,12 @@ describe("backAction", () => {
     expect(backAction({ ...base, phase: "navigating", hasRoute: true })).toBe("endRoute");
     expect(backAction({ ...base, phase: "navigating", hasRoute: true, driving: true })).toBe("ignore");
   });
+
+  test("route preview with the answer up: the first Back closes the answer only, the second ends the preview (UI review 2026-11-05, N2)", () => {
+    const preview = { ...base, phase: "navigating" as const, hasRoute: true };
+    expect(backAction({ ...preview, reply: true })).toBe("closeReply");
+    expect(backAction(preview)).toBe("endRoute");
+    expect(backAction({ ...preview, reply: true, routesOpen: true })).toBe("closeRoutes");
+    expect(backAction({ ...base, phase: "listening", reply: true })).toBe("cancelTurn");
+  });
 });

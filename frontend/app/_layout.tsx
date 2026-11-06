@@ -96,6 +96,13 @@ function RootLayout() {
     "PlusJakartaSans-SemiBold": require("../assets/fonts/PlusJakartaSans-SemiBold.ttf"),
     "PlusJakartaSans-Bold": require("../assets/fonts/PlusJakartaSans-Bold.ttf"),
     "PlusJakartaSans-ExtraBold": require("../assets/fonts/PlusJakartaSans-ExtraBold.ttf"),
+    // Plus Jakarta Sans has no Cyrillic: Russian text is drawn in Manrope (OFL, assets/fonts/Manrope-OFL.txt),
+    // the same weights, picked by src/i18n/Text.tsx.
+    "Manrope-Regular": require("../assets/fonts/Manrope-Regular.ttf"),
+    "Manrope-Medium": require("../assets/fonts/Manrope-Medium.ttf"),
+    "Manrope-SemiBold": require("../assets/fonts/Manrope-SemiBold.ttf"),
+    "Manrope-Bold": require("../assets/fonts/Manrope-Bold.ttf"),
+    "Manrope-ExtraBold": require("../assets/fonts/Manrope-ExtraBold.ttf"),
   });
 
   if ((!loaded && !error) || auth === "loading" || consent === "loading" || !themeReady || !storageReady || !langLoaded) return null;

@@ -101,3 +101,10 @@ export function formatBytes(n: number): string {
   if (mb < 1000) return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
   return `${(mb / 1024).toFixed(1)} GB`;
 }
+
+/** Two corners that take in every polyline in `lines` (the current route and its alternatives), for a camera
+ *  fit. Empty when there is nothing to fit. */
+export function routeFitPoints(lines: readonly (readonly (readonly [number, number])[])[]): LatLng[] {
+  const b = routeBounds(lines.flat(), 0.5);
+  return b ? [b.sw, b.ne] : [];
+}
