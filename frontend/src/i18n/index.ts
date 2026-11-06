@@ -59,6 +59,14 @@ export function loadLang(): Promise<void> {
   return reading;
 }
 
+/** "Delete my data": no saved choice, the phone's language until the first screen asks again (`chosen` false
+ *  puts the language screen back in front of everything, app/_layout.tsx). */
+export async function forgetLang(): Promise<void> {
+  await storage.removeItem(LANG_KEY).catch(() => false);
+  reading = Promise.resolve();
+  useLangStore.setState({ lang: deviceLang(), loaded: true, chosen: false });
+}
+
 export const getLang = (): Lang => useLangStore.getState().lang;
 export const setLang = (l: Lang) => useLangStore.getState().setLang(l);
 
@@ -79,15 +87,22 @@ function fill(s: string, vars?: Record<string, string | number>): string {
     if (v === undefined) return `{${name}}`;
     if (forms) {
       const [one, few, many] = forms.split(",");
-      return `${v} ${pluralRu(Number(v), one, few, many)}`;
+      // "80,000" is 80000; any written fraction ("5.0 mi") takes the fraction form, as "2.7 мили" does.
+      const raw = String(v).replace(/,/g, "");
+      return `${v} ${raw.includes(".") ? few : pluralRu(Number(raw), one, few, many)}`;
     }
     return String(v);
   });
 }
 
-type Pattern = { rx: RegExp; names: string[]; target: string };
+type Pattern = { rx: RegExp; names: string[]; target: string; dot: boolean };
 const escapeRx = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 let patterns: Pattern[] | null = null;
+
+/** Placeholder names that always hold a number in ru.ts ("{n} min", "{h} h {m} min · {d} mi", "{f} ft {i} in"). */
+const NUMERIC = new Set(["n", "d", "h", "m", "f", "i"]);
+/** 12, 2.7, 80,000, $12.50, ~5 */
+const NUMBER_RX = "([$~]?\\d[\\d.,]*)";
 
 /** Dictionary keys with {placeholders} ("In {n} feet, {rest}") as regexes, the most literal text first. */
 function compiled(): Pattern[] {
@@ -102,13 +117,15 @@ function compiled(): Pattern[] {
           const m = /^\{(\w+)\}$/.exec(part);
           if (!m) return escapeRx(part);
           names.push(m[1]);
-          return "(.*?)"; // may be empty: "All set{name}!" without a name
+          // A number slot takes a number only, so "{n} ft" can't swallow "Low clearance 13" and "{h} h" leaves
+          // "Open 24 h" alone; any other slot may be empty: "All set{name}!" without a name.
+          return NUMERIC.has(m[1]) ? NUMBER_RX : "(.*?)";
         })
         .join("");
-      return { rx: new RegExp(`^${src}$`, "s"), names, target, lit: en.replace(/\{\w+\}/g, "").length };
+      return { rx: new RegExp(`^${src}$`, "s"), names, target, dot: en.includes(" · "), lit: en.replace(/\{\w+\}/g, "").length };
     })
     .sort((a, b) => b.lit - a.lit)
-    .map(({ rx, names, target }) => ({ rx, names, target }));
+    .map(({ rx, names, target, dot }) => ({ rx, names, target, dot }));
   return patterns;
 }
 
@@ -122,17 +139,28 @@ export function t(en: string, vars?: Record<string, string | number>, lang: Lang
   const exact = RU[en];
   if (exact !== undefined) return fill(exact, vars);
   if (vars) return fill(en, vars);
+  const facts = en.includes(" · ");
   for (const p of compiled()) {
+    // "{n} lb" must not swallow "14 ft 0 in · 53 ft trailer · 80,000" as its number: a line of facts only matches
+    // a pattern that has the dots itself; otherwise it is translated fact by fact below.
+    if (facts && !p.dot) continue;
     const m = p.rx.exec(en);
     if (!m) continue;
     const got: Record<string, string> = {};
     p.names.forEach((n, i) => {
       got[n] = m[i + 1];
     });
-    return fill(p.target, Object.fromEntries(Object.entries(got).map(([k, v]) => [k, RU[v] ?? v])));
+    return fill(p.target, Object.fromEntries(Object.entries(got).map(([k, v]) => [k, RU[v] ?? (MEASURE.test(v) ? t(v, undefined, lang) : v)])));
   }
+  // A line of facts joined by " · " ("8 min · 2.7 mi · current", "14 ft 0 in · 53 ft trailer · 80,000 lb") that has
+  // no entry as a whole: each fact on its own, so a unit never stays English next to a translated one (QA M-4).
+  if (facts) return en.split(" · ").map((part) => t(part, undefined, lang)).join(" · ");
   return en;
 }
+
+/** A captured value that starts with a number ("10 ft", "0.4 mi", "$12.50") carries a unit worth translating;
+ *  anything else (a place, a road, a name) moves over as it is. */
+const MEASURE = /^[$~]?\d/;
 
 /** t() for components: re-renders when the language changes. */
 export function useT() {

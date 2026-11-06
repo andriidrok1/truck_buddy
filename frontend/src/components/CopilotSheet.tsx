@@ -22,6 +22,7 @@ import { Waveform } from "./Waveform";
 import { entrySpot, routeEndsAt } from "../utils/entry";
 import { dragHeight, sheetHeights, snapTarget, stateHeight, type SheetHeights, type SnapState } from "../utils/sheetSnap";
 import { t, useLang, useT } from "../i18n";
+import { arrivalClock } from "../utils/arrivalClock";
 import { placeTagLine } from "../utils/placeTags";
 
 /** Sheet height while nothing pins it: whatever the content needs (Yoga treats this as no cap). */
@@ -145,11 +146,6 @@ function OfflineMapButton({ state, onPress }: { state: OfflineMapState; onPress?
       )}
     </Pressable>
   );
-}
-
-function arrivalClock(seconds: number) {
-  const d = new Date(Date.now() + seconds * 1000);
-  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 function durationLabel(seconds: number) {
@@ -366,7 +362,7 @@ export function CopilotSheet(props: Props) {
           <View testID="driving-info" style={styles.driveInfo}>
             <View onLayout={onFirstLine}>
               <Text testID="arrival-time" style={[styles.eta, { color: colors.success }]}>
-                {arrivalClock(remaining.s)}
+                {arrivalClock(remaining.s, lang)}
               </Text>
             </View>
             <Text testID="remaining-info" numberOfLines={1} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
@@ -443,44 +439,47 @@ export function CopilotSheet(props: Props) {
             {!!active.place.reviews?.length && <ReviewsGist reviews={active.place.reviews} />}
             <ParkingLiveBadge place={active.place} />
             {active.place.category !== "service" && <ParkingStatus parking={active.parking} place={active.place} route={active.route.geometry} />}
-            {/* Before Go the one primary action is Go: the other routes and the other places are two quiet
-                buttons of the same weight, full 56 pt (UI review 2026-11-05: 31 pt text links). */}
-            {(options.length > 0 || routesChip) && (
-              <View style={styles.linkRow}>
-                {routesChip && (
-                  <PressableScale
-                    testID="routes-chip"
-                    accessibilityLabel="Other routes"
-                    onPress={onShowRoutes}
-                    containerStyle={styles.linkItem}
-                    style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
-                  >
-                    <Icon name="directions-fork" size={20} color={colors.onSurface} />
-                    <Text numberOfLines={1} style={[styles.linkText, { color: colors.onSurface }]}>{routesChip}</Text>
-                  </PressableScale>
-                )}
-                {options.length > 0 && (
-                  <PressableScale
-                    testID="other-options-button"
-                    accessibilityLabel="Other places"
-                    onPress={onShowOptions}
-                    containerStyle={styles.linkItem}
-                    style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
-                  >
-                    <Icon name="format-list-bulleted" size={20} color={colors.onSurface} />
-                    <Text numberOfLines={1} style={[styles.linkText, { color: colors.onSurface }]}>
-                      {options.length === 1 ? "1 other place" : `${options.length} other places`}
-                    </Text>
-                  </PressableScale>
-                )}
-              </View>
-            )}
             {offlineMap && <OfflineMapButton state={offlineMap} onPress={onDownloadMap} />}
           </View>
         )}
       </View>
       </Animated.ScrollView>
       </GestureDetector>
+
+      {/* Before Go the one primary action is Go: the other routes and the other places are two quiet
+          buttons of the same weight, full 56 pt (UI review 2026-11-05: 31 pt text links). They sit with Go under
+          the scrolling card: a long answer plus the permit line pushed them below the fold, and the driver never
+          learned there were other routes or places (QA 2026-11-05, M-3). */}
+      {navigating && active && !driving && !routesPanel && (options.length > 0 || routesChip) && (
+        <View style={styles.linkRow}>
+          {routesChip && (
+            <PressableScale
+              testID="routes-chip"
+              accessibilityLabel="Other routes"
+              onPress={onShowRoutes}
+              containerStyle={styles.linkItem}
+              style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
+            >
+              <Icon name="directions-fork" size={20} color={colors.onSurface} />
+              <Text testID="routes-chip-label" numberOfLines={2} style={[styles.linkText, { color: colors.onSurface }]}>{routesChip}</Text>
+            </PressableScale>
+          )}
+          {options.length > 0 && (
+            <PressableScale
+              testID="other-options-button"
+              accessibilityLabel="Other places"
+              onPress={onShowOptions}
+              containerStyle={styles.linkItem}
+              style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
+            >
+              <Icon name="format-list-bulleted" size={20} color={colors.onSurface} />
+              <Text testID="other-options-label" numberOfLines={2} style={[styles.linkText, { color: colors.onSurface }]}>
+                {options.length === 1 ? "1 other place" : `${options.length} other places`}
+              </Text>
+            </PressableScale>
+          )}
+        </View>
+      )}
 
       {/* Go sits under the scrolling card, never inside it: with three stops, or at a 130 % font, the card
           outgrew the sheet and the main button was half under the bottom bar (QA 2026-10-31, Н9, Н25). */}
@@ -619,10 +618,12 @@ const styles = StyleSheet.create({
   stopsLabel: { fontFamily: fonts.medium, fontSize: 13 },
   stopChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingLeft: spacing.sm, paddingRight: 6, height: 28, borderRadius: radius.pill, maxWidth: 200 },
   stopName: { fontFamily: fonts.semibold, fontSize: 13, flexShrink: 1 },
-  linkRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },
+  linkRow: { flexDirection: "row", alignItems: "stretch", gap: spacing.sm, marginTop: spacing.sm },
   linkItem: { flex: 1 },
-  linkBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, height: 56, paddingHorizontal: spacing.md, borderRadius: radius.md },
-  linkText: { fontFamily: fonts.semibold, fontSize: 16, flexShrink: 1 },
+  // At least 56 tall and two lines: in Russian at a 130 % system font "Маршруты (3)" lost its count to an ellipsis
+  // on one line (review of #129). The row stretches, so both buttons keep the same height.
+  linkBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 56, flexGrow: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.md },
+  linkText: { fontFamily: fonts.semibold, fontSize: 16, flexShrink: 1, textAlign: "center" },
   offlineBtn: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", alignSelf: "flex-start", gap: 6, minHeight: 48, paddingHorizontal: spacing.md, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1, marginTop: spacing.xs },
   progressTrack: { width: "100%", height: 3, borderRadius: 2, overflow: "hidden" },
   progressFill: { height: 3 },

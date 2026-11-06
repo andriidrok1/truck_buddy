@@ -5,16 +5,15 @@ import { Text } from "@/src/i18n/Text";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api } from "@/src/api";
 import { requestCode, setToken, signedInWithCode } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
 import { setEldToken, useEldToken } from "@/src/eld";
 import { PressableScale } from "@/src/components/PressableScale";
 import { removePack, usePacks } from "@/src/hooks/useOfflineMap";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
-import { resetProfile, saveProfile } from "@/src/data/profile";
+import { saveProfile } from "@/src/data/profile";
+import { deleteMyData } from "@/src/state/firstLaunch";
 import { DEFAULT_TRUCK, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
-import { useTripStore } from "@/src/state/tripStore";
 import { requestTruckReroute, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts } from "@/src/state/settingsStore";
 import { Chip, PrefsForm, ToggleRow, type Prefs } from "@/src/components/PrefsForm";
 import { formatBytes } from "@/src/map/bounds";
@@ -60,7 +59,7 @@ function Field({
   );
 }
 
-const DELETE_MSG = "This removes everything TruckBuddy stored for this device on our servers and signs you out. This can't be undone.";
+const DELETE_MSG = "This removes everything TruckBuddy stored for this device on our servers and on this phone. The app starts over like a fresh install. This can't be undone.";
 
 const confirmDelete = (onYes: () => void) => {
   if (Platform.OS === "web") {
@@ -86,19 +85,11 @@ const confirmReset = (onYes: () => void) => {
   ]);
 };
 
-/** Server records first (while the token is still valid), then a fresh local state. */
-const deleteMyData = async () => {
-  try {
-    await api.clearMemory();
-  } catch {
+/** The server copy, then the phone back to a fresh install (src/state/firstLaunch.ts). */
+const onDeleteMyData = async (router: ReturnType<typeof useRouter>) => {
+  if (!(await deleteMyData(router))) {
     Alert.alert(t("Couldn't reach the server"), t("Your data is still there. Check your connection and try again."));
-    return;
   }
-  await resetProfile();
-  useTripStore.getState().endRoute(); // the saved trip on disk goes with it
-  setSim(null);
-  requestCode();
-  await setToken(null);
 };
 
 const THEME_CHOICES: { value: ThemePref; label: string }[] = [
@@ -414,14 +405,14 @@ export default function TruckProfileScreen() {
         <PressableScale
           testID="delete-my-data"
           accessibilityLabel="Delete my data"
-          onPress={() => confirmDelete(deleteMyData)}
+          onPress={() => confirmDelete(() => onDeleteMyData(router))}
           style={[styles.signOut, { borderColor: colors.error, marginTop: spacing.md }]}
         >
           <Icon name="delete-outline" size={20} color={colors.error} />
           <Text style={[styles.signOutText, { color: colors.error }]}>Delete my data</Text>
         </PressableScale>
         <Text style={[styles.deleteNote, { color: colors.muted }]}>
-          Erases everything stored for this device on our servers (conversation memory) and signs you out. The truck profile on this phone is reset too.
+          Erases everything stored for this device on our servers (conversation memory) and on this phone: language, settings, the truck profile. The app starts over like a fresh install.
         </Text>
         {/* Credits the open place data asks for (backend/scripts/build_places.py: ODbL, CDLA, Apache-2.0). */}
         <Text testID="data-credits" style={[styles.deleteNote, { color: colors.muted, marginTop: spacing.lg }]}>

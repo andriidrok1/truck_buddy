@@ -79,3 +79,7 @@ export const fitBubble = ({ room, textY, contentH, belowH, line = REPLY_LINE }: 
  *  (`sheetHosts`); elsewhere the bubble keeps it and scrolls at a line boundary. */
 export const replyPlacement = (p: { mapWindow: number; room: number; overflowed: boolean; sheetHosts: boolean }): "map" | "sheet" =>
   !replyOnMap(p.mapWindow) || p.room < MIN_BUBBLE_ROOM || (p.overflowed && p.sheetHosts) ? "sheet" : "map";
+
+/** The copilot's answer (not a spoken turn or nudge line): what the hardware Back may close. While driving the
+ *  caption is usually the turn instruction, and Back took it away (#124 review). */
+export const isReplyCaption = (c: Caption | null): boolean => !!c && c.kind !== "line";

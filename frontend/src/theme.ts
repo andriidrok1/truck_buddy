@@ -190,6 +190,14 @@ export function setThemePref(p: ThemePref) {
   storage.setItem(PREF_KEY, p).catch(() => {});
 }
 
+/** "Delete my data": back to the fresh-install default (Light), nothing stored. */
+export async function forgetThemePref() {
+  await storage.removeItem(PREF_KEY);
+  pref = "light";
+  prefLoaded = true;
+  emit();
+}
+
 export function useThemePref(): ThemePref {
   return useSyncExternalStore(subscribe, () => pref, () => pref);
 }

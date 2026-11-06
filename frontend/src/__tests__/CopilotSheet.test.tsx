@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { fireEvent, render, screen, within } from "@testing-library/react-native";
 import { Keyboard, StyleSheet } from "react-native";
 
 import { CopilotSheet } from "../components/CopilotSheet";
@@ -164,10 +164,66 @@ describe("CopilotSheet route preview", () => {
     for (const id of ["routes-chip", "other-options-button", "go-button"]) {
       // PressableScale: the testID is on the Pressable, the size on the view inside it.
       const inner = screen.getByTestId(id).children[0] as unknown as { props: { style: unknown } };
-      expect(StyleSheet.flatten(inner.props.style as never).height).toBeGreaterThanOrEqual(56);
+      const box = StyleSheet.flatten(inner.props.style as never) as { height?: number; minHeight?: number };
+      expect(box.height ?? box.minHeight).toBeGreaterThanOrEqual(56);
     }
     expect(screen.getByText("4 other places")).toBeTruthy();
     expect(screen.getByTestId("route-place-tags").props.children).toBe("DEF · 24/7 · 7 truck spots · (916) 372-2893");
+  });
+
+  test("a long answer and a permit line never push Routes and other places below the fold: they sit with Go outside the scroll (M-3)", async () => {
+    const long = "Alright, got one. Harbor Truck and Auto Plaza, right off West Capitol Ave, about 2.9 miles out. Heads up: Your truck is over the legal height limit in CA (13 ft 6 in); that takes a permit.";
+    const permit = { ...active, route: { ...active.route, restricted: "legal", notices: ["Your truck is over the legal height limit in CA (13 ft 6 in); that takes a permit."] } } as typeof active;
+    await render(
+      <CopilotSheet
+        replyInSheet={long}
+        phase="navigating"
+        speaking={false}
+        onShowOptions={noop}
+        options={[active.place, active.place, active.place, active.place]}
+        parking={{}}
+        onOptionParking={noop}
+        onOptionRoute={noop}
+        active={permit}
+        driving={false}
+        remaining={null}
+        onGo={noop}
+        bottomInset={0}
+        onAvatarPress={noop}
+        onSubmitText={noop}
+        onClose={noop}
+        onEndRoute={noop}
+        onShowRoutes={noop}
+        onLayout={noop}
+      />,
+    );
+    const body = screen.getByTestId("sheet-body");
+    expect(within(body).getByTestId("sheet-reply")).toBeTruthy();
+    expect(within(body).getByTestId("route-notices")).toBeTruthy();
+    for (const id of ["routes-chip", "other-options-button", "go-button"]) {
+      expect(screen.getByTestId(id)).toBeTruthy();
+      expect(within(body).queryByTestId(id)).toBeNull();
+    }
+  });
+
+  test("Russian at a large font: the routes count never goes behind an ellipsis, the buttons grow to two lines", async () => {
+    const { useLangStore } = jest.requireActual<typeof import("../i18n")>("../i18n");
+    useLangStore.setState({ lang: "ru" });
+    try {
+      await render(preview(false));
+      const label = screen.getByTestId("routes-chip-label");
+      expect(label.props.children).toBe("Маршруты (3)");
+      expect(label.props.numberOfLines).toBe(2);
+      expect(screen.getByTestId("other-options-label").props.numberOfLines).toBe(2);
+      for (const id of ["routes-chip", "other-options-button"]) {
+        const inner = screen.getByTestId(id).children[0] as unknown as { props: { style: unknown } };
+        const box = StyleSheet.flatten(inner.props.style as never) as { height?: number; minHeight?: number };
+        expect(box.height).toBeUndefined(); // a fixed height would clip the second line
+        expect(box.minHeight).toBeGreaterThanOrEqual(56);
+      }
+    } finally {
+      useLangStore.setState({ lang: "en" });
+    }
   });
 
   test("driving: End route is there, Cancel is gone", async () => {

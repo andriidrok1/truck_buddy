@@ -9,7 +9,7 @@ import * as Sentry from "@sentry/react-native";
 import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
 import { newSessionId, useCopilotTurn, type AnswerContext } from "@/src/dialog/useCopilotTurn";
 import { useFillers } from "@/src/dialog/useFillers";
-import { bubbleRoom, expireLine, hasExpiringLine, LINE_HOLD_MS, lineCaption, replyCaption, replyPlacement, type Caption } from "@/src/dialog/caption";
+import { bubbleRoom, expireLine, hasExpiringLine, isReplyCaption, LINE_HOLD_MS, lineCaption, replyCaption, replyPlacement, type Caption } from "@/src/dialog/caption";
 import { floatingBottom } from "@/src/state/floating";
 import { routeFitPoints } from "@/src/map/bounds";
 import { AlternativesSheet } from "@/src/components/AlternativesSheet";
@@ -995,7 +995,7 @@ export default function MapScreen() {
   });
   useLayoutEffect(() => {
     backRefs.current = {
-      state: { micCard: !!micCard, routesOpen, reply: !!caption, phase },
+      state: { micCard: !!micCard, routesOpen, reply: isReplyCaption(caption), phase },
       cancel: () => {
         turn.cancel();
         voice.cancelRecording().catch(() => {});
