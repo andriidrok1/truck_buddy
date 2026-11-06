@@ -23,6 +23,11 @@ export const MPH_PER_MPS = 2.23694;
 /** No speed alert against a posted limit under this: a 5 in a lot is real, but "you're doing 23 in a 5" never helps (QA 2026-11-05). */
 export const MIN_ALERT_LIMIT_MPH = 15;
 
+/** The banner's red speed: over the posted limit, and the limit is one the alert would speak about too. */
+export function overLimit(speedMph: number | null, limitMph: number): boolean {
+  return speedMph != null && limitMph >= MIN_ALERT_LIMIT_MPH && speedMph > limitMph;
+}
+
 export type SpeedWatchOptions = {
   /** mph over the limit before it counts. */
   overMph?: number;
