@@ -24,6 +24,7 @@ ADDRESS_TYPES = ("houseNumber", "street", "place", "postalCode", "intersection")
 AREA_TYPES = ("locality", "administrativeArea")  # towns need a near-perfect match (wrong-town risk)
 MIN_ORS_CONFIDENCE = 0.7
 FAR_KM = 500.0  # a weak match this far from the driver is almost always the wrong town
+NEAR_KM = 320.0  # ~200 mi: a named place within this beats a same-named one farther away
 NOMINATIM_BOX_DEG = 3.0  # viewbox around the driver (preferred, not strict)
 STOP = {"the", "of", "to", "and", "in", "at", "st", "street", "ave", "rd", "road", "near", "me", "usa", "us"}
 _STATES = {
@@ -49,6 +50,16 @@ def town_query(q: str) -> bool:
     if len(parts) != 2 or not parts[0] or re.search(r"\d", q):
         return False
     return parts[1].lower() in _STATE_WORDS and not chain_query(parts[0])
+
+
+_STREET_WORD = re.compile(r"\b(?:st|street|ave|avenue|rd|road|blvd|boulevard|hwy|highway|dr|drive|way|ln|lane|ct|"
+                          r"court|pl|pkwy|parkway|trl|trail|cir|circle|fwy|freeway|interstate|exit)\b", re.I)
+
+
+def name_query(q: str) -> bool:
+    """"Boomtown, NV", "the 49er", "Pilot": a place's name, no number of its own and no street word. HERE's geocoder
+    answers such a name with any same-named street in the country; the driver means a place near him."""
+    return not re.search(r"\b\d+(?:st|nd|rd|th)?\b", q, re.I) and not _STREET_WORD.search(q)
 
 
 def chain_query(q: str) -> bool:
@@ -203,22 +214,63 @@ async def _here_once(q: str, lat: float, lng: float) -> list[Place]:
     score = ((top or {}).get("scoring") or {}).get("queryScore", 0)
     rtype = (top or {}).get("resultType")
     logger.info("here geocode q=%r top=%r type=%s score=%.2f", q, (top or {}).get("title"), rtype, score)
-    # Precise address/city match wins; otherwise a business/landmark from Discover that matches the words.
-    if top and ((score >= 0.9 and rtype in AREA_TYPES) or (score >= MIN_ADDRESS_SCORE and rtype in ADDRESS_TYPES)):
-        p = _here_item(top, (lat, lng))
-        if p and _near_enough(p, score >= 0.9):
-            return [p]
-    if disc is not None and disc.status_code == 200:
-        for it in disc.json().get("items", []):
-            label = f"{it.get('title', '')} {(it.get('address') or {}).get('label', '')}"
-            ov = _overlap(q, label)
-            p = _here_item(it, (lat, lng)) if ov >= 0.5 else None
-            if p and _near_enough(p, ov >= 0.9):
-                return [p]
-    if top and score >= MIN_HERE_SCORE:
-        p = _here_item(top, (lat, lng))
-        return [p] if p and _near_enough(p, score >= 0.9) else []
-    return []
+    name = name_query(q)
+    # Precise address/city match wins; a bare street only when the driver said a street ("Boomtown" is a casino
+    # truck stop at Reno, not Boom Town Dr in Las Vegas, QA 2026-11-05 M-2).
+    precise = top and ((score >= 0.9 and rtype in AREA_TYPES) or (score >= MIN_ADDRESS_SCORE and rtype in ADDRESS_TYPES))
+    top_place = _here_item(top, (lat, lng)) if top and (precise or score >= MIN_HERE_SCORE) else None
+    if top_place and not _near_enough(top_place, score >= 0.9):
+        top_place = None
+    if precise and top_place and not (name and rtype not in AREA_TYPES and
+                                      (rtype == "street" or (top_place.distance_km or 0) > NEAR_KM)):
+        return [top_place]
+    # Otherwise a business/landmark from Discover that matches the words, then the geocoder's own top answer.
+    pois = _discover_hits(q, disc.json().get("items", []) if disc is not None and disc.status_code == 200 else [],
+                          (lat, lng), rank=name)
+    ordered = pois + ([top_place] if top_place else [])
+    if not name or not ordered:
+        return ordered[:1]
+    near = [p for p in ordered if (p.distance_km or 0) <= NEAR_KM]
+    if near:
+        return near[:1]
+    # Nothing that name close by: ask Discover around the driver only before taking the far match (which the agent
+    # confirms with "Is that the one?").
+    closer = await _discover_around(q, lat, lng)
+    if closer:
+        logger.info("here discover around q=%r -> %r (%.0f km)", q, closer.name, closer.distance_km or 0)
+        return [closer]
+    return ordered[:1]
+
+
+def _discover_hits(q: str, items: list, at: tuple[float, float], rank: bool) -> list[Place]:
+    """Discover items whose title/address carries the words of the query. With rank (a name query): the best
+    name match first, the nearer one among equals; else HERE's order."""
+    hits: list[tuple[float, Place]] = []
+    for it in items:
+        label = f"{it.get('title', '')} {(it.get('address') or {}).get('label', '')}"
+        ov = _overlap(q, label)
+        p = _here_item(it, at) if ov >= 0.5 else None
+        if p and _near_enough(p, ov >= 0.9):
+            hits.append((ov, p))
+    if rank:
+        hits.sort(key=lambda h: (-round(h[0], 1), h[1].distance_km or 0))
+    return [p for _, p in hits]
+
+
+async def _discover_around(q: str, lat: float, lng: float) -> Optional[Place]:
+    """Discover bounded to NEAR_KM around the driver (no country-wide relevance), the best name match there."""
+    params = {"q": q, "in": f"circle:{lat},{lng};r={int(NEAR_KM * 1000)}", "limit": 5,
+              "apiKey": os.environ["HERE_API_KEY"]}
+    try:
+        r = await client().get("https://discover.search.hereapi.com/v1/discover", params=params, timeout=10)
+    except Exception as e:  # noqa: BLE001 - the far answer still stands
+        logger.info("here discover around failed for %r: %s", q, e)
+        return None
+    if r.status_code != 200:
+        return None
+    hits = [p for p in _discover_hits(q, r.json().get("items", []), (lat, lng), rank=True)
+            if (p.distance_km or 0) <= NEAR_KM]
+    return hits[0] if hits else None
 
 
 async def _ors(q: str, lat: float, lng: float) -> list[Place]:

@@ -1,0 +1,5 @@
+{"items": [
+  {"title": "Boom Town Dr", "id": "here:af:street:boomtowndr-lv", "resultType": "street",
+   "address": {"label": "Boom Town Dr, Las Vegas, NV 89122, United States", "city": "Las Vegas", "stateCode": "NV"},
+   "position": {"lat": 36.1139, "lng": -115.0436}}
+]}
