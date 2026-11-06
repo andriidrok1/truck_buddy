@@ -131,6 +131,8 @@ describe("the delete and the old token (review of #129)", () => {
           finishDelete = (ok) => (ok ? resolve(body({ deleted: 1 })) : reject(new TypeError("Network request failed")));
         });
       }
+      // The server: no token, no entry.
+      if (!call.auth) return new Response(JSON.stringify({ detail: "Not authenticated" }), { status: 401, headers: { "Content-Type": "application/json" } });
       if (call.path.startsWith("/trips/events")) return body({ stored: 1 });
       return body({ turns: [] });
     }) as typeof fetch;
@@ -159,14 +161,17 @@ describe("the delete and the old token (review of #129)", () => {
     expect(calls[deleteAt].auth).toBe("Bearer old-device-token");
     expect(calls.slice(0, deleteAt).map((c) => c.path)).toEqual(["/trips/events"]);
 
-    // While the DELETE is out: new events and screen requests go nowhere with the old token.
+    // While the DELETE is out: new events don't send, screen requests wait for it.
     tripLog.log("question", { text: "during" });
     expect(await tripLog.flush()).toBe("busy");
-    await api.memory().catch(() => undefined);
+    const queued = api.memory().catch(() => undefined);
+    await flush();
+    expect(calls.length).toBe(deleteAt + 1);
 
     await act(async () => {
       finishDelete(true);
       expect(await done).toBe(true);
+      await queued; // went out after the wipe, without a token
     });
     tripLog.log("question", { text: "after" });
     await tripLog.flush().catch(() => undefined);
@@ -181,12 +186,21 @@ describe("the delete and the old token (review of #129)", () => {
     await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
     const router = { canDismiss: () => true, dismissAll: jest.fn() };
     let done: Promise<boolean> = Promise.resolve(true);
+    let queued: Promise<unknown> = Promise.resolve();
     await act(async () => {
       done = deleteMyData(router);
       await waitFor(() => calls.some((c) => c.method === "DELETE"));
+      // The map under the truck screen asks for something while the DELETE hangs: it waits, never goes tokenless.
+      queued = api.memory();
+      await flush();
+      expect(calls.map((c) => c.method)).toEqual(["DELETE"]);
       finishDelete(false);
       expect(await done).toBe(false);
+      await queued;
     });
+    // Same identity: the waiting request went with the old token, nothing signed the phone in anew.
+    expect(calls[1]).toEqual({ method: "GET", path: "/memory", auth: "Bearer old-device-token" });
+    expect(calls.some((c) => c.path.startsWith("/auth/"))).toBe(false);
     expect(router.dismissAll).not.toHaveBeenCalled();
     expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru"));
     expect(getToken()).toBe("old-device-token");
@@ -194,6 +208,15 @@ describe("the delete and the old token (review of #129)", () => {
     expect(calls[calls.length - 1].auth).toBe("Bearer old-device-token");
     tripLog.log("question", { text: "later" });
     expect(await tripLog.flush()).toBe("sent");
+  });
+
+  test("a 401 on a request that went out without the current token leaves the sign-in alone", async () => {
+    await setToken(null);
+    const late = api.memory().catch(() => undefined); // sent with no token: 401
+    await setToken("new-device-token"); // the phone signed in meanwhile
+    await late;
+    expect(calls[calls.length - 1].auth).toBeUndefined();
+    expect(getToken()).toBe("new-device-token");
   });
 });
 
@@ -221,6 +244,44 @@ describe("a partial wipe (review of #129)", () => {
     __resetWipeGate();
     expect(await storage.getItem("lang_v1", null)).toBeNull();
     expect(await AsyncStorage.getItem(WIPE_PENDING_KEY)).toBeNull();
+  });
+
+  test("signed in again in the same run with the flag up: the old leftovers go, the new identity survives the next cold start", async () => {
+    await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
+    await AsyncStorage.setItem("trip_arrived_v1", JSON.stringify({ trip: "old", ids: ["p1"] }));
+    const stuck = new Set(["lang_v1", "trip_arrived_v1"]);
+    const spy = jest.spyOn(AsyncStorage, "removeItem").mockImplementation(async (k: string) => {
+      if (stuck.has(k)) throw new Error("disk full");
+      await AsyncStorage.multiRemove([k]);
+    });
+    let left: string[] = [];
+    await act(async () => {
+      left = await resetToFirstLaunch();
+    });
+    expect(left.sort()).toEqual(["lang_v1", "trip_arrived_v1"]);
+    expect(JSON.parse((await AsyncStorage.getItem(WIPE_PENDING_KEY)) ?? "null")).toEqual(expect.arrayContaining(["lang_v1", "trip_arrived_v1"]));
+    stuck.clear(); // the disk recovers
+
+    // The driver goes through the gates again: language, consent, a new device token.
+    await act(async () => {
+      setLang("en");
+      await giveConsent();
+      await setToken("new-device-token", "driver");
+    });
+    spy.mockRestore();
+    jest.mocked(AsyncStorage.removeItem).mockImplementation((key: string) => AsyncStorage.multiRemove([key]));
+    expect(await AsyncStorage.getItem(WIPE_PENDING_KEY)).toBeNull();
+    expect(await AsyncStorage.getItem("trip_arrived_v1")).toBeNull(); // the old identity's leftover
+    expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("en")); // the new choice
+
+    // Next cold start: nothing of the new identity is wiped.
+    __resetWipeGate();
+    expect(await storage.getItem("lang_v1", null)).toBe("en");
+    expect(await storage.getItem("ai_consent_v2", null)).toBe(true);
+    expect(await storage.secureGet("auth_token", null)).toBe("new-device-token");
+    await act(async () => {
+      await resetToFirstLaunch(); // clean up for the next test (and the query cache's gc timer)
+    });
   });
 
   test("the wipe list covers every key the app writes", async () => {

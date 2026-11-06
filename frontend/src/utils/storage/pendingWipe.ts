@@ -37,34 +37,75 @@ async function tryRemove(remove: Remove, key: string): Promise<boolean> {
   }
 }
 
+const ALL_KEYS: string[] = [...APP_KEYS, ...SECURE_KEYS];
+const isSecure = (k: string) => (SECURE_KEYS as readonly string[]).includes(k);
+
+/** The flag holds what is still to remove: "*" while a wipe runs (a crash midway leaves everything to do), then
+ *  the list of keys that would not go. */
+const flagKeys = (raw: string | null): string[] | null => {
+  if (raw === null) return null;
+  try {
+    const v = JSON.parse(raw) as unknown;
+    if (Array.isArray(v)) return v.filter((k): k is string => typeof k === "string" && ALL_KEYS.includes(k));
+  } catch {
+    // an older or broken flag: treat as a whole wipe
+  }
+  return ALL_KEYS;
+};
+
+async function setFlag(keys: string[] | "*"): Promise<void> {
+  try {
+    await AsyncStorage.setItem(WIPE_PENDING_KEY, JSON.stringify(keys));
+  } catch {
+    // nothing to fall back on
+  }
+}
+
 /**
- * Removes every app key, retrying a failed one once, and lowers the pending flag when nothing is left.
- * Returns the keys that are still there (empty = done).
+ * Removes the given app keys (all by default), retrying a failed one once. Lowers the pending flag when nothing is
+ * left, else leaves the leftovers in it. Returns the keys that are still there (empty = done).
  */
-export async function removeAppKeys(removeSecure: Remove): Promise<string[]> {
-  const jobs: [Remove, string][] = [
-    ...APP_KEYS.map((k): [Remove, string] => [(key) => AsyncStorage.removeItem(key), k]),
-    ...SECURE_KEYS.map((k): [Remove, string] => [removeSecure, k]),
-  ];
-  let left = jobs;
+export async function removeAppKeys(removeSecure: Remove, keys: string[] = ALL_KEYS): Promise<string[]> {
+  writtenSinceWipe.clear(); // what was written before this pass (the wipe's own steps) is old; from here on, new
+  const removeOf = (k: string): Remove => (isSecure(k) ? removeSecure : (key) => AsyncStorage.removeItem(key));
+  let left = keys;
   for (let attempt = 0; attempt < 2 && left.length; attempt++) {
-    const ok = await Promise.all(left.map(([rm, k]) => tryRemove(rm, k)));
+    const ok = await Promise.all(left.map((k) => tryRemove(removeOf(k), k)));
     left = left.filter((_, i) => !ok[i]);
   }
   if (left.length) {
-    console.warn(`[storage] wipe left ${left.map(([, k]) => k).join(", ")}; finishing on the next start`);
-    return left.map(([, k]) => k);
+    console.warn(`[storage] wipe left ${left.join(", ")}; finishing on the next start or sign-in`);
+    await setFlag(left);
+    return left;
   }
   await tryRemove((key) => AsyncStorage.removeItem(key), WIPE_PENDING_KEY);
   return [];
 }
 
+/** Keys written since the last removal pass: they hold the new identity's choices (language, consent, the new token). */
+const writtenSinceWipe = new Set<string>();
+/** Called by the storage helpers on every write. */
+export const noteWrite = (key: string) => writtenSinceWipe.add(key);
+
 export async function markWipePending(): Promise<void> {
+  writtenSinceWipe.clear();
+  await setFlag("*");
+}
+
+/**
+ * The phone signed in again in the same run with the flag still up: the leftovers belong to the old identity, so
+ * they go now, except what the new run has written since (re-review of #129: otherwise the next cold start would
+ * wipe the new identity). The flag comes down with them.
+ */
+export async function settleWipeAfterSignIn(removeSecure: Remove): Promise<string[]> {
+  let keys: string[] | null;
   try {
-    await AsyncStorage.setItem(WIPE_PENDING_KEY, "true");
+    keys = flagKeys(await AsyncStorage.getItem(WIPE_PENDING_KEY));
   } catch {
-    // nothing to fall back on: the wipe below still runs
+    return [];
   }
+  if (keys === null) return [];
+  return removeAppKeys(removeSecure, keys.filter((k) => !writtenSinceWipe.has(k)));
 }
 
 let gate: Promise<void> | null = null;
@@ -79,12 +120,13 @@ export function wipeGate(removeSecure: Remove): Promise<void> | null {
   if (gateDone) return null;
   if (!gate) {
     gate = (async () => {
+      let keys: string[] | null;
       try {
-        if ((await AsyncStorage.getItem(WIPE_PENDING_KEY)) === null) return;
+        keys = flagKeys(await AsyncStorage.getItem(WIPE_PENDING_KEY));
       } catch {
         return;
       }
-      await removeAppKeys(removeSecure);
+      if (keys !== null) await removeAppKeys(removeSecure, keys); // nothing has been written in this run yet
     })().finally(() => {
       gateDone = true;
     });
@@ -96,4 +138,5 @@ export function wipeGate(removeSecure: Remove): Promise<void> | null {
 export function __resetWipeGate() {
   gate = null;
   gateDone = false;
+  writtenSinceWipe.clear();
 }

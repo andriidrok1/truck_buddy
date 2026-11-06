@@ -70,8 +70,9 @@ type Nav = { canDismiss: () => boolean; dismissAll: () => void };
 export async function deleteMyData(router: Nav, clearServer: () => Promise<unknown> = api.clearMemory): Promise<boolean> {
   // Nothing may reach the server with the old token once the delete is under way: an event posted after it would
   // bring trip rows back for the driver just wiped (review of #129). The trip log stops sending (a batch already on
-  // the wire lands first, before the DELETE), the DELETE takes the token with it, and from then on every request
-  // goes without it.
+  // the wire lands first, before the DELETE), the DELETE takes the token with it, and every other request waits for
+  // the DELETE to settle: on failure they go out with the same token as before, on success after the wipe, without
+  // one. None goes out tokenless meanwhile, so no 401 can sign the phone out behind the dialog (re-review of #129).
   await tripLog.pause();
   let release: () => void = () => {};
   try {
@@ -84,7 +85,8 @@ export async function deleteMyData(router: Nav, clearServer: () => Promise<unkno
     return false;
   }
   if (router.canDismiss()) router.dismissAll();
-  await resetToFirstLaunch();
+  await resetToFirstLaunch(); // releases the hold once the token is gone (forgetIdentity)
+  release(); // in case that step failed
   tripLog.resume(); // empty now; the next events belong to the new identity
   return true;
 }

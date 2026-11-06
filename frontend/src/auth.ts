@@ -1,7 +1,7 @@
 import { getLang } from "./i18n";
 import { useEffect, useState } from "react";
 
-import { storage } from "./utils/storage";
+import { settleWipe, storage } from "./utils/storage";
 
 const KEY = "auth_token";
 const ROLE_KEY = "auth_role";
@@ -10,9 +10,11 @@ let token: string | null = null;
 let role: "driver" | "tester" = "driver";
 let via: "code" | "device" = "device";
 let loaded = false;
-// "Delete my data": while the server DELETE is on the wire, requests leave without the token (the screens still
-// see a signed-in phone, so nothing signs in anew behind the dialog). Released on failure, cleared on success.
-let held = false;
+// "Delete my data": while the server DELETE is on the wire, every other authenticated request waits for it to settle
+// (api.ts awaits `tokenHold()`), so nothing reaches the server with the old token after the delete started and no 401
+// signs the phone out behind the dialog. On failure the requests go out as before; on success after the wipe,
+// without a token. Anything that reads the header directly (a satellite thumbnail) gets none meanwhile.
+let hold: { promise: Promise<void>; release: () => void } | null = null;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
@@ -50,6 +52,9 @@ export async function setToken(t: string | null, r: "driver" | "tester" = "drive
     await storage.secureSet(KEY, t);
     await storage.secureSet(ROLE_KEY, role);
     await storage.secureSet(VIA_KEY, via);
+    // A "Delete my data" that could not remove everything: the old identity's leftovers go now, not the new
+    // identity on the next cold start (pendingWipe.ts).
+    await settleWipe().catch(() => []);
   } else {
     await storage.secureRemove(KEY);
     await storage.secureRemove(ROLE_KEY);
@@ -62,20 +67,33 @@ export async function setToken(t: string | null, r: "driver" | "tester" = "drive
  *  anonymous device (the server hands out a new identity for every POST /auth/device). */
 export async function forgetIdentity() {
   codeWanted = false;
-  held = false;
   await setToken(null);
+  hold?.release(); // the queued requests go now, without the token
 }
 
 // Every authenticated request also says the driver's language (backend services/i18n.LangMiddleware).
-/** Stops the token going out on any request from now on; the returned function puts it back. */
+/** Holds every authenticated request from now on; the returned function lets them go (idempotent). */
 export function holdToken(): () => void {
-  held = true;
-  return () => {
-    held = false;
+  if (hold) return hold.release;
+  let resolve: () => void = () => {};
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  const h = {
+    promise,
+    release: () => {
+      if (hold === h) hold = null;
+      resolve();
+    },
   };
+  hold = h;
+  return h.release;
 }
 
-export const authHeader = (): Record<string, string> => ({ ...(token && !held ? { Authorization: `Bearer ${token}` } : {}), "X-Lang": getLang() });
+/** What a request waits on before it reads the token; null when nothing is held. */
+export const tokenHold = (): Promise<void> | null => hold?.promise ?? null;
+
+export const authHeader = (): Record<string, string> => ({ ...(token && !hold ? { Authorization: `Bearer ${token}` } : {}), "X-Lang": getLang() });
 
 /** "loading" until the stored token is read, then whether the driver has entered the access code. */
 export function useAuthState(): "loading" | "in" | "out" {

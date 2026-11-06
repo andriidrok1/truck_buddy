@@ -1,4 +1,4 @@
-import { authHeader, requestCode, setToken } from "./auth";
+import { authHeader, getToken, requestCode, setToken, tokenHold } from "./auth";
 import { AgentResponseSchema, checkContract, RouteResultSchema } from "./api/schemas";
 import { eldHeader } from "./eld";
 import { ensureTruckProfile, type TruckProfile } from "./hooks/useTruckProfile";
@@ -61,8 +61,10 @@ export const isNoTruckRoute = (e: unknown): boolean =>
   e instanceof ApiError && e.status === 422 && /no truck route/i.test(e.detail ?? "");
 
 /** A rejected token (expired / code changed) sends the driver back to the access-code screen. */
-async function check(res: Response, path: string): Promise<void> {
-  if (res.status === 401) setToken(null);
+/** `sent`: the token the request carried. A 401 signs the phone out only when that token is still the current one:
+ *  a request sent without it (or with one already replaced) says nothing about the driver's sign-in. */
+async function check(res: Response, path: string, sent: string | null): Promise<void> {
+  if (res.status === 401 && sent !== null && sent === getToken()) setToken(null);
   if (res.ok) return;
   let detail: string | null = null;
   try {
@@ -132,16 +134,27 @@ async function fetchTracked(url: string, init: RequestInit): Promise<Response> {
 }
 
 /** A stalled cell connection must never leave a screen spinning forever: every call has a deadline. */
+/** Waits out a "Delete my data" hold (auth.ts), then the token the request will carry. Nothing is awaited when no
+ *  hold is up, so the header is read in the same tick the call was made (the DELETE itself relies on that). */
+async function heldToken(): Promise<string | null> {
+  const hold = tokenHold();
+  if (hold) await hold;
+  return getToken();
+}
+
 async function request<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, ...rest } = init ?? {};
   const d = deadline(timeoutMs, rest.signal);
   try {
+    const hold = tokenHold();
+    if (hold) await hold;
+    const sent = getToken();
     const res = await fetchTracked(`${BASE}${path}`, {
       ...rest,
       signal: d.signal,
       headers: { "Content-Type": "application/json", ...authHeader(), ...(rest.headers ?? {}) },
     });
-    await check(res, path);
+    await check(res, path, sent);
     return json<T>(res, path);
   } finally {
     d.done();
@@ -224,8 +237,9 @@ export const api = {
   profile: async (): Promise<{ profile: TruckProfile; source: "vehicle" | "driver" }> => {
     const d = deadline(DEFAULT_TIMEOUT_MS);
     try {
+      const sent = await heldToken();
       const res = await fetchTracked(`${BASE}/me/profile`, { signal: d.signal, headers: { "Content-Type": "application/json", ...authHeader() } });
-      await check(res, "/me/profile");
+      await check(res, "/me/profile", sent);
       const source = res.headers.get("x-profile-source") === "vehicle" ? "vehicle" : "driver";
       return { profile: await json<TruckProfile>(res, "/me/profile"), source };
     } finally {
@@ -276,13 +290,14 @@ export const api = {
     const d = deadline(20000, signal); // upload + STT; the server itself gives up on STT after 12 s
     const t0 = Date.now();
     try {
+      const sent = await heldToken();
       const res = await uploadForm(`${BASE}/voice/transcribe`, {
         fields: { ...(hint ? { hint: hint.slice(0, 600) } : {}), ...(maybe ? { maybe: "1" } : {}) },
         files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
         headers: { ...authHeader(), ...eldHeader() },
         signal: d.signal,
       });
-      await check(res as Response, "/voice/transcribe");
+      await check(res as Response, "/voice/transcribe", sent);
       const out = await json<{ transcript: string; timings?: Record<string, number>; stt_confidence?: number | null }>(res, "/voice/transcribe");
       return { ...out, stt_ms: out.timings?.stt ?? Date.now() - t0, stt_confidence: out.stt_confidence ?? null };
     } finally {
@@ -352,13 +367,14 @@ export const api = {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
     const d = deadline(30000);
     try {
+      const sent = await heldToken();
       const res = await uploadForm(`${BASE}/onboarding/parse`, {
         fields: { step },
         files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
         headers: authHeader(),
         signal: d.signal,
       });
-      await check(res as Response, "/onboarding/parse");
+      await check(res as Response, "/onboarding/parse", sent);
       return json<{ transcript: string; updates: Record<string, unknown> }>(res, "/onboarding/parse");
     } finally {
       d.done();
