@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { fireEvent, render, screen, within } from "@testing-library/react-native";
 import { Keyboard, StyleSheet } from "react-native";
 
 import { CopilotSheet } from "../components/CopilotSheet";
@@ -168,6 +168,41 @@ describe("CopilotSheet route preview", () => {
     }
     expect(screen.getByText("4 other places")).toBeTruthy();
     expect(screen.getByTestId("route-place-tags").props.children).toBe("DEF · 24/7 · 7 truck spots · (916) 372-2893");
+  });
+
+  test("a long answer and a permit line never push Routes and other places below the fold: they sit with Go outside the scroll (M-3)", async () => {
+    const long = "Alright, got one. Harbor Truck and Auto Plaza, right off West Capitol Ave, about 2.9 miles out. Heads up: Your truck is over the legal height limit in CA (13 ft 6 in); that takes a permit.";
+    const permit = { ...active, route: { ...active.route, restricted: "legal", notices: ["Your truck is over the legal height limit in CA (13 ft 6 in); that takes a permit."] } } as typeof active;
+    await render(
+      <CopilotSheet
+        replyInSheet={long}
+        phase="navigating"
+        speaking={false}
+        onShowOptions={noop}
+        options={[active.place, active.place, active.place, active.place]}
+        parking={{}}
+        onOptionParking={noop}
+        onOptionRoute={noop}
+        active={permit}
+        driving={false}
+        remaining={null}
+        onGo={noop}
+        bottomInset={0}
+        onAvatarPress={noop}
+        onSubmitText={noop}
+        onClose={noop}
+        onEndRoute={noop}
+        onShowRoutes={noop}
+        onLayout={noop}
+      />,
+    );
+    const body = screen.getByTestId("sheet-body");
+    expect(within(body).getByTestId("sheet-reply")).toBeTruthy();
+    expect(within(body).getByTestId("route-notices")).toBeTruthy();
+    for (const id of ["routes-chip", "other-options-button", "go-button"]) {
+      expect(screen.getByTestId(id)).toBeTruthy();
+      expect(within(body).queryByTestId(id)).toBeNull();
+    }
   });
 
   test("driving: End route is there, Cancel is gone", async () => {

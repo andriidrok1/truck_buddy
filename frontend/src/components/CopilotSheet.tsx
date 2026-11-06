@@ -443,44 +443,47 @@ export function CopilotSheet(props: Props) {
             {!!active.place.reviews?.length && <ReviewsGist reviews={active.place.reviews} />}
             <ParkingLiveBadge place={active.place} />
             {active.place.category !== "service" && <ParkingStatus parking={active.parking} place={active.place} route={active.route.geometry} />}
-            {/* Before Go the one primary action is Go: the other routes and the other places are two quiet
-                buttons of the same weight, full 56 pt (UI review 2026-11-05: 31 pt text links). */}
-            {(options.length > 0 || routesChip) && (
-              <View style={styles.linkRow}>
-                {routesChip && (
-                  <PressableScale
-                    testID="routes-chip"
-                    accessibilityLabel="Other routes"
-                    onPress={onShowRoutes}
-                    containerStyle={styles.linkItem}
-                    style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
-                  >
-                    <Icon name="directions-fork" size={20} color={colors.onSurface} />
-                    <Text numberOfLines={1} style={[styles.linkText, { color: colors.onSurface }]}>{routesChip}</Text>
-                  </PressableScale>
-                )}
-                {options.length > 0 && (
-                  <PressableScale
-                    testID="other-options-button"
-                    accessibilityLabel="Other places"
-                    onPress={onShowOptions}
-                    containerStyle={styles.linkItem}
-                    style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
-                  >
-                    <Icon name="format-list-bulleted" size={20} color={colors.onSurface} />
-                    <Text numberOfLines={1} style={[styles.linkText, { color: colors.onSurface }]}>
-                      {options.length === 1 ? "1 other place" : `${options.length} other places`}
-                    </Text>
-                  </PressableScale>
-                )}
-              </View>
-            )}
             {offlineMap && <OfflineMapButton state={offlineMap} onPress={onDownloadMap} />}
           </View>
         )}
       </View>
       </Animated.ScrollView>
       </GestureDetector>
+
+      {/* Before Go the one primary action is Go: the other routes and the other places are two quiet
+          buttons of the same weight, full 56 pt (UI review 2026-11-05: 31 pt text links). They sit with Go under
+          the scrolling card: a long answer plus the permit line pushed them below the fold, and the driver never
+          learned there were other routes or places (QA 2026-11-05, M-3). */}
+      {navigating && active && !driving && !routesPanel && (options.length > 0 || routesChip) && (
+        <View style={styles.linkRow}>
+          {routesChip && (
+            <PressableScale
+              testID="routes-chip"
+              accessibilityLabel="Other routes"
+              onPress={onShowRoutes}
+              containerStyle={styles.linkItem}
+              style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
+            >
+              <Icon name="directions-fork" size={20} color={colors.onSurface} />
+              <Text numberOfLines={1} style={[styles.linkText, { color: colors.onSurface }]}>{routesChip}</Text>
+            </PressableScale>
+          )}
+          {options.length > 0 && (
+            <PressableScale
+              testID="other-options-button"
+              accessibilityLabel="Other places"
+              onPress={onShowOptions}
+              containerStyle={styles.linkItem}
+              style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
+            >
+              <Icon name="format-list-bulleted" size={20} color={colors.onSurface} />
+              <Text numberOfLines={1} style={[styles.linkText, { color: colors.onSurface }]}>
+                {options.length === 1 ? "1 other place" : `${options.length} other places`}
+              </Text>
+            </PressableScale>
+          )}
+        </View>
+      )}
 
       {/* Go sits under the scrolling card, never inside it: with three stops, or at a 130 % font, the card
           outgrew the sheet and the main button was half under the bottom bar (QA 2026-10-31, Н9, Н25). */}
