@@ -35,6 +35,7 @@ import { farFromRoute } from "@/src/geo/guidance";
 import { startDriveTracking, stopDriveTracking } from "@/src/geo/driveTracking";
 import { arrivals, loadArrived, saveArrived } from "@/src/geo/arrival";
 import { createRerouteGate } from "@/src/geo/offroute";
+import { useDriveRecorder } from "@/src/hooks/useDriveRecorder";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
 import { useOfflineGuidance, type OfflineGuidance } from "@/src/hooks/useOfflineGuidance";
@@ -61,10 +62,8 @@ import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 import { routeFailText } from "@/src/utils/routeFail";
 import { APPROACH_TIPS_M, nearbyLine, statusLine, tipsLine } from "@/src/voice/parkingLines";
-import { RECORD_DRIVES, recorder } from "@/src/geo/driveRecorder";
-import { subscribeReplay, takeReplayRequest } from "@/src/geo/replayRequest";
-import { startPositionHeartbeat, startTripLog, stopTripLog, tripLog } from "@/src/net/tripEvents";
-import { playTrace } from "@/src/sim";
+import { recorder } from "@/src/geo/driveRecorder";
+import { startPositionHeartbeat, tripLog } from "@/src/net/tripEvents";
 import { t } from "@/src/i18n";
 
 const KEEP_AWAKE_TAG = "driving";
@@ -196,45 +195,10 @@ export default function MapScreen() {
     },
     (item, why) => tripLog.log("speech_dropped", { key: item.key ?? null, priority: item.priority, kind: item.kind, why }, trip().active?.trip_id),
   );
-  // The trip log mirrors its backlog to storage and flushes once a minute while the screen lives; the
-  // drive recorder marks every logged event on its timeline.
-  useEffect(() => {
-    startTripLog();
-    const off = tripLog.onEvent((e) => recorder.mark(e.kind, JSON.stringify(e.data)));
-    return () => {
-      off();
-      stopTripLog();
-    };
-  }, []);
-  // The recorder follows the active route: a reroute, an alternative or a stop lands on its timeline.
-  useEffect(() => {
-    if (active?.route) recorder.routeChanged(active.route);
-  }, [active?.route]);
-  // A build for a day on the road records every drive from Go to End route.
-  useEffect(() => {
-    if (RECORD_DRIVES && driving && active && !recorder.isRecording()) {
-      recorder.start({ tripId: active.trip_id ?? null, place: active.place, route: active.route });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [driving]);
-  // The tester picked a recorded drive: its own route goes on the map, then its fixes drive the truck.
-  useEffect(() => {
-    const apply = () => {
-      const req = takeReplayRequest();
-      if (!req) return;
-      const { trace, speedFactor, name } = req;
-      if (trace.place && trace.route) {
-        clearSpeech();
-        trip().startRoute({ place: trace.place, route: trace.route, trip_id: trace.trip_id ?? undefined });
-        setDialogPhase(null);
-        setDriving(true);
-      }
-      playTrace(trace.fixes, speedFactor, { id: `trace-${name}`, label: `Replay: ${name} (${speedFactor}x)` });
-    };
-    apply();
-    return subscribeReplay(apply);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useDriveRecorder(active, driving, clearSpeech, () => {
+    setDialogPhase(null);
+    setDriving(true);
+  });
 
   useEffect(() => {
     if (!toast) return;
