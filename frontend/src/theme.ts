@@ -146,8 +146,6 @@ const dark: ThemeColors = {
   switchThumb: "#F2F2F7",
 };
 
-export const defaultScheme = "light" satisfies ColorScheme;
-
 export const themes: { light: ThemeColors; dark: ThemeColors } = { light, dark };
 
 /** Force a scheme at the platform level; null = back to the system. Kept for tooling, the app uses the preference below. */

@@ -4,6 +4,7 @@ import { Text } from "../i18n/Text";
 import { alternativeLabel } from "../geo/routeChoice";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import type { RouteInfo } from "../types";
+import { durationLabel } from "../utils/duration";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
 
@@ -13,14 +14,6 @@ type Props = {
   onPick: (index: number) => void;
   onClose: () => void;
 };
-
-function durationLabel(seconds: number) {
-  const min = Math.max(1, Math.round(seconds / 60));
-  if (min < 60) return `${min} min`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m ? `${h} h ${m} min` : `${h} h`;
-}
 
 /** "8 min · 4.2 mi · $12.50 tolls" */
 export function routeFacts(r: RouteInfo) {

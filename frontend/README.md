@@ -83,8 +83,9 @@ Every `Platform.OS === "ios"` branch in `src/` and `app/` has an Android path. N
 these are the Android-specific gaps still open:
 
 - `app.config.ts` lists `comgooglemaps` / `waze` under `ios.infoPlist.LSApplicationQueriesSchemes`
-  only. Android needs no equivalent today because `openWithFallback` relies on `openURL` throwing
-  (not on `canOpenURL`); if a `canOpenURL` check is ever added, add a `<queries>` block through a
+  only. No code opens those apps any more: the only map link is Street View, an `https://` URL opened
+  with `Linking.openURL` (`src/utils/navLinks.ts`), and nothing calls `canOpenURL`, so Android needs
+  no `<queries>` block. If a `canOpenURL` check or an app-scheme link comes back, add one through a
   config plugin.
 - Location services switched off (not just denied): `useDriverLocation` catches the error and stays
   on the last known fix. Android could call `Location.enableNetworkProviderAsync()` to show the

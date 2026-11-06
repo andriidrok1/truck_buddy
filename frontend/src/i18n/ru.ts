@@ -36,7 +36,7 @@ export const RU: Record<string, string> = {
   "You're doing {speed} in a {limit}.": "Ты едешь {speed} при ограничении {limit}.",
   "Return to the route: {dist} {dir}": "Вернись на маршрут: {dist} {dir}",
 
-  // ---- break reminder (app/index.tsx) ----
+  // ---- break reminder (src/hooks/useBreakReminder.ts) ----
   "Hey {name}, you've been driving for {n} hours. Want me to find a rest area?": "{name}, ты за рулём уже {n|plural:час,часа,часов}. Найти рест-эрию?",
   "Hey {name}, you've been driving for an hour. Want me to find a rest area?": "{name}, ты за рулём уже час. Найти рест-эрию?",
   "you've been driving for {n} hours. Want me to find a rest area?": "Ты за рулём уже {n|plural:час,часа,часов}. Найти рест-эрию?",

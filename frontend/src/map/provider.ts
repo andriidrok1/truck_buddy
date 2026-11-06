@@ -17,7 +17,6 @@ export function resolveProvider(env: string | undefined, mapLibreLoaded: boolean
   return requestedProvider(env) === "maplibre" && mapLibreLoaded ? "maplibre" : "apple";
 }
 
-export const REQUESTED_PROVIDER: MapProvider = requestedProvider(process.env.EXPO_PUBLIC_MAP_PROVIDER);
 export const MAP_PROVIDER: MapProvider = resolveProvider(process.env.EXPO_PUBLIC_MAP_PROVIDER, loadMapLibre() !== null);
 
 /** OpenFreeMap styles (free, no key). The dark one is used when the theme is dark. */

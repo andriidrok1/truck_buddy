@@ -89,11 +89,6 @@ export function ensureSettings(): Promise<Settings> {
   });
 }
 
-export const getSettings = (): Settings => {
-  const { handsFree, nudges, speedAlerts, voiceGuidance } = useSettings.getState();
-  return { handsFree, nudges, speedAlerts, voiceGuidance };
-};
-
 export const setHandsFree = (v: boolean) => useSettings.getState().set({ handsFree: v });
 export const setNudgesEnabled = (v: boolean) => useSettings.getState().set({ nudges: v });
 export const setSpeedAlerts = (v: boolean) => useSettings.getState().set({ speedAlerts: v });

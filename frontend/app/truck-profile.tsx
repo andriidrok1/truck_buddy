@@ -466,7 +466,6 @@ const styles = StyleSheet.create({
   },
   unit: { fontFamily: fonts.medium, fontSize: 15, flexShrink: 0, marginLeft: spacing.sm },
   toggleGap: { marginTop: spacing.sm },
-  switchRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.md, padding: spacing.lg, marginTop: spacing.sm },
   switchTitle: { fontFamily: fonts.semibold, fontSize: 16 },
   switchSub: { fontFamily: fonts.regular, fontSize: 13, marginTop: 2 },
   eldBox: { borderRadius: radius.md, padding: spacing.lg, gap: spacing.md },
