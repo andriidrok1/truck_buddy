@@ -4,8 +4,6 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import * as Sentry from "@sentry/react-native";
-
 import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
 import { newSessionId, useCopilotTurn, type AnswerContext } from "@/src/dialog/useCopilotTurn";
 import { useFillers } from "@/src/dialog/useFillers";
@@ -46,13 +44,14 @@ import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
+import { useTripRestore } from "@/src/hooks/useTripRestore";
 import { saveProfile, setMidTripCheck } from "@/src/data/profile";
 import { getTruckProfile, isOnboarded, truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { askWithDeadline } from "@/src/voice/micAsk";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
-import { providerPlace, restoreSavedTrip, selectPlaces, startTripPersistence, stopsAhead, useTripStore, viaOf } from "@/src/state/tripStore";
+import { providerPlace, selectPlaces, stopsAhead, useTripStore, viaOf } from "@/src/state/tripStore";
 import { setHandsFree, setNudgesEnabled, setVoiceGuidance, takeTruckReroute, useHandsFree, useNudgesEnabled, useVoiceGuidance } from "@/src/state/settingsStore";
 import { reduceAgentResponse } from "@/src/state/agentReducer";
 import { applyEffects } from "@/src/state/applyEffects";
@@ -359,34 +358,7 @@ export default function MapScreen() {
 
   const backToIdle = () => setPhase(trip().idleSheet());
 
-  // The disk copy of the trip survives a restart (src/state/tripStore.ts writes every change); every Sentry
-  // event of a drive carries its trip id, so a crash can be put next to the trip log.
-  useEffect(() => {
-    Sentry.setTag("trip_id", active?.trip_id ?? "none");
-  }, [active?.trip_id]);
-  useEffect(() => startTripPersistence(), []);
-
-  // A route saved before the last restart (crash, dead zone, phone off) comes back silently, not
-  // driving, with a banner: Resume drives it, Dismiss forgets it.
-  useEffect(() => {
-    restoreSavedTrip().then((r) => {
-      if (!r) return;
-      const { restored: res, saved } = r;
-      tripLog.log("route_restored", { place_id: res.place.id, saved_age_s: Math.round((Date.now() - saved.savedAt) / 1000), was_driving: saved.driving === true }, res.trip_id);
-      setDialogPhase(null);
-      // The whole saved line: the GPS fix is not in yet, and the demo point would span half the country.
-      const line = res.route.geometry.filter((_, i) => i % 25 === 0).map(([lat, lng]) => ({ lat, lng }));
-      setFit({ key: `restored-${res.place.id}`, points: [...line, res.place] });
-    });
-  }, []);
-  const restored = restoredId !== null && active?.place.id === restoredId && !driving;
-  useEffect(() => {
-    // Nothing pressed in 20 s: the banner goes, the route stays in preview (same as "Keep"). Not when the truck
-    // was driving when the app died: then Resume is what the driver came back for, and it stays until pressed.
-    if (!restored || trip().restoredDriving) return;
-    const t = setTimeout(() => trip().dismissRestored(), 20000);
-    return () => clearTimeout(t);
-  }, [restored]);
+  const restored = useTripRestore(active, driving, restoredId, setDialogPhase, setFit);
 
   /**
    * The tracker says the truck left the route: ask the engine to resume the plan from here
