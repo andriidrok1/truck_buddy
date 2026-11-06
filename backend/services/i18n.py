@@ -28,6 +28,7 @@ import contextvars
 import json
 import logging
 import re
+from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Optional
@@ -37,6 +38,8 @@ logger = logging.getLogger("truckbuddy.i18n")
 LANGS = ("en", "ru", "uk")
 CATALOG_DIR = Path(__file__).resolve().parent.parent / "i18n"
 _lang: contextvars.ContextVar[str] = contextvars.ContextVar("tb_lang", default="en")
+_fallback: contextvars.ContextVar[Optional[Callable[[str, str], Optional[str]]]] = contextvars.ContextVar(
+    "tb_i18n_fallback", default=None)  # translate()'s fallback, for the {x|mt} values inside a matched template
 _PH = re.compile(r"\{(\w+)(?:\|([^{}]*))?\}")
 _NUM = re.compile(r"\d+(?:[.,]\d+)?")
 
@@ -207,7 +210,7 @@ def _apply(filt: Optional[str], value: str, code: str, words: dict) -> str:
         return value.replace(" and ", " и ")
     if kind == "time":
         return time_ru(value, case=arg or "nom")
-    if kind in ("tr", "part"):
+    if kind in ("tr", "part", "mt"):
         if not value.strip():
             return value
         # Fragments glued one after another (", about 1 h 46 min longer, and it misses the High Wind Warning",
@@ -221,6 +224,11 @@ def _apply(filt: Optional[str], value: str, code: str, words: dict) -> str:
         got = _match(value, code, parts=True)
         if got is not None:
             return got
+        if kind == "mt":
+            # Text the vision or review model wrote ("To get in: {tip|mt}."): the enclosing translate()'s fallback
+            # sends it to the model like a whole sentence, or it stayed English inside a Russian line (QA
+            # 2026-11-05). Only these values: {x|tr} holds place names ("Reno"), which must never cost a call.
+            return translate(value, code, fallback=_fallback.get())
         return translate(value, code, fallback=None)
     if kind == "clock":
         return clock_ru(value)
@@ -236,9 +244,27 @@ def _fill(t: Template, m: re.Match, code: str, words: dict) -> str:
     vals = m.groupdict()
 
     def sub(pm: re.Match) -> str:
-        return _apply(pm.group(2), vals.get(pm.group(1)) or "", code, words)
+        out = _apply(pm.group(2), vals.get(pm.group(1)) or "", code, words)
+        if pm.group(2) == "mt" and t.target[pm.end():pm.end() + 1] in (".", "!", "?"):
+            out = out.rstrip(" .")  # the model's own period before the template's: "въезд.." (review of #126)
+        return out
 
     return _PH.sub(sub, t.target)
+
+
+_VALUE_FILTERS = ("plural", "and", "time", "tr", "part", "mt", "clock")  # every other filter is a form from the words table
+
+
+def _words_known(t: Template, m: re.Match, words: dict) -> bool:
+    """A placeholder the target takes from the words table ({event|nom}, {dir|at}) holds a word that is there.
+    Otherwise "{event} near {area}." took a vision tip, "Park along the east side near existing trailers.", and
+    said "Park along the east side в районе existing trailers." (QA 2026-11-05)."""
+    vals = m.groupdict()
+    for pm in _PH.finditer(t.target):
+        kind = (pm.group(2) or "").partition(":")[0]
+        if kind and kind not in _VALUE_FILTERS and (vals.get(pm.group(1)) or "").strip().lower() not in words:
+            return False
+    return True
 
 
 def _match(text: str, code: str, parts: bool = False) -> Optional[str]:
@@ -247,7 +273,7 @@ def _match(text: str, code: str, parts: bool = False) -> Optional[str]:
         if t.part and not parts:
             continue
         m = t.rx.fullmatch(text)
-        if m:
+        if m and _words_known(t, m, words):
             return _fill(t, m, code, words)
     entry = words.get(text.strip().lower())
     if isinstance(entry, dict):
@@ -268,6 +294,14 @@ def translate(text: str, code: Optional[str] = None, fallback: Optional[Callable
         return text
     if _CYRILLIC.search(text) and not _LATIN_WORDS.search(_strip_names(text)):
         return text  # already in the language (a model-written chat line)
+    token = _fallback.set(fallback)
+    try:
+        return _translate(text, code, fallback)
+    finally:
+        _fallback.reset(token)
+
+
+def _translate(text: str, code: str, fallback: Optional[Callable[[str, str], Optional[str]]]) -> str:
     whole = _match(text.strip(), code)
     if whole is not None:
         return _cap(whole)
@@ -349,9 +383,40 @@ async def localize(text: str, code: Optional[str] = None) -> str:
             logger.warning("i18n fallback changed numbers, kept English: %r -> %r", s, got)
         return s, None
 
+    async def cached(s: str) -> tuple[str, Optional[str]]:
+        key = (code, s.rstrip(" ."))  # "Park along ..." on the card and "Park along ...." in the spoken answer
+        if key in _model_cache:
+            _model_cache.move_to_end(key)
+            return s, _period_like(s, _model_cache[key])
+        task = _inflight.get(key)
+        if task is None:  # the card fields and the reply ask for the same tip at once: one call
+            task = asyncio.ensure_future(one(key[1]))
+            _inflight[key] = task
+            task.add_done_callback(lambda _t: _inflight.pop(key, None))
+        _src, got = await asyncio.shield(task)
+        if got:
+            _model_cache[key] = got
+            _model_cache.move_to_end(key)
+            while len(_model_cache) > MODEL_CACHE_MAX:
+                _model_cache.popitem(last=False)
+        return s, _period_like(s, got) if got else None
+
     # All misses at once: one after another, three unknown lines added three model round trips to the answer.
-    done = {s: got for s, got in await asyncio.gather(*(one(s) for s in dict.fromkeys(misses))) if got}
+    done = {s: got for s, got in await asyncio.gather(*(cached(s) for s in dict.fromkeys(misses))) if got}
     return translate(text, code, fallback=lambda s, c: done.get(s))
+
+
+# Model translations by (language, English text): a place's vision tips are the same on every request, so the
+# card and the spoken answer pay the model once per text, not once per request. Bounded, oldest out.
+MODEL_CACHE_MAX = 2000
+_model_cache: "OrderedDict[tuple[str, str], str]" = OrderedDict()
+_inflight: dict = {}
+
+
+def _period_like(src: str, got: str) -> str:
+    """The translation ends with a period exactly when the English did (the cache key has none)."""
+    got = got.rstrip(" .")
+    return got + "." if src.rstrip().endswith(".") else got
 
 
 # ---- whole responses -------------------------------------------------------------------------------------------
@@ -374,14 +439,50 @@ def localize_route(route):
 
 
 async def localize_parking(check):
-    """A ParkingCheck's card text (verdict label, reason, entry and parking tips) in this request's language."""
+    """A ParkingCheck's card text (verdict label, reason, entry and parking tips) in this request's language, on a
+    copy. The check is usually the cached verdict itself (services/parking.py, approach.best): changed in place,
+    a Russian request left Russian text in the cache, the next English request showed it and a re-check could
+    save it to the table (QA 2026-11-05). The cache stays English; every response is translated on its own."""
     if check is None or lang() == "en":
         return check
-    for f in ("label", "reason", "entry_tip", "park_tip"):
-        v = getattr(check, f, None)
-        if v:
-            setattr(check, f, await localize(v))
-    return check
+    import asyncio
+
+    fields = {f: v for f in ("label", "reason", "entry_tip", "park_tip") if (v := getattr(check, f, None))}
+    tasks = {f: asyncio.ensure_future(_localize_clauses(v)) for f, v in fields.items()}
+    _done, late = await asyncio.wait(tasks.values(), timeout=CARD_BUDGET_S)
+    update = {}
+    for f, task in tasks.items():
+        if task in late:
+            # Over the budget: the catalog's part now, the model's English; the call goes on and fills the cache.
+            pieces = fields[f].split("; ")
+            update[f] = _join_clauses(pieces, [translate(p, fallback=None) for p in pieces])
+        else:
+            update[f] = task.result()
+    if late:
+        logger.info("parking card translation over %.1f s: %s left to the catalog", CARD_BUDGET_S,
+                    ", ".join(f for f, t in tasks.items() if t in late))
+    return check.model_copy(update=update)
+
+
+CARD_BUDGET_S = 4.0  # the whole card; /route waits for it
+
+
+async def _localize_clauses(text: str) -> str:
+    """A card line in clauses joined by "; " (the vision reason plus our "there's a lot with trailers to the
+    north"): each clause on its own, so the catalog's clause is not handed to the model inside a model-written one."""
+    import asyncio
+
+    pieces = text.split("; ")
+    return _join_clauses(pieces, await asyncio.gather(*(localize(p) for p in pieces)))
+
+
+def _join_clauses(pieces: list[str], done: list[str]) -> str:
+    out = []
+    for i, (p, got) in enumerate(zip(pieces, done)):
+        if i and p[:1].islower() and got[:1].isupper():
+            got = got[:1].lower() + got[1:]  # mid-line after "; " stays lower case, as in English
+        out.append(got)
+    return "; ".join(out)
 
 
 class LangMiddleware:

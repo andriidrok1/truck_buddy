@@ -20,6 +20,14 @@ export function limitAt(speedLimits: readonly SpeedLimit[] | undefined, matchedI
 
 export const MPH_PER_MPS = 2.23694;
 
+/** No speed alert against a posted limit under this: a 5 in a lot is real, but "you're doing 23 in a 5" never helps (QA 2026-11-05). */
+export const MIN_ALERT_LIMIT_MPH = 15;
+
+/** The banner's red speed: over the posted limit, and the limit is one the alert would speak about too. */
+export function overLimit(speedMph: number | null, limitMph: number): boolean {
+  return speedMph != null && limitMph >= MIN_ALERT_LIMIT_MPH && speedMph > limitMph;
+}
+
 export type SpeedWatchOptions = {
   /** mph over the limit before it counts. */
   overMph?: number;
@@ -36,7 +44,7 @@ export type SpeedWatch = {
 /**
  * "You're doing 70 in a 55", once: the alert fires after `holdMs` continuously over the limit
  * (a short overtake is not a lecture) and re-arms only when the truck is back under the limit.
- * A missing limit or speed cancels the hold without re-arming.
+ * A missing limit or speed, or a limit under MIN_ALERT_LIMIT_MPH, cancels the hold without re-arming.
  */
 export function createSpeedWatch(opts: SpeedWatchOptions = {}): SpeedWatch {
   const { overMph = 5, holdMs = 10000 } = opts;
@@ -44,7 +52,7 @@ export function createSpeedWatch(opts: SpeedWatchOptions = {}): SpeedWatch {
   let alerted = false;
   return {
     push({ speedMph, limitMph, now }) {
-      if (speedMph == null || limitMph == null) {
+      if (speedMph == null || limitMph == null || limitMph < MIN_ALERT_LIMIT_MPH) {
         overSince = null;
         return null;
       }

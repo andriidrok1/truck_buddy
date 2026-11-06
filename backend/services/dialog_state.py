@@ -1,13 +1,13 @@
 """The state of one dialog (one session id), as a model that survives JSON: the copilot keeps it between turns,
 and with the database-backed session store any worker can pick the next turn up.
 
-Keys written to the session anywhere (services/agent.py, services/nudges.py, services/breakdown.py, server.py),
+Keys written to the session anywhere (services/agent/, services/nudges.py, services/breakdown.py, server.py),
 all declared below: history, places, city, pending, via, alternatives, rejected, dest_declined, rejected_chains,
 confirmed_once, facts, past, past_loaded, n, turns, driver, nudge_break_done, nudge_parking_done,
 nudge_chains_done, hos_cache, breakdown_pending, breakdown, providers, providers_at, near, say_learned,
 last_offer, replies, name_at, breakdown_asked.
 Rules that make it serializable: the former sets (rejected, dest_declined) are lists; the pending question's
-"yes" is a pattern NAME (YES_PATTERNS in agent.py), not a compiled regex; the memory read that used to live on
+"yes" is a pattern NAME (YES_PATTERNS in services/agent/phrases.py), not a compiled regex; the memory read that used to live on
 as an asyncio.Task (past_task) is gone, past_loaded says whether it has landed; clocks are epoch seconds
 (time.time), never time.monotonic, which differs per process.
 

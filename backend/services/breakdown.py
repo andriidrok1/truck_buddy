@@ -39,7 +39,7 @@ QUESTIONS = {
 FOLLOWUP_TTL_S = 30 * 60
 RESULT_WAIT_S = 30
 
-# Block for the agent's classification prompt (services/agent.py SYSTEM, same pattern as approach.PROMPT).
+# Block for the agent's classification prompt (services/agent/prompt.py SYSTEM, same pattern as approach.PROMPT).
 PROMPT = """- breakdown: the truck or trailer is broken or stuck and the driver wants someone to fix it, tow it or bring fuel ("I blew a tire", "flat on the trailer", "truck won't start", "losing power", "need a tow", "reefer quit", "ran out of fuel", "brake light on", "landing gear stuck", "who can fix ... near me"). Use intent "breakdown" and also return
   "kind": "tire"|"mechanic"|"tow"|"reefer"|"fuel"|"electrical"|"trailer" (tire = flat/blowout; tow = needs a tow or wrecker; reefer = refrigeration unit; fuel = out of fuel/DEF; electrical = lights, battery, alternator, wiring, brake/ABS light; trailer = landing gear, doors, air lines, trailer brakes; mechanic = engine, won't start, losing power, check engine, overheating, anything else),
   "detail": the problem in the driver's own words (short), "mode": "mobile_needed" (can't move, needs them to come out) | "shop_ok" (ONLY if the driver says it still drives / can roll to a shop; "losing power" alone is unknown) | "unknown",
@@ -86,17 +86,8 @@ _JOBS: dict[str, "asyncio.Task[AgentResponse]"] = {}
 _tasks: set = set()
 
 
-def _parse(raw: str) -> dict:
-    m = re.search(r"\{.*\}", raw or "", re.S)
-    try:
-        d = json.loads(m.group(0)) if m else {}
-    except json.JSONDecodeError:
-        d = {}
-    return d if isinstance(d, dict) else {}
-
-
 async def _llm(system: str, text: str, timeout: float = 25) -> dict:  # first call per process is a ~13 s cold start
-    return _parse(await asyncio.wait_for(llm.complete(system, text, MODEL[1]), timeout=timeout))
+    return llm.json_object(await asyncio.wait_for(llm.complete(system, text, MODEL[1]), timeout=timeout))
 
 
 def needs_question(d: dict) -> Optional[str]:

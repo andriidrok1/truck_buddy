@@ -5,26 +5,13 @@ Used for breakdown jobs (`jobs`), parking verdicts (`parking_checks`) and the sh
 stores share rather than a generic table. Every call returns None / does nothing when the store is off."""
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from services import db
+from services.db import iso as _iso, parse_at as _parse_at, utcnow as _now
 
 logger = logging.getLogger("truckbuddy.kv")
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _iso(at: datetime) -> str:
-    return at.astimezone(timezone.utc).isoformat()
-
-
-def _parse_at(v) -> datetime:
-    if isinstance(v, datetime):
-        return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
-    return datetime.fromisoformat(str(v))
 
 
 def dumps(value: Any) -> str:

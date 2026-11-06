@@ -1,5 +1,7 @@
 """Posted speed limits from HERE spans=maxSpeed: conversion, merging, index remap, flag, API shape."""
 
+import copy
+
 import pytest
 from conftest import fixture_json, params_of, run
 
@@ -69,7 +71,7 @@ def test_flag_off_drops_the_span_and_the_field(monkeypatch, fake_http):
     fake_http.add("router.hereapi.com", "/v8/routes", json=DATA)
     info = run(routing.get_routing_provider().route(38.58, -121.49, 39.53, -119.81, TruckProfile()))
     p = dict(params_of(fake_http.calls[0]))
-    assert "maxSpeed" not in p["spans"]
+    assert "maxSpeed" not in p["spans"] and "streetAttributes" not in p["spans"]
     assert info.speed_limits  # parsing is independent of the flag: whatever HERE sends is kept
 
 
@@ -107,3 +109,33 @@ def test_a_stretch_without_a_posted_limit_ends_the_previous_one():
     assert _speed_limits([_span(0, 29.17)], 100, prev=65) == []  # same limit continues: no entry
     idx = _Index([0, 4, 9])
     assert [(s.index, s.mph) for s in _remap_limits([(0, 65), (4, None), (9, 55)], idx)] == [(0, 65), (1, None), (2, 55)]
+
+
+def test_a_limit_under_15_on_a_public_road_is_unknown():
+    """QA 2026-11-05, M-5: "SPEED LIMIT 5" near Waterfront Pl in West Sacramento and "you're doing 23 in a 5"."""
+    spans = [_span(0, 11.1111116), _span(4, 2.2222223), _span(7, 11.1111116)]
+    assert _speed_limits(spans, 0) == [(0, 25), (4, None), (7, 25)]
+    assert _speed_limits([_span(0, 6.25)], 0) == []  # 14 mph at the start: nothing known, nothing shown
+    assert _speed_limits([_span(0, 6.7056)], 0) == [(0, 15)]  # 15 mph is a real school / alley limit
+
+
+def test_a_low_limit_on_a_private_road_stands():
+    spans = [{"offset": 0, "maxSpeed": 2.2222223, "streetAttributes": ["privateRoad"]},
+             {"offset": 5, "maxSpeed": 2.2222223, "streetAttributes": ["rightDrivingSide"]},
+             _span(9, 24.4444447)]
+    assert _speed_limits(spans, 0) == [(0, 5), (5, None), (9, 55)]
+
+
+def test_a_route_with_a_bogus_5_never_carries_it():
+    data = copy.deepcopy(DATA)
+    spans = data["routes"][0]["sections"][0]["spans"]
+    spans[1]["maxSpeed"] = 2.2222223
+    info = _here_parse(data)
+    assert 5 not in {s.mph for s in info.speed_limits}
+    assert any(s.mph is None for s in info.speed_limits)
+
+
+def test_flag_on_asks_for_street_attributes(fake_http):
+    fake_http.add("router.hereapi.com", "/v8/routes", json=DATA)
+    run(routing.get_routing_provider().route(38.58, -121.49, 39.53, -119.81, TruckProfile()))
+    assert "streetAttributes" in dict(params_of(fake_http.calls[0]))["spans"].split(",")

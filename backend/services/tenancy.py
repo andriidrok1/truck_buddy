@@ -14,7 +14,7 @@ import sqlite3
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -22,6 +22,7 @@ import asyncpg
 
 from models import TruckProfile
 from services import db
+from services.db import iso as _iso, parse_at as _at, utcnow as _now
 
 logger = logging.getLogger("truckbuddy.tenancy")
 
@@ -36,20 +37,6 @@ class Device:
     org_id: str
     vehicle_id: Optional[str]
     role: str
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _iso(at: datetime) -> str:
-    return at.astimezone(timezone.utc).isoformat()
-
-
-def _at(v) -> datetime:
-    if isinstance(v, datetime):
-        return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
-    return datetime.fromisoformat(str(v))
 
 
 def new_id(prefix: str) -> str:
@@ -341,18 +328,6 @@ async def sub_by_refresh(refresh_hash: str) -> Optional[str]:
         return row[0] if row else None
     pool = await db._db()
     return await pool.fetchval("SELECT sub FROM devices WHERE refresh_hash = $1", refresh_hash)
-
-
-async def refresh_hash_of(sub: str) -> Optional[str]:
-    k = db.store()
-    if k == "off":
-        return None
-    if k == "sqlite":
-        row = await db._sq_run(lambda con: con.execute(
-            "SELECT refresh_hash FROM devices WHERE sub = ?", (sub,)).fetchone())
-        return row[0] if row else None
-    pool = await db._db()
-    return await pool.fetchval("SELECT refresh_hash FROM devices WHERE sub = $1", sub)
 
 
 # ---- truck profile -------------------------------------------------------------------------------------------

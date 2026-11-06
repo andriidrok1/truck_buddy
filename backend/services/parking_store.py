@@ -36,6 +36,15 @@ def has_entry(c: Optional[ParkingCheck]) -> bool:
     return bool(c and any(s.kind == "entry" for s in c.spots))
 
 
+_CYRILLIC = re.compile(r"[А-Яа-яЁёІіЇїЄєҐґ]")
+
+
+def localized(c: ParkingCheck) -> bool:
+    """A verdict saved after a Russian request translated the cached copy in place (fixed 2026-11-05): its English
+    text is gone, so it is not loaded and the place is checked again. Verdicts are stored in English only."""
+    return any(_CYRILLIC.search(v or "") for v in (c.label, c.reason, c.entry_tip, c.park_tip))
+
+
 def _files_on() -> bool:
     return db.store() == "off"
 
@@ -66,7 +75,11 @@ def load_all() -> dict[str, ParkingCheck]:
     for f in DIR.glob("*.json"):
         try:
             d = json.loads(f.read_text())
-            _mem[d["key"]] = (ParkingCheck(**d["check"]), bool(d.get("retried")))
+            c = ParkingCheck(**d["check"])
+            if localized(c):
+                logger.warning("parking cache file %s holds translated text; re-checked", f.name)
+                continue
+            _mem[d["key"]] = (c, bool(d.get("retried")))
         except Exception as e:  # noqa: BLE001 - a broken file is just re-checked
             logger.warning("bad parking cache file %s: %s", f.name, e)
     logger.info("parking cache: %d verdicts loaded", len(_mem))
@@ -88,9 +101,14 @@ async def sync_from_db() -> int:
             continue
         if check:
             try:
-                _mem[key] = (ParkingCheck(**check), retried)
+                c = ParkingCheck(**check)
             except Exception as e:  # noqa: BLE001
                 logger.warning("bad parking row %s: %s", key, e)
+            else:
+                if localized(c):
+                    logger.warning("parking row %s holds translated text; re-checked", key)
+                else:
+                    _mem[key] = (c, retried)
         if ap:
             try:
                 _approach[key] = Approach(**ap)

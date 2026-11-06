@@ -994,11 +994,11 @@
   },
   {
    "en": "The truck entrance is {tip}.",
-   "ru": "Въезд для траков {tip|tr}."
+   "ru": "Въезд для траков {tip|mt}."
   },
   {
    "en": "To get in: {tip}.",
-   "ru": "Как заехать: {tip|tr}."
+   "ru": "Как заехать: {tip|mt}."
   },
   {
    "en": "on your {side}, off {street}",
@@ -1007,7 +1007,7 @@
   },
   {
    "en": "on your {side}, off {street}, {rest}",
-   "ru": "{side|side}, с {street}, {rest}",
+   "ru": "{side|side}, с {street}, {rest|mt}",
    "part": true
   },
   {
@@ -1036,8 +1036,26 @@
    "ru": "Спроси трак-стоп или дай адрес, и я проверю парковку."
   },
   {
+   "en": "There's a lot with trailers to the {dir}{look}.",
+   "ru": "Есть площадка с трейлерами {dir|at}{look|part}."
+  },
+  {
+   "en": "there's a lot with trailers to the {dir}{look}.",
+   "ru": "есть площадка с трейлерами {dir|at}{look|part}."
+  },
+  {
+   "en": ", looks like a public lot",
+   "ru": ", похоже, общая стоянка",
+   "part": true
+  },
+  {
+   "en": ", looks like a private yard",
+   "ru": ", похоже, частная площадка",
+   "part": true
+  },
+  {
    "en": "Drivers say: {gist}",
-   "ru": "Водители говорят: {gist|tr}"
+   "ru": "Водители говорят: {gist|mt}"
   },
   {
    "en": "No driver reviews there yet.",
@@ -2005,35 +2023,67 @@
   },
   "east": {
    "from": "восточный",
+   "at": "к востоку",
    "to": "восток"
   },
   "west": {
    "from": "западный",
+   "at": "к западу",
    "to": "запад"
   },
   "north": {
    "from": "северный",
+   "at": "к северу",
    "to": "север"
   },
   "south": {
    "from": "южный",
+   "at": "к югу",
    "to": "юг"
   },
   "northeast": {
    "from": "северо-восточный",
+   "at": "к северо-востоку",
    "to": "северо-восток"
   },
   "northwest": {
    "from": "северо-западный",
+   "at": "к северо-западу",
    "to": "северо-запад"
   },
   "southeast": {
    "from": "юго-восточный",
+   "at": "к юго-востоку",
    "to": "юго-восток"
   },
   "southwest": {
    "from": "юго-западный",
+   "at": "к юго-западу",
    "to": "юго-запад"
+  },
+  "north-northeast": {
+   "from": "северо-северо-восточный"
+  },
+  "east-northeast": {
+   "from": "восточно-северо-восточный"
+  },
+  "east-southeast": {
+   "from": "восточно-юго-восточный"
+  },
+  "south-southeast": {
+   "from": "юго-юго-восточный"
+  },
+  "south-southwest": {
+   "from": "юго-юго-западный"
+  },
+  "west-southwest": {
+   "from": "западно-юго-западный"
+  },
+  "west-northwest": {
+   "from": "западно-северо-западный"
+  },
+  "north-northwest": {
+   "from": "северо-северо-западный"
   },
   "left": {
    "side": "слева",

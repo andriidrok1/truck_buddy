@@ -2,7 +2,7 @@ import { StyleSheet, View } from "react-native";
 import { Text } from "../i18n/Text";
 import Animated, { FadeInRight, FadeInUp, ZoomIn } from "react-native-reanimated";
 
-import type { Advisory } from "../geo/advisories";
+import { overLimit, type Advisory } from "../geo/advisories";
 import { formatDistance } from "../hooks/useGuidance";
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import type { Maneuver } from "../types";
@@ -54,7 +54,7 @@ type Props = {
 /** US speed-limit sign: white, black border, "SPEED LIMIT" over the number. */
 function SpeedShield({ limitMph, speedMph }: { limitMph: number; speedMph: number | null }) {
   const { colors } = useTheme();
-  const over = speedMph != null && speedMph > limitMph;
+  const over = overLimit(speedMph, limitMph);
   return (
     <View style={styles.shieldWrap} testID="speed-shield">
       <View style={styles.shield}>

@@ -22,6 +22,7 @@ from services.flags import on
 from services.geo import haversine_km
 from services import kv, leader
 from services.http import client
+from services.speech_text import hours_minutes
 
 logger = logging.getLogger("truckbuddy.weather")
 
@@ -591,8 +592,7 @@ def _diff(alt: RouteInfo, route: RouteInfo) -> str:
     d = alt.duration_min - route.duration_min
     if abs(d) < 5:
         return SAME_TIME
-    h, m = divmod(abs(int(d)), 60)
-    said = f"{h} h {m} min" if h and m else (f"{h} h" if h else f"{m} min")
+    said = hours_minutes(abs(int(d)))
     return f", about {said} {'longer' if d > 0 else 'faster'}"
 
 
