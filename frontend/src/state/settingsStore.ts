@@ -106,6 +106,14 @@ export const useNudgesEnabled = () => useSettings((s) => s.nudges);
 export const useSpeedAlerts = () => useSettings((s) => s.speedAlerts);
 export const useVoiceGuidance = () => useSettings((s) => s.voiceGuidance);
 
+/** "Delete my data": the defaults, nothing on disk. */
+export async function forgetSettings(): Promise<void> {
+  touched.clear();
+  loading = Promise.resolve();
+  useSettings.setState({ ...DEFAULT_SETTINGS, loaded: true, rerouteRequested: false });
+  await storage.removeItem(SETTINGS_KEY);
+}
+
 /** Tests only. */
 export function __resetSettings() {
   loading = null;

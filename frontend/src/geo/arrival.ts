@@ -47,6 +47,8 @@ export async function loadArrived(tripId: string | null): Promise<Set<string>> {
   return saved && saved.trip === tripId && Array.isArray(saved.ids) ? new Set(saved.ids) : new Set();
 }
 
+export const forgetArrived = (): Promise<boolean> => storage.removeItem(ARRIVED_KEY);
+
 export function saveArrived(tripId: string | null, seen: Set<string>): Promise<boolean> {
   return storage.setItem(ARRIVED_KEY, { trip: tripId, ids: [...seen] });
 }

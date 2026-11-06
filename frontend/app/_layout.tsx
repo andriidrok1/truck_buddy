@@ -23,6 +23,7 @@ import { migrateStorage } from "@/src/utils/storageMigrations";
 import { DeviceGate } from "@/src/components/DeviceGate";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { useConsent } from "@/src/consent";
+import { rootScreen } from "@/src/state/firstLaunch";
 import { loadEldToken } from "@/src/eld";
 import { fetchProfile, PROFILE_KEY } from "@/src/data/profile";
 import { queryClient } from "@/src/query-client";
@@ -105,6 +106,7 @@ function RootLayout() {
     "Manrope-ExtraBold": require("../assets/fonts/Manrope-ExtraBold.ttf"),
   });
 
+  const screen = rootScreen(langChosen, consent, auth);
   if ((!loaded && !error) || auth === "loading" || consent === "loading" || !themeReady || !storageReady || !langLoaded) return null;
 
   // One app level ErrorBoundary; a render crash shows a reload screen
@@ -123,7 +125,15 @@ function RootLayout() {
                 animations are 200-320 ms fades, so they always play; this replaces the per-view flag from #69. */}
             <ReducedMotionConfig mode={ReduceMotion.Never} />
             <StatusBar style={scheme === "dark" ? "light" : "dark"} />
-            {!langChosen ? <LanguageGate /> : consent !== "yes" ? <ConsentGate /> : auth !== "in" ? <DeviceGate /> : <Stack screenOptions={{ headerShown: false }} />}
+            {screen === "language" ? (
+              <LanguageGate />
+            ) : screen === "consent" ? (
+              <ConsentGate />
+            ) : screen === "device" ? (
+              <DeviceGate />
+            ) : (
+              <Stack screenOptions={{ headerShown: false }} />
+            )}
           </KeyboardProvider>
         </QueryClientProvider>
       </ErrorBoundary>

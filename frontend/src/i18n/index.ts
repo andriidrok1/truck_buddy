@@ -59,6 +59,14 @@ export function loadLang(): Promise<void> {
   return reading;
 }
 
+/** "Delete my data": no saved choice, the phone's language until the first screen asks again (`chosen` false
+ *  puts the language screen back in front of everything, app/_layout.tsx). */
+export async function forgetLang(): Promise<void> {
+  await storage.removeItem(LANG_KEY).catch(() => false);
+  reading = Promise.resolve();
+  useLangStore.setState({ lang: deviceLang(), loaded: true, chosen: false });
+}
+
 export const getLang = (): Lang => useLangStore.getState().lang;
 export const setLang = (l: Lang) => useLangStore.getState().setLang(l);
 

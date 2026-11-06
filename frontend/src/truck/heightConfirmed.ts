@@ -40,6 +40,14 @@ export async function confirmHeight(): Promise<void> {
   await storage.setItem(HEIGHT_CONFIRMED_KEY, true).catch(() => {});
 }
 
+/** "Delete my data": the height is unknown again, the map asks for it. */
+export async function forgetHeight(): Promise<void> {
+  await storage.removeItem(HEIGHT_CONFIRMED_KEY).catch(() => false);
+  confirmed = false;
+  reading = null;
+  listeners.forEach((l) => l(false));
+}
+
 export const isHeightConfirmed = () => confirmed === true;
 
 /** null while the flag is being read (show nothing yet), then true / false. */

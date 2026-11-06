@@ -60,6 +60,8 @@ export type TripLog = {
   flush(): Promise<FlushResult>;
   /** Loads the mirror written before a restart (call once at startup). */
   restore(): Promise<void>;
+  /** Drops every pending event, in memory and on disk ("Delete my data"). */
+  clear(): Promise<void>;
   /** Pending events (for the tester card). */
   size(): number;
   /** When the last batch was accepted, epoch ms, or null. */
@@ -153,6 +155,14 @@ export function createTripLog(deps: TripLogDeps): TripLog {
         pending = [...saved, ...pending].slice(-MAX_PENDING);
         notify();
       }
+    },
+    async clear() {
+      if (persistTimer) clearTimer(persistTimer);
+      persistTimer = null;
+      pending = [];
+      failures = 0;
+      notify();
+      await deps.save([]).catch(() => {});
     },
     size: () => pending.length,
     lastFlushAt: () => lastFlush,

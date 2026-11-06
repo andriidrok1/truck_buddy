@@ -55,6 +55,13 @@ export async function setToken(t: string | null, r: "driver" | "tester" = "drive
   emit();
 }
 
+/** "Delete my data": no token, no code screen; once the gates pass again, DeviceGate signs the phone in as a new
+ *  anonymous device (the server hands out a new identity for every POST /auth/device). */
+export async function forgetIdentity() {
+  codeWanted = false;
+  await setToken(null);
+}
+
 // Every authenticated request also says the driver's language (backend services/i18n.LangMiddleware).
 export const authHeader = (): Record<string, string> => ({ ...(token ? { Authorization: `Bearer ${token}` } : {}), "X-Lang": getLang() });
 

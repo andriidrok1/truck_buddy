@@ -88,6 +88,16 @@ export async function saveTruckProfile(t: TruckProfile) {
   await storage.setItem(KEY, t); // the wrapper serialises once; load() still reads the older double-encoded form
 }
 
+/** "Delete my data": the default truck in memory, nothing on disk, onboarding runs again. */
+export async function forgetTruckProfile() {
+  loaded = true;
+  savedSinceLoad = true;
+  if (!loading) loading = Promise.resolve();
+  current = DEFAULT_TRUCK;
+  listeners.forEach((l) => l(DEFAULT_TRUCK));
+  await Promise.all([storage.removeItem(KEY), storage.removeItem(ONBOARDED_KEY)]);
+}
+
 export function getTruckProfile() {
   return current;
 }

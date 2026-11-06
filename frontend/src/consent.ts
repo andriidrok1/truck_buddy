@@ -22,6 +22,13 @@ export async function giveConsent() {
   emit();
 }
 
+/** "Delete my data": the consent screen comes back as on a fresh install. */
+export async function forgetConsent() {
+  await storage.removeItem(KEY);
+  state = "no";
+  emit();
+}
+
 export function useConsent() {
   const [, force] = useState(0);
   useEffect(() => {
