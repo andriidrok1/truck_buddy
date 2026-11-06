@@ -1,6 +1,5 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -29,23 +28,23 @@ import { MESSAGES } from "@/src/constants";
 import { isTester } from "@/src/auth";
 import { switchedLine } from "@/src/geo/routeChoice";
 import { farFromRoute } from "@/src/geo/guidance";
-import { startDriveTracking, stopDriveTracking } from "@/src/geo/driveTracking";
-import { arrivals, loadArrived, saveArrived } from "@/src/geo/arrival";
 import { createRerouteGate } from "@/src/geo/offroute";
 import { useAppActive } from "@/src/hooks/useAppActive";
 import { useBreakReminder } from "@/src/hooks/useBreakReminder";
 import { useDriveRecorder } from "@/src/hooks/useDriveRecorder";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
+import { useDrivingSession } from "@/src/hooks/useDrivingSession";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
 import { useOfflineGuidance, type OfflineGuidance } from "@/src/hooks/useOfflineGuidance";
 import { useStartPins, useWarmCaches } from "@/src/hooks/useNearbyWarmup";
 import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
+import { useMicPrewarm } from "@/src/hooks/useMicPrewarm";
 import { NUDGE_KEY_PREFIX, useNudges } from "@/src/hooks/useNudges";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
 import { useTripRestore } from "@/src/hooks/useTripRestore";
-import { saveProfile, setMidTripCheck } from "@/src/data/profile";
+import { saveProfile } from "@/src/data/profile";
 import { getTruckProfile, isOnboarded, truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { askWithDeadline } from "@/src/voice/micAsk";
@@ -66,10 +65,8 @@ import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 import { routeFailText } from "@/src/utils/routeFail";
 import { APPROACH_TIPS_M, nearbyLine, statusLine, tipsLine } from "@/src/voice/parkingLines";
 import { recorder } from "@/src/geo/driveRecorder";
-import { startPositionHeartbeat, tripLog } from "@/src/net/tripEvents";
+import { tripLog } from "@/src/net/tripEvents";
 import { t } from "@/src/i18n";
-
-const KEEP_AWAKE_TAG = "driving";
 
 // "End route" asks first while more than this is left of the drive.
 const END_CONFIRM_ABOVE_S = 10 * 60;
@@ -614,37 +611,8 @@ export default function MapScreen() {
     }, []),
   );
 
-  // Keep the recorder armed while this screen is in front and the mic is allowed, so a tap records at once
-  // (useVoice.prepareIdle). It was wired as setPrewarm(micOk && focused && !wakeArmed) before the turn-machine
-  // move (112c7e1) and got lost there: every tap then switched the session and prepared from scratch. The
-  // permission check also tells useVoice it is granted, so the first tap skips that round trip too.
-  const { setPrewarm, micPermission } = voice;
-  useEffect(() => {
-    if (!focused) {
-      setPrewarm(false);
-      return;
-    }
-    let live = true;
-    micPermission()
-      .then((p) => live && setPrewarm(p === "granted"))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [focused, micCard, setPrewarm, micPermission]); // micCard: re-check once the driver allowed the mic
-
-  // Back from Settings (or from a system dialog that answered after the card gave up): the mic is allowed now,
-  // so the card has nothing left to ask.
-  useEffect(() => {
-    if (!micCard || !appActive || !focused) return;
-    let live = true;
-    micPermission()
-      .then((p) => live && p === "granted" && setMicCard(null))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [micCard, appActive, focused, micPermission]);
+  // Recorder kept armed while this screen is in front; the mic card goes once the mic is allowed.
+  useMicPrewarm(voice.setPrewarm, voice.micPermission, focused, micCard, appActive, setMicCard);
 
   const onAvatarPress = async () => {
     if (phase === "listening") {
@@ -893,60 +861,8 @@ export default function MapScreen() {
     }
   };
 
-  // Driving: fixes keep coming with the screen off (a location task, src/geo/driveTracking.ts), and with the app
-  // open the screen stays on. Where the task can't run (Expo Go, refused) the awake screen is all there is.
-  const drivingTo = driving ? (active?.place.name.split(",")[0] ?? "your stop") : null;
-  useEffect(() => {
-    if (!drivingTo) {
-      stopDriveTracking();
-      deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
-      return;
-    }
-    activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
-    startDriveTracking(drivingTo);
-  }, [drivingTo]);
-  useEffect(() => () => {
-    stopDriveTracking();
-    deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
-  }, []);
-
-  // A fleet truck's stored sizes are not pulled over a trip's own change (src/data/profile.ts).
-  useEffect(() => setMidTripCheck(() => !!trip().active), []);
-
-  // A position for the fleet dashboard every few minutes while driving (lat/lng are stamped by the log).
-  const speedRef = useRef<number | null>(null);
-  useEffect(() => {
-    speedRef.current = loc.speed;
-  });
-  useEffect(() => {
-    if (!driving) return;
-    return startPositionHeartbeat(tripLog, () => ({ tripId: trip().active?.trip_id ?? null, speedMps: speedRef.current }));
-  }, [driving]);
-
-  // Arrival at a stop or the destination: one trip event each (the server counts visits, the fleet reads the time).
-  // The places already reported live on disk with the trip id, so a restart mid-trip doesn't report them again.
-  const arrived = useRef<{ trip: string | null; seen: Set<string> | null }>({ trip: null, seen: null });
-  useEffect(() => {
-    const cur = trip().active;
-    if (!cur || !driving || loc.isDemo) return;
-    const tripId = cur.trip_id ?? null;
-    const fix = { ...loc.coords, speed: loc.speed };
-    const check = (seen: Set<string>) => {
-      const found = arrivals(fix, cur.stops, cur.place, seen);
-      for (const a of found) {
-        tripLog.log("arrived", { place_id: a.place.id, kind: a.kind, category: a.place.category, name: a.place.name }, tripId);
-      }
-      if (found.length) saveArrived(tripId, seen).catch(() => {});
-    };
-    if (arrived.current.trip === tripId && arrived.current.seen) return check(arrived.current.seen);
-    arrived.current = { trip: tripId, seen: null };
-    loadArrived(tripId).then((seen) => {
-      if (arrived.current.trip !== tripId) return;
-      arrived.current.seen = seen;
-      check(seen);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loc.ts, driving]);
+  // Background location, keep-awake, the fleet heartbeat and arrival events while driving.
+  useDrivingSession(driving, active, loc);
 
   // Resume of a restored route: the first real fix after it decides whether the truck is still near the line.
   // A parked truck never trips the off-route tracker, so far from it the plan is redone right away.
