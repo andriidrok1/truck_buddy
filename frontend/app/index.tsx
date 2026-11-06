@@ -27,6 +27,7 @@ import { MESSAGES } from "@/src/constants";
 import { isTester } from "@/src/auth";
 import { switchedLine } from "@/src/geo/routeChoice";
 import { farFromRoute } from "@/src/geo/guidance";
+import { useApproachTips } from "@/src/hooks/useApproachTips";
 import { useAppActive } from "@/src/hooks/useAppActive";
 import { useBreakReminder } from "@/src/hooks/useBreakReminder";
 import { useDriveRecorder } from "@/src/hooks/useDriveRecorder";
@@ -64,7 +65,7 @@ import { streetFromInstruction } from "@/src/voice/sttHint";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 import { routeFailText } from "@/src/utils/routeFail";
-import { APPROACH_TIPS_M, nearbyLine, statusLine, tipsLine } from "@/src/voice/parkingLines";
+import { nearbyLine, statusLine } from "@/src/voice/parkingLines";
 import { recorder } from "@/src/geo/driveRecorder";
 import { tripLog } from "@/src/net/tripEvents";
 import { t } from "@/src/i18n";
@@ -347,17 +348,8 @@ export default function MapScreen() {
     if (stage === "now") tripLog.log("maneuver_said", { action: next.action, index: next.index, to_next_m: Math.round(toNextM) }, trip().active?.trip_id);
   });
 
-  // Half a mile out, once per destination: the entry and parking tips from the card, through the speech
-  // queue (a due turn still comes first).
-  const tipsSaidFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!driving || !active?.parking || guidance.remainingM == null || guidance.remainingM > APPROACH_TIPS_M) return;
-    if (tipsSaidFor.current === active.place.id) return;
-    const text = tipsLine(active.parking);
-    if (!text) return;
-    tipsSaidFor.current = active.place.id;
-    say(text, { priority: PRIORITY.CLOSURE_CHAIN, kind: "system", key: "approach-tips", ttlMs: 5 * 60 * 1000 });
-  }, [driving, active, guidance.remainingM, say]);
+  // Half a mile out, once per destination: the entry and parking tips from the card.
+  useApproachTips(driving, active, guidance.remainingM, say);
 
   // Lost signal: "I'll keep you on the loaded route", and where the line is when off it.
   const driverPos = useMemo(() => ({ ...loc.coords, heading: loc.heading }), [loc.coords, loc.heading]);
