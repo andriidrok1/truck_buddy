@@ -21,7 +21,7 @@ import { NavBanner } from "@/src/components/NavBanner";
 import { PressableScale } from "@/src/components/PressableScale";
 import { dial, ProvidersList } from "@/src/components/ProvidersList";
 import { RestoredBanner } from "@/src/components/RestoredBanner";
-import { CaptionBubble, Toast, type ToastData } from "@/src/components/Toast";
+import { CaptionBubble, Toast } from "@/src/components/Toast";
 import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
@@ -44,6 +44,7 @@ import { useReroute } from "@/src/hooks/useReroute";
 import { useMicPrewarm } from "@/src/hooks/useMicPrewarm";
 import { NUDGE_KEY_PREFIX, useNudges } from "@/src/hooks/useNudges";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
+import { useToast } from "@/src/hooks/useToast";
 import { useTripRestore } from "@/src/hooks/useTripRestore";
 import { saveProfile } from "@/src/data/profile";
 import { getTruckProfile, isOnboarded, truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
@@ -123,7 +124,7 @@ export default function MapScreen() {
       trip().setSheet(p);
     }
   };
-  const [toast, setToast] = useState<ToastData | null>(null);
+  const { toast, showToast } = useToast();
   // kind "reply" = the copilot's answer, kept until the driver dismisses it or the next answer comes (a driver
   // who looks later must still see it); kind "line" = a spoken line (turn, nudge, parking tip), gone 8 s after
   // it is said. A line during an answer shows as a note under it (src/dialog/caption.ts).
@@ -168,10 +169,6 @@ export default function MapScreen() {
 
   const searchBlurGuard = useRef(false); // while set, "Where to?" gives a focus it gets back (see onSubmitText)
 
-  const showToast = useCallback((text: string, kind: ToastData["kind"] = "error") => {
-    setToast({ id: Date.now(), text, kind });
-  }, []);
-
   // Everything the copilot says on its own (maneuvers, reroutes, reminders) goes through one
   // queue: it waits while the driver is talking to the copilot or a reply plays (never cuts it
   // off), and orders by urgency. The caption follows whatever line is on air. A nudge ("Want me
@@ -194,12 +191,6 @@ export default function MapScreen() {
     setDialogPhase(null);
     setDriving(true);
   });
-
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3200);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   // A spoken line (or the note under an answer) goes LINE_HOLD_MS after it was said; the answer itself stays.
   useEffect(() => {
