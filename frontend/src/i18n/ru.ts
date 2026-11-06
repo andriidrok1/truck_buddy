@@ -1,6 +1,7 @@
 // Russian side of the app texts: the English text is the key, as it appears in code or is built at runtime
 // ("In {n} feet, {rest}."). {name} captures a value and moves it over unchanged; {n|plural:фут,фута,футов} writes
-// the number with the noun in its form. Terms follow what Russian-speaking drivers in the US say: трак-стоп,
+// the number with the noun in its form. {n} {d} {h} {m} {f} {i} match a number only (src/i18n/index.ts NUMERIC);
+// use another name for a slot that holds words. Terms follow what Russian-speaking drivers in the US say: трак-стоп,
 // рест-эрия, кэт-скейл, мили и футы. Ukrainian is not here on purpose: it gets its own uk.ts, never this one.
 
 export const RU: Record<string, string> = {
@@ -15,7 +16,7 @@ export const RU: Record<string, string> = {
   "In a mile": "Через милю",
   "you'll arrive at {place}": "прибытие: {place}",
   "Follow the route": "Следуй по маршруту",
-  "Lost signal, can't reroute. The route is {d} to the {dir}.": "Связь пропала, маршрут не перестроить. Маршрут в {d} на {dir}.",
+  "Lost signal, can't reroute. The route is {dist} to the {dir}.": "Связь пропала, маршрут не перестроить. Маршрут в {dist} на {dir}.",
   "Lost signal. I'll keep you on the loaded route.": "Связь пропала. Поведу по загруженному маршруту.",
   "Signal's back.": "Связь вернулась.",
   "Rerouting.": "Перестраиваю маршрут.",

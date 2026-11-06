@@ -42,3 +42,17 @@ test("a fact line keeps what has no translation (a place name) and English is un
   }
 });
 
+
+test("number slots match numbers only: free text that ends in a unit is left alone, a real measure gets its plural", () => {
+  expect(ru("13 ft")).toBe("13 футов");
+  expect(ru("Low clearance 13 ft")).toBe("Low clearance 13 ft"); // not "Low clearance 13 фута"
+  expect(ru("Love's Travel Stop · Exit 12 · Open 24 h")).toBe("Love's Travel Stop · Exit 12 · Open 24 h");
+  expect(ru("Navigating to 76 Truck Stop")).toBe("Едем в 76 Truck Stop");
+  expect(ru("Routes (3)")).toBe("Маршруты (3)");
+  expect(ru("$12.50 tolls")).toBe("$12.50 за платные дороги");
+  expect(ru("80,000 lb")).toBe("80,000 фунтов");
+  expect(ru("2 h 54 min · 135 mi")).toBe("2 ч 54 мин · 135 миль");
+  for (const s of ["Low clearance 13 ft", "Love's Travel Stop · Exit 12 · Open 24 h", "Navigating to 76 Truck Stop"]) {
+    expect(en(s)).toBe(s);
+  }
+});

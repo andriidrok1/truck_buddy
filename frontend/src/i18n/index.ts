@@ -99,6 +99,11 @@ type Pattern = { rx: RegExp; names: string[]; target: string; dot: boolean };
 const escapeRx = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 let patterns: Pattern[] | null = null;
 
+/** Placeholder names that always hold a number in ru.ts ("{n} min", "{h} h {m} min · {d} mi", "{f} ft {i} in"). */
+const NUMERIC = new Set(["n", "d", "h", "m", "f", "i"]);
+/** 12, 2.7, 80,000, $12.50, ~5 */
+const NUMBER_RX = "([$~]?\\d[\\d.,]*)";
+
 /** Dictionary keys with {placeholders} ("In {n} feet, {rest}") as regexes, the most literal text first. */
 function compiled(): Pattern[] {
   if (patterns) return patterns;
@@ -112,7 +117,9 @@ function compiled(): Pattern[] {
           const m = /^\{(\w+)\}$/.exec(part);
           if (!m) return escapeRx(part);
           names.push(m[1]);
-          return "(.*?)"; // may be empty: "All set{name}!" without a name
+          // A number slot takes a number only, so "{n} ft" can't swallow "Low clearance 13" and "{h} h" leaves
+          // "Open 24 h" alone; any other slot may be empty: "All set{name}!" without a name.
+          return NUMERIC.has(m[1]) ? NUMBER_RX : "(.*?)";
         })
         .join("");
       return { rx: new RegExp(`^${src}$`, "s"), names, target, dot: en.includes(" · "), lit: en.replace(/\{\w+\}/g, "").length };
