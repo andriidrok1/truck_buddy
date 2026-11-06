@@ -7,17 +7,18 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, type S
 
 import { routesChipText } from "../geo/routeChoice";
 import type { OfflineMapState } from "../hooks/useOfflineMap";
-import { formatBytes } from "../map/bounds";
 import { fontFor, fonts, radius, shadow, spacing, useTheme } from "../theme";
 import type { ActiveRoute, MapsSource, ParkingState, Phase, Place } from "../types";
 import { Avatar } from "./Avatar";
 import { Icon } from "./Icon";
 import { MapsSources } from "./MapsSources";
 import { OptionsList } from "./OptionsList";
+import { OfflineMapButton } from "./OfflineMapButton";
 import { ParkingLiveBadge } from "./ParkingLiveBadge";
 import { ParkingStatus } from "./ParkingStatus";
 import { haptic, PressableScale } from "./PressableScale";
 import { ReviewsGist } from "./ReviewsGist";
+import { SideButton, SideSpacer } from "./SideButton";
 import { Waveform } from "./Waveform";
 import { entrySpot, routeEndsAt } from "../utils/entry";
 import { dragHeight, sheetHeights, snapTarget, stateHeight, type SheetHeights, type SnapState } from "../utils/sheetSnap";
@@ -82,71 +83,6 @@ type Props = {
    *  shown at the top of the route card instead, so it is never on screen nowhere (UI review 2026-11-05, N1). */
   replyInSheet?: string | null;
 };
-
-function SideButton({
-  icon,
-  label,
-  testID,
-  onPress,
-  danger,
-}: {
-  icon: string;
-  label: string;
-  testID: string;
-  onPress?: () => void;
-  danger?: boolean;
-}) {
-  const { colors } = useTheme();
-  return (
-    <PressableScale testID={testID} accessibilityLabel={label} onPress={onPress} style={styles.side} haptic={danger ? "heavy" : "light"}>
-      <View style={[styles.sideCircle, { backgroundColor: danger ? colors.error : colors.surfaceSecondary }]}>
-        <Icon name={icon} size={24} color={danger ? colors.onError : colors.onSurface} />
-      </View>
-      <Text style={[styles.sideLabel, { color: danger ? colors.error : colors.onSurfaceSecondary }]}>{label}</Text>
-    </PressableScale>
-  );
-}
-
-/** "Download for offline · ~84 MB" / "Downloading · 42%" / "Saved · 84 MB" / "Download failed · try again". */
-export function offlineMapLabel(s: OfflineMapState): string {
-  switch (s.kind) {
-    case "none":
-      return `Download for offline · ~${formatBytes(s.estimateBytes)}`;
-    case "downloading":
-      return `Downloading · ${Math.round(s.percentage)}%${s.bytes ? ` · ${formatBytes(s.bytes)}` : ""}`;
-    case "saved":
-      return `Saved · ${formatBytes(s.bytes)}`;
-    case "failed":
-      return `Download failed · try again (~${formatBytes(s.estimateBytes)})`;
-  }
-}
-
-function OfflineMapButton({ state, onPress }: { state: OfflineMapState; onPress?: () => void }) {
-  const { colors } = useTheme();
-  const busy = state.kind === "downloading";
-  const saved = state.kind === "saved";
-  return (
-    <Pressable
-      testID="offline-map-button"
-      accessibilityLabel={offlineMapLabel(state)}
-      accessibilityState={{ disabled: busy || saved }}
-      disabled={busy || saved}
-      onPress={onPress}
-      hitSlop={8}
-      style={[styles.offlineBtn, { borderColor: saved ? colors.success : colors.info }]}
-    >
-      <Icon name={saved ? "check-circle-outline" : busy ? "progress-download" : "download-outline"} size={16} color={saved ? colors.success : colors.info} />
-      <Text testID="offline-map-label" style={[styles.otherText, { color: saved ? colors.success : colors.info }]}>
-        {offlineMapLabel(state)}
-      </Text>
-      {busy && (
-        <View style={[styles.progressTrack, { backgroundColor: colors.surfaceTertiary }]}>
-          <View style={[styles.progressFill, { backgroundColor: colors.info, width: `${Math.max(2, Math.min(100, state.percentage))}%` }]} />
-        </View>
-      )}
-    </Pressable>
-  );
-}
 
 function durationLabel(seconds: number) {
   const min = Math.max(1, Math.round(seconds / 60));
@@ -539,7 +475,7 @@ export function CopilotSheet(props: Props) {
         {canType ? (
           <SideButton icon="keyboard-outline" label="Type" testID="type-button" onPress={() => setTyping((t) => !t)} />
         ) : (
-          <View style={styles.side} />
+          <SideSpacer />
         )}
 
         <Pressable
@@ -567,7 +503,7 @@ export function CopilotSheet(props: Props) {
           </View>
         </Pressable>
 
-        {phase === "ready" && <View style={styles.side} />}
+        {phase === "ready" && <SideSpacer />}
         {(phase === "options" || phase === "providers") && <SideButton icon="close" label="Close" testID="close-options-button" onPress={onClose} />}
         {(phase === "listening" || phase === "thinking") && (
           <SideButton icon="close" label="Close" testID="close-listening-button" onPress={onClose} />
@@ -624,14 +560,7 @@ const styles = StyleSheet.create({
   // on one line (review of #129). The row stretches, so both buttons keep the same height.
   linkBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 56, flexGrow: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.md },
   linkText: { fontFamily: fonts.semibold, fontSize: 16, flexShrink: 1, textAlign: "center" },
-  offlineBtn: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", alignSelf: "flex-start", gap: 6, minHeight: 48, paddingHorizontal: spacing.md, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1, marginTop: spacing.xs },
-  progressTrack: { width: "100%", height: 3, borderRadius: 2, overflow: "hidden" },
-  progressFill: { height: 3 },
-  otherText: { fontFamily: fonts.bold, fontSize: 14 },
   actions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.sm },
-  side: { width: 72, alignItems: "center", gap: 6 },
-  sideCircle: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
-  sideLabel: { fontFamily: fonts.medium, fontSize: 12 },
   center: { alignItems: "center" },
   quiet: { opacity: 0.45 },
   captionRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
