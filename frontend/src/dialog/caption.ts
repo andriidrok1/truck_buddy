@@ -47,3 +47,35 @@ export const MIN_MAP_FOR_BUBBLE = 140;
 
 /** Whether the answer goes in the bubble over the map (true) or into the sheet (false). */
 export const replyOnMap = (mapWindow: number): boolean => mapWindow >= MIN_MAP_FOR_BUBBLE;
+
+/** Bubble height for one line of the answer (captionText lineHeight 24 at font scale 1). */
+export const REPLY_LINE = 24;
+
+/** Below this much room the bubble cannot hold "You said", one line and the paddings; the answer goes to the sheet. */
+export const MIN_BUBBLE_ROOM = MIN_MAP_FOR_BUBBLE - 32;
+
+/** The height the bubble may take: what is left of the map window above the bubble's bottom edge (a card under
+ *  the bubble lifts it), but at most 3/4 of the window so some of the route stays in sight above it. `lift`: how
+ *  far the bubble's bottom sits above the sheet's top edge; 14 = the tail plus a gap to the top bar. */
+export const bubbleRoom = (mapWindow: number, lift: number): number => Math.min(mapWindow - lift - 14, mapWindow * 0.75);
+
+/** Measured parts of the bubble. `textY`: where the answer text starts inside the scroll content (padding and
+ *  "You said"); `contentH`: the whole scroll content; `belowH`: the note and padding under the scroll area. */
+export type BubbleMeasure = { room: number; textY: number; contentH: number; belowH: number; line?: number };
+
+/** Whether the whole answer fits in the bubble, and when it does not, how tall the scroll area may be: the
+ *  answer's lines are cut at a line boundary, never through the letters (UI review 2026-11-05, third pass, H1:
+ *  a 118 pt bubble showed three and a half lines of a four-line answer, the last one cut mid-letter). The
+ *  caller moves the answer into the sheet when it does not fit and the sheet has a place for it. */
+export const fitBubble = ({ room, textY, contentH, belowH, line = REPLY_LINE }: BubbleMeasure): { fits: boolean; scrollH?: number } => {
+  if (contentH + belowH <= room + 0.5) return { fits: true };
+  const lines = Math.max(1, Math.floor((room - belowH - textY) / line));
+  return { fits: false, scrollH: textY + lines * line };
+};
+
+/** Where the answer goes: the bubble over the map, or the sheet (the route card's top in the preview, under
+ *  "Ask your copilot" when idle). The sheet takes it when the map window is too small, when the room above a card
+ *  is too small, or when the answer was measured not to fit whole (`overflowed`) and the sheet has a place for it
+ *  (`sheetHosts`); elsewhere the bubble keeps it and scrolls at a line boundary. */
+export const replyPlacement = (p: { mapWindow: number; room: number; overflowed: boolean; sheetHosts: boolean }): "map" | "sheet" =>
+  !replyOnMap(p.mapWindow) || p.room < MIN_BUBBLE_ROOM || (p.overflowed && p.sheetHosts) ? "sheet" : "map";

@@ -14,12 +14,39 @@ export const BREAKS: (number | null)[] = [null, 2, 3, 4, 6, 8];
 
 export type Prefs = Pick<TruckProfile, "avoid_tolls" | "avoid_ferries_tunnels" | "favorite_chains" | "break_hours">;
 
-export function ToggleRow({ title, value, onChange, testID }: { title: string; value: boolean; onChange: (v: boolean) => void; testID: string }) {
+/** A whole-row toggle: the row (56 pt or taller) flips the switch, not only the switch itself. `subtitle` adds a
+ *  second line; `onColor` tints the switch when on. Hazmat and Speed limit alerts were bare 48 pt switches on
+ *  rows that did nothing when tapped (UI review 2026-11-05, third pass, M4). */
+export function ToggleRow({
+  title,
+  subtitle,
+  value,
+  onChange,
+  onColor,
+  testID,
+}: {
+  title: string;
+  subtitle?: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+  onColor?: string;
+  testID: string;
+}) {
   const { colors } = useTheme();
   return (
-    <PressableScale testID={`${testID}-row`} onPress={() => onChange(!value)} style={[styles.toggle, { backgroundColor: colors.surfaceSecondary }]}>
-      <Text style={[styles.toggleTitle, { color: colors.onSurface }]}>{title}</Text>
-      <ThemedSwitch testID={testID} value={value} onValueChange={onChange} />
+    <PressableScale
+      testID={`${testID}-row`}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value }}
+      accessibilityLabel={title}
+      onPress={() => onChange(!value)}
+      style={[styles.toggle, !!subtitle && styles.toggleTall, { backgroundColor: colors.surfaceSecondary }]}
+    >
+      <View style={styles.toggleText}>
+        <Text style={[styles.toggleTitle, { color: colors.onSurface }]}>{title}</Text>
+        {!!subtitle && <Text style={[styles.toggleSub, { color: colors.onSurfaceSecondary }]}>{subtitle}</Text>}
+      </View>
+      <ThemedSwitch testID={testID} value={value} onValueChange={onChange} onColor={onColor} />
     </PressableScale>
   );
 }
@@ -72,7 +99,10 @@ export function PrefsForm({ value, onChange }: { value: Prefs; onChange: (patch:
 const styles = StyleSheet.create({
   body: { gap: spacing.md },
   toggle: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md, borderRadius: radius.md, paddingHorizontal: spacing.lg, minHeight: 56 },
+  toggleTall: { paddingVertical: spacing.lg },
+  toggleText: { flexShrink: 1 },
   toggleTitle: { fontFamily: fonts.semibold, fontSize: 16, flexShrink: 1 },
+  toggleSub: { fontFamily: fonts.regular, fontSize: 13, marginTop: 2 },
   section: { fontFamily: fonts.bold, fontSize: 15, marginTop: spacing.xs },
   // Wrapped rows, not a sideways scroll: a chip cut at the edge ("Petro", "Every 8 h") hid that there was more.
   chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },

@@ -9,7 +9,9 @@ import * as Sentry from "@sentry/react-native";
 import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
 import { newSessionId, useCopilotTurn, type AnswerContext } from "@/src/dialog/useCopilotTurn";
 import { useFillers } from "@/src/dialog/useFillers";
-import { expireLine, hasExpiringLine, LINE_HOLD_MS, lineCaption, MIN_MAP_FOR_BUBBLE, replyCaption, replyOnMap, type Caption } from "@/src/dialog/caption";
+import { bubbleRoom, expireLine, hasExpiringLine, LINE_HOLD_MS, lineCaption, replyCaption, replyPlacement, type Caption } from "@/src/dialog/caption";
+import { floatingBottom } from "@/src/state/floating";
+import { routeFitPoints } from "@/src/map/bounds";
 import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
 import { Icon } from "@/src/components/Icon";
@@ -159,6 +161,11 @@ export default function MapScreen() {
   /** Drawn heights of the answer bubble and of the card on the map (height, mic): 0 when gone. */
   const [bubbleH, setBubbleH] = useState(0);
   const [cardH, setCardH] = useState(0);
+  // Whether this screen is the one on top (not under the truck profile or history).
+  const [focused, setFocused] = useState(true);
+  /** The answer that did not fit whole in the bubble, and the room it had: it stays in the sheet until a new
+   *  answer comes or the bubble gets more room (the driver lowered the sheet). */
+  const [overflow, setOverflow] = useState<{ reply: string; room: number } | null>(null);
   /** The "End the route to …?" question while it is up (ConfirmSheet), null otherwise. */
   const [endConfirm, setEndConfirm] = useState<string | null>(null);
   const [fit, setFit] = useState<{ key: string; points: LatLng[] }>({ key: "init", points: [] });
@@ -321,13 +328,43 @@ export default function MapScreen() {
   // it in and the route refits above it; the destination pin is never under the bubble (UI review 2026-11-05,
   // M11). Dismissing the bubble gives the room back.
   const previewing = phase === "navigating" && !!active && !driving;
-  const bubbleUp = !!caption && replyOnMap(mapWindow) && !routesOpen;
+  // The height card waits while the mic card asks, and while the copilot listens or thinks (one thing at a time).
+  const showHeightCard = heightConfirmed === false && focused && !micCard && phase !== "listening" && phase !== "thinking";
+  const cardUp = (showHeightCard || !!micCard) && cardH > 0;
+  // The bubble sits above a card on the map, never under it: under the height card the whole answer was hidden
+  // (UI review 2026-11-05, third pass, M2).
+  const bubbleBottom = cardUp ? cardBottom + cardH + spacing.sm : cardBottom;
+  const room = bubbleRoom(mapWindow, bubbleBottom - (peekH ?? sheetH));
+  const overflowed = caption?.kind === "reply" && overflow?.reply === caption.reply && room <= overflow.room;
+  const replyPlace = replyPlacement({ mapWindow, room, overflowed, sheetHosts: phase === "ready" || previewing });
+  const bubbleUp = !!caption && replyPlace === "map" && !routesOpen;
+  const onBubbleFit = useCallback(
+    (fits: boolean) => {
+      if (!fits && caption?.kind === "reply") setOverflow({ reply: caption.reply, room });
+    },
+    [caption, room],
+  );
+  // Follow truck sits above the sheet (or above a card), and only where it clears the top bar's buttons.
+  const followBottom = floatingBottom({ windowH, topH, bottom: cardUp ? cardBottom + cardH + spacing.sm : chromeBottom });
   const mapBottom = sheetH + (previewing && bubbleUp && bubbleH > 0 ? bubbleH + 2 * spacing.lg : 0);
   const previewFit = previewing && active ? `preview-${active.place.id}-${mapBottom}` : null;
   const [previewFitSeen, setPreviewFitSeen] = useState(previewFit);
   if (previewFit !== previewFitSeen) {
     setPreviewFitSeen(previewFit);
     if (previewFit && active) setFit({ key: previewFit, points: [loc.coords, active.place] });
+  }
+  // While the driver picks a route, the other routes are on the map too (grey, under the blue current one) and
+  // the camera takes them all in: choosing between lines nobody can see was the M1 of the third review pass.
+  const altLines = useMemo(
+    () => (routesOpen && previewing && active?.route.alternatives?.length ? active.route.alternatives.map((r) => r.geometry) : undefined),
+    [routesOpen, previewing, active],
+  );
+  const altFit = altLines && active ? `routes-${active.place.id}-${altLines.length}-${sheetH}` : null;
+  const [altFitSeen, setAltFitSeen] = useState(altFit);
+  if (altFit !== altFitSeen) {
+    setAltFitSeen(altFit);
+    if (altFit && altLines && active) setFit({ key: altFit, points: [loc.coords, active.place, ...routeFitPoints([active.route.geometry, ...altLines])] });
+    else if (previewFit && active) setFit({ key: `${previewFit}-back`, points: [loc.coords, active.place] });
   }
 
   const sayReply = (res: AgentResponse, isCurrent: () => boolean = () => true) => {
@@ -795,7 +832,6 @@ export default function MapScreen() {
   };
 
   // Modal screens (onboarding, truck profile): a return re-plans with a changed truck (below).
-  const [focused, setFocused] = useState(true);
   useFocusEffect(
     useCallback(() => {
       setFocused(true);
@@ -1281,9 +1317,6 @@ export default function MapScreen() {
     }
   };
 
-  // The height card waits while the mic card asks, and while the copilot listens or thinks (one thing at a time).
-  const showHeightCard = heightConfirmed === false && focused && !micCard && phase !== "listening" && phase !== "thinking";
-
   return (
     <View style={[styles.root, { backgroundColor: colors.mapPlaceholder }]} testID="map-screen">
       <MapLayer
@@ -1295,6 +1328,7 @@ export default function MapScreen() {
         // route and "Harbor Truck…" label stayed over the list (UI review 2026-11-05, M16). Its pin stays as one
         // of the options.
         active={phase === "options" && !driving ? null : active}
+        alternatives={altLines}
         topInset={topH}
         bottomInset={mapBottom}
         fitKey={fit.key}
@@ -1349,35 +1383,40 @@ export default function MapScreen() {
       />
       )}
 
-      <PressableScale
-        testID="follow-button"
-        accessibilityLabel={following ? "Stop following" : "Follow truck"}
-        accessibilityState={{ selected: following }}
-        onPress={() => {
-          if (following) {
-            setTracking(false);
-            if (driving) setOverview(true);
-          } else {
-            setOverview(false);
-            setTracking(true);
-          }
-        }}
-        // Above the card on the map when one asks: under it, only the button's edge showed (UI review 2026-11-05, M6).
-        containerStyle={[styles.recenter, { bottom: (showHeightCard || micCard) && cardH > 0 ? cardBottom + cardH + spacing.sm : chromeBottom }]}
-        style={[styles.recenterBtn, shadow(colors), { backgroundColor: following ? colors.info : colors.surface }]}
-      >
-        <Icon name={following ? "navigation-variant" : "crosshairs-gps"} size={24} color={following ? colors.onInfo : colors.info} />
-      </PressableScale>
+      {/* Hidden when the map window has no room for it under the top bar: it sat on the history button
+          (UI review 2026-11-05, third pass, M3). */}
+      {followBottom !== null && (
+        <PressableScale
+          testID="follow-button"
+          accessibilityLabel={following ? "Stop following" : "Follow truck"}
+          accessibilityState={{ selected: following }}
+          onPress={() => {
+            if (following) {
+              setTracking(false);
+              if (driving) setOverview(true);
+            } else {
+              setOverview(false);
+              setTracking(true);
+            }
+          }}
+          // Above the card on the map when one asks: under it, only the button's edge showed (UI review 2026-11-05, M6).
+          containerStyle={[styles.recenter, { bottom: followBottom }]}
+          style={[styles.recenterBtn, shadow(colors), { backgroundColor: following ? colors.info : colors.surface }]}
+        >
+          <Icon name={following ? "navigation-variant" : "crosshairs-gps"} size={24} color={following ? colors.onInfo : colors.info} />
+        </PressableScale>
+      )}
 
       <CaptionBubble
         text={bubbleUp ? (caption?.reply ?? null) : null}
         heard={caption?.heard}
         note={caption?.note}
-        bottom={cardBottom}
-        maxHeight={Math.max(MIN_MAP_FOR_BUBBLE - spacing.xxl, mapWindow * 0.55)}
+        bottom={bubbleBottom}
+        maxHeight={room}
         sources={caption?.sources}
         onDismiss={() => setCaption(null)}
         onHeight={setBubbleH}
+        onFit={onBubbleFit}
       />
 
       <CopilotSheet
@@ -1415,7 +1454,7 @@ export default function MapScreen() {
             <AlternativesSheet primary={active.route} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />
           ) : null
         }
-        replyInSheet={caption?.kind === "reply" && !replyOnMap(mapWindow) ? caption.reply : null}
+        replyInSheet={caption?.kind === "reply" && replyPlace === "sheet" ? caption.reply : null}
       />
 
       {showHeightCard && (

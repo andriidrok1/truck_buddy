@@ -16,8 +16,7 @@ import { resetProfile, saveProfile } from "@/src/data/profile";
 import { DEFAULT_TRUCK, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
 import { useTripStore } from "@/src/state/tripStore";
 import { requestTruckReroute, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts } from "@/src/state/settingsStore";
-import { Chip, PrefsForm, type Prefs } from "@/src/components/PrefsForm";
-import { ThemedSwitch } from "@/src/components/ThemedSwitch";
+import { Chip, PrefsForm, ToggleRow, type Prefs } from "@/src/components/PrefsForm";
 import { formatBytes } from "@/src/map/bounds";
 import { setSim } from "@/src/sim";
 import { truckErrors, truckFromInputs } from "@/src/truck/validate";
@@ -228,46 +227,38 @@ export default function TruckProfileScreen() {
         <Field label="Trailer length" value={trailer} onChange={setTrailer} unit="ft" testID="truck-trailer-input" error={bad.trailer} />
         <Field label="Gross weight" value={weight} onChange={setWeight} unit="lb" testID="truck-weight-input" error={bad.weight} />
 
-        <View style={[styles.switchRow, { backgroundColor: colors.surfaceSecondary }]}>
-          <View style={styles.flex}>
-            <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Hazardous materials</Text>
-            <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>Avoid tunnels and roads closed to hazmat</Text>
-          </View>
-          <ThemedSwitch
+        <View style={styles.toggleGap}>
+          <ToggleRow
+            title="Hazardous materials"
+            subtitle="Avoid tunnels and roads closed to hazmat"
             testID="truck-hazmat-switch"
             value={hazmat}
-            onValueChange={setHazmat}
+            onChange={setHazmat}
             onColor={colors.warning}
           />
         </View>
 
         {/* Only where the wake word can actually run: a switch that does nothing is a review rejection. */}
         {WAKE_SUPPORTED && (
-          <View style={[styles.switchRow, { backgroundColor: colors.surfaceSecondary }]}>
-            <View style={styles.flex}>
-              <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Hands-free</Text>
-              <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
-                Start the copilot with a wake word instead of a tap
-              </Text>
-            </View>
-            <ThemedSwitch
+          <View style={styles.toggleGap}>
+            <ToggleRow
+              title="Hands-free"
+              subtitle="Start the copilot with a wake word instead of a tap"
               testID="hands-free-switch"
               value={handsFree}
-              onValueChange={setHandsFree}
+              onChange={setHandsFree}
               onColor={colors.brandPrimary}
             />
           </View>
         )}
 
-        <View style={[styles.switchRow, { backgroundColor: colors.surfaceSecondary }]}>
-          <View style={styles.flex}>
-            <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Speed limit alerts</Text>
-            <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>Say so after 10 s more than 5 mph over the posted limit</Text>
-          </View>
-          <ThemedSwitch
+        <View style={styles.toggleGap}>
+          <ToggleRow
+            title="Speed limit alerts"
+            subtitle="Say so after 10 s more than 5 mph over the posted limit"
             testID="speed-alerts-switch"
             value={speedAlerts}
-            onValueChange={setSpeedAlerts}
+            onChange={setSpeedAlerts}
             onColor={colors.brandPrimary}
           />
         </View>
@@ -483,6 +474,7 @@ const styles = StyleSheet.create({
     ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}),
   },
   unit: { fontFamily: fonts.medium, fontSize: 15, flexShrink: 0, marginLeft: spacing.sm },
+  toggleGap: { marginTop: spacing.sm },
   switchRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, borderRadius: radius.md, padding: spacing.lg, marginTop: spacing.sm },
   switchTitle: { fontFamily: fonts.semibold, fontSize: 16 },
   switchSub: { fontFamily: fonts.regular, fontSize: 13, marginTop: 2 },
