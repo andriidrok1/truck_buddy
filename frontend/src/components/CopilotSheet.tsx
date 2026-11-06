@@ -24,6 +24,7 @@ import { entrySpot, routeEndsAt } from "../utils/entry";
 import { dragHeight, sheetHeights, snapTarget, stateHeight, type SheetHeights, type SnapState } from "../utils/sheetSnap";
 import { t, useLang, useT } from "../i18n";
 import { arrivalClock } from "../utils/arrivalClock";
+import { durationLabel } from "../utils/duration";
 import { placeTagLine } from "../utils/placeTags";
 
 /** Sheet height while nothing pins it: whatever the content needs (Yoga treats this as no cap). */
@@ -83,14 +84,6 @@ type Props = {
    *  shown at the top of the route card instead, so it is never on screen nowhere (UI review 2026-11-05, N1). */
   replyInSheet?: string | null;
 };
-
-function durationLabel(seconds: number) {
-  const min = Math.max(1, Math.round(seconds / 60));
-  if (min < 60) return `${min} min`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m ? `${h} h ${m} min` : `${h} h`;
-}
 
 export function CopilotSheet(props: Props) {
   const { phase, speaking, micLevel, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel, quiet, routesPanel, replyInSheet } = props;
