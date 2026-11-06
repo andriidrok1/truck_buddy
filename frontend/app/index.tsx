@@ -38,6 +38,7 @@ import { useStartPins, useWarmCaches } from "@/src/hooks/useNearbyWarmup";
 import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
+import { useFollowCamera } from "@/src/hooks/useFollowCamera";
 import { useHardwareBack } from "@/src/hooks/useHardwareBack";
 import { useReroute } from "@/src/hooks/useReroute";
 import { useMicPrewarm } from "@/src/hooks/useMicPrewarm";
@@ -144,24 +145,10 @@ export default function MapScreen() {
   const [fit, setFit] = useState<{ key: string; points: LatLng[] }>({ key: "init", points: [] });
   const [thinkingText, setThinkingText] = useState<string | undefined>(undefined);
   const setDriving = (v: boolean) => trip().setDriving(v);
-  const [overview, setOverview] = useState(false);
   // The list of the other routes the engine offered (the "Routes (N)" chip, before "Go").
   const [routesOpen, setRoutesOpen] = useState(false);
-  // "Follow" button: the camera keeps the truck arrow in view until the driver drags the map.
-  const [tracking, setTracking] = useState(false);
-  const following = tracking || (driving && !overview);
-  // A new view to show (route, options, overview) wins over the Follow button.
-  const [fitSeen, setFitSeen] = useState(fit.key);
-  if (fitSeen !== fit.key) {
-    setFitSeen(fit.key);
-    if (fit.key !== "init" && fit.key !== "gps") setTracking(false);
-  }
-  // Whole-route view while driving: back to following the truck after 15 s.
-  useEffect(() => {
-    if (!overview) return;
-    const t = setTimeout(() => setOverview(false), 15000);
-    return () => clearTimeout(t);
-  }, [overview]);
+  // Follow truck, or the whole route for a moment while driving (src/hooks/useFollowCamera.ts).
+  const { following, setOverview, setTracking } = useFollowCamera(fit.key, driving);
   const voiceOn = useVoiceGuidance();
   const setVoiceOn = setVoiceGuidance;
   const { online } = useOnline();
