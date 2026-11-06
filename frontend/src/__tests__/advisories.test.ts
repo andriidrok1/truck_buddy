@@ -68,6 +68,13 @@ describe("createSpeedWatch", () => {
     const fresh = createSpeedWatch({ holdMs: 2000 });
     expect(run(fresh, [70, null, 70, 70, 70])).toEqual([null, null, null, null, "alert"]); // hold restarted at index 2
   });
+
+  test("never alerts against a limit under 15 mph", () => {
+    const w = createSpeedWatch({ holdMs: 2000 });
+    expect(run(w, Array(20).fill(23), 5).includes("alert")).toBe(false);
+    expect(run(w, Array(20).fill(40), 14).includes("alert")).toBe(false);
+    expect(run(w, [25, 25, 25], 15)).toEqual([null, null, "alert"]);
+  });
 });
 
 describe("upcomingAdvisories", () => {

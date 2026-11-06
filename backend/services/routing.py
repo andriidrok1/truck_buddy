@@ -175,6 +175,7 @@ def _traffic(points: List[List[float]], spans: List[dict]) -> List[TrafficSegmen
 HERE_RETURN = "polyline,summary,actions,instructions"
 HERE_SPANS = "dynamicSpeedInfo"
 MPH_PER_MS = 2.23694
+MIN_LIMIT_MPH = 15  # below this a posted limit is believed only on a private road (a lot, a yard, a driveway)
 INCIDENT_TEXT_MAX = 80
 ALTERNATIVES = 2  # extra truck routes HERE is asked for (ROUTE_ALTERNATIVES=0 turns them off)
 
@@ -192,7 +193,7 @@ def _here_params(t: TruckProfile, origin: tuple[float, float], dest: tuple[float
     """Query for HERE Routing v8 as (key, value) pairs, so a key can repeat (via=...&via=...)."""
     ret, spans = [HERE_RETURN], [HERE_SPANS]
     if on("ROUTE_SPEED_LIMITS"):
-        spans.append("maxSpeed")
+        spans += ["maxSpeed", "streetAttributes"]  # streetAttributes: privateRoad keeps a 5 mph lot limit (_speed_limits)
     if on("ROUTE_INCIDENTS"):
         ret.append("incidents")
         spans.append("incidents")
@@ -356,7 +357,8 @@ def _speed_limits(spans: List[dict], base: int, prev: Optional[int] = None) -> l
     """(section-global offset, mph) for every span whose posted limit differs from the previous one; None where
     HERE has no limit for the stretch, so the app shows nothing there instead of the freeway's 65 on the ramp.
     `prev` is the limit in force at the end of the previous section, so a stretch without one right after a
-    via stop ends it too."""
+    via stop ends it too. A limit under MIN_LIMIT_MPH counts as unknown unless HERE marks the span a private road:
+    HERE sent 2.2 m/s (5 mph) on a street in West Sacramento and the app warned "you're doing 23 in a 5"."""
     out: list[tuple[int, Optional[int]]] = []
     last: Optional[int] = prev
     for sp in spans:
@@ -366,7 +368,9 @@ def _speed_limits(spans: List[dict], base: int, prev: Optional[int] = None) -> l
                 out.append((base + int(sp.get("offset", 0)), None))
                 last = None
             continue
-        mph = int(round(ms * MPH_PER_MS))
+        mph: Optional[int] = int(round(ms * MPH_PER_MS))
+        if mph < MIN_LIMIT_MPH and "privateRoad" not in (sp.get("streetAttributes") or []):
+            mph = None  # QA 2026-11-05, M-5: not a limit to show or to warn about
         if mph == last:
             continue
         last = mph
