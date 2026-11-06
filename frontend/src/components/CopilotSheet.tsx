@@ -465,7 +465,7 @@ export function CopilotSheet(props: Props) {
               style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
             >
               <Icon name="directions-fork" size={20} color={colors.onSurface} />
-              <Text numberOfLines={1} style={[styles.linkText, { color: colors.onSurface }]}>{routesChip}</Text>
+              <Text testID="routes-chip-label" numberOfLines={2} style={[styles.linkText, { color: colors.onSurface }]}>{routesChip}</Text>
             </PressableScale>
           )}
           {options.length > 0 && (
@@ -477,7 +477,7 @@ export function CopilotSheet(props: Props) {
               style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
             >
               <Icon name="format-list-bulleted" size={20} color={colors.onSurface} />
-              <Text numberOfLines={1} style={[styles.linkText, { color: colors.onSurface }]}>
+              <Text testID="other-options-label" numberOfLines={2} style={[styles.linkText, { color: colors.onSurface }]}>
                 {options.length === 1 ? "1 other place" : `${options.length} other places`}
               </Text>
             </PressableScale>
@@ -622,10 +622,12 @@ const styles = StyleSheet.create({
   stopsLabel: { fontFamily: fonts.medium, fontSize: 13 },
   stopChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingLeft: spacing.sm, paddingRight: 6, height: 28, borderRadius: radius.pill, maxWidth: 200 },
   stopName: { fontFamily: fonts.semibold, fontSize: 13, flexShrink: 1 },
-  linkRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },
+  linkRow: { flexDirection: "row", alignItems: "stretch", gap: spacing.sm, marginTop: spacing.sm },
   linkItem: { flex: 1 },
-  linkBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, height: 56, paddingHorizontal: spacing.md, borderRadius: radius.md },
-  linkText: { fontFamily: fonts.semibold, fontSize: 16, flexShrink: 1 },
+  // At least 56 tall and two lines: in Russian at a 130 % system font "Маршруты (3)" lost its count to an ellipsis
+  // on one line (review of #129). The row stretches, so both buttons keep the same height.
+  linkBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 56, flexGrow: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.md },
+  linkText: { fontFamily: fonts.semibold, fontSize: 16, flexShrink: 1, textAlign: "center" },
   offlineBtn: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", alignSelf: "flex-start", gap: 6, minHeight: 48, paddingHorizontal: spacing.md, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1, marginTop: spacing.xs },
   progressTrack: { width: "100%", height: 3, borderRadius: 2, overflow: "hidden" },
   progressFill: { height: 3 },
