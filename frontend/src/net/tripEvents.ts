@@ -62,6 +62,10 @@ export type TripLog = {
   restore(): Promise<void>;
   /** Drops every pending event, in memory and on disk ("Delete my data"). */
   clear(): Promise<void>;
+  /** No sends until `resume`; resolves once a send already on the wire has finished ("Delete my data" holds the
+   *  log so no event reaches the server after the delete with the old token). */
+  pause(): Promise<void>;
+  resume(): void;
   /** Pending events (for the tester card). */
   size(): number;
   /** When the last batch was accepted, epoch ms, or null. */
@@ -85,6 +89,8 @@ export function createTripLog(deps: TripLogDeps): TripLog {
   let pending: TripEvent[] = [];
   let failures = 0;
   let flushing = false;
+  let paused = false;
+  let inflight: Promise<unknown> | null = null;
   let lastFlush: number | null = null;
   let persistTimer: unknown = null;
   const listeners = new Set<() => void>();
@@ -114,11 +120,12 @@ export function createTripLog(deps: TripLogDeps): TripLog {
     async flush() {
       if (!pending.length) return "empty";
       if (!deps.online()) return "offline";
-      if (flushing) return "busy";
+      if (flushing || paused) return "busy";
       flushing = true;
       const batch = pending.slice(0, MAX_BATCH);
       try {
-        await deps.post(batch);
+        inflight = deps.post(batch);
+        await inflight;
         pending = pending.slice(batch.length);
         failures = 0;
         lastFlush = deps.now();
@@ -147,6 +154,7 @@ export function createTripLog(deps: TripLogDeps): TripLog {
         return "kept";
       } finally {
         flushing = false;
+        inflight = null;
       }
     },
     async restore() {
@@ -155,6 +163,13 @@ export function createTripLog(deps: TripLogDeps): TripLog {
         pending = [...saved, ...pending].slice(-MAX_PENDING);
         notify();
       }
+    },
+    async pause() {
+      paused = true;
+      if (inflight) await inflight.catch(() => {});
+    },
+    resume() {
+      paused = false;
     },
     async clear() {
       if (persistTimer) clearTimer(persistTimer);

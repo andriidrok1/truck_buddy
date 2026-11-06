@@ -25,7 +25,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 
+import { removeAppKeys, wipeGate } from "./pendingWipe";
 import { AssertNoExtras, StorageBase, StorageItemValue } from "./storage-base";
+
+// A "Delete my data" the last run could not finish is finished before the first read (pendingWipe.ts).
+const removeSecure = (key: string) => SecureStore.deleteItemAsync(key);
+// null once the gate has settled: then a call costs no extra tick and keeps its place in line.
+const pending = () => wipeGate(removeSecure);
+
+/** Every key the app writes, a failed one retried once; the keys still there come back (pendingWipe.ts). */
+export const removeAllAppKeys = (): Promise<string[]> => removeAppKeys(removeSecure);
 
 export class Storage extends StorageBase {
   // General KV — backed by AsyncStorage.
@@ -35,6 +44,8 @@ export class Storage extends StorageBase {
     fallback: Fallback,
   ): Promise<Fallback | null> {
     try {
+      const gate = pending();
+      if (gate) await gate;
       const raw = await AsyncStorage.getItem(key);
       return this.retrieve(raw, fallback);
     } catch (e) {
@@ -48,6 +59,8 @@ export class Storage extends StorageBase {
     value: Value,
   ): Promise<boolean> {
     try {
+      const gate = pending();
+      if (gate) await gate;
       await AsyncStorage.setItem(key, JSON.stringify(value));
       return true;
     } catch (e) {
@@ -58,6 +71,8 @@ export class Storage extends StorageBase {
 
   async removeItem(key: string): Promise<boolean> {
     try {
+      const gate = pending();
+      if (gate) await gate;
       await AsyncStorage.removeItem(key);
       return true;
     } catch (e) {
@@ -74,6 +89,8 @@ export class Storage extends StorageBase {
     fallback: Fallback,
   ): Promise<Fallback | null> {
     try {
+      const gate = pending();
+      if (gate) await gate;
       const raw = await SecureStore.getItemAsync(key);
       return this.retrieve(raw, fallback);
     } catch (e) {
@@ -87,6 +104,8 @@ export class Storage extends StorageBase {
     value: Value,
   ): Promise<boolean> {
     try {
+      const gate = pending();
+      if (gate) await gate;
       await SecureStore.setItemAsync(key, JSON.stringify(value));
       return true;
     } catch (e) {
@@ -97,6 +116,8 @@ export class Storage extends StorageBase {
 
   async secureRemove(key: string): Promise<boolean> {
     try {
+      const gate = pending();
+      if (gate) await gate;
       await SecureStore.deleteItemAsync(key);
       return true;
     } catch (e) {

@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { act, renderHook } from "@testing-library/react-native";
 
+import { api } from "../api";
 import { getToken, loadToken, setToken, useAuthState } from "../auth";
 import { giveConsent, useConsent } from "../consent";
 import { saveProfile } from "../data/profile";
@@ -10,11 +11,13 @@ import { saveArrived } from "../geo/arrival";
 import { DEFAULT_TRUCK, getTruckProfile, isOnboarded, setOnboarded } from "../hooks/useTruckProfile";
 import { loadLang, setLang, useLangStore } from "../i18n";
 import { tripLog } from "../net/tripEvents";
-import { deleteMyData, rootScreen } from "../state/firstLaunch";
+import { deleteMyData, resetToFirstLaunch, rootScreen } from "../state/firstLaunch";
 import { saveActiveRoute } from "../state/routeStore";
 import { setSpeedAlerts, useSettings } from "../state/settingsStore";
 import { loadThemePref, setThemePref, useThemePref } from "../theme";
 import { confirmHeight, isHeightConfirmed } from "../truck/heightConfirmed";
+import { storage } from "../utils/storage";
+import { __resetWipeGate, APP_KEYS, SECURE_KEYS, WIPE_PENDING_KEY } from "../utils/storage/pendingWipe";
 import { SCHEMA_KEY } from "../utils/storageMigrations";
 
 // The Keychain native module is missing under jest; a map stands in for it (jest.mock is hoisted above the imports).
@@ -108,4 +111,132 @@ test("no server, nothing deleted: the phone keeps its data and the driver gets t
   expect(ok).toBe(false);
   expect(router.dismissAll).not.toHaveBeenCalled();
   expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru"));
+});
+
+describe("the delete and the old token (review of #129)", () => {
+  type Call = { method: string; path: string; auth: string | undefined };
+  let calls: Call[];
+  let finishDelete: (ok: boolean) => void;
+  const realFetch = global.fetch;
+
+  beforeEach(async () => {
+    calls = [];
+    global.fetch = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      const call = { method: init?.method ?? "GET", path: String(url).replace("https://ci.invalid/api", ""), auth: headers.Authorization };
+      calls.push(call);
+      const body = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (call.method === "DELETE") {
+        return new Promise<Response>((resolve, reject) => {
+          finishDelete = (ok) => (ok ? resolve(body({ deleted: 1 })) : reject(new TypeError("Network request failed")));
+        });
+      }
+      if (call.path.startsWith("/trips/events")) return body({ stored: 1 });
+      return body({ turns: [] });
+    }) as typeof fetch;
+    await setToken("old-device-token", "driver");
+  });
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  const waitFor = async (cond: () => boolean) => {
+    for (let i = 0; i < 50 && !cond(); i++) await flush();
+    expect(cond()).toBe(true);
+  };
+
+  test("only the DELETE carries the old token once the delete has started; a send already on the wire lands before it", async () => {
+    tripLog.log("question", { text: "before" });
+    const early = tripLog.flush(); // on the wire before the driver confirmed
+    const router = { canDismiss: () => false, dismissAll: jest.fn() };
+    let done: Promise<boolean> = Promise.resolve(false);
+    await act(async () => {
+      done = deleteMyData(router);
+      await early;
+      await waitFor(() => calls.some((c) => c.method === "DELETE"));
+    });
+    const deleteAt = calls.findIndex((c) => c.method === "DELETE");
+    expect(calls[deleteAt].auth).toBe("Bearer old-device-token");
+    expect(calls.slice(0, deleteAt).map((c) => c.path)).toEqual(["/trips/events"]);
+
+    // While the DELETE is out: new events and screen requests go nowhere with the old token.
+    tripLog.log("question", { text: "during" });
+    expect(await tripLog.flush()).toBe("busy");
+    await api.memory().catch(() => undefined);
+
+    await act(async () => {
+      finishDelete(true);
+      expect(await done).toBe(true);
+    });
+    tripLog.log("question", { text: "after" });
+    await tripLog.flush().catch(() => undefined);
+    await api.memory().catch(() => undefined);
+
+    const afterStart = calls.slice(deleteAt + 1);
+    expect(afterStart.length).toBeGreaterThan(0);
+    expect(afterStart.filter((c) => c.auth?.includes("old-device-token"))).toEqual([]);
+  });
+
+  test("the server can't be reached: the token and the trip log come back, nothing local is wiped", async () => {
+    await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
+    const router = { canDismiss: () => true, dismissAll: jest.fn() };
+    let done: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      done = deleteMyData(router);
+      await waitFor(() => calls.some((c) => c.method === "DELETE"));
+      finishDelete(false);
+      expect(await done).toBe(false);
+    });
+    expect(router.dismissAll).not.toHaveBeenCalled();
+    expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru"));
+    expect(getToken()).toBe("old-device-token");
+    await api.memory();
+    expect(calls[calls.length - 1].auth).toBe("Bearer old-device-token");
+    tripLog.log("question", { text: "later" });
+    expect(await tripLog.flush()).toBe("sent");
+  });
+});
+
+describe("a partial wipe (review of #129)", () => {
+  test("a key that will not go away keeps the pending flag, and the next cold start finishes the wipe before the first read", async () => {
+    await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
+    await AsyncStorage.setItem("ai_consent_v2", "true");
+    // removeItem is itself a jest.fn in the AsyncStorage mock: the other keys go through multiRemove.
+    const spy = jest.spyOn(AsyncStorage, "removeItem").mockImplementation(async (k: string) => {
+      if (k === "lang_v1") throw new Error("disk full");
+      await AsyncStorage.multiRemove([k]);
+    });
+    let left: string[] = [];
+    await act(async () => {
+      left = await resetToFirstLaunch();
+    });
+    spy.mockRestore();
+    jest.mocked(AsyncStorage.removeItem).mockImplementation((key: string) => AsyncStorage.multiRemove([key]));
+    expect(left).toEqual(["lang_v1"]);
+    expect(await AsyncStorage.getItem(WIPE_PENDING_KEY)).not.toBeNull();
+    expect(await AsyncStorage.getItem("ai_consent_v2")).toBeNull();
+    expect(useLangStore.getState().chosen).toBe(false); // memory already says first launch
+
+    // Next cold start: the gate runs before any read, so the old language never comes back.
+    __resetWipeGate();
+    expect(await storage.getItem("lang_v1", null)).toBeNull();
+    expect(await AsyncStorage.getItem(WIPE_PENDING_KEY)).toBeNull();
+  });
+
+  test("the wipe list covers every key the app writes", async () => {
+    const realFetch = global.fetch;
+    // The profile push answers 500: it stays pending on disk (profile_unsynced_v1), without an offline mark
+    // whose timer would outlive the test.
+    global.fetch = jest.fn(async () => new Response("{}", { status: 500 })) as typeof fetch;
+    await AsyncStorage.clear();
+    mockSecure.clear();
+    await fillTheAppUp();
+    await setEldToken("motive-key");
+    await new Promise((r) => setTimeout(r, 2100)); // the trip log's debounced mirror
+    const listed = new Set<string>([...APP_KEYS, SCHEMA_KEY, WIPE_PENDING_KEY]);
+    expect((await AsyncStorage.getAllKeys()).filter((k) => !listed.has(k))).toEqual([]);
+    expect([...mockSecure.keys()].filter((k) => !(SECURE_KEYS as readonly string[]).includes(k))).toEqual([]);
+    global.fetch = realFetch;
+    await resetToFirstLaunch(); // clears the query cache, whose gc timer would keep jest alive
+  });
 });

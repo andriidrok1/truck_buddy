@@ -10,6 +10,9 @@ let token: string | null = null;
 let role: "driver" | "tester" = "driver";
 let via: "code" | "device" = "device";
 let loaded = false;
+// "Delete my data": while the server DELETE is on the wire, requests leave without the token (the screens still
+// see a signed-in phone, so nothing signs in anew behind the dialog). Released on failure, cleared on success.
+let held = false;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
@@ -59,11 +62,20 @@ export async function setToken(t: string | null, r: "driver" | "tester" = "drive
  *  anonymous device (the server hands out a new identity for every POST /auth/device). */
 export async function forgetIdentity() {
   codeWanted = false;
+  held = false;
   await setToken(null);
 }
 
 // Every authenticated request also says the driver's language (backend services/i18n.LangMiddleware).
-export const authHeader = (): Record<string, string> => ({ ...(token ? { Authorization: `Bearer ${token}` } : {}), "X-Lang": getLang() });
+/** Stops the token going out on any request from now on; the returned function puts it back. */
+export function holdToken(): () => void {
+  held = true;
+  return () => {
+    held = false;
+  };
+}
+
+export const authHeader = (): Record<string, string> => ({ ...(token && !held ? { Authorization: `Bearer ${token}` } : {}), "X-Lang": getLang() });
 
 /** "loading" until the stored token is read, then whether the driver has entered the access code. */
 export function useAuthState(): "loading" | "in" | "out" {
