@@ -1,0 +1,9 @@
+# api.truckbuddy.io gets a Let's Encrypt cert once its A record points here.
+api.truckbuddy.io {
+	reverse_proxy api:8001
+}
+
+# Plain HTTP on the bare IP so /api/health can be probed before DNS exists.
+:80 {
+	reverse_proxy api:8001
+}

@@ -8,11 +8,12 @@ dispatch). It tars `backend/` without `tests/` and `__pycache__`, streams the ta
 short commit hash as the only argument, then polls `http://$HOST/api/health` up to 30 times, 5 s apart.
 Secrets: `TRUCKBUDDY_DEPLOY_KEY`, `TRUCKBUDDY_KNOWN_HOSTS`, `TRUCKBUDDY_HOST`.
 
-The forced command on the server (unpack, install, restart, keep data dirs) is **not in this repo**.
+The forced command on the server is `deploy/truckbuddy-deploy` (installed as `/usr/local/bin/truckbuddy-deploy`);
+the rest of the box setup (provision, bootstrap, compose, Caddy, rollback) is in `deploy/` and `deploy/README.md`.
 
 ## Database
 
-Production uses Postgres via `DATABASE_URL` (Neon). The schema is managed by numbered files in
+Production uses Postgres via `DATABASE_URL`: the `db` service (postgres:16) in the box's compose file, volume `truckbuddy_tb_pg`. The schema is managed by numbered files in
 `backend/migrations/` (Postgres) and `backend/migrations/sqlite/` (the twin for tests); `services/db.py`
 applies the pending ones at startup (`memory.warm()` → `db.migrate()`) and on the first connection, recording
 them in `schema_version`. A deploy with a new migration needs nothing else; a rollback of code that depends on
@@ -67,9 +68,17 @@ Data that must survive a deploy: `DATABASE_URL` (or the SQLite file), `TTS_DIR` 
 EXPO_PUBLIC_BACKEND_URL=https://api.truckbuddy.io ACCESS_CODE=… python -m pytest -n 0 -m smoke tests/smoke -q
 ```
 
-## TODO (Abdul)
+## On the box
 
-- systemd unit name and where the forced command script lives on the box
-- install path of the unpacked backend, the venv, and the data directories it preserves
-- how to roll back to the previous tarball (is the previous release kept?)
-- where the logs go (`journalctl -u …`) and their retention
+- No systemd unit for the app: Docker runs three compose services (`api`, `db`, `caddy`) from
+  `/opt/truckbuddy/docker-compose.yml`, all `restart: unless-stopped`. Env is `/opt/truckbuddy/.env`.
+- The deploy command is `/usr/local/bin/truckbuddy-deploy` (root, called via sudo by `tbdeploy`'s forced
+  command or by `deploy/deploy.sh`). Deploy log: `/var/log/truckbuddy-deploy.log`.
+- Each upload is unpacked to `/opt/truckbuddy/releases/<sha7>-<utc time>/` (five newest kept) and built into
+  the image `truckbuddy-api:<sha7>`; there is no venv on the host. `.current-sha` / `.previous-sha` track it.
+- Data lives in Docker volumes outside the release tree: `truckbuddy_tb_pg` (Postgres), `truckbuddy_tb_data`
+  (`/data`: parking cache), `truckbuddy_tb_caddy_data` / `_config` (TLS certs).
+- Roll back: `bash /opt/truckbuddy/rollback.sh <sha7>` (or no argument for `.previous-sha`); it only swaps the
+  image, schema changes stay.
+- App logs: `cd /opt/truckbuddy && TB_SHA=$(cat .current-sha) docker compose logs api` (Docker's default
+  json-file driver, no rotation configured).

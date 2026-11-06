@@ -1,0 +1,51 @@
+# TruckBuddy API on one Lightsail box: backend + postgres + caddy (auto HTTPS).
+# Lives at /opt/truckbuddy/docker-compose.yml; env from /opt/truckbuddy/.env.
+# The backend image tag comes from $TB_SHA, set by deploy.sh / rollback.sh.
+services:
+  api:
+    image: truckbuddy-api:${TB_SHA:?set TB_SHA}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "8001"
+      PARKING_CACHE_DIR: /data/parking_cache
+    volumes:
+      - tb_data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8001"
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: truckbuddy
+      POSTGRES_DB: truckbuddy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - tb_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U truckbuddy -d truckbuddy"]
+      interval: 5s
+      retries: 20
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - tb_caddy_data:/data
+      - tb_caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  tb_data:
+  tb_pg:
+  tb_caddy_data:
+  tb_caddy_config:

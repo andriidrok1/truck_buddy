@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# /usr/local/bin/truckbuddy-deploy (root:root 0755). The ONE deploy path on the box.
+# Called two ways, both as root:
+#   GitHub Actions:  ssh tbdeploy@host <sha>   (forced command -> sudo, sha in SSH_ORIGINAL_COMMAND)
+#   Mac deploy.sh:   ssh ubuntu@host "sudo /usr/local/bin/truckbuddy-deploy <sha>"
+# stdin: tar.gz of backend/ (build context only). The compose file, Caddyfile and
+# .env in /opt/truckbuddy are never taken from the tarball.
+# Builds truckbuddy-api:<sha>, switches compose to it, gates on /api/health and
+# rolls back to the previous image if the gate fails.
+set -euo pipefail
+umask 022
+ROOT=/opt/truckbuddy
+LOG=/var/log/truckbuddy-deploy.log
+MAX_BYTES=$((50 * 1024 * 1024))
+
+SHA="${SSH_ORIGINAL_COMMAND:-${1:-}}"
+if ! [[ "$SHA" =~ ^[0-9a-f]{7,40}$ ]]; then
+  echo "usage: truckbuddy-deploy <7-40 hex commit sha>" >&2
+  exit 2
+fi
+SHA="${SHA:0:7}"
+
+exec 9>"$ROOT/.deploy.lock"
+flock -w 600 9 || { echo "another deploy is running" >&2; exit 3; }
+exec > >(while IFS= read -r l; do printf '%s %s\n' "$(date -u +%FT%TZ)" "$l"; done | tee -a "$LOG") 2>&1
+echo "deploy $SHA requested by ${SUDO_USER:-$USER}"
+
+REL="$ROOT/releases/$SHA-$(date -u +%Y%m%d%H%M%S)"
+mkdir -p "$REL"
+TMP="$(mktemp "$ROOT/releases/.upload.XXXXXX")"
+trap 'rm -f "$TMP"' EXIT
+
+head -c $((MAX_BYTES + 1)) > "$TMP"
+SIZE=$(stat -c %s "$TMP")
+if [ "$SIZE" -gt "$MAX_BYTES" ]; then echo "rejected: upload over 50 MB"; rm -rf "$REL"; exit 4; fi
+[ "$SIZE" -gt 0 ] || { echo "rejected: empty upload"; rm -rf "$REL"; exit 4; }
+
+# tarfile's 'data' filter refuses absolute paths, '..', device files and links
+# that point outside the release dir.
+python3 - "$TMP" "$REL" <<'PY'
+import sys, tarfile
+with tarfile.open(sys.argv[1], "r:gz") as t:
+    t.extractall(sys.argv[2], filter="data")
+PY
+[ -f "$REL/Dockerfile" ] || { echo "rejected: no Dockerfile at the tarball root"; rm -rf "$REL"; exit 4; }
+
+docker build -q -t "truckbuddy-api:$SHA" "$REL" >/dev/null
+echo "built truckbuddy-api:$SHA"
+
+cd "$ROOT"
+PREV="$(cat .current-sha 2>/dev/null || true)"
+up() { TB_SHA="$1" docker compose up -d --remove-orphans; }
+healthy() {
+  for _ in $(seq 1 30); do
+    curl -fsS http://127.0.0.1/api/health >/dev/null 2>&1 && return 0
+    sleep 2
+  done
+  return 1
+}
+
+up "$SHA"
+if healthy; then
+  if [ -n "$PREV" ] && [ "$PREV" != "$SHA" ]; then echo "$PREV" > .previous-sha; fi
+  echo "$SHA" > .current-sha
+  # Keep the five newest release dirs.
+  ls -1dt "$ROOT"/releases/*/ 2>/dev/null | tail -n +6 | xargs -r rm -rf
+  echo "deployed $SHA, /api/health OK"
+  exit 0
+fi
+
+echo "health gate FAILED for $SHA"
+if [ -n "$PREV" ]; then
+  up "$PREV"
+  if healthy; then echo "rolled back to $PREV, /api/health OK"; else echo "rollback to $PREV is NOT healthy"; fi
+fi
+exit 1
