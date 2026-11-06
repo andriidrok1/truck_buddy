@@ -63,6 +63,19 @@ describe("AlternativesSheet", () => {
     expect(screen.getByText("10 min · 5.0 mi")).toBeTruthy();
   });
 
+  test("in Russian every unit and the current mark are Russian, English stays as it was (QA 2026-11-05, M-4)", async () => {
+    const { useLangStore } = jest.requireActual<typeof import("../i18n")>("../i18n");
+    useLangStore.setState({ lang: "ru" });
+    try {
+      await render(<AlternativesSheet primary={primary} onPick={() => {}} onClose={() => {}} />);
+      expect(screen.getByText("8 мин · 4.2 мили · текущий")).toBeTruthy();
+      expect(screen.getByText("1 ч 5 мин · 61 миля · $12.50 за платные дороги")).toBeTruthy();
+      expect(screen.getByText("10 мин · 5.0 мили")).toBeTruthy();
+    } finally {
+      useLangStore.setState({ lang: "en" });
+    }
+  });
+
   test("tapping an alternative reports its index; close reports close", async () => {
     const onPick = jest.fn();
     const onClose = jest.fn();
