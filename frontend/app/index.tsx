@@ -35,6 +35,7 @@ import { farFromRoute } from "@/src/geo/guidance";
 import { startDriveTracking, stopDriveTracking } from "@/src/geo/driveTracking";
 import { arrivals, loadArrived, saveArrived } from "@/src/geo/arrival";
 import { createRerouteGate } from "@/src/geo/offroute";
+import { useBreakReminder } from "@/src/hooks/useBreakReminder";
 import { useDriveRecorder } from "@/src/hooks/useDriveRecorder";
 import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
@@ -222,21 +223,7 @@ export default function MapScreen() {
   }, []);
 
   // Break reminder while a route is active.
-  useEffect(() => {
-    if (!active || !truck.break_hours) return;
-    const limitMs = truck.break_hours * 3600 * 1000;
-    const t = setInterval(() => {
-      const start = trip().routeStart;
-      if (!start || Date.now() - start < limitMs) return;
-      useTripStore.setState({ routeStart: Date.now() }); // remind again after the next interval
-      const who = truck.driver_name ? `Hey ${truck.driver_name}, ` : "";
-      const hrs = truck.break_hours === 1 ? "an hour" : `${truck.break_hours} hours`;
-      const text = `${who}you've been driving for ${hrs}. Want me to find a rest area?`;
-      say(text, { priority: PRIORITY.WEATHER, kind: "ambient", key: "break", ttlMs: 10 * 60 * 1000 });
-    }, 60000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, truck.break_hours, truck.driver_name]);
+  useBreakReminder(active, truck, say);
 
   // Re-center once when the real GPS fix arrives. (Nothing reads `center` back; the map only reports it.)
   const [fixSeen, setFixSeen] = useState<boolean | null>(null);
