@@ -24,9 +24,10 @@ ADDRESS_TYPES = ("houseNumber", "street", "place", "postalCode", "intersection")
 AREA_TYPES = ("locality", "administrativeArea")  # towns need a near-perfect match (wrong-town risk)
 MIN_ORS_CONFIDENCE = 0.7
 FAR_KM = 500.0  # a weak match this far from the driver is almost always the wrong town
-NEAR_KM = 320.0  # ~200 mi: a named place within this beats a same-named one farther away
+NEAR_KM = 320.0  # ~200 mi: a named place within this beats an equally well named one farther away
+AROUND_TIMEOUT_S = 3.0  # the circle search only improves an answer we already have
 NOMINATIM_BOX_DEG = 3.0  # viewbox around the driver (preferred, not strict)
-STOP = {"the", "of", "to", "and", "in", "at", "st", "street", "ave", "rd", "road", "near", "me", "usa", "us"}
+STOP = {"the", "of", "to", "and", "in", "at", "on", "st", "street", "ave", "rd", "road", "near", "me", "usa", "us"}
 _STATES = {
     "al": "alabama", "ak": "alaska", "az": "arizona", "ar": "arkansas", "ca": "california", "co": "colorado",
     "ct": "connecticut", "de": "delaware", "fl": "florida", "ga": "georgia", "hi": "hawaii", "id": "idaho",
@@ -128,8 +129,58 @@ def _words(s: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9]+", s.lower()) if len(w) > 1 and w not in STOP}
 
 
+_STATE_CODE = {**{k: k for k in _STATES}, **{v: k for k, v in _STATES.items()}}
+_TRAILING_STATE = re.compile(r"(?:^|\s)(" + "|".join(sorted(_STATE_CODE, key=len, reverse=True)) + r")\s*$")
+
+
+def _strip_state(text: str, allow_empty: bool = False) -> tuple[str, Optional[str]]:
+    """'boomtown nevada' -> ('boomtown', 'nv'); 'fernley nv' -> ('fernley', 'nv'). A lone state word stays a word
+    ('washington') unless allow_empty (the part after a comma: 'Jubitz, OR')."""
+    t = text.strip().lower()
+    m = _TRAILING_STATE.search(t)
+    if not m or (not allow_empty and not t[:m.start()].strip()):
+        return t, None
+    return t[:m.start()].strip(), _STATE_CODE[m.group(1)]
+
+
+def _query_words(query: str) -> set[str]:
+    """The words a match has to carry: no state named as the place's location, no filler ("Jubitz, OR" is
+    {jubitz}: any label with ", OR" in it matched half of it)."""
+    head, *tail = query.lower().split(",")
+    words = _words(_strip_state(head)[0])
+    for part in tail:
+        if part.strip() not in ("united states", "usa"):
+            words |= _words(_strip_state(part, allow_empty=True)[0])
+    return words or _words(query)
+
+
+def _location(query: str) -> tuple[set[str], Optional[str]]:
+    """Town words and state code the driver named: "Flying J in Ely" -> ({ely}, None), "Jubitz, OR" -> ({}, "or"),
+    "Boomtown Nevada" -> ({}, "nv"), "Pilot, Fernley NV" -> ({fernley}, "nv")."""
+    head, *tail = query.lower().split(",")
+    head, state = _strip_state(head)
+    town: set[str] = set()
+    m = re.search(r"\b(?:in|near)\s+(.+)$", head)
+    if m:
+        town |= _words(m.group(1))
+    for part in tail:
+        if part.strip() in ("united states", "usa"):
+            continue
+        rest, st = _strip_state(part, allow_empty=True)
+        state = st or state
+        town |= _words(rest)
+    return town, state
+
+
+def _in_location(label: str, town: set[str], state: Optional[str]) -> bool:
+    low = label.lower()
+    if town and not town <= _words(low):
+        return False
+    return not state or state in re.findall(r"[a-z]+", low) or _STATES[state] in low
+
+
 def _overlap(query: str, text: str) -> float:
-    q = _words(query)
+    q = _query_words(query)
     return len(q & _words(text)) / len(q) if q else 0.0
 
 
@@ -224,27 +275,62 @@ async def _here_once(q: str, lat: float, lng: float) -> list[Place]:
     if precise and top_place and not (name and rtype not in AREA_TYPES and
                                       (rtype == "street" or (top_place.distance_km or 0) > NEAR_KM)):
         return [top_place]
-    # Otherwise a business/landmark from Discover that matches the words, then the geocoder's own top answer.
-    pois = _discover_hits(q, disc.json().get("items", []) if disc is not None and disc.status_code == 200 else [],
-                          (lat, lng), rank=name)
-    ordered = pois + ([top_place] if top_place else [])
-    if not name or not ordered:
-        return ordered[:1]
-    near = [p for p in ordered if (p.distance_km or 0) <= NEAR_KM]
-    if near:
-        return near[:1]
-    # Nothing that name close by: ask Discover around the driver only before taking the far match (which the agent
-    # confirms with "Is that the one?").
-    closer = await _discover_around(q, lat, lng)
-    if closer:
-        logger.info("here discover around q=%r -> %r (%.0f km)", q, closer.name, closer.distance_km or 0)
-        return [closer]
-    return ordered[:1]
+    disc_items = disc.json().get("items", []) if disc is not None and disc.status_code == 200 else []
+    if not name:  # an address: a business from Discover that matches the words, then the geocoder's own answer
+        pois = [p for _, p in _discover_hits(q, disc_items, (lat, lng))]
+        return (pois + ([top_place] if top_place else []))[:1]
+    return await _pick_named(q, lat, lng, disc_items, top, top_place, demoted=bool(precise and top_place))
 
 
-def _discover_hits(q: str, items: list, at: tuple[float, float], rank: bool) -> list[Place]:
-    """Discover items whose title/address carries the words of the query. With rank (a name query): the best
-    name match first, the nearer one among equals; else HERE's order."""
+async def _pick_named(q: str, lat: float, lng: float, disc_items: list, top: Optional[dict],
+                      top_place: Optional[Place], demoted: bool) -> list[Place]:
+    """A place's name: the best name match wins, the town or state the driver named first ("Flying J in Ely" is
+    the one in Ely, not the nearer one in Sparks); distance only orders equally good matches (a place over a
+    street among those). When the winner is far and the driver named no place it sits in, Discover is asked once
+    around the driver for an equally good match. A pick that is not the geocoder's own precise answer is marked
+    (picked_nearby) so the agent reads it back."""
+    town, state = _location(q)
+    cands: list[tuple[float, bool, bool, Place]] = []  # (overlap, in the named town/state, a street, place)
+    for ov, p in _discover_hits(q, disc_items, (lat, lng)):
+        cands.append((ov, _in_location(f"{p.name} {p.address or ''}", town, state), p.id.startswith("here-street-"), p))
+    if top_place:
+        label = f"{(top or {}).get('title', '')} {((top or {}).get('address') or {}).get('label', '')}"
+        cands.append((_overlap(q, label), _in_location(label, town, state), top_place.id.startswith("here-street-"),
+                      top_place))
+    if not cands:
+        return []
+    best = _best(cands)
+    best_ov, best_loc = next((ov, loc) for ov, loc, _, p in cands if p is best)
+    located = bool(town or state) and best_loc and best_ov >= 0.9
+    if (best.distance_km or 0) > NEAR_KM and not (located and town):
+        closer = await _discover_around(q, lat, lng, max(0.9, 0.9 * best_ov), town, state)
+        if closer:
+            logger.info("here discover around q=%r -> %r (%.0f km)", q, closer.name, closer.distance_km or 0)
+            return [_marked(closer)]
+    return [_marked(best) if demoted and best is not top_place else best]
+
+
+def _best(cands: list[tuple[float, bool, bool, Place]]) -> Place:
+    """In the named town/state first, then the best overlap; among overlaps within 90% of it a place before a
+    street, then the nearest."""
+    cands = sorted(cands, key=lambda c: (not c[1], -c[0]))
+    lead_ov, lead_loc = cands[0][0], cands[0][1]
+    group = [c for c in cands if c[1] == lead_loc and c[0] >= 0.9 * lead_ov]
+    return min(group, key=lambda c: (c[2], c[3].distance_km or 0))[3]
+
+
+def _marked(p: Place) -> Place:
+    return p.model_copy(update={"id": "here-near-" + p.id.removeprefix("here-")})
+
+
+def picked_nearby(place) -> bool:
+    """A name the geocoder answered with something else (a street, a far match) that was swapped for a place
+    near the driver: read back before routing ("Elm" -> Elm Street Cafe instead of Elm St)."""
+    return str(getattr(place, "id", "")).startswith("here-near-")
+
+
+def _discover_hits(q: str, items: list, at: tuple[float, float]) -> list[tuple[float, Place]]:
+    """(overlap, place) for the Discover items whose title/address carries the words of the query, HERE's order."""
     hits: list[tuple[float, Place]] = []
     for it in items:
         label = f"{it.get('title', '')} {(it.get('address') or {}).get('label', '')}"
@@ -252,25 +338,28 @@ def _discover_hits(q: str, items: list, at: tuple[float, float], rank: bool) -> 
         p = _here_item(it, at) if ov >= 0.5 else None
         if p and _near_enough(p, ov >= 0.9):
             hits.append((ov, p))
-    if rank:
-        hits.sort(key=lambda h: (-round(h[0], 1), h[1].distance_km or 0))
-    return [p for _, p in hits]
+    return hits
 
 
-async def _discover_around(q: str, lat: float, lng: float) -> Optional[Place]:
-    """Discover bounded to NEAR_KM around the driver (no country-wide relevance), the best name match there."""
+async def _discover_around(q: str, lat: float, lng: float, min_ov: float, town: set[str],
+                           state: Optional[str]) -> Optional[Place]:
+    """Discover bounded to NEAR_KM around the driver: the nearest place there that matches the name at least
+    min_ov and sits in the town/state the driver named. Whatever is closest in a circle often shares only the
+    state with the query, hence the bar. Gives up after AROUND_TIMEOUT_S: the far answer stands."""
     params = {"q": q, "in": f"circle:{lat},{lng};r={int(NEAR_KM * 1000)}", "limit": 5,
               "apiKey": os.environ["HERE_API_KEY"]}
     try:
-        r = await client().get("https://discover.search.hereapi.com/v1/discover", params=params, timeout=10)
-    except Exception as e:  # noqa: BLE001 - the far answer still stands
-        logger.info("here discover around failed for %r: %s", q, e)
+        r = await asyncio.wait_for(client().get("https://discover.search.hereapi.com/v1/discover", params=params,
+                                                timeout=AROUND_TIMEOUT_S), AROUND_TIMEOUT_S)
+    except Exception as e:  # noqa: BLE001 - incl. the timeout: the far answer still stands
+        logger.info("here discover around failed for %r: %s", q, type(e).__name__)
         return None
     if r.status_code != 200:
         return None
-    hits = [p for p in _discover_hits(q, r.json().get("items", []), (lat, lng), rank=True)
-            if (p.distance_km or 0) <= NEAR_KM]
-    return hits[0] if hits else None
+    hits = [p for ov, p in _discover_hits(q, r.json().get("items", []), (lat, lng))
+            if ov >= min_ov and (p.distance_km or 0) <= NEAR_KM
+            and _in_location(f"{p.name} {p.address or ''}", town, state)]
+    return min(hits, key=lambda p: p.distance_km or 0) if hits else None
 
 
 async def _ors(q: str, lat: float, lng: float) -> list[Place]:

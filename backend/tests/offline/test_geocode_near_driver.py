@@ -7,16 +7,20 @@ from conftest import fixture_json, run
 
 from models import AgentRequest
 from services import agent, geocode
-from services.geocode import name_query
+from services.geocode import _location, _overlap, name_query, picked_nearby
 
 SAC = (38.5816, -121.4944)
 TRUCKEE = (39.3280, -120.1833)
 VERDI = (39.5219, -119.9339)  # Boomtown's access point
+RENO = (39.5296, -119.8138)
+MEDFORD = (42.3265, -122.8756)
 
 
 def _here(fake_http, geo="geocode_boomtown", disc="discover_boomtown", around="discover_empty"):
     def discover(request: httpx.Request):
         circle = request.url.params.get("in", "").startswith("circle:")
+        if circle and isinstance(around, Exception):
+            raise around
         return httpx.Response(200, json=fixture_json(f"here/{around if circle else disc}"), request=request)
     fake_http.add("geocode.search.hereapi.com", "/v1/geocode", json=fixture_json(f"here/{geo}") if geo else {"items": []})
     fake_http.add("discover.search.hereapi.com", "/v1/discover", fn=discover)
@@ -100,3 +104,51 @@ def test_a_far_only_place_is_read_back_before_the_route(agent_sandbox, fake_http
     assert res.reply == ("I found Jubitz Travel Center on North Vancouver Way in Portland, Oregon, about 489 miles away. "
                          "Is that the one?")
     assert len(_around_calls(fake_http)) == 1 and fake_http.calls_to("router.hereapi.com") == []
+
+
+def test_state_words_and_filler_carry_no_weight():
+    assert _overlap("Jubitz, OR", "Petro Medford, 5250 Biddle Rd, Central Point, OR 97502") == 0
+    assert _overlap("Boomtown Nevada", "Boom Town Dr, Las Vegas, NV 89122") == 0
+    assert _overlap("Boomtown Nevada", "Boomtown Casino Hotel, 2100 Garson Rd, Verdi, NV") == 1
+    assert _overlap("Washington", "Washington Ave, Reno, NV") == 1  # a lone state word is still the name
+    assert _location("Flying J in Ely") == ({"ely"}, None)
+    assert _location("Jubitz, OR") == (set(), "or") and _location("Boomtown Nevada") == (set(), "nv")
+    assert _location("Pilot, Fernley NV") == ({"fernley"}, "nv")
+
+
+def test_the_town_the_driver_named_beats_a_nearer_one_of_the_chain(fake_http):
+    _here(fake_http, geo=None, disc="discover_flyingj_ely")
+    found = run(geocode.geocode("Flying J in Ely", *RENO))
+    assert found and "Ely, NV" in found[0].address and found[0].distance_mi > 200, found
+    assert _around_calls(fake_http) == []  # the driver said where it is
+
+
+def test_jubitz_from_medford_is_portland_never_the_petro_next_door(fake_http):
+    _here(fake_http, geo=None, disc="discover_jubitz", around="discover_around_medford")
+    found = run(geocode.geocode("Jubitz, OR", *MEDFORD))
+    assert found and found[0].name == "Jubitz Travel Center", found
+    assert len(_around_calls(fake_http)) == 1  # asked around Medford, nothing there carries the name
+
+
+def test_boomtown_with_the_state_spelled_out_is_still_verdi(fake_http):
+    _here(fake_http, disc="discover_boomtown_far_only", around="discover_boomtown")
+    found = run(geocode.geocode("Boomtown Nevada", *SAC))
+    assert found and found[0].name == "Boomtown Casino Hotel" and picked_nearby(found[0])
+
+
+def test_a_slow_search_around_the_driver_falls_back_to_the_far_answer(fake_http):
+    _here(fake_http, disc="discover_boomtown_far_only", around=httpx.ReadTimeout("slow"))
+    found = run(geocode.geocode("Boomtown, NV", *SAC))
+    assert found and found[0].name.startswith("Boom Town Dr")
+    (call,) = _around_calls(fake_http)
+    assert geocode.AROUND_TIMEOUT_S == 3.0 and call.extensions["timeout"]["read"] == 3.0
+
+
+def test_elm_swapped_for_a_diner_is_read_back(agent_sandbox, fake_http, monkeypatch):
+    _here(fake_http, geo="geocode_elm", disc="discover_elm")
+    prov = _agent(agent_sandbox, fake_http, monkeypatch, "elm", "Elm")
+    res = run(prov.handle(AgentRequest(text="take me to elm", session_id="bt3", lat=SAC[0], lng=SAC[1]), None))
+    assert res.status == "confirm" and res.route is None
+    assert res.reply == "I found Elm Street Diner on Elm Street in Sacramento, California, about 1.8 miles away. Is that the one?"
+    res = run(prov.handle(AgentRequest(text="yes", session_id="bt3", lat=SAC[0], lng=SAC[1]), None))
+    assert res.status == "route_set" and res.place.name == "Elm Street Diner"

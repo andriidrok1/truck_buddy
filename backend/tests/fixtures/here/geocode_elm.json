@@ -1,0 +1,5 @@
+{"items": [
+  {"title": "Elm St, Sacramento, CA 95814, United States", "id": "here:af:street:elm-sac", "resultType": "street",
+   "address": {"label": "Elm St, Sacramento, CA 95814, United States", "city": "Sacramento", "stateCode": "CA"},
+   "position": {"lat": 38.5901, "lng": -121.4790}, "scoring": {"queryScore": 0.95}}
+]}

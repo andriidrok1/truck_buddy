@@ -18,7 +18,7 @@ from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, MapsSource, 
 from services import (approach, breakdown, chains, controls, fuel_index, hos, i18n, llm, maps_grounding, memory,
                       profile_learn, reviews, timing, tpims, weather)
 from services.geo import haversine_km, km_to_mi
-from services.geocode import _STATES, chain_query, geocode, is_street, town_query
+from services.geocode import _STATES, chain_query, geocode, is_street, picked_nearby, town_query
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
 from services.parking import cached_parking, check_parking, is_town, listed_in_data
 from services.places import get_places_provider
@@ -399,6 +399,8 @@ def dest_check(query: str, place: Place) -> Optional[str]:
         return "town_to_other"
     if far and not same:
         return "far_other_name"
+    if picked_nearby(place):  # "Elm": the geocoder said Elm St, a place near the driver was picked instead
+        return "picked_nearby"
     return None
 
 

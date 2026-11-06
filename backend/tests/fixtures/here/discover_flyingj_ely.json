@@ -1,0 +1,8 @@
+{"items": [
+  {"title": "Flying J Travel Center", "id": "here:pds:place:840flyingj-sparks", "resultType": "place",
+   "address": {"label": "Flying J Travel Center, 1 Sparks Blvd, Sparks, NV 89434, United States", "city": "Sparks", "stateCode": "NV"},
+   "position": {"lat": 39.5357, "lng": -119.7235}},
+  {"title": "Flying J Travel Center", "id": "here:pds:place:840flyingj-ely", "resultType": "place",
+   "address": {"label": "Flying J Travel Center, 1500 Great Basin Blvd, Ely, NV 89301, United States", "city": "Ely", "stateCode": "NV"},
+   "position": {"lat": 39.2405, "lng": -114.8886}}
+]}
