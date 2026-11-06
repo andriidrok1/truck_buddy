@@ -65,6 +65,7 @@ import { streetFromInstruction } from "@/src/voice/sttHint";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 import { routeFailText } from "@/src/utils/routeFail";
+import { searchRequest } from "@/src/utils/searchRequest";
 import { nearbyLine, statusLine } from "@/src/voice/parkingLines";
 import { recorder } from "@/src/geo/driveRecorder";
 import { tripLog } from "@/src/net/tripEvents";
@@ -859,10 +860,7 @@ export default function MapScreen() {
         hazmat={truck.hazmat}
         // While the driver picks from the list, the pill must not say "To: <the first pick>" over it.
         destination={phase === "options" ? null : (active?.place.name ?? null)}
-        onSearch={(q) =>
-          // A bare place ("Reno") becomes "Take me to Reno"; a full request ("I need fuel") goes as typed.
-          onSubmitText(/\b(?:i|i'm|me|my|need|find|take|go|where|show|get|park|near|any|truck ?stops?|hotels?|motels?|rest ?areas?|fuel|diesel|gas|parking)\b/i.test(q) ? q : `Take me to ${q}`)
-        }
+        onSearch={(q) => onSubmitText(searchRequest(q))}
         blurGuard={searchBlurGuard}
         onTruckPress={() => router.push("/truck-profile")}
         onHistoryPress={() => router.push("/history")}
