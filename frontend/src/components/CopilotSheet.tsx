@@ -22,6 +22,7 @@ import { Waveform } from "./Waveform";
 import { entrySpot, routeEndsAt } from "../utils/entry";
 import { dragHeight, sheetHeights, snapTarget, stateHeight, type SheetHeights, type SnapState } from "../utils/sheetSnap";
 import { t, useLang, useT } from "../i18n";
+import { arrivalClock } from "../utils/arrivalClock";
 import { placeTagLine } from "../utils/placeTags";
 
 /** Sheet height while nothing pins it: whatever the content needs (Yoga treats this as no cap). */
@@ -145,11 +146,6 @@ function OfflineMapButton({ state, onPress }: { state: OfflineMapState; onPress?
       )}
     </Pressable>
   );
-}
-
-function arrivalClock(seconds: number) {
-  const d = new Date(Date.now() + seconds * 1000);
-  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 function durationLabel(seconds: number) {
@@ -366,7 +362,7 @@ export function CopilotSheet(props: Props) {
           <View testID="driving-info" style={styles.driveInfo}>
             <View onLayout={onFirstLine}>
               <Text testID="arrival-time" style={[styles.eta, { color: colors.success }]}>
-                {arrivalClock(remaining.s)}
+                {arrivalClock(remaining.s, lang)}
               </Text>
             </View>
             <Text testID="remaining-info" numberOfLines={1} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>

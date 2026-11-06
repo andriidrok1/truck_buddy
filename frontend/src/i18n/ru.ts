@@ -121,6 +121,7 @@ export const RU: Record<string, string> = {
   "Collapse the reply": "Свернуть ответ",
   "You said: “{text}”": "Ты сказал: «{text}»",
   "Navigating to {name}": "Едем в {name}",
+  "Route restored: {name}": "Маршрут восстановлен: {name}",
   "To: {name}": "Куда: {name}",
   "Take me to {name}": "Отвези в {name}",
   "Switch to {name}": "Переключить на {name}",

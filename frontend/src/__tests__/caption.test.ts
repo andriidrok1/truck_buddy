@@ -1,4 +1,4 @@
-import { expireLine, hasExpiringLine, lineCaption, replyCaption } from "../dialog/caption";
+import { expireLine, hasExpiringLine, isReplyCaption, lineCaption, replyCaption } from "../dialog/caption";
 
 describe("caption", () => {
   test("a spoken line never replaces the answer, however long after it comes", () => {
@@ -38,4 +38,10 @@ describe("caption", () => {
     expect(expireLine(second)).toBeNull();
     expect(expireLine(null)).toBeNull();
   });
+});
+
+test("Back closes the copilot's answer, never a spoken turn line (driving: the turn instruction stays)", () => {
+  expect(isReplyCaption(replyCaption("Harbor Truck Plaza, 2.9 miles."))).toBe(true);
+  expect(isReplyCaption(lineCaption("Turn right onto 3rd St.", null, 0))).toBe(false);
+  expect(isReplyCaption(null)).toBe(false);
 });

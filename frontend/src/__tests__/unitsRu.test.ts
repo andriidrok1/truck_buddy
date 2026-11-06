@@ -2,6 +2,7 @@
 // in Russian mode. Every line here is what a screen draws; English must come out unchanged.
 import { chipAhead } from "../geo/advisories";
 import { formatDistance } from "../geo/guidance";
+import { arrivalClock } from "../utils/arrivalClock";
 import { t } from "../i18n";
 
 const ru = (en: string) => t(en, undefined, "ru");
@@ -55,4 +56,12 @@ test("number slots match numbers only: free text that ends in a unit is left alo
   for (const s of ["Low clearance 13 ft", "Love's Travel Stop · Exit 12 · Open 24 h", "Navigating to 76 Truck Stop"]) {
     expect(en(s)).toBe(s);
   }
+});
+
+test("arrival time: 24-hour in Russian, the phone's format in English; the restored-route banner in Russian", () => {
+  const at = new Date(2026, 10, 5, 17, 3).getTime();
+  expect(arrivalClock(25 * 60, "ru", at)).toBe("17:28");
+  expect(arrivalClock(0, "ru", new Date(2026, 10, 5, 9, 5).getTime())).toBe("9:05");
+  expect(arrivalClock(25 * 60, "en", at)).toBe(new Date(at + 25 * 60_000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+  expect(ru("Route restored: Pilot Sacramento")).toBe("Маршрут восстановлен: Pilot Sacramento");
 });
