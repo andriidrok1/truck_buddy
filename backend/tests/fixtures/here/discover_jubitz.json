@@ -1,0 +1,6 @@
+{"items": [
+  {"title": "Jubitz Travel Center", "id": "here:pds:place:840jubitz-portland", "resultType": "place",
+   "address": {"label": "Jubitz Travel Center, 10210 N Vancouver Way, Portland, OR 97217, United States", "city": "Portland", "stateCode": "OR"},
+   "position": {"lat": 45.6031, "lng": -122.6771},
+   "categories": [{"id": "700-7600-0116", "name": "Truck Stop/Plaza", "primary": true}]}
+]}

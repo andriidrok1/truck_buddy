@@ -1,0 +1,9 @@
+{"items": [
+  {"title": "Boomtown Casino Hotel", "id": "here:pds:place:840boomtown-verdi", "resultType": "place",
+   "address": {"label": "Boomtown Casino Hotel, 2100 Garson Rd, Verdi, NV 89439, United States", "city": "Verdi", "stateCode": "NV"},
+   "position": {"lat": 39.5226, "lng": -119.9358}, "access": [{"lat": 39.5219, "lng": -119.9339}],
+   "categories": [{"id": "700-7600-0116", "name": "Casino", "primary": true}]},
+  {"title": "Boom Town Dr", "id": "here:af:street:boomtowndr-lv", "resultType": "street",
+   "address": {"label": "Boom Town Dr, Las Vegas, NV 89122, United States", "city": "Las Vegas", "stateCode": "NV"},
+   "position": {"lat": 36.1139, "lng": -115.0436}}
+]}

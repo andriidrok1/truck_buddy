@@ -1,0 +1,8 @@
+{"items": [
+  {"title": "Truck Wash", "id": "here:pds:place:840truckwash-lakecharles", "resultType": "place",
+   "address": {"label": "Truck Wash, 3400 Broad St, Lake Charles, LA 70615, United States", "city": "Lake Charles", "stateCode": "LA"},
+   "position": {"lat": 30.2266, "lng": -93.1720}},
+  {"title": "Blue Beacon Truck Wash", "id": "here:pds:place:840bluebeacon-la", "resultType": "place",
+   "address": {"label": "Blue Beacon Truck Wash, 2600 E Washington Blvd, Los Angeles, CA 90023, United States", "city": "Los Angeles", "stateCode": "CA"},
+   "position": {"lat": 34.0200, "lng": -118.2210}}
+]}

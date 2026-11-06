@@ -5,7 +5,7 @@ import re
 from typing import Optional
 
 from models import Place, RouteInfo
-from services.geocode import _STATES, chain_query, is_street, town_query
+from services.geocode import _STATES, chain_query, is_street, picked_nearby, town_query
 from services.parking import is_town
 from services.speech_text import hours_minutes as _minutes_said
 from services.agent.phrases import PRICE_WORDS, _ZIP_COUNTRY
@@ -133,6 +133,8 @@ def dest_check(query: str, place: Place) -> Optional[str]:
         return "town_to_other"
     if far and not same:
         return "far_other_name"
+    if picked_nearby(place):  # "Elm": the geocoder said Elm St, a place near the driver was picked instead
+        return "picked_nearby"
     return None
 
 

@@ -1,0 +1,5 @@
+{"items": [
+  {"title": "Verdi St, Los Angeles, CA 90032, United States", "id": "here:af:street:verdist-la", "resultType": "street",
+   "address": {"label": "Verdi St, Los Angeles, CA 90032, United States", "city": "Los Angeles", "stateCode": "CA"},
+   "position": {"lat": 34.08, "lng": -118.17}, "scoring": {"queryScore": 0.95}}
+]}

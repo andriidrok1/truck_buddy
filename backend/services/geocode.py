@@ -24,8 +24,10 @@ ADDRESS_TYPES = ("houseNumber", "street", "place", "postalCode", "intersection")
 AREA_TYPES = ("locality", "administrativeArea")  # towns need a near-perfect match (wrong-town risk)
 MIN_ORS_CONFIDENCE = 0.7
 FAR_KM = 500.0  # a weak match this far from the driver is almost always the wrong town
+NEAR_KM = 320.0  # ~200 mi: a named place within this beats an equally well named one farther away
+AROUND_TIMEOUT_S = 3.0  # the circle search only improves an answer we already have
 NOMINATIM_BOX_DEG = 3.0  # viewbox around the driver (preferred, not strict)
-STOP = {"the", "of", "to", "and", "in", "at", "st", "street", "ave", "rd", "road", "near", "me", "usa", "us"}
+STOP = {"the", "of", "to", "and", "in", "at", "on", "st", "street", "ave", "rd", "road", "near", "me", "usa", "us"}
 _STATES = {
     "al": "alabama", "ak": "alaska", "az": "arizona", "ar": "arkansas", "ca": "california", "co": "colorado",
     "ct": "connecticut", "de": "delaware", "fl": "florida", "ga": "georgia", "hi": "hawaii", "id": "idaho",
@@ -49,6 +51,16 @@ def town_query(q: str) -> bool:
     if len(parts) != 2 or not parts[0] or re.search(r"\d", q):
         return False
     return parts[1].lower() in _STATE_WORDS and not chain_query(parts[0])
+
+
+_STREET_WORD = re.compile(r"\b(?:st|street|ave|avenue|rd|road|blvd|boulevard|hwy|highway|dr|drive|way|ln|lane|ct|"
+                          r"court|pl|pkwy|parkway|trl|trail|cir|circle|fwy|freeway|interstate|exit)\b", re.I)
+
+
+def name_query(q: str) -> bool:
+    """"Boomtown, NV", "the 49er", "Pilot": a place's name, no number of its own and no street word. HERE's geocoder
+    answers such a name with any same-named street in the country; the driver means a place near him."""
+    return not re.search(r"\b\d+(?:st|nd|rd|th)?\b", q, re.I) and not _STREET_WORD.search(q)
 
 
 def chain_query(q: str) -> bool:
@@ -117,8 +129,63 @@ def _words(s: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9]+", s.lower()) if len(w) > 1 and w not in STOP}
 
 
+_STATE_CODE = {**{k: k for k in _STATES}, **{v: k for k, v in _STATES.items()}}
+# Codes that are also words or common abbreviations ("truck wash in LA", "or", "ok"): a state only after a comma.
+_AMBIGUOUS_CODES = {"al", "co", "de", "ga", "hi", "id", "in", "la", "ma", "md", "me", "mo", "ms", "mt", "nd", "ne",
+                    "oh", "ok", "or", "pa", "sc", "sd", "va", "wa"}
+_TRAILING_STATE = re.compile(r"(?:^|\s)(" + "|".join(sorted(_STATE_CODE, key=len, reverse=True)) + r")\s*$")
+
+
+def _strip_state(text: str, allow_empty: bool = False) -> tuple[str, Optional[str]]:
+    """'boomtown nevada' -> ('boomtown', 'nv'); 'fernley nv' -> ('fernley', 'nv'). A lone state word stays a word
+    ('washington') and an ambiguous code ('in la') stays a word, unless after_comma ('Jubitz, OR')."""
+    t = text.strip().lower()
+    m = _TRAILING_STATE.search(t)
+    if not m or (not allow_empty and (not t[:m.start()].strip() or m.group(1) in _AMBIGUOUS_CODES)):
+        return t, None
+    return t[:m.start()].strip(), _STATE_CODE[m.group(1)]
+
+
+def _query_words(query: str) -> set[str]:
+    """The words a match has to carry: no state named as the place's location, no filler ("Jubitz, OR" is
+    {jubitz}: any label with ", OR" in it matched half of it)."""
+    head, *tail = query.lower().split(",")
+    head = _strip_state(head)[0]
+    name = re.sub(r"\s+\b(?:in|near)\s+.+$", "", head)  # "Flying J in Ely": the town is checked by _location
+    words = _words(name) or _words(head)
+    for part in tail:
+        if part.strip() not in ("united states", "usa"):
+            words |= _words(_strip_state(part, allow_empty=True)[0])
+    return words or _words(query)
+
+
+def _location(query: str) -> tuple[set[str], Optional[str]]:
+    """Town words and state code the driver named: "Flying J in Ely" -> ({ely}, None), "Jubitz, OR" -> ({}, "or"),
+    "Boomtown Nevada" -> ({}, "nv"), "Pilot, Fernley NV" -> ({fernley}, "nv")."""
+    head, *tail = query.lower().split(",")
+    head, state = _strip_state(head)
+    town: set[str] = set()
+    m = re.search(r"\b(?:in|near)\s+(.+)$", head)
+    if m:  # a two-letter "town" ("in LA", "near SF") is an abbreviation no address label spells out
+        town |= {w for w in _words(m.group(1)) if len(w) > 2}
+    for part in tail:
+        if part.strip() in ("united states", "usa"):
+            continue
+        rest, st = _strip_state(part, allow_empty=True)
+        state = st or state
+        town |= _words(rest)
+    return town, state
+
+
+def _in_location(label: str, town: set[str], state: Optional[str]) -> bool:
+    low = label.lower()
+    if town and not town <= _words(low):
+        return False
+    return not state or state in re.findall(r"[a-z]+", low) or _STATES[state] in low
+
+
 def _overlap(query: str, text: str) -> float:
-    q = _words(query)
+    q = _query_words(query)
     return len(q & _words(text)) / len(q) if q else 0.0
 
 
@@ -203,22 +270,108 @@ async def _here_once(q: str, lat: float, lng: float) -> list[Place]:
     score = ((top or {}).get("scoring") or {}).get("queryScore", 0)
     rtype = (top or {}).get("resultType")
     logger.info("here geocode q=%r top=%r type=%s score=%.2f", q, (top or {}).get("title"), rtype, score)
-    # Precise address/city match wins; otherwise a business/landmark from Discover that matches the words.
-    if top and ((score >= 0.9 and rtype in AREA_TYPES) or (score >= MIN_ADDRESS_SCORE and rtype in ADDRESS_TYPES)):
-        p = _here_item(top, (lat, lng))
-        if p and _near_enough(p, score >= 0.9):
-            return [p]
-    if disc is not None and disc.status_code == 200:
-        for it in disc.json().get("items", []):
-            label = f"{it.get('title', '')} {(it.get('address') or {}).get('label', '')}"
-            ov = _overlap(q, label)
-            p = _here_item(it, (lat, lng)) if ov >= 0.5 else None
-            if p and _near_enough(p, ov >= 0.9):
-                return [p]
-    if top and score >= MIN_HERE_SCORE:
-        p = _here_item(top, (lat, lng))
-        return [p] if p and _near_enough(p, score >= 0.9) else []
-    return []
+    name = name_query(q)
+    # Precise address/city match wins; a bare street only when the driver said a street ("Boomtown" is a casino
+    # truck stop at Reno, not Boom Town Dr in Las Vegas, QA 2026-11-05 M-2).
+    precise = top and ((score >= 0.9 and rtype in AREA_TYPES) or (score >= MIN_ADDRESS_SCORE and rtype in ADDRESS_TYPES))
+    top_place = _here_item(top, (lat, lng)) if top and (precise or score >= MIN_HERE_SCORE) else None
+    if top_place and not _near_enough(top_place, score >= 0.9):
+        top_place = None
+    if precise and top_place and not (name and rtype not in AREA_TYPES and
+                                      (rtype == "street" or (top_place.distance_km or 0) > NEAR_KM)):
+        return [top_place]
+    disc_items = disc.json().get("items", []) if disc is not None and disc.status_code == 200 else []
+    if not name:  # an address: a business from Discover that matches the words, then the geocoder's own answer
+        pois = [p for _, p in _discover_hits(q, disc_items, (lat, lng))]
+        return (pois + ([top_place] if top_place else []))[:1]
+    return await _pick_named(q, lat, lng, disc_items, top, top_place, demoted=bool(precise and top_place))
+
+
+async def _pick_named(q: str, lat: float, lng: float, disc_items: list, top: Optional[dict],
+                      top_place: Optional[Place], demoted: bool) -> list[Place]:
+    """A place's name: the best name match wins, the town or state the driver named first ("Flying J in Ely" is
+    the one in Ely, not the nearer one in Sparks); distance only orders equally good matches (a place over a
+    street among those). When the winner is far and the driver named no place it sits in, Discover is asked once
+    around the driver for an equally good match. A pick that is not the geocoder's own precise answer is marked
+    (picked_nearby) so the agent reads it back."""
+    town, state = _location(q)
+    cands: list[_Cand] = []
+    for ov, p in _discover_hits(q, disc_items, (lat, lng)):
+        cands.append((ov, _in_location(f"{p.name} {p.address or ''}", town, state), is_street(p), False, p))
+    if top_place:
+        label = f"{(top or {}).get('title', '')} {((top or {}).get('address') or {}).get('label', '')}"
+        cands.append((_overlap(q, label), _in_location(label, town, state), is_street(top_place), True, top_place))
+    if not cands:
+        return []
+    best = _best(cands)
+    best_ov, best_loc = next((c[0], c[1]) for c in cands if c[4] is best)
+    located = bool(town or state) and best_loc and best_ov >= 0.9
+    if (best.distance_km or 0) > NEAR_KM and not (located and town):
+        closer = await _discover_around(q, lat, lng, max(0.9, 0.9 * best_ov), town, state)
+        if closer:
+            logger.info("here discover around q=%r -> %r (%.0f km)", q, closer.name, closer.distance_km or 0)
+            return [_marked(closer)]
+    return [_marked(best) if demoted and best is not top_place else best]
+
+
+_Cand = tuple[float, bool, bool, bool, Place]  # (overlap, in the named town/state, a street, the geocoder's own, place)
+
+
+def _best(cands: list[_Cand]) -> Place:
+    """In the named town/state first, then the best overlap; among overlaps within 90% of it a place before a
+    street, the geocoder's own answer before the same thing from Discover, then the nearest."""
+    cands = sorted(cands, key=lambda c: (not c[1], -c[0]))
+    lead_ov, lead_loc = cands[0][0], cands[0][1]
+    group = [c for c in cands if c[1] == lead_loc and c[0] >= 0.9 * lead_ov]
+    return min(group, key=lambda c: (c[2], not c[3], c[4].distance_km or 0))[4]
+
+
+class NearbyPick(Place):
+    """A Place picked instead of the geocoder's own answer. Same fields and id (is_street / is_town still read the
+    id prefix); only the type says "read it back"."""
+
+
+def _marked(p: Place) -> Place:
+    return NearbyPick(**p.model_dump())
+
+
+def picked_nearby(place) -> bool:
+    """A name the geocoder answered with something else (a street, a far match) that was swapped for a place
+    near the driver: read back before routing ("Elm" -> Elm Street Diner instead of Elm St)."""
+    return isinstance(place, NearbyPick)
+
+
+def _discover_hits(q: str, items: list, at: tuple[float, float]) -> list[tuple[float, Place]]:
+    """(overlap, place) for the Discover items whose title/address carries the words of the query, HERE's order."""
+    hits: list[tuple[float, Place]] = []
+    for it in items:
+        label = f"{it.get('title', '')} {(it.get('address') or {}).get('label', '')}"
+        ov = _overlap(q, label)
+        p = _here_item(it, at) if ov >= 0.5 else None
+        if p and _near_enough(p, ov >= 0.9):
+            hits.append((ov, p))
+    return hits
+
+
+async def _discover_around(q: str, lat: float, lng: float, min_ov: float, town: set[str],
+                           state: Optional[str]) -> Optional[Place]:
+    """Discover bounded to NEAR_KM around the driver: the nearest place there that matches the name at least
+    min_ov and sits in the town/state the driver named. Whatever is closest in a circle often shares only the
+    state with the query, hence the bar. Gives up after AROUND_TIMEOUT_S: the far answer stands."""
+    params = {"q": q, "in": f"circle:{lat},{lng};r={int(NEAR_KM * 1000)}", "limit": 5,
+              "apiKey": os.environ["HERE_API_KEY"]}
+    try:
+        r = await asyncio.wait_for(client().get("https://discover.search.hereapi.com/v1/discover", params=params,
+                                                timeout=AROUND_TIMEOUT_S), AROUND_TIMEOUT_S)
+    except Exception as e:  # noqa: BLE001 - incl. the timeout: the far answer still stands
+        logger.info("here discover around failed for %r: %s", q, type(e).__name__)
+        return None
+    if r.status_code != 200:
+        return None
+    hits = [p for ov, p in _discover_hits(q, r.json().get("items", []), (lat, lng))
+            if ov >= min_ov and (p.distance_km or 0) <= NEAR_KM
+            and _in_location(f"{p.name} {p.address or ''}", town, state)]
+    return min(hits, key=lambda p: p.distance_km or 0) if hits else None
 
 
 async def _ors(q: str, lat: float, lng: float) -> list[Place]:

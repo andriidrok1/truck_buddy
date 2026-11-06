@@ -1,0 +1,5 @@
+{"items": [
+  {"title": "49ER Trl", "id": "here:af:street:49ertrl-placerville", "resultType": "street",
+   "address": {"label": "49ER Trl, Placerville, CA 95667, United States", "city": "Placerville", "stateCode": "CA"},
+   "position": {"lat": 38.73, "lng": -120.80}}
+]}
