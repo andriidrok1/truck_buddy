@@ -29,8 +29,3 @@ export function loadMapLibre(): MapLibre | null {
   }
   return cached;
 }
-
-/** Tests only. */
-export function __setMapLibre(m: MapLibre | null | undefined) {
-  cached = m;
-}

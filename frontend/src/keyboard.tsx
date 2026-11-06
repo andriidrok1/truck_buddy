@@ -57,7 +57,6 @@ const FallbackStickyView: AnyComponent = ({ offset, style, ...rest }) => {
   return <Animated.View {...rest} style={[style, { transform: [{ translateY: shift }] }]} />;
 };
 
-export const KEYBOARD_CONTROLLER_AVAILABLE = native !== null;
 export const KeyboardProvider: AnyComponent = native?.KeyboardProvider ?? FallbackProvider;
 export const KeyboardAwareScrollView: AnyComponent = native?.KeyboardAwareScrollView ?? FallbackAwareScrollView;
 export const KeyboardStickyView: AnyComponent = native?.KeyboardStickyView ?? FallbackStickyView;
