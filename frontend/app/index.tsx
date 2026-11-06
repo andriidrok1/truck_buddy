@@ -53,22 +53,19 @@ import { setHandsFree, setNudgesEnabled, setVoiceGuidance, takeTruckReroute, use
 import { reduceAgentResponse } from "@/src/state/agentReducer";
 import { applyEffects } from "@/src/state/applyEffects";
 import { offlineTurn } from "@/src/state/offlineTurn";
-import type { ActiveRoute, AgentResponse, LatLng, ParkingCheck, Phase, Place, RouteInfo } from "@/src/types";
+import type { ActiveRoute, AgentResponse, LatLng, Phase, Place, RouteInfo } from "@/src/types";
 import { backAction } from "@/src/utils/backAction";
 import { PRIORITY } from "@/src/voice/queue";
 import { streetFromInstruction } from "@/src/voice/sttHint";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
+import { routeFailText } from "@/src/utils/routeFail";
+import { APPROACH_TIPS_M, nearbyLine, statusLine, tipsLine } from "@/src/voice/parkingLines";
 import { RECORD_DRIVES, recorder } from "@/src/geo/driveRecorder";
 import { subscribeReplay, takeReplayRequest } from "@/src/geo/replayRequest";
 import { startPositionHeartbeat, startTripLog, stopTripLog, tripLog } from "@/src/net/tripEvents";
 import { playTrace } from "@/src/sim";
 import { t } from "@/src/i18n";
-
-/** Toast for a failed /route: the router's "no truck route" is a destination problem, not a retry. */
-function routeFailText(e: unknown): string {
-  return isNoTruckRoute(e) ? "No truck route there from here. Try another destination or an address on a main road." : "Couldn't build a route. Try again.";
-}
 
 const KEEP_AWAKE_TAG = "driving";
 
@@ -84,24 +81,6 @@ const ROUTE_STAGE = "Setting route…";
 const NUDGE_FIRST_MS = 60 * 1000;
 const NUDGE_EVERY_MS = 5 * 60 * 1000;
 const NUDGE_KEY_PREFIX = "nudge-";
-/** " There's a lot with trailers to the southeast, looks like a private yard." (or "") */
-const APPROACH_TIPS_M = 800; // about half a mile: the entry tip is useful here, not six miles out
-/** One short line about the lot right after the answer; "" when there is nothing certain to say. */
-const statusLine = (pk: ParkingCheck) => {
-  if (pk.verdict === "likely" || pk.verdict === "listed") return "Parking looks good there.";
-  return "";
-};
-/** The entry and parking tips as one spoken line, for the approach and for "how do I get in". */
-const tipsLine = (pk: ParkingCheck) => {
-  const entry = pk.entry_tip && pk.relative ? `The truck entrance is ${pk.entry_tip.charAt(0).toLowerCase()}${pk.entry_tip.slice(1)}` : pk.entry_tip;
-  const tips = [entry, pk.park_tip].filter(Boolean).join(". ");
-  return tips ? `${tips}.` : "";
-};
-const nearbyLine = (pk: ParkingCheck) => {
-  if (!pk.nearby) return "";
-  const look = pk.nearby.kind === "unclear" ? "" : `, looks like a ${pk.nearby.kind}`;
-  return ` There's a lot with trailers to the ${pk.nearby.direction}${look}.`;
-};
 // The trip (route, driving, stops, options, providers, parking, sheet) lives in src/state/tripStore.ts;
 // async handlers read `trip()` at the moment they need a value instead of a ref mirror of a render.
 const trip = useTripStore.getState;
