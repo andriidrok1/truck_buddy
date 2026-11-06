@@ -93,6 +93,11 @@ t("Parking's almost full there.", "Парковка там почти запол
 t("Parking's full there right now.", "Парковка там сейчас заполнена.")
 t("{cap} truck spots there, no live count.", "Там {cap|plural:место,места,мест} для траков, живого счётчика нет.")
 t("Ask for a truck stop or give an address to check the parking.", "Спроси трак-стоп или дай адрес, и я проверю парковку.")
+# NearbyLot.phrase (models.py): spoken as a sentence, on the card as the reason's clause after "; "
+t("There's a lot with trailers to the {dir}{look}.", "Есть площадка с трейлерами {dir|at}{look|part}.")
+t("there's a lot with trailers to the {dir}{look}.", "есть площадка с трейлерами {dir|at}{look|part}.")
+t(", looks like a public lot", ", похоже, общая стоянка", True)
+t(", looks like a private yard", ", похоже, частная площадка", True)
 
 # --- reviews ---
 t("Drivers say: {gist}", "Водители говорят: {gist|tr}")
@@ -219,9 +224,12 @@ W = {
     "weigh station": {"nom": "весовая", "acc": "весовую", "gen": "весовой", "dat": "весовым", "nom_pl": "Весовые"},
     "fuel stop": {"nom": "заправка", "acc": "заправку", "gen": "заправки", "dat": "заправкам", "nom_pl": "Заправки"},
     "height": {"dat": "высоте"}, "weight": {"dat": "весу"}, "length": {"dat": "длине"}, "width": {"dat": "ширине"},
-    "east": {"from": "восточный"}, "west": {"from": "западный"}, "north": {"from": "северный"}, "south": {"from": "южный"},
-    "northeast": {"from": "северо-восточный"}, "northwest": {"from": "северо-западный"},
-    "southeast": {"from": "юго-восточный"}, "southwest": {"from": "юго-западный"},
+    "east": {"from": "восточный", "at": "к востоку"}, "west": {"from": "западный", "at": "к западу"},
+    "north": {"from": "северный", "at": "к северу"}, "south": {"from": "южный", "at": "к югу"},
+    "northeast": {"from": "северо-восточный", "at": "к северо-востоку"},
+    "northwest": {"from": "северо-западный", "at": "к северо-западу"},
+    "southeast": {"from": "юго-восточный", "at": "к юго-востоку"},
+    "southwest": {"from": "юго-западный", "at": "к юго-западу"},
     "left": {"side": "слева", "side_cap": "Слева"}, "right": {"side": "справа", "side_cap": "Справа"},
     "sunny": "солнечно", "mostly sunny": "в основном солнечно", "partly sunny": "переменная облачность",
     "clear": "ясно", "mostly clear": "в основном ясно", "partly cloudy": "переменная облачность",

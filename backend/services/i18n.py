@@ -37,6 +37,8 @@ logger = logging.getLogger("truckbuddy.i18n")
 LANGS = ("en", "ru", "uk")
 CATALOG_DIR = Path(__file__).resolve().parent.parent / "i18n"
 _lang: contextvars.ContextVar[str] = contextvars.ContextVar("tb_lang", default="en")
+_fallback: contextvars.ContextVar[Optional[Callable[[str, str], Optional[str]]]] = contextvars.ContextVar(
+    "tb_i18n_fallback", default=None)  # translate()'s fallback, for the {x|tr} values inside a matched template
 _PH = re.compile(r"\{(\w+)(?:\|([^{}]*))?\}")
 _NUM = re.compile(r"\d+(?:[.,]\d+)?")
 
@@ -221,7 +223,9 @@ def _apply(filt: Optional[str], value: str, code: str, words: dict) -> str:
         got = _match(value, code, parts=True)
         if got is not None:
             return got
-        return translate(value, code, fallback=None)
+        # The enclosing translate()'s fallback: a model-written value ("To get in: {tip}.") goes to the model like
+        # a whole sentence would, instead of staying English inside a Russian line (QA 2026-11-05).
+        return translate(value, code, fallback=_fallback.get())
     if kind == "clock":
         return clock_ru(value)
     entry = words.get(value.strip().lower())
@@ -241,13 +245,28 @@ def _fill(t: Template, m: re.Match, code: str, words: dict) -> str:
     return _PH.sub(sub, t.target)
 
 
+_VALUE_FILTERS = ("plural", "and", "time", "tr", "part", "clock")  # every other filter is a form from the words table
+
+
+def _words_known(t: Template, m: re.Match, words: dict) -> bool:
+    """A placeholder the target takes from the words table ({event|nom}, {dir|at}) holds a word that is there.
+    Otherwise "{event} near {area}." took a vision tip, "Park along the east side near existing trailers.", and
+    said "Park along the east side в районе existing trailers." (QA 2026-11-05)."""
+    vals = m.groupdict()
+    for pm in _PH.finditer(t.target):
+        kind = (pm.group(2) or "").partition(":")[0]
+        if kind and kind not in _VALUE_FILTERS and (vals.get(pm.group(1)) or "").strip().lower() not in words:
+            return False
+    return True
+
+
 def _match(text: str, code: str, parts: bool = False) -> Optional[str]:
     tpls, words = catalog(code)
     for t in tpls:
         if t.part and not parts:
             continue
         m = t.rx.fullmatch(text)
-        if m:
+        if m and _words_known(t, m, words):
             return _fill(t, m, code, words)
     entry = words.get(text.strip().lower())
     if isinstance(entry, dict):
@@ -268,6 +287,14 @@ def translate(text: str, code: Optional[str] = None, fallback: Optional[Callable
         return text
     if _CYRILLIC.search(text) and not _LATIN_WORDS.search(_strip_names(text)):
         return text  # already in the language (a model-written chat line)
+    token = _fallback.set(fallback)
+    try:
+        return _translate(text, code, fallback)
+    finally:
+        _fallback.reset(token)
+
+
+def _translate(text: str, code: str, fallback: Optional[Callable[[str, str], Optional[str]]]) -> str:
     whole = _match(text.strip(), code)
     if whole is not None:
         return _cap(whole)
@@ -374,14 +401,33 @@ def localize_route(route):
 
 
 async def localize_parking(check):
-    """A ParkingCheck's card text (verdict label, reason, entry and parking tips) in this request's language."""
+    """A ParkingCheck's card text (verdict label, reason, entry and parking tips) in this request's language, on a
+    copy. The check is usually the cached verdict itself (services/parking.py, approach.best): changed in place,
+    a Russian request left Russian text in the cache, the next English request showed it and a re-check could
+    save it to the table (QA 2026-11-05). The cache stays English; every response is translated on its own."""
     if check is None or lang() == "en":
         return check
+    update = {}
     for f in ("label", "reason", "entry_tip", "park_tip"):
         v = getattr(check, f, None)
         if v:
-            setattr(check, f, await localize(v))
-    return check
+            update[f] = await _localize_clauses(v)
+    return check.model_copy(update=update)
+
+
+async def _localize_clauses(text: str) -> str:
+    """A card line in clauses joined by "; " (the vision reason plus our "there's a lot with trailers to the
+    north"): each clause on its own, so the catalog's clause is not handed to the model inside a model-written one."""
+    pieces = text.split("; ")
+    if len(pieces) == 1:
+        return await localize(text)
+    out = []
+    for i, p in enumerate(pieces):
+        got = await localize(p)
+        if i and p[:1].islower() and got[:1].isupper():
+            got = got[:1].lower() + got[1:]  # mid-line after "; " stays lower case, as in English
+        out.append(got)
+    return "; ".join(out)
 
 
 class LangMiddleware:
