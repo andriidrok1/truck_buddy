@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View } from "react-native";
+import { Keyboard, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
@@ -40,6 +40,7 @@ import { useStartPins, useWarmCaches } from "@/src/hooks/useNearbyWarmup";
 import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
+import { useHardwareBack } from "@/src/hooks/useHardwareBack";
 import { useMicPrewarm } from "@/src/hooks/useMicPrewarm";
 import { NUDGE_KEY_PREFIX, useNudges } from "@/src/hooks/useNudges";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
@@ -56,7 +57,6 @@ import { reduceAgentResponse } from "@/src/state/agentReducer";
 import { applyEffects } from "@/src/state/applyEffects";
 import { offlineTurn } from "@/src/state/offlineTurn";
 import type { ActiveRoute, AgentResponse, LatLng, Phase, Place, RouteInfo } from "@/src/types";
-import { backAction } from "@/src/utils/backAction";
 import { PRIORITY } from "@/src/voice/queue";
 import { playReply } from "@/src/voice/playReply";
 import { streetFromInstruction } from "@/src/voice/sttHint";
@@ -725,19 +725,9 @@ export default function MapScreen() {
     setFit({ key: `end-${Date.now()}`, points: [loc.coords] });
   };
 
-  // Hardware Back closes the top layer (src/utils/backAction.ts); only with nothing of ours open does
-  // it leave the app. While driving it does nothing: one stray press must not drop the route.
-  // The screen's own layers and handlers are mirrored at commit (like phaseRef above), the route and the
-  // driving flag are read from the trip store, so the one listener registered on mount never acts on a
-  // stale closure.
-  const backRefs = useRef({
-    state: { micCard: false, routesOpen: false, reply: false, phase: "ready" as Phase },
-    cancel: () => {},
-    closeOptions: () => {},
-    endRoute: () => {},
-  });
-  useLayoutEffect(() => {
-    backRefs.current = {
+  // Hardware Back closes the top layer (src/hooks/useHardwareBack.ts).
+  useHardwareBack(
+    {
       state: { micCard: !!micCard, routesOpen, reply: isReplyCaption(caption), phase },
       cancel: () => {
         turn.cancel();
@@ -747,40 +737,11 @@ export default function MapScreen() {
       },
       closeOptions: onClose,
       endRoute: onEndRoute,
-    };
-  });
-  useEffect(() => {
-    if (Platform.OS !== "android") return;
-    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      const { state, cancel, closeOptions, endRoute } = backRefs.current;
-      const t = trip();
-      switch (backAction({ ...state, hasRoute: !!t.active, driving: t.driving })) {
-        case "closeMicCard":
-          setMicCard(null);
-          return true;
-        case "closeRoutes":
-          setRoutesOpen(false);
-          return true;
-        case "closeReply":
-          setCaption(null);
-          return true;
-        case "cancelTurn":
-          cancel();
-          return true;
-        case "closeOptions":
-          closeOptions();
-          return true;
-        case "endRoute":
-          endRoute();
-          return true;
-        case "ignore":
-          return true;
-        default:
-          return false;
-      }
-    });
-    return () => sub.remove();
-  }, []);
+    },
+    setMicCard,
+    setRoutesOpen,
+    setCaption,
+  );
 
   /** Re-plans the active route with the current truck profile (after a voice change) or to the entrance;
    * the stops on the way stay (they used to vanish from the line while their chips stayed on screen). */
