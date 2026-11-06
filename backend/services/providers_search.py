@@ -10,7 +10,6 @@ Pipeline (budget ~20 s, everything in parallel):
 """
 import asyncio
 import html
-import json
 import logging
 import math
 import os
@@ -387,15 +386,6 @@ def clean_facts(raw: dict, reviews_text: str, website_text: str) -> dict:
     return out
 
 
-def _parse_json(raw: str) -> dict:
-    m = re.search(r"\{.*\}", raw or "", re.S)
-    try:
-        data = json.loads(m.group(0)) if m else {}
-    except json.JSONDecodeError:
-        data = {}
-    return data if isinstance(data, dict) else {}
-
-
 def source_texts(c: dict, website: str) -> tuple[str, str]:
     reviews = "\n".join(f"- ({r['date'] or 'date unknown'}, {r['rating'] or '?'} stars) {r['text']}"
                         for r in c["reviews"] if r["text"])
@@ -411,7 +401,7 @@ async def extract_facts(c: dict, website: str, budget: Budget) -> dict:
     budget.llm_in_chars += len(EXTRACT_SYSTEM) + len(prompt)
     raw = await asyncio.wait_for(llm.complete(EXTRACT_SYSTEM, prompt, EXTRACT_MODEL[1]), timeout=budget.left(1.5))
     budget.llm_out_chars += len(raw or "")
-    facts = clean_facts(_parse_json(raw), reviews, site)
+    facts = clean_facts(llm.json_object(raw), reviews, site)
     if not facts["last_review_date"]:
         dates = sorted(r["date"] for r in c["reviews"] if r["date"])
         facts["last_review_date"] = dates[-1] if dates else None

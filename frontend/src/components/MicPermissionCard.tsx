@@ -8,15 +8,17 @@ import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
 
-type Props = { state: Exclude<MicPermission, "granted">; bottom: number; onAllow: () => void; onDismiss: () => void };
+type Props = { state: Exclude<MicPermission, "granted">; bottom: number; onAllow: () => void; onDismiss: () => void; onHeight?: (h: number) => void };
 
 // Pre-permission explanation (state "ask") or a route to Settings once the OS stops asking ("blocked").
-export function MicPermissionCard({ state, bottom, onAllow, onDismiss }: Props) {
+export function MicPermissionCard({ state, bottom, onAllow, onDismiss, onHeight }: Props) {
   const { colors } = useTheme();
   return (
     <Animated.View
       entering={FadeInDown.duration(240)}
       exiting={FadeOutDown.duration(180)}
+      // Its height lifts the Follow truck button above it (UI review 2026-11-05, M6).
+      onLayout={(e) => onHeight?.(e.nativeEvent.layout.height)}
       style={[styles.wrap, shadow(colors, 2), { bottom, backgroundColor: colors.surface }]}
       testID="mic-permission-card"
     >

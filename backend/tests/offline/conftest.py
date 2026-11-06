@@ -53,6 +53,8 @@ def _offline_env(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("MEMORY_STORE", "off")  # no store unless a test asks for sqlite
     monkeypatch.delenv("EXPO_PUBLIC_BACKEND_URL", raising=False)
+    from services import i18n
+    i18n._model_cache.clear()  # model translations are cached per process; each test starts without them
 
 
 def fixture_json(name: str) -> Any:

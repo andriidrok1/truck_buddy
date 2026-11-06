@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
-import { Dimensions, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
 
 import { AlternativesSheet, routeFacts } from "../components/AlternativesSheet";
 import type { RouteInfo } from "../types";
@@ -54,7 +54,7 @@ const primary = route("I-5 N", {
 // RNTL 14: render() and fireEvent.* are async.
 describe("AlternativesSheet", () => {
   test("lists the current route and each alternative with its facts", async () => {
-    await render(<AlternativesSheet primary={primary} bottom={0} top={0} onPick={() => {}} onClose={() => {}} />);
+    await render(<AlternativesSheet primary={primary} onPick={() => {}} onClose={() => {}} />);
     expect(screen.getByTestId("alternative-current")).toBeTruthy();
     expect(screen.getByText("8 min · 4.2 mi · current")).toBeTruthy();
     expect(screen.getByText("I-80")).toBeTruthy();
@@ -66,17 +66,27 @@ describe("AlternativesSheet", () => {
   test("tapping an alternative reports its index; close reports close", async () => {
     const onPick = jest.fn();
     const onClose = jest.fn();
-    await render(<AlternativesSheet primary={primary} bottom={0} top={0} onPick={onPick} onClose={onClose} />);
+    await render(<AlternativesSheet primary={primary} onPick={onPick} onClose={onClose} />);
     await fireEvent.press(screen.getByTestId("alternative-1"));
     expect(onPick).toHaveBeenCalledWith(1);
     await fireEvent.press(screen.getByTestId("alternatives-close"));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  test("never grows past the top bound: the title and close stay on screen at large font (QA 2026-11-02)", async () => {
-    await render(<AlternativesSheet primary={primary} bottom={300} top={200} onPick={() => {}} onClose={() => {}} />);
-    const style = StyleSheet.flatten(screen.getByTestId("alternatives-sheet").props.style);
-    expect(style.maxHeight).toBe(Dimensions.get("window").height - 500);
+  test("56 pt close and rows of at least 56 pt, every route drawn (UI review 2026-11-05, N7)", async () => {
+    await render(<AlternativesSheet primary={primary} onPick={() => {}} onClose={() => {}} />);
+    // PressableScale draws its box on the inner view; the plain current row carries its own style.
+    type Node = { props: { style?: unknown }; children: unknown[] };
+    const box = (id: string) => {
+      const el = screen.getByTestId(id) as unknown as Node;
+      const styled = el.props.style ? el : (el.children[0] as Node);
+      return StyleSheet.flatten(styled.props.style as never) as { width?: number; height?: number; minHeight?: number };
+    };
+    expect(box("alternatives-close").width).toBeGreaterThanOrEqual(56);
+    expect(box("alternatives-close").height).toBeGreaterThanOrEqual(56);
+    for (const id of ["alternative-current", "alternative-0", "alternative-1"]) {
+      expect(box(id).minHeight).toBeGreaterThanOrEqual(56);
+    }
   });
 });
 

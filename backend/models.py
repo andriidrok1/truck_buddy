@@ -8,11 +8,6 @@ PlaceCategory = Literal["truck_stop", "hotel", "rest_area", "walmart", "cat_scal
                         "destination", "service"]  # service = breakdown provider
 
 
-class LatLng(BaseModel):
-    lat: float
-    lng: float
-
-
 class Review(BaseModel):
     """One Google review. Google's terms: show the author and link to the review when displayed."""
     author: str

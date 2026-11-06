@@ -1,4 +1,4 @@
-import { advisoryText, chipAhead, createSpeedWatch, limitAt, spokenAhead, upcomingAdvisories, type Advisory } from "../geo/advisories";
+import { advisoryText, chipAhead, createSpeedWatch, limitAt, overLimit, spokenAhead, upcomingAdvisories, type Advisory } from "../geo/advisories";
 import { cumulativeMeters } from "../geo/guidance";
 import type { RouteInfo } from "../types";
 
@@ -67,6 +67,23 @@ describe("createSpeedWatch", () => {
     expect(run(w, [70, 70, 70])).toEqual([null, null, "alert"]);
     const fresh = createSpeedWatch({ holdMs: 2000 });
     expect(run(fresh, [70, null, 70, 70, 70])).toEqual([null, null, null, null, "alert"]); // hold restarted at index 2
+  });
+
+  test("never alerts against a limit under 15 mph", () => {
+    const w = createSpeedWatch({ holdMs: 2000 });
+    expect(run(w, Array(20).fill(23), 5).includes("alert")).toBe(false);
+    expect(run(w, Array(20).fill(40), 14).includes("alert")).toBe(false);
+    expect(run(w, [25, 25, 25], 15)).toEqual([null, null, "alert"]);
+  });
+});
+
+describe("overLimit", () => {
+  test("red only over a limit of 15 mph or more, same floor as the alert", () => {
+    expect(overLimit(23, 5)).toBe(false);
+    expect(overLimit(40, 14)).toBe(false);
+    expect(overLimit(16, 15)).toBe(true);
+    expect(overLimit(15, 15)).toBe(false);
+    expect(overLimit(null, 55)).toBe(false);
   });
 });
 

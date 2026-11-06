@@ -50,6 +50,23 @@ def sqlite_path() -> Path:
     return Path(os.environ.get("MEMORY_SQLITE_PATH") or Path(__file__).resolve().parents[1] / "data" / "memory.sqlite")
 
 
+# ---- timestamps (SQLite keeps them as ISO text, Postgres as timestamptz) -----------------------------------------
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def iso(at: datetime) -> str:
+    return at.astimezone(timezone.utc).isoformat()
+
+
+def parse_at(v) -> datetime:
+    """A stored timestamp back as an aware datetime: a naive one is UTC."""
+    if isinstance(v, datetime):
+        return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(str(v))
+
+
 # ---- migrations ---------------------------------------------------------------------------------------------
 
 def migration_files(dialect: str) -> list[tuple[int, Path]]:

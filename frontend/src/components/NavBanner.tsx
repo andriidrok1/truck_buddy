@@ -2,7 +2,7 @@ import { StyleSheet, View } from "react-native";
 import { Text } from "../i18n/Text";
 import Animated, { FadeInRight, FadeInUp, ZoomIn } from "react-native-reanimated";
 
-import type { Advisory } from "../geo/advisories";
+import { overLimit, type Advisory } from "../geo/advisories";
 import { formatDistance } from "../hooks/useGuidance";
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import type { Maneuver } from "../types";
@@ -54,7 +54,7 @@ type Props = {
 /** US speed-limit sign: white, black border, "SPEED LIMIT" over the number. */
 function SpeedShield({ limitMph, speedMph }: { limitMph: number; speedMph: number | null }) {
   const { colors } = useTheme();
-  const over = speedMph != null && speedMph > limitMph;
+  const over = overLimit(speedMph, limitMph);
   return (
     <View style={styles.shieldWrap} testID="speed-shield">
       <View style={styles.shield}>
@@ -64,9 +64,10 @@ function SpeedShield({ limitMph, speedMph }: { limitMph: number; speedMph: numbe
           {limitMph}
         </Text>
       </View>
-      {speedMph != null && (
-        <Text testID="speed-now" style={[styles.speedNow, { color: over ? colors.error : colors.onSurfaceInverse }]}>
-          {speedMph}
+      {/* Standing still there is nothing to compare: a bare "0" under the sign read as a mystery number. */}
+      {speedMph != null && speedMph >= 1 && (
+        <Text testID="speed-now" style={[styles.speedNow, { color: over ? colors.error : colors.onNavBanner }]}>
+          {`${speedMph} mph`}
         </Text>
       )}
     </View>
@@ -82,15 +83,15 @@ export function NavBanner({ topInset, next, toNextM, voiceOn, onToggleVoice, onL
       pointerEvents="box-none"
       onLayout={(e) => onLayout(e.nativeEvent.layout.height)}
     >
-      <Animated.View entering={FadeInUp.springify().damping(16)} testID="nav-banner" style={[styles.card, shadow(colors, 2), { backgroundColor: colors.surfaceInverse }]}>
+      <Animated.View entering={FadeInUp.springify().damping(16)} testID="nav-banner" style={[styles.card, shadow(colors, 2), { backgroundColor: colors.navBanner }]}>
         <Animated.View key={`ic-${next?.instruction ?? "-"}`} entering={ZoomIn.springify().damping(14)} style={[styles.arrow, { backgroundColor: colors.info }]}>
           <Icon name={maneuverIcon(next)} size={36} color={colors.onInfo} />
         </Animated.View>
         <Animated.View key={`tx-${next?.instruction ?? "-"}`} entering={FadeInRight.duration(260)} style={styles.text}>
-          <Text testID="nav-distance" style={[styles.dist, { color: colors.onSurfaceInverse }]}>
+          <Text testID="nav-distance" style={[styles.dist, { color: colors.onNavBanner }]}>
             {formatDistance(toNextM)}
           </Text>
-          <Text testID="nav-instruction" numberOfLines={2} style={[styles.instr, { color: colors.onSurfaceInverse }]}>
+          <Text testID="nav-instruction" numberOfLines={2} style={[styles.instr, { color: colors.onNavBanner }]}>
             {next?.instruction ?? "Follow the route"}
           </Text>
         </Animated.View>
@@ -99,9 +100,9 @@ export function NavBanner({ topInset, next, toNextM, voiceOn, onToggleVoice, onL
           testID="voice-guidance-toggle"
           accessibilityLabel={voiceOn ? "Mute directions" : "Unmute directions"}
           onPress={onToggleVoice}
-          style={[styles.voice, { backgroundColor: voiceOn ? colors.surface : colors.error }]}
+          style={[styles.voice, { backgroundColor: voiceOn ? colors.navButton : colors.error }]}
         >
-          <Icon name={voiceOn ? "volume-high" : "volume-off"} size={24} color={voiceOn ? colors.onSurface : colors.onError} />
+          <Icon name={voiceOn ? "volume-high" : "volume-off"} size={24} color={voiceOn ? colors.onNavButton : colors.onError} />
         </PressableScale>
       </Animated.View>
       {!!offlineLine && (
@@ -124,7 +125,7 @@ const styles = StyleSheet.create({
   text: { flex: 1, minWidth: 0 },
   dist: { fontFamily: fonts.extrabold, fontSize: 26, letterSpacing: -0.3 },
   instr: { fontFamily: fonts.semibold, fontSize: 16 },
-  voice: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
+  voice: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
   shieldWrap: { alignItems: "center", gap: 2 },
   shield: { width: 44, paddingVertical: 3, borderRadius: 6, borderWidth: 2, borderColor: "#000000", backgroundColor: "#FFFFFF", alignItems: "center" },
   shieldLabel: { fontFamily: fonts.bold, fontSize: 7, lineHeight: 8, color: "#000000", letterSpacing: 0.2 },

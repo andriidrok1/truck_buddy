@@ -28,7 +28,7 @@ function unproject(x: number, y: number, z: number): LatLng {
 }
 
 const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(props, ref) {
-  const { driver, heading, places, active, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch } = props;
+  const { driver, heading, places, active, alternatives, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch } = props;
   const panCb = useRef(onUserPan);
   panCb.current = follow ? onUserPan : undefined;
   const touchCb = useRef(onMapTouch);
@@ -172,6 +172,8 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
       {...pan.panHandlers}
     >
       {tiles}
+      {(alternatives ?? []).map((g, i) => segments(g, 9, colors.routeCasing, `alt-case-${i}`))}
+      {(alternatives ?? []).map((g, i) => segments(g, 5, colors.muted, `alt-line-${i}`))}
       {active && segments(active.route.geometry, 10, colors.routeCasing, "case")}
       {active && segments(active.route.geometry, 6, colors.routeLine, "line")}
       {active &&

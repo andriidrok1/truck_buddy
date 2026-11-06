@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from models import ParkingAnswerRequest, ParkingCheck
-from services import approach, voice
+from services import approach, i18n, voice
 
 router = APIRouter(prefix="/api")
 
@@ -20,6 +20,9 @@ class ParkingAnswer(BaseModel):
 @router.post("/parking/answer", response_model=ParkingAnswer)
 async def parking_answer(req: ParkingAnswerRequest):
     status, reply, check = await approach.answer(req.place, req.wait_s)
+    # The driver's language (X-Lang): the spoken reply and the card, like /parking. Both stayed English here.
+    reply = await i18n.localize(reply)
+    check = await i18n.localize_parking(check)
     audio_id = await voice.synthesize(reply)
     return ParkingAnswer(status=status, reply=reply, parking=check,
                          audio_url=f"/api/voice/audio/{audio_id}" if audio_id else None)

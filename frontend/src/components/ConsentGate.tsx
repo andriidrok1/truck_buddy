@@ -71,10 +71,10 @@ export function ConsentGate() {
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg }]}>
         {/* In the footer, not at the end of the scroll: there it sat half under the button on a phone screen. */}
         <View style={styles.links}>
-          <PressableScale testID="consent-privacy-link" accessibilityRole="link" onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL).catch(() => {})}>
+          <PressableScale testID="consent-privacy-link" accessibilityRole="link" onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL).catch(() => {})} style={styles.linkHit}>
             <Text style={[styles.link, styles.center, { color: colors.info }]}>Privacy policy</Text>
           </PressableScale>
-          <PressableScale testID="consent-terms-link" accessibilityRole="link" onPress={() => WebBrowser.openBrowserAsync(TERMS_URL).catch(() => {})}>
+          <PressableScale testID="consent-terms-link" accessibilityRole="link" onPress={() => WebBrowser.openBrowserAsync(TERMS_URL).catch(() => {})} style={styles.linkHit}>
             <Text style={[styles.link, styles.center, { color: colors.info }]}>Terms of use</Text>
           </PressableScale>
         </View>
@@ -87,7 +87,7 @@ export function ConsentGate() {
         >
           {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={[styles.buttonText, { color: colors.onBrandPrimary }]}>Agree and continue</Text>}
         </PressableScale>
-        <PressableScale testID="consent-agree-code" accessibilityRole="button" onPress={() => agree(true)} disabled={busy}>
+        <PressableScale testID="consent-agree-code" accessibilityRole="button" onPress={() => agree(true)} disabled={busy} style={styles.linkHit}>
           <Text style={[styles.link, styles.center, { color: colors.info }]}>Agree and enter an access code</Text>
         </PressableScale>
       </View>
@@ -98,6 +98,8 @@ export function ConsentGate() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   links: { flexDirection: "row", justifyContent: "center", gap: spacing.xl },
+  // Text links still get a 56 pt target (in-cab rule); the label stays a link, the row around it is the hit zone.
+  linkHit: { minHeight: 56, minWidth: 56, justifyContent: "center", paddingHorizontal: spacing.sm },
   wrap: { alignItems: "center", paddingHorizontal: spacing.xl, gap: spacing.md, paddingBottom: spacing.md },
   avatar: { width: 96, height: 96, borderRadius: 48, marginBottom: spacing.sm },
   title: { fontFamily: fonts.bold, fontSize: 26, textAlign: "center" },
