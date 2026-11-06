@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { absoluteUrl, api } from "@/src/api";
 import { useCopilotTurn, type AnswerContext } from "@/src/dialog/useCopilotTurn";
+import { turnContext } from "@/src/dialog/turnContext";
 import { useFillers } from "@/src/dialog/useFillers";
 import { bubbleRoom, expireLine, hasExpiringLine, isReplyCaption, LINE_HOLD_MS, lineCaption, replyCaption, replyPlacement, type Caption } from "@/src/dialog/caption";
 import { floatingBottom } from "@/src/state/floating";
@@ -51,7 +52,6 @@ import { saveProfile } from "@/src/data/profile";
 import { getTruckProfile, isOnboarded, truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { askWithDeadline } from "@/src/voice/micAsk";
-import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { spacing, useTheme } from "@/src/theme";
 import { providerPlace, selectPlaces, useTripStore } from "@/src/state/tripStore";
 import { setHandsFree, setNudgesEnabled, setVoiceGuidance, takeTruckReroute, useHandsFree, useVoiceGuidance } from "@/src/state/settingsStore";
@@ -61,7 +61,6 @@ import { offlineTurn } from "@/src/state/offlineTurn";
 import type { ActiveRoute, AgentResponse, LatLng, Phase, Place } from "@/src/types";
 import { PRIORITY } from "@/src/voice/queue";
 import { playReply } from "@/src/voice/playReply";
-import { streetFromInstruction } from "@/src/voice/sttHint";
 import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 import { routeFailText } from "@/src/utils/routeFail";
@@ -390,28 +389,16 @@ export default function MapScreen() {
     api: { transcribe: api.transcribe, agentSpeak: api.agentSpeak },
     fillers,
     offline: () => offlineTurn({ isOnline, say, setCaption }),
-    context: () => {
-      const t = trip();
-      const cur = t.active;
-      return {
+    context: () =>
+      turnContext(trip(), {
         coords: coordsRef.current, // the truck moved while the driver talked and the words were transcribed
-        active: cur,
-        ui: { driving: t.driving, voice_guidance: voiceOnRef.current, hands_free: handsFreeRef.current && WAKE_SUPPORTED, options_count: t.options.length,
-          option_ids: t.options.slice(0, 20).map((p) => p.id) },
-        heading: locRef.current.heading ?? null,
-        speed: locRef.current.speed ?? null,
+        voiceOn: voiceOnRef.current,
+        handsFree: handsFreeRef.current,
+        heading: locRef.current.heading,
+        speed: locRef.current.speed,
         limitMph: limitRef.current,
-        // Names the recogniser should expect: what is on screen and on the route, most useful first.
-        hintNames: [
-          cur?.place.name,
-          ...t.options.map((p) => p.name),
-          ...t.places().map((p) => p.name),
-          ...(cur?.stops ?? []).map((s) => s.name),
-          ...(cur?.route.labels ?? []),
-          streetFromInstruction(guidanceRef.current.next?.instruction),
-        ],
-      };
-    },
+        nextInstruction: guidanceRef.current.next?.instruction,
+      }),
     onPhase: setPhase,
     onIdle: () => backToIdle(),
     onThinking: setThinkingText,
