@@ -65,3 +65,10 @@ test("arrival time: 24-hour in Russian, the phone's format in English; the resto
   expect(arrivalClock(25 * 60, "en", at)).toBe(new Date(at + 25 * 60_000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
   expect(ru("Route restored: Pilot Sacramento")).toBe("Маршрут восстановлен: Pilot Sacramento");
 });
+
+test("the spoken off-route line is Russian end to end, direction included", () => {
+  expect(ru("Lost signal, can't reroute. The route is 0.4 miles to the north.")).toBe("Связь пропала, маршрут не перестроить. До маршрута 0.4 мили на север.");
+  expect(ru("Lost signal, can't reroute. The route is 1 mile to the southwest.")).toBe("Связь пропала, маршрут не перестроить. До маршрута 1 миля на юго-запад.");
+  expect(ru("Lost signal, can't reroute. The route is 300 feet to the east.")).toBe("Связь пропала, маршрут не перестроить. До маршрута 300 футов на восток.");
+  expect(en("Lost signal, can't reroute. The route is 0.4 miles to the north.")).toBe("Lost signal, can't reroute. The route is 0.4 miles to the north.");
+});
