@@ -5,7 +5,7 @@ import { BackHandler, Keyboard, Platform, StyleSheet, useWindowDimensions, View 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
-import { newSessionId, useCopilotTurn, type AnswerContext } from "@/src/dialog/useCopilotTurn";
+import { useCopilotTurn, type AnswerContext } from "@/src/dialog/useCopilotTurn";
 import { useFillers } from "@/src/dialog/useFillers";
 import { bubbleRoom, expireLine, hasExpiringLine, isReplyCaption, LINE_HOLD_MS, lineCaption, replyCaption, replyPlacement, type Caption } from "@/src/dialog/caption";
 import { floatingBottom } from "@/src/state/floating";
@@ -27,7 +27,6 @@ import { ConfirmSheet } from "@/src/components/ConfirmSheet";
 import { TopBar } from "@/src/components/TopBar";
 import { MESSAGES } from "@/src/constants";
 import { isTester } from "@/src/auth";
-import { chainControlAhead, routePointsAhead } from "@/src/geo/ahead";
 import { switchedLine } from "@/src/geo/routeChoice";
 import { farFromRoute } from "@/src/geo/guidance";
 import { startDriveTracking, stopDriveTracking } from "@/src/geo/driveTracking";
@@ -43,6 +42,7 @@ import { useStartPins, useWarmCaches } from "@/src/hooks/useNearbyWarmup";
 import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
+import { NUDGE_KEY_PREFIX, useNudges } from "@/src/hooks/useNudges";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
 import { useTripRestore } from "@/src/hooks/useTripRestore";
 import { saveProfile, setMidTripCheck } from "@/src/data/profile";
@@ -52,7 +52,7 @@ import { askWithDeadline } from "@/src/voice/micAsk";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
 import { providerPlace, selectPlaces, stopsAhead, useTripStore, viaOf } from "@/src/state/tripStore";
-import { setHandsFree, setNudgesEnabled, setVoiceGuidance, takeTruckReroute, useHandsFree, useNudgesEnabled, useVoiceGuidance } from "@/src/state/settingsStore";
+import { setHandsFree, setNudgesEnabled, setVoiceGuidance, takeTruckReroute, useHandsFree, useVoiceGuidance } from "@/src/state/settingsStore";
 import { reduceAgentResponse } from "@/src/state/agentReducer";
 import { applyEffects } from "@/src/state/applyEffects";
 import { offlineTurn } from "@/src/state/offlineTurn";
@@ -78,11 +78,6 @@ const RESEARCH_INTERIM = "Reading reviews now, almost there.";
 const RESEARCH_INTERIM_MS = 7000;
 
 const ROUTE_STAGE = "Setting route…";
-// Nudges (/api/nudges): first ask a minute into the drive, then every five minutes; a nudge that
-// is still waiting when the next one comes is stale. After one plays the mic opens for ~7 s.
-const NUDGE_FIRST_MS = 60 * 1000;
-const NUDGE_EVERY_MS = 5 * 60 * 1000;
-const NUDGE_KEY_PREFIX = "nudge-";
 // The trip (route, driving, stops, options, providers, parking, sheet) lives in src/state/tripStore.ts;
 // async handlers read `trip()` at the moment they need a value instead of a ref mirror of a render.
 const trip = useTripStore.getState;
@@ -545,59 +540,8 @@ export default function MapScreen() {
     nudgeAnswer.current = turn.nudgeOffer;
   });
 
-  // ---- Nudges: while driving, every few minutes the backend may have something to offer (a
-  // break coming due, parking ahead). Each line is spoken as ambient; the backend keeps the offer
-  // pending for the next turn of the same session, so a tap and "yes" is enough (walkie-talkie: the
-  // mic does not open by itself, turnMachine.ts). Not offline, not before "Go". ----
-  const hasRoute = !!active;
-  const nudgesOn = useNudgesEnabled();
-  useEffect(() => {
-    if (!driving || !hasRoute || !nudgesOn) return;
-    const ctrl = new AbortController();
-    let every: ReturnType<typeof setInterval> | null = null;
-    const poll = async () => {
-      if (!isOnline()) return;
-      const cur = trip().active;
-      if (!cur) return;
-      const g = guidanceRef.current;
-      // The offer must land in the session the answer will use: a live one, else one started here.
-      const before = turn.dialogId();
-      const sessionId = turn.isStale() || !before ? newSessionId() : before;
-      const since = trip().drivingSince;
-      try {
-        const { nudges } = await api.nudges(
-          {
-            lat: coordsRef.current.lat,
-            lng: coordsRef.current.lng,
-            driving: true,
-            active_place: cur.place,
-            ahead: routePointsAhead(cur.route.geometry, g.cum, g.matchedIndex, g.alongM),
-            chain_control_ahead: chainControlAhead(cur.route.chain_controls, g.cum, g.matchedIndex, g.alongM) ?? undefined,
-            drive_elapsed_min: since === null ? null : Math.min(24 * 60, Math.max(0, Math.round((Date.now() - since) / 60000))),
-            local_hour: new Date().getHours(),
-            session_id: sessionId,
-          },
-          ctrl.signal,
-        );
-        if (ctrl.signal.aborted || !nudges.length) return;
-        turn.adoptSession(sessionId); // the answer must not start a fresh session
-        for (const n of nudges) {
-          say(n.text, { priority: PRIORITY.WEATHER, kind: "ambient", key: `${NUDGE_KEY_PREFIX}${n.kind}`, ttlMs: NUDGE_EVERY_MS });
-        }
-      } catch (e) {
-        if (!ctrl.signal.aborted) console.log(`[nudges] ${String(e)}`);
-      }
-    };
-    const first = setTimeout(() => {
-      poll();
-      every = setInterval(poll, NUDGE_EVERY_MS);
-    }, NUDGE_FIRST_MS);
-    return () => {
-      clearTimeout(first);
-      if (every) clearInterval(every);
-      ctrl.abort();
-    };
-  }, [driving, hasRoute, nudgesOn, say, turn]); // refs and a stable callback; `active` itself must not restart the timer
+  // ---- Nudges: the backend's offers every few minutes while driving (src/hooks/useNudges.ts). ----
+  useNudges(driving, !!active, say, turn, guidanceRef, coordsRef);
 
   const onGo = () => {
     if (!isHeightConfirmed()) {
