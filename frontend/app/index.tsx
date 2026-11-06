@@ -11,14 +11,13 @@ import { floatingBottom } from "@/src/state/floating";
 import { routeFitPoints } from "@/src/map/bounds";
 import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
-import { Icon } from "@/src/components/Icon";
+import { FollowButton } from "@/src/components/FollowButton";
 import MapLayer from "@/src/components/MapLayer";
 import type { MapLayerHandle } from "@/src/components/mapTypes";
 import { MicPermissionCard } from "@/src/components/MicPermissionCard";
 import { HeightConfirmCard } from "@/src/components/HeightConfirmCard";
 import { confirmHeight, isHeightConfirmed, useHeightConfirmed } from "@/src/truck/heightConfirmed";
 import { NavBanner } from "@/src/components/NavBanner";
-import { PressableScale } from "@/src/components/PressableScale";
 import { dial, ProvidersList } from "@/src/components/ProvidersList";
 import { RestoredBanner } from "@/src/components/RestoredBanner";
 import { CaptionBubble, Toast } from "@/src/components/Toast";
@@ -51,7 +50,7 @@ import { getTruckProfile, isOnboarded, truckLabel, useTruckProfile } from "@/src
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { askWithDeadline } from "@/src/voice/micAsk";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
-import { shadow, spacing, useTheme } from "@/src/theme";
+import { spacing, useTheme } from "@/src/theme";
 import { providerPlace, selectPlaces, useTripStore } from "@/src/state/tripStore";
 import { setHandsFree, setNudgesEnabled, setVoiceGuidance, takeTruckReroute, useHandsFree, useVoiceGuidance } from "@/src/state/settingsStore";
 import { reduceAgentResponse } from "@/src/state/agentReducer";
@@ -900,10 +899,9 @@ export default function MapScreen() {
       {/* Hidden when the map window has no room for it under the top bar: it sat on the history button
           (UI review 2026-11-05, third pass, M3). */}
       {followBottom !== null && (
-        <PressableScale
-          testID="follow-button"
-          accessibilityLabel={following ? "Stop following" : "Follow truck"}
-          accessibilityState={{ selected: following }}
+        <FollowButton
+          following={following}
+          bottom={followBottom}
           onPress={() => {
             if (following) {
               setTracking(false);
@@ -913,12 +911,7 @@ export default function MapScreen() {
               setTracking(true);
             }
           }}
-          // Above the card on the map when one asks: under it, only the button's edge showed (UI review 2026-11-05, M6).
-          containerStyle={[styles.recenter, { bottom: followBottom }]}
-          style={[styles.recenterBtn, shadow(colors), { backgroundColor: following ? colors.info : colors.surface }]}
-        >
-          <Icon name={following ? "navigation-variant" : "crosshairs-gps"} size={24} color={following ? colors.onInfo : colors.info} />
-        </PressableScale>
+        />
       )}
 
       <CaptionBubble
@@ -1030,12 +1023,4 @@ export default function MapScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  recenter: { position: "absolute", right: spacing.lg },
-  recenterBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-  },
 });
