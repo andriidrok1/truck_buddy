@@ -5,9 +5,10 @@ when nothing of that name is close, and the agent still asks "Is that the one?" 
 import httpx
 from conftest import fixture_json, run
 
-from models import AgentRequest
+from models import AgentRequest, Place
 from services import agent, geocode
-from services.geocode import _location, _overlap, name_query, picked_nearby
+from services.geocode import _location, _overlap, is_street, name_query, picked_nearby
+from services.parking import is_town
 
 SAC = (38.5816, -121.4944)
 TRUCKEE = (39.3280, -120.1833)
@@ -114,6 +115,10 @@ def test_state_words_and_filler_carry_no_weight():
     assert _location("Flying J in Ely") == ({"ely"}, None)
     assert _location("Jubitz, OR") == (set(), "or") and _location("Boomtown Nevada") == (set(), "nv")
     assert _location("Pilot, Fernley NV") == ({"fernley"}, "nv")
+    # a two-letter code that is also a word or an abbreviation is a state only after a comma
+    assert _location("truck wash in LA") == (set(), None) and _location("Truck Wash, LA") == (set(), "la")
+    assert _location("Boomtown OK") == (set(), None) and _location("Boomtown NV") == (set(), "nv")
+    assert _overlap("truck wash in LA", "Blue Beacon Truck Wash, Los Angeles, CA") == 1
 
 
 def test_the_town_the_driver_named_beats_a_nearer_one_of_the_chain(fake_http):
@@ -134,6 +139,7 @@ def test_boomtown_with_the_state_spelled_out_is_still_verdi(fake_http):
     _here(fake_http, disc="discover_boomtown_far_only", around="discover_boomtown")
     found = run(geocode.geocode("Boomtown Nevada", *SAC))
     assert found and found[0].name == "Boomtown Casino Hotel" and picked_nearby(found[0])
+    assert found[0].id == "here-here:pds:place:840boomtown-verdi"  # the flag is the type, never the id
 
 
 def test_a_slow_search_around_the_driver_falls_back_to_the_far_answer(fake_http):
@@ -152,3 +158,33 @@ def test_elm_swapped_for_a_diner_is_read_back(agent_sandbox, fake_http, monkeypa
     assert res.reply == "I found Elm Street Diner on Elm Street in Sacramento, California, about 1.8 miles away. Is that the one?"
     res = run(prov.handle(AgentRequest(text="yes", session_id="bt3", lat=SAC[0], lng=SAC[1]), None))
     assert res.status == "route_set" and res.place.name == "Elm Street Diner"
+
+
+def test_truck_wash_in_la_from_los_angeles_is_the_one_in_town(fake_http):
+    _here(fake_http, geo=None, disc="discover_truckwash_la")
+    found = run(geocode.geocode("truck wash in LA", 34.0522, -118.2437))
+    assert found and found[0].name == "Blue Beacon Truck Wash" and found[0].distance_mi < 5, found
+
+
+def test_a_marked_town_is_still_a_town_and_a_street_still_a_street(fake_http):
+    _here(fake_http, geo="geocode_verdi_street", disc="discover_reno_town")
+    found = run(geocode.geocode("Verdi", *RENO))
+    assert found and found[0].name.startswith("Verdi, NV") and picked_nearby(found[0])
+    assert is_town(found[0]) and not is_street(found[0])
+    street = geocode._marked(Place(id="here-street-x", name="Elm St", category="destination", lat=0, lng=0))
+    assert picked_nearby(street) and is_street(street)
+
+
+def test_the_49er_from_sacramento_still_falls_back_to_the_truck_stop(agent_sandbox, fake_http, monkeypatch):
+    """H23 as on main: Geocode and Discover both answer "the 49er" with 49ER Trl, Placerville; the geocoder's own
+    street wins the tie, stays a street, and the agent takes the 49er Travel Plaza nearby instead."""
+    _here(fake_http, geo="geocode_49er", disc="discover_49er")
+    niner = Place(id="sac49", name="Sacramento 49er Travel Plaza", category="truck_stop", lat=38.62, lng=-121.52,
+                  distance_mi=5.3, address="2828 El Centro Rd, Sacramento, CA")
+    agent_sandbox.places_provider.places = [niner]
+    prov = _agent(agent_sandbox, fake_http, monkeypatch, "the 49er", "the 49er")
+    found = run(geocode.geocode("the 49er", *SAC))
+    assert is_street(found[0]) and not picked_nearby(found[0])
+    res = run(prov.handle(AgentRequest(text="take me to the 49er", session_id="bt4", lat=SAC[0], lng=SAC[1]), None))
+    assert res.status == "route_set" and res.place.id == "sac49", res.reply
+    assert "49ER Trl" not in res.reply
