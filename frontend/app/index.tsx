@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Keyboard, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { absoluteUrl, api, isNoTruckRoute } from "@/src/api";
+import { absoluteUrl, api } from "@/src/api";
 import { useCopilotTurn, type AnswerContext } from "@/src/dialog/useCopilotTurn";
 import { useFillers } from "@/src/dialog/useFillers";
 import { bubbleRoom, expireLine, hasExpiringLine, isReplyCaption, LINE_HOLD_MS, lineCaption, replyCaption, replyPlacement, type Caption } from "@/src/dialog/caption";
@@ -28,7 +28,6 @@ import { MESSAGES } from "@/src/constants";
 import { isTester } from "@/src/auth";
 import { switchedLine } from "@/src/geo/routeChoice";
 import { farFromRoute } from "@/src/geo/guidance";
-import { createRerouteGate } from "@/src/geo/offroute";
 import { useAppActive } from "@/src/hooks/useAppActive";
 import { useBreakReminder } from "@/src/hooks/useBreakReminder";
 import { useDriveRecorder } from "@/src/hooks/useDriveRecorder";
@@ -41,6 +40,7 @@ import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
 import { useHardwareBack } from "@/src/hooks/useHardwareBack";
+import { useReroute } from "@/src/hooks/useReroute";
 import { useMicPrewarm } from "@/src/hooks/useMicPrewarm";
 import { NUDGE_KEY_PREFIX, useNudges } from "@/src/hooks/useNudges";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
@@ -51,12 +51,12 @@ import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { askWithDeadline } from "@/src/voice/micAsk";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { shadow, spacing, useTheme } from "@/src/theme";
-import { providerPlace, selectPlaces, stopsAhead, useTripStore, viaOf } from "@/src/state/tripStore";
+import { providerPlace, selectPlaces, useTripStore } from "@/src/state/tripStore";
 import { setHandsFree, setNudgesEnabled, setVoiceGuidance, takeTruckReroute, useHandsFree, useVoiceGuidance } from "@/src/state/settingsStore";
 import { reduceAgentResponse } from "@/src/state/agentReducer";
 import { applyEffects } from "@/src/state/applyEffects";
 import { offlineTurn } from "@/src/state/offlineTurn";
-import type { ActiveRoute, AgentResponse, LatLng, Phase, Place, RouteInfo } from "@/src/types";
+import type { ActiveRoute, AgentResponse, LatLng, Phase, Place } from "@/src/types";
 import { PRIORITY } from "@/src/voice/queue";
 import { playReply } from "@/src/voice/playReply";
 import { streetFromInstruction } from "@/src/voice/sttHint";
@@ -352,86 +352,14 @@ export default function MapScreen() {
 
   const restored = useTripRestore(active, driving, restoredId, setDialogPhase, setFit);
 
-  /**
-   * The tracker says the truck left the route: ask the engine to resume the plan from here
-   * (/reroute with the handle, section and metres into it), or plan afresh when that fails.
-   * One at a time; the new route only lands if the destination is still the same.
-   * Not for a tester parked on a fake spot (no trace = nothing moves) and not before "Go".
-   */
-  /**
-   * A route that landed while driving and breaks a truck restriction (or needs a permit) is said out loud:
-   * the card with the red banner is not on screen then, and the turn calls would otherwise just carry on.
-   */
-  const warnRestricted = (route: RouteInfo) => {
-    if (!route.restricted || !trip().driving) return;
-    const line = route.notices?.[0] ?? "";
-    const text =
-      route.restricted === "legal"
-        ? `Heads up: ${line || "this route needs a permit for your truck."}`
-        : `Heads up, the new route isn't cleared for your truck. ${line} Watch the signs.`;
-    say(text.replace(/\s+/g, " ").trim(), { priority: PRIORITY.MANEUVER, kind: "system", key: "route-restricted", ttlMs: 30000 });
-  };
-
-  const rerouting = useRef(false);
-  const rerouteGate = useRef(createRerouteGate()).current;
+  // Where the truck is now, for handlers that run after an await.
+  const coordsRef = useRef<LatLng>(loc.coords);
+  useEffect(() => {
+    coordsRef.current = loc.coords;
+  }, [loc.coords]);
   const offlineRef = useRef<OfflineGuidance | null>(null);
-  const rerouteOffRoute = async (g: Guidance) => {
-    const cur = trip().active;
-    if (!cur || rerouting.current || !trip().driving) return;
-    if (loc.sim && !loc.sim.trace) return;
-    if (!rerouteGate.allow(Date.now())) return;
-    // No signal: no /reroute. Point the driver back at the loaded line instead; the reroute
-    // runs as soon as the signal is back (useOfflineGuidance calls this again).
-    if (!isOnline()) {
-      offlineRef.current?.onOffRoute(g);
-      return;
-    }
-    rerouting.current = true;
-    const route = cur.route;
-    const starts = route.section_starts ?? [];
-    let sectionIndex = 0;
-    for (let i = 0; i < starts.length; i++) if (starts[i] <= g.matchedIndex) sectionIndex = i;
-    const sectionStart = starts[sectionIndex] ?? 0;
-    const traveledM = Math.max(0, g.alongM - (g.cum[sectionStart] ?? 0));
-    say("Rerouting.", { priority: PRIORITY.MANEUVER, kind: "system", key: "reroute", ttlMs: 20000 });
-    const gen = trip().routeGen;
-    const event = { cause: "off_route", dist_m: Math.round(g.distM), threshold_m: g.thresholdM, handle: !!route.handle, section_index: sectionIndex };
-    // /reroute gets the whole via list and the section index and drops the stops behind on its side; the
-    // fallback /route and the stop chips only get what is still ahead.
-    const ahead = cur.stops?.length ? cur.stops.slice(Math.min(sectionIndex, cur.stops.length)) : cur.stops;
-    let fallback = false;
-    try {
-      let res;
-      try {
-        res = await api.reroute({
-          lat: loc.coords.lat,
-          lng: loc.coords.lng,
-          place: cur.place,
-          handle: route.handle ?? null,
-          heading: loc.heading ?? null,
-          section_index: sectionIndex,
-          traveled_m: Math.round(traveledM),
-          via: route.via ?? [],
-          trip_id: cur.trip_id ?? null,
-        });
-      } catch (e) {
-        console.log(`[reroute] /reroute failed (${String(e)}), planning from scratch`);
-        fallback = true;
-        res = await api.route(loc.coords, cur.place, false, (route.via ?? []).slice(sectionIndex), cur.trip_id ?? null);
-      }
-      // Only onto the route the truck left: a stop added or a route picked while this ran is newer.
-      const applied = trip().applyRoute(gen, res.route, ahead, res.parking);
-      if (applied) warnRestricted(res.route);
-      tripLog.log("reroute", { ...event, ok: true, fallback, applied, restricted: res.route.restricted ?? null }, cur.trip_id);
-      g.resetOffRoute();
-    } catch {
-      tripLog.log("reroute", { ...event, ok: false, fallback }, cur.trip_id);
-      showToast("Couldn't reroute. Follow the map for now and watch the truck signs.");
-    } finally {
-      rerouting.current = false;
-      rerouteGate.done(Date.now());
-    }
-  };
+  // Off-route reroute, re-plan with the truck profile or to the entrance, and "×" on a stop (src/hooks/useReroute.ts).
+  const { rerouteOffRoute, reroute, onRemoveStop } = useReroute(loc, coordsRef, offlineRef, say, showToast);
   // One object per GPS fix (not per render): useGuidance pushes each fix into the off-route tracker once.
   const fix = useMemo(
     () => ({ ...loc.coords, speed: loc.speed, accuracy: loc.accuracy, ts: loc.ts }),
@@ -472,10 +400,6 @@ export default function MapScreen() {
   useEffect(() => {
     guidanceRef.current = guidance;
   }, [guidance]);
-  const coordsRef = useRef<LatLng>(loc.coords);
-  useEffect(() => {
-    coordsRef.current = loc.coords;
-  }, [loc.coords]);
 
   // ---- The dialog: src/dialog/turnMachine.ts decides, useCopilotTurn runs the commands (listen, STT, the agent
   // call, the mic reopening), this screen supplies what they need and applies each answer. Everything read
@@ -742,59 +666,6 @@ export default function MapScreen() {
     setRoutesOpen,
     setCaption,
   );
-
-  /** Re-plans the active route with the current truck profile (after a voice change) or to the entrance;
-   * the stops on the way stay (they used to vanish from the line while their chips stayed on screen). */
-  const reroute = async (cause: "profile" | "entrance" | "resume", failMsg = "Couldn't update the route. Try again."): Promise<boolean> => {
-    const cur = trip().active;
-    const gen = trip().routeGen;
-    if (!cur) return false;
-    try {
-      // From where the truck is now, not where it was when the driver tapped the mic, and only through the
-      // stops still ahead (a fresh /route knows no section index to drop the ones already made).
-      const stops = stopsAhead(cur.route, cur.stops, coordsRef.current);
-      const res = await api.route(coordsRef.current, cur.place, false, viaOf(stops), cur.trip_id ?? null);
-      // The route must still be the one this started from (the store's generation): a stop added or an
-      // off-route reroute that landed meanwhile is newer than this plan. The caller learns whether it landed.
-      const applied = trip().applyRoute(gen, res.route, stops, res.parking);
-      if (applied) warnRestricted(res.route);
-      tripLog.log("reroute", { cause, ok: true, applied, restricted: res.route.restricted ?? null }, cur.trip_id);
-      return applied;
-    } catch (e) {
-      tripLog.log("reroute", { cause, ok: false, no_route: isNoTruckRoute(e) }, cur.trip_id);
-      if (trip().routeGen === gen) showToast(isNoTruckRoute(e) ? routeFailText(e) : failMsg);
-      return false;
-    }
-  };
-
-  /** "×" on a stop chip: re-plan through the remaining stops (plain /route when none are left). */
-  const onRemoveStop = async (stop: Place) => {
-    const cur = trip().active;
-    const gen = trip().routeGen;
-    if (!cur) return;
-    const stops = stopsAhead(cur.route, cur.stops, loc.coords).filter((s) => s.id !== stop.id);
-    const via = viaOf(stops);
-    try {
-      const res = via.length
-        ? await api.reroute({
-            lat: loc.coords.lat,
-            lng: loc.coords.lng,
-            place: cur.place,
-            handle: null, // the old handle pins the old stops; a changed list must route fresh
-            heading: loc.heading ?? null,
-            section_index: 0,
-            traveled_m: 0,
-            via,
-            trip_id: cur.trip_id ?? null,
-          })
-        : await api.route(coordsRef.current, cur.place, false, [], cur.trip_id ?? null);
-      if (trip().applyRoute(gen, res.route, stops, res.parking)) {
-        tripLog.log("stop_removed", { stops: stops.length, duration_s: res.route.duration_s }, cur.trip_id);
-      }
-    } catch {
-      showToast("Couldn't update the stops. Try again.");
-    }
-  };
 
   /**
    * A tap in the routes list: swap `active.route` for that alternative, no network. The old primary
