@@ -21,7 +21,7 @@ jobs:
       - name: Deploy to Railway
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: npx -y @railway/cli@4.26.0 up website --path-as-root --service site --ci
+        run: npx -y @railway/cli@5.71.0 up website --path-as-root --service site --ci
 
       - name: Check pages
         run: |

@@ -22,7 +22,7 @@ jobs:
       - name: Deploy to Railway
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: npx -y @railway/cli@4.26.0 up backend --path-as-root --service backend --ci
+        run: npx -y @railway/cli@5.71.0 up backend --path-as-root --service backend --ci
 
       - name: Health check
         run: |

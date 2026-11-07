@@ -76,4 +76,4 @@ Code review of the diff goes to `/code-review` or a fresh `general-purpose` agen
 
 ## Secrets
 
-Keys live in `backend/.env` and on the server only. Never print them, commit them or put them in a PR, issue or spec.
+Keys live in `backend/.env` and in the Railway service variables only. Never print them, commit them or put them in a PR, issue or spec.

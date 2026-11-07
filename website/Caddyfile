@@ -1,11 +1,11 @@
 :{$PORT} {
+	@www host www.truckbuddy.io
+	redir @www https://truckbuddy.io{uri} 308
+
 	root * /srv
 	encode gzip
 	@internal path /Caddyfile /Dockerfile /README.md /.dockerignore
 	respond @internal "Not found" 404
 	try_files {path} {path}/ {path}/index.html
 	file_server
-	handle_errors {
-		respond "Not found" 404
-	}
 }

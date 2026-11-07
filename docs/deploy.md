@@ -11,6 +11,8 @@ Prod is on Railway (project `truckbuddy`, environment `production`), owned by An
 - `.github/workflows/deploy-site.yml` does the same for `website/` (service `site`, Caddy, `website/Dockerfile`)
   and checks `/privacy/`, `/terms/` and `/support/` on `https://truckbuddy.io`.
 - Secret: `RAILWAY_TOKEN`, a project token for the production environment.
+- Roll back: in the Railway dashboard open the service → Deployments → pick the previous one → Redeploy, or revert
+  the commit on `main` and let the workflow ship it.
 
 Railway services: `backend` (volume at `/data`, `TTS_DIR=/data/tts`), `Postgres` (its `DATABASE_URL` is referenced
 by `backend`), `site`. Environment variables, including API keys, are set in the Railway dashboard, never in the repo.
