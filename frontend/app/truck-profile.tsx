@@ -59,31 +59,25 @@ function Field({
   );
 }
 
-const DELETE_MSG = "This removes everything TruckBuddy stored for this device on our servers and on this phone. The app starts over like a fresh install. This can't be undone.";
-
-const confirmDelete = (onYes: () => void) => {
+/** A destructive action asks first: a native alert, or the browser's confirm on web (which shows `message` as is). */
+const confirmDestructive = (title: string, message: string, action: string, onYes: () => void) => {
   if (Platform.OS === "web") {
-    if (window.confirm(DELETE_MSG)) onYes();
+    if (window.confirm(message)) onYes();
     return;
   }
-  Alert.alert(t("Delete my data?"), t(DELETE_MSG), [
+  Alert.alert(t(title), t(message), [
     { text: t("Cancel"), style: "cancel" },
-    { text: t("Delete"), style: "destructive", onPress: onYes },
+    { text: t(action), style: "destructive", onPress: onYes },
   ]);
 };
+
+const DELETE_MSG = "This removes everything TruckBuddy stored for this device on our servers and on this phone. The app starts over like a fresh install. This can't be undone.";
+
+const confirmDelete = (onYes: () => void) => confirmDestructive("Delete my data?", DELETE_MSG, "Delete", onYes);
 
 const RESET_MSG = "Height, trailer, weight, hazmat and your name go back to the defaults. Nothing is saved until you tap Save truck.";
 
-const confirmReset = (onYes: () => void) => {
-  if (Platform.OS === "web") {
-    if (window.confirm(RESET_MSG)) onYes();
-    return;
-  }
-  Alert.alert(t("Reset to defaults?"), t(RESET_MSG), [
-    { text: t("Cancel"), style: "cancel" },
-    { text: t("Reset"), style: "destructive", onPress: onYes },
-  ]);
-};
+const confirmReset = (onYes: () => void) => confirmDestructive("Reset to defaults?", RESET_MSG, "Reset", onYes);
 
 /** The server copy, then the phone back to a fresh install (src/state/firstLaunch.ts). */
 const onDeleteMyData = async (router: ReturnType<typeof useRouter>) => {
