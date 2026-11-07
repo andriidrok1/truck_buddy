@@ -58,7 +58,7 @@ The driver looks at the screen for two seconds at 65 mph. Everything follows fro
 
 - Offline tests never touch the network: provider responses come from `tests/fixtures/<provider>/*.json`, an unmocked call fails the test.
 - Flags are read at call time (`os.getenv` inside the function or `services/flags.py`), so a flag flip on prod needs no deploy.
-- Prod runs `main` on Lightsail (`api.truckbuddy.io`), deployed by `.github/workflows/deploy-backend.yml` after merge. Don't ssh in and change things by hand.
+- Prod runs `main` on Railway (`api.truckbuddy.io`, site `truckbuddy.io`), deployed by `.github/workflows/deploy-backend.yml` and `deploy-site.yml` after merge. Don't change prod by hand.
 
 ## Agents in `.claude/agents/`
 

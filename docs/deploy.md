@@ -2,13 +2,21 @@
 
 ## What happens on a push to main
 
-`.github/workflows/deploy-backend.yml` runs on every push to `main` that touches `backend/**` (and on manual
-dispatch). It tars `backend/` without `tests/` and `__pycache__`, streams the tarball over SSH to
-`tbdeploy@$TRUCKBUDDY_HOST` (AWS Lightsail) whose authorized key is restricted to one forced command, with the
-short commit hash as the only argument, then polls `http://$HOST/api/health` up to 30 times, 5 s apart.
-Secrets: `TRUCKBUDDY_DEPLOY_KEY`, `TRUCKBUDDY_KNOWN_HOSTS`, `TRUCKBUDDY_HOST`.
+Prod is on Railway (project `truckbuddy`, environment `production`), owned by Andrii.
 
-The forced command on the server (unpack, install, restart, keep data dirs) is **not in this repo**.
+- `.github/workflows/deploy-backend.yml` runs on every push to `main` that touches `backend/**` (and on manual
+  dispatch). It uploads `backend/` with `railway up --service backend`; Railway builds `backend/Dockerfile`
+  (see `backend/railway.json`), checks `/api/health` before switching traffic, then the job polls
+  `https://api.truckbuddy.io/api/health` up to 30 times, 5 s apart.
+- `.github/workflows/deploy-site.yml` does the same for `website/` (service `site`, Caddy, `website/Dockerfile`)
+  and checks `/privacy/`, `/terms/` and `/support/` on `https://truckbuddy.io`.
+- Secret: `RAILWAY_TOKEN`, a project token for the production environment.
+
+Railway services: `backend` (volume at `/data`, `TTS_DIR=/data/tts`), `Postgres` (its `DATABASE_URL` is referenced
+by `backend`), `site`. Environment variables, including API keys, are set in the Railway dashboard, never in the repo.
+
+DNS is at Namecheap: `api` CNAME and `@` ALIAS / `www` CNAME to the targets Railway shows for each custom domain, plus
+one `_railway-verify` TXT record per domain (the CLI doesn't print these; the dashboard does).
 
 ## Database
 
@@ -57,7 +65,7 @@ stream lives in the process that started it). Shutdown waits up to 5 s for backg
 events, jobs, parking) before closing the pool, so a deploy mid-dialog loses nothing.
 
 Data that must survive a deploy: `DATABASE_URL` (or the SQLite file), `TTS_DIR` (clips and the pinned fixed lines),
-`PARKING_CACHE_DIR` only when the store is off (files are the fallback). The forced command must keep them outside the unpacked tree.
+`PARKING_CACHE_DIR` only when the store is off (files are the fallback). On Railway `TTS_DIR` lives on the `/data` volume and the database is the `Postgres` service.
 
 ## Smoke after a deploy
 
@@ -66,10 +74,3 @@ Data that must survive a deploy: `DATABASE_URL` (or the SQLite file), `TTS_DIR` 
 ```
 EXPO_PUBLIC_BACKEND_URL=https://api.truckbuddy.io ACCESS_CODE=… python -m pytest -n 0 -m smoke tests/smoke -q
 ```
-
-## TODO (Abdul)
-
-- systemd unit name and where the forced command script lives on the box
-- install path of the unpacked backend, the venv, and the data directories it preserves
-- how to roll back to the previous tarball (is the previous release kept?)
-- where the logs go (`journalctl -u …`) and their retention
