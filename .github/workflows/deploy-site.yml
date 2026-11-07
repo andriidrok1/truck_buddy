@@ -1,0 +1,31 @@
+# Deploys website/ (truckbuddy.io: privacy, terms, support) to Railway (project truckbuddy, service site).
+name: Deploy site
+
+on:
+  push:
+    branches: [main]
+    paths: ["website/**", ".github/workflows/deploy-site.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: npx -y @railway/cli@5.71.0 up website --path-as-root --service site --ci
+
+      - name: Check pages
+        run: |
+          for p in privacy/ terms/ support/; do
+            for i in $(seq 1 20); do curl -fsS -o /dev/null "https://truckbuddy.io/$p" && break; sleep 5; done
+            curl -fsS -o /dev/null "https://truckbuddy.io/$p"
+          done
