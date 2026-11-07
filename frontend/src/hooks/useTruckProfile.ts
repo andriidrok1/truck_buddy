@@ -102,10 +102,6 @@ export function getTruckProfile() {
   return current;
 }
 
-// Settings (hands-free, nudges, speed alerts, voice guidance, the truck editor's reroute flag) moved to
-// src/state/settingsStore.ts; these names stay for the call sites.
-export { requestTruckReroute, setHandsFree, setNudgesEnabled, setSpeedAlerts, takeTruckReroute, useHandsFree, useNudgesEnabled, useSpeedAlerts } from "../state/settingsStore";
-
 export function useTruckProfile() {
   const [truck, setTruck] = useState<TruckProfile>(current);
   useEffect(() => {

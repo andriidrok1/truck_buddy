@@ -1,26 +1,26 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Alert, Platform, StyleSheet, TextInput, View } from "react-native";
+import { Alert, Platform, TextInput, View } from "react-native";
 import { Text } from "@/src/i18n/Text";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { requestCode, setToken, signedInWithCode } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
-import { setEldToken, useEldToken } from "@/src/eld";
 import { PressableScale } from "@/src/components/PressableScale";
-import { removePack, usePacks } from "@/src/hooks/useOfflineMap";
+import { EldSection } from "@/src/components/EldSection";
+import { OfflineMapsSection } from "@/src/components/OfflineMapsSection";
+import { styles } from "@/src/components/truckProfileStyles";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { saveProfile } from "@/src/data/profile";
 import { deleteMyData } from "@/src/state/firstLaunch";
 import { DEFAULT_TRUCK, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
 import { requestTruckReroute, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts } from "@/src/state/settingsStore";
 import { Chip, PrefsForm, ToggleRow, type Prefs } from "@/src/components/PrefsForm";
-import { formatBytes } from "@/src/map/bounds";
 import { setSim } from "@/src/sim";
 import { truckErrors, truckFromInputs } from "@/src/truck/validate";
 import { confirmHeight } from "@/src/truck/heightConfirmed";
-import { fonts, radius, spacing, useTheme, setThemePref, useThemePref, type ThemePref } from "@/src/theme";
+import { spacing, useTheme, setThemePref, useThemePref, type ThemePref } from "@/src/theme";
 import { LANGS, setLang, t, UK_READY, useLang } from "@/src/i18n";
 
 
@@ -59,31 +59,25 @@ function Field({
   );
 }
 
-const DELETE_MSG = "This removes everything TruckBuddy stored for this device on our servers and on this phone. The app starts over like a fresh install. This can't be undone.";
-
-const confirmDelete = (onYes: () => void) => {
+/** A destructive action asks first: a native alert, or the browser's confirm on web (which shows `message` as is). */
+const confirmDestructive = (title: string, message: string, action: string, onYes: () => void) => {
   if (Platform.OS === "web") {
-    if (window.confirm(DELETE_MSG)) onYes();
+    if (window.confirm(message)) onYes();
     return;
   }
-  Alert.alert(t("Delete my data?"), t(DELETE_MSG), [
+  Alert.alert(t(title), t(message), [
     { text: t("Cancel"), style: "cancel" },
-    { text: t("Delete"), style: "destructive", onPress: onYes },
+    { text: t(action), style: "destructive", onPress: onYes },
   ]);
 };
+
+const DELETE_MSG = "This removes everything TruckBuddy stored for this device on our servers and on this phone. The app starts over like a fresh install. This can't be undone.";
+
+const confirmDelete = (onYes: () => void) => confirmDestructive("Delete my data?", DELETE_MSG, "Delete", onYes);
 
 const RESET_MSG = "Height, trailer, weight, hazmat and your name go back to the defaults. Nothing is saved until you tap Save truck.";
 
-const confirmReset = (onYes: () => void) => {
-  if (Platform.OS === "web") {
-    if (window.confirm(RESET_MSG)) onYes();
-    return;
-  }
-  Alert.alert(t("Reset to defaults?"), t(RESET_MSG), [
-    { text: t("Cancel"), style: "cancel" },
-    { text: t("Reset"), style: "destructive", onPress: onYes },
-  ]);
-};
+const confirmReset = (onYes: () => void) => confirmDestructive("Reset to defaults?", RESET_MSG, "Reset", onYes);
 
 /** The server copy, then the phone back to a fresh install (src/state/firstLaunch.ts). */
 const onDeleteMyData = async (router: ReturnType<typeof useRouter>) => {
@@ -114,10 +108,6 @@ export default function TruckProfileScreen() {
   const truck = useTruckProfile();
   const handsFree = useHandsFree();
   const speedAlerts = useSpeedAlerts();
-  const eldToken = useEldToken();
-  const [eldDraft, setEldDraft] = useState("");
-  const eldConnected = !!eldToken;
-  const offlineMaps = usePacks();
 
   const [feet, setFeet] = useState(String(Math.floor(truck.height_in / 12)));
   const [inches, setInches] = useState(String(truck.height_in % 12));
@@ -274,97 +264,9 @@ export default function TruckProfileScreen() {
         <Text style={[styles.section, { color: colors.onSurface }]}>Preferences</Text>
         <PrefsForm value={prefs} onChange={(patch) => setPrefs((p) => ({ ...p, ...patch }))} />
 
-        <Text style={[styles.section, { color: colors.onSurface }]}>Hours of service (Motive)</Text>
-        <View testID="eld-section" style={[styles.eldBox, { backgroundColor: colors.surfaceSecondary }]}>
-          <View style={styles.eldStatusRow}>
-            <Icon name={eldConnected ? "check-circle" : "link-variant-off"} size={18} color={eldConnected ? colors.success : colors.muted} />
-            <Text testID="eld-status" style={[styles.switchTitle, { color: colors.onSurface }]}>
-              {eldConnected ? "Connected" : "Not connected"}
-            </Text>
-          </View>
-          <View style={[styles.inputRow, { backgroundColor: colors.surface, borderColor: colors.surface }]}>
-            <TextInput
-              testID="eld-key-input"
-              value={eldDraft}
-              onChangeText={setEldDraft}
-              placeholder={t(eldConnected ? "Paste a new API key to replace" : "Motive API key")}
-              placeholderTextColor={colors.muted}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="off"
-              textContentType="none"
-              returnKeyType="done"
-              style={[styles.input, { color: colors.onSurface }]}
-            />
-          </View>
-          <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
-            The key comes from the Motive Fleet Dashboard: Admin → API keys → create a key, then paste it here.
-          </Text>
-          <View style={styles.row}>
-            <PressableScale
-              testID="eld-save-button"
-              containerStyle={styles.flex}
-              disabled={!eldDraft.trim()}
-              onPress={async () => {
-                await setEldToken(eldDraft);
-                setEldDraft("");
-              }}
-              style={[styles.eldBtn, { backgroundColor: eldDraft.trim() ? colors.brandPrimary : colors.surfaceTertiary }]}
-            >
-              <Text style={[styles.eldBtnText, { color: eldDraft.trim() ? colors.onBrandPrimary : colors.muted }]}>Save</Text>
-            </PressableScale>
-            {eldConnected && (
-              <PressableScale
-                testID="eld-remove-button"
-                containerStyle={styles.flex}
-                onPress={async () => {
-                  await setEldToken(null);
-                  setEldDraft("");
-                }}
-                style={[styles.eldBtn, { borderColor: colors.error, borderWidth: 1.5 }]}
-              >
-                <Text style={[styles.eldBtnText, { color: colors.error }]}>Remove</Text>
-              </PressableScale>
-            )}
-          </View>
-          <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
-            Your Motive API key stays in this phone&apos;s secure storage. It is sent only with your copilot requests so the copilot can read your hours, and is never stored on TruckBuddy servers. Remove it any time.
-          </Text>
-        </View>
+        <EldSection />
 
-        {/* MapLibre builds only: with the Apple provider there is no pack to list and nothing to delete. */}
-        {offlineMaps.available && (
-          <>
-            <Text style={[styles.section, { color: colors.onSurface }]}>Offline maps</Text>
-            <View testID="offline-maps-section" style={[styles.eldBox, { backgroundColor: colors.surfaceSecondary }]}>
-              {offlineMaps.packs.length === 0 ? (
-                <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
-                  No maps saved. Set a route and tap “Download for offline” on its card; the last three routes are kept.
-                </Text>
-              ) : (
-                offlineMaps.packs.map((p) => (
-                  <View key={p.name} testID={`offline-pack-${p.name}`} style={styles.eldStatusRow}>
-                    <Icon name={p.complete ? "map-check-outline" : "progress-download"} size={18} color={p.complete ? colors.success : colors.muted} />
-                    <View style={styles.flex}>
-                      <Text style={[styles.switchTitle, { color: colors.onSurface }]} numberOfLines={1}>
-                        {p.name}
-                      </Text>
-                      <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
-                        {p.complete ? formatBytes(p.bytes) : `${Math.round(p.percentage)}% · ${formatBytes(p.bytes)}`}
-                        {p.createdAt ? ` · ${new Date(p.createdAt).toLocaleDateString()}` : ""}
-                      </Text>
-                    </View>
-                    <PressableScale testID={`offline-pack-delete-${p.name}`} accessibilityLabel={`Delete ${p.name}`} onPress={() => removePack(p.name)} style={styles.packDelete}>
-                      <Icon name="delete-outline" size={22} color={colors.error} />
-                    </PressableScale>
-                  </View>
-                ))
-              )}
-              <Text style={[styles.switchSub, { color: colors.muted }]}>Map data © OpenFreeMap © OpenMapTiles © OpenStreetMap contributors.</Text>
-            </View>
-          </>
-        )}
+        <OfflineMapsSection />
 
         {!valid && (
           <Text testID="truck-profile-error" style={[styles.error, { color: colors.error }]}>
@@ -435,46 +337,3 @@ export default function TruckProfileScreen() {
     </View>
   );
 }
-
-const INPUT_BORDER = 1.5;
-
-const styles = StyleSheet.create({
-  signOut: { height: 56, borderRadius: radius.pill, borderWidth: 1.5, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginTop: spacing.xl },
-  signOutText: { fontFamily: fonts.semibold, fontSize: 16 },
-  deleteNote: { fontFamily: fonts.regular, fontSize: 13, textAlign: "center", marginTop: spacing.sm, paddingHorizontal: spacing.lg },
-  root: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, gap: spacing.md },
-  back: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
-  title: { flex: 1, fontFamily: fonts.bold, fontSize: 22 },
-  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xl, gap: spacing.md },
-  hint: { fontFamily: fonts.regular, fontSize: 14, lineHeight: 20 },
-  section: { fontFamily: fonts.bold, fontSize: 16, marginTop: spacing.sm },
-  row: { flexDirection: "row", gap: spacing.md },
-  flex: { flex: 1 },
-  field: { gap: 6 },
-  label: { fontFamily: fonts.medium, fontSize: 13 },
-  // The border is inside the box: 56 + both borders leaves the field itself 56 tall (UI review 2026-11-05, N10: 53).
-  inputRow: { flexDirection: "row", alignItems: "center", height: 56 + 2 * INPUT_BORDER, borderRadius: radius.md, paddingHorizontal: spacing.lg, borderWidth: INPUT_BORDER, overflow: "hidden" },
-  input: {
-    flex: 1,
-    minWidth: 0,
-    width: 0,
-    fontFamily: fonts.semibold,
-    fontSize: 18,
-    height: "100%",
-    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}),
-  },
-  unit: { fontFamily: fonts.medium, fontSize: 15, flexShrink: 0, marginLeft: spacing.sm },
-  toggleGap: { marginTop: spacing.sm },
-  switchTitle: { fontFamily: fonts.semibold, fontSize: 16 },
-  switchSub: { fontFamily: fonts.regular, fontSize: 13, marginTop: 2 },
-  eldBox: { borderRadius: radius.md, padding: spacing.lg, gap: spacing.md },
-  eldStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  eldBtn: { flex: 1, height: 56, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
-  eldBtnText: { fontFamily: fonts.semibold, fontSize: 15 },
-  packDelete: { width: 56, height: 56, alignItems: "center", justifyContent: "center" },
-  error: { fontFamily: fonts.medium, fontSize: 13 },
-  footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  save: { height: 56, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
-  saveText: { fontFamily: fonts.bold, fontSize: 16 },
-});
