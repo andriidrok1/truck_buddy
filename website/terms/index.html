@@ -8,114 +8,110 @@
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
-<style>
-/* Same tokens as index.html (from frontend/src/theme.ts): a plain reading page. */
-:root { color-scheme: light; --paper: #FFFFFF; --paper-2: #F2F2F7; --map: #EEF1F4; --cabin: #F7F2EA; --ink: #1C1C1E; --ink-2: #3A3A3C; --ink-3: #6C6C70; --line: #E5E5EA; --blue: #007AFF; --blue-soft: rgba(0,122,255,0.16); --font-ui: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-ui); font-size: 1.0625rem; line-height: 1.65; -webkit-font-smoothing: antialiased; }
-a { color: var(--blue); }
-:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; border-radius: 8px; }
-.wrap { max-width: 760px; margin-inline: auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-header { border-bottom: 1px solid var(--line); }
-.head-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 68px; }
-.brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); font-weight: 800; font-size: 1.125rem; letter-spacing: -0.02em; }
-.brand-disc { width: 38px; height: 38px; border-radius: 50%; background: var(--cabin); display: grid; place-items: center; box-shadow: 0 0 0 4px var(--blue-soft); }
-.brand-disc img { width: 30px; height: 30px; }
-.head-row nav { display: flex; gap: 6px 18px; flex-wrap: wrap; }
-.head-row nav a { text-decoration: none; font-weight: 600; font-size: 0.9375rem; color: var(--ink-2); }
-.head-row nav a[aria-current="page"] { color: var(--blue); }
-.intro { background: var(--map); padding-block: 56px 48px; }
-.eyebrow { font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--blue); }
-h1 { font-size: clamp(2.25rem, 1.6rem + 2.6vw, 3.5rem); font-weight: 800; letter-spacing: -0.04em; line-height: 1.05; margin: 12px 0 12px; text-wrap: balance; }
-.intro p { color: var(--ink-2); max-width: 60ch; margin: 0; }
-.updated { font-size: 0.875rem; color: var(--ink-3); margin-top: 16px !important; }
-main.doc { padding-block: 48px 96px; }
-.doc h2 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.025em; margin: 48px 0 12px; }
-.doc h2:first-child { margin-top: 0; }
-.doc p, .doc li { color: var(--ink-2); max-width: 65ch; }
-.doc ul { padding-left: 1.2em; margin: 0 0 12px; display: grid; gap: 10px; }
-.doc strong { color: var(--ink); }
-.contact { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; background: var(--paper-2); border-radius: 20px; padding: 20px 24px; margin-top: 16px; }
-.contact b { font-size: 1.125rem; }
-.copy { height: 40px; padding: 0 16px; border-radius: 999px; border: 0; background: var(--ink); color: var(--paper); font: 700 0.875rem var(--font-ui); cursor: pointer; }
-details { border-top: 1px solid var(--line); padding-block: 4px; }
-details:last-of-type { border-bottom: 1px solid var(--line); }
-summary { cursor: pointer; font-weight: 700; padding-block: 16px; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
-summary::-webkit-details-marker { display: none; }
-summary::after { content: "+"; color: var(--blue); font-weight: 800; font-size: 1.25rem; line-height: 1; transition: transform .2s; }
-details[open] summary::after { transform: rotate(45deg); }
-details p { margin: 0 0 16px; }
-footer { border-top: 1px solid var(--line); padding-block: 32px; color: var(--ink-3); font-size: 0.875rem; }
-footer .row { display: flex; flex-wrap: wrap; gap: 12px 20px; justify-content: space-between; }
-footer a { color: var(--ink-2); font-weight: 600; text-decoration: none; }
-</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,1,0&display=block">
+<link rel="stylesheet" href="../assets/legal.css">
 </head>
 <body>
-<header>
+<header class="site-head">
   <div class="wrap head-row">
-    <a class="brand" href="../"><span class="brand-disc"><img src="../assets/favicon.png" alt=""></span>TruckBuddy</a>
-    <nav aria-label="Main"><a href="../">Home</a><a href="../privacy/">Privacy</a><a href="../terms/" aria-current="page">Terms</a><a href="../support/">Support</a></nav>
+    <a class="brand" href="../" aria-label="TruckBuddy home"><span class="brand-disc"><span class="buddy"><img src="../assets/buddy-body.webp" alt=""><img src="../assets/buddy-eyes.webp" alt=""></span></span>TruckBuddy</a>
+    <nav class="nav" aria-label="Main"><a class="home" href="../">Home</a><a href="../privacy/">Privacy</a><a href="../terms/" aria-current="page">Terms</a><a href="../support/">Support</a></nav>
   </div>
 </header>
-<section class="intro">
-<div class="wrap">
-<span class="eyebrow">Terms of use</span>
-<h1>TruckBuddy Terms of Use</h1>
-<p>These terms apply when you use the TruckBuddy app and its services. By using the app you agree to them.</p>
-<p class="updated">Last updated: November 4, 2026</p>
-</div>
-</section>
-<main class="doc wrap">
-<h2>The short version</h2>
-<ul>
-<li><strong>Road signs and the law come first.</strong> A posted clearance, weight limit, truck restriction or closure always wins over what the app says.</li>
-<li><strong>The app can be wrong.</strong> Bridge heights, truck restrictions, parking, prices, weather and hours of service come from outside sources that can be missing, late or incorrect.</li>
-<li><strong>You drive the truck.</strong> You decide where to go and whether a route, a stop or a parking spot is safe and legal for your vehicle.</li>
-</ul>
-<h2>Who can use TruckBuddy</h2>
-<p>TruckBuddy is for professional drivers and people who work with them in the United States. You must be at least 18 years old.</p>
-<h2>Using the app while driving</h2>
-<ul>
-<li>Mount your phone and set it up before you drive. Talk to the copilot by voice; a single tap starts it.</li>
-<li>Do not hold the phone, type or read long text while the vehicle is moving. Follow FMCSA rules and the laws of every state you drive in on the use of mobile phones.</li>
-<li>Pull over to change settings, your truck profile or anything that takes more than one touch.</li>
-</ul>
-<h2>Routes, bridges and restrictions</h2>
-<ul>
-<li>Routes are planned for the truck height, length, weight and hazmat status in your truck profile. Keep it correct; a wrong height means a wrong route.</li>
-<li>Clearance and restriction data come from HERE, public bridge inventories and OpenStreetMap. Not every bridge, tunnel, overhang or local restriction is in them. The app warns you about what it knows; it cannot warn you about what it does not know.</li>
-<li>If the app says it could not find a legal truck route, do not drive it without checking the restrictions yourself or getting a permit.</li>
-</ul>
-<h2>Parking, places, prices and hours of service</h2>
-<ul>
-<li>Satellite parking checks, entrance directions and truck parking counts are estimates. A lot may be full, closed, private or not allowed for trucks.</li>
-<li>Place details, phone numbers and fuel prices may be out of date. What drivers say about a place comes from Google Maps and reflects other people&rsquo;s opinions.</li>
-<li>Hours-of-service clocks come from your ELD provider. Your logs and your ELD, not TruckBuddy, are the record that counts.</li>
-<li>In a breakdown or emergency, call 911 or your carrier. TruckBuddy does not call for help.</li>
-</ul>
-<h2>Free service and limits</h2>
-<p>TruckBuddy is free while in early access. To keep it running, there is a daily limit on copilot questions and satellite checks; the map and routes keep working past it. Features may change, and the service may be unavailable at times.</p>
-<h2>Your content</h2>
-<p>You keep what you say to the copilot. You let us process it to answer you and to improve the service, as described in the <a href="../privacy/">Privacy Policy</a>. Do not use the app to break the law, to harass anyone, or to overload or reverse engineer the service.</p>
-<h2>Data from others</h2>
-<p>TruckBuddy uses data from HERE, OpenStreetMap contributors (ODbL), Overture Maps Foundation, Foursquare, AllThePlaces, the FHWA, the National Weather Service, Caltrans, Esri and Google Maps. It belongs to them and is shown under their terms.</p>
-<h2>No warranty</h2>
-<p>The app and its information are provided &ldquo;as is&rdquo; and &ldquo;as available&rdquo;, without warranties of any kind, including accuracy, fitness for a particular purpose and uninterrupted service, to the extent the law allows.</p>
-<h2>Limitation of liability</h2>
-<p>To the extent the law allows, TruckBuddy and the people who make it are not liable for indirect, incidental or consequential damages, or for damage to vehicles, cargo or property, fines, or lost income arising from the use of the app or reliance on its information. Where liability cannot be excluded, it is limited to the amount you paid for the app in the last 12 months.</p>
-<h2>Ending use</h2>
-<p>You can stop using TruckBuddy at any time and delete your data in Truck profile &rarr; Delete my data. We may suspend access that breaks these terms or puts the service at risk.</p>
-<h2>Changes</h2>
-<p>We may update these terms. The date above shows the latest version; important changes are announced in the app.</p>
-<h2>Governing law</h2>
-<p>These terms are governed by the laws of the State of California, without regard to its conflict-of-laws rules.</p>
-<h2>Contact</h2>
-<p>Questions: <a href="mailto:support@truckbuddy.io">support@truckbuddy.io</a></p>
-</main>
-<footer>
-  <div class="wrap row"><span>© 2026 TruckBuddy</span><span><a href="../privacy/">Privacy</a> · <a href="../terms/">Terms</a> · <a href="../support/">Support</a> · support@truckbuddy.io</span></div>
-</footer>
 
+<section class="hero">
+  <div class="wrap">
+    <span class="eyebrow"><span class="ms" aria-hidden="true">gavel</span>Terms of use</span>
+    <h1>The rules of the road for the app.</h1>
+    <p class="lede">These terms apply when you use TruckBuddy and its services. By using the app you agree to them.</p>
+    <span class="spec">Last updated: November 7, 2026</span>
+  </div>
+</section>
+
+<main class="wrap">
+  <section class="sheet" aria-labelledby="short">
+    <h2 id="short">The short version</h2>
+    <ul class="rows">
+      <li class="row"><span class="ic warn"><span class="ms" aria-hidden="true">warning</span></span><div><h3>Road signs and the law come first</h3><p>A posted clearance, weight limit, truck restriction or closure always wins over what the app says.</p></div></li>
+      <li class="row"><span class="ic warn"><span class="ms" aria-hidden="true">help</span></span><div><h3>The app can be wrong</h3><p>Bridge heights, restrictions, parking, prices, weather and hours of service come from outside sources that can be missing, late or incorrect.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">local_shipping</span></span><div><h3>You drive the truck</h3><p>You decide where to go and whether a route, a stop or a parking spot is safe and legal for your vehicle.</p></div></li>
+    </ul>
+  </section>
+
+  <section class="sheet" aria-labelledby="who">
+    <h2 id="who">Who can use TruckBuddy</h2>
+    <p>TruckBuddy is for professional drivers and people who work with them in the United States. You must be at least 18 years old.</p>
+  </section>
+
+  <section class="sheet" aria-labelledby="driving">
+    <h2 id="driving">Using the app while driving</h2>
+    <ul class="plain">
+      <li>Mount your phone and set it up before you drive. Talk to the copilot by voice; a single tap starts it.</li>
+      <li>Do not hold the phone, type or read long text while the vehicle is moving. Follow FMCSA rules and the laws of every state you drive in on the use of mobile phones.</li>
+      <li>Pull over to change settings, your truck profile or anything that takes more than one touch.</li>
+    </ul>
+  </section>
+
+  <section class="sheet" aria-labelledby="routes">
+    <h2 id="routes">Routes, bridges and restrictions</h2>
+    <ul class="plain">
+      <li>Routes are planned for the height, length, weight and hazmat status in your truck profile. Keep it correct: a wrong height means a wrong route.</li>
+      <li>Clearance and restriction data come from map providers and public records. Not every bridge, tunnel, overhang or local restriction is in them. The app warns you about what it knows and cannot warn you about what it does not know.</li>
+      <li>If the app says it could not find a legal truck route, do not drive it without checking the restrictions yourself or getting a permit.</li>
+    </ul>
+  </section>
+
+  <section class="sheet" aria-labelledby="places">
+    <h2 id="places">Parking, places, prices and hours of service</h2>
+    <ul class="plain">
+      <li>Parking checks, entrance directions and truck parking counts are estimates. A lot may be full, closed, private or not allowed for trucks.</li>
+      <li>Place details, phone numbers and fuel prices may be out of date. What drivers say about a place reflects other people&rsquo;s opinions.</li>
+      <li>Hours-of-service clocks come from your ELD provider. Your logs and your ELD, not TruckBuddy, are the record that counts.</li>
+      <li>In a breakdown or emergency, call 911 or your carrier. TruckBuddy does not call for help.</li>
+    </ul>
+  </section>
+
+  <section class="sheet" aria-labelledby="free">
+    <h2 id="free">Free service and limits</h2>
+    <p>TruckBuddy is free while in early access. To keep it running, there is a daily limit on copilot questions; the map and routes keep working past it. Features may change, and the service may be unavailable at times.</p>
+  </section>
+
+  <section class="sheet" aria-labelledby="content">
+    <h2 id="content">Your content</h2>
+    <p>You keep what you say to the copilot. You let us process it to answer you and to improve the service, as described in the <a href="../privacy/">Privacy Policy</a>. Do not use the app to break the law, to harass anyone, or to overload, scrape or reverse engineer the service.</p>
+  </section>
+
+  <section class="sheet" aria-labelledby="others">
+    <h2 id="others">Data from others</h2>
+    <p>Maps, places, weather and reviews in TruckBuddy come from third parties, including OpenStreetMap contributors (ODbL). That data belongs to them and is shown under their terms, with credits in the app and on its maps.</p>
+  </section>
+
+  <section class="sheet" aria-labelledby="legal">
+    <h2 id="legal">Warranty and liability</h2>
+    <p>The app and its information are provided &ldquo;as is&rdquo; and &ldquo;as available&rdquo;, without warranties of any kind, including accuracy, fitness for a particular purpose and uninterrupted service, to the extent the law allows.</p>
+    <p>To the extent the law allows, TruckBuddy and the people who make it are not liable for indirect, incidental or consequential damages, or for damage to vehicles, cargo or property, fines, or lost income arising from the use of the app or reliance on its information. Where liability cannot be excluded, it is limited to the amount you paid for the app in the last 12 months.</p>
+  </section>
+
+  <section class="sheet" aria-labelledby="end">
+    <h2 id="end">Ending use, changes and law</h2>
+    <p>You can stop using TruckBuddy at any time and delete your data in Truck profile &rarr; Delete my data. We may suspend access that breaks these terms or puts the service at risk.</p>
+    <p>We may update these terms. The date above shows the latest version; important changes are announced in the app.</p>
+    <p>These terms are governed by the laws of the State of California, without regard to its conflict-of-laws rules.</p>
+  </section>
+
+  <section class="sheet" aria-labelledby="contact">
+    <h2 id="contact">Questions</h2>
+    <div class="contact"><a class="mail" href="mailto:support@truckbuddy.io">support@truckbuddy.io</a><a class="btn" href="mailto:support@truckbuddy.io"><span class="ms" aria-hidden="true">mail</span>Email us</a></div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot-row">
+    <a class="brand" href="../"><span class="brand-disc"><span class="buddy"><img src="../assets/buddy-body.webp" alt=""><img src="../assets/buddy-eyes.webp" alt=""></span></span>TruckBuddy</a>
+    <nav class="foot-links" aria-label="Footer"><a href="../">Home</a><a href="../privacy/">Privacy</a><a href="../terms/">Terms</a><a href="../support/">Support</a></nav>
+    <span>Voice copilot for truck drivers. © 2026 TruckBuddy</span>
+  </div>
+</footer>
 </body>
 </html>

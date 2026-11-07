@@ -8,113 +8,96 @@
 <link rel="icon" type="image/png" href="../assets/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
-<style>
-/* Same tokens as index.html (from frontend/src/theme.ts): a plain reading page. */
-:root { color-scheme: light; --paper: #FFFFFF; --paper-2: #F2F2F7; --map: #EEF1F4; --cabin: #F7F2EA; --ink: #1C1C1E; --ink-2: #3A3A3C; --ink-3: #6C6C70; --line: #E5E5EA; --blue: #007AFF; --blue-soft: rgba(0,122,255,0.16); --font-ui: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-ui); font-size: 1.0625rem; line-height: 1.65; -webkit-font-smoothing: antialiased; }
-a { color: var(--blue); }
-:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; border-radius: 8px; }
-.wrap { max-width: 760px; margin-inline: auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-header { border-bottom: 1px solid var(--line); }
-.head-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 68px; }
-.brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); font-weight: 800; font-size: 1.125rem; letter-spacing: -0.02em; }
-.brand-disc { width: 38px; height: 38px; border-radius: 50%; background: var(--cabin); display: grid; place-items: center; box-shadow: 0 0 0 4px var(--blue-soft); }
-.brand-disc img { width: 30px; height: 30px; }
-.head-row nav { display: flex; gap: 6px 18px; flex-wrap: wrap; }
-.head-row nav a { text-decoration: none; font-weight: 600; font-size: 0.9375rem; color: var(--ink-2); }
-.head-row nav a[aria-current="page"] { color: var(--blue); }
-.intro { background: var(--map); padding-block: 56px 48px; }
-.eyebrow { font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--blue); }
-h1 { font-size: clamp(2.25rem, 1.6rem + 2.6vw, 3.5rem); font-weight: 800; letter-spacing: -0.04em; line-height: 1.05; margin: 12px 0 12px; text-wrap: balance; }
-.intro p { color: var(--ink-2); max-width: 60ch; margin: 0; }
-.updated { font-size: 0.875rem; color: var(--ink-3); margin-top: 16px !important; }
-main.doc { padding-block: 48px 96px; }
-.doc h2 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.025em; margin: 48px 0 12px; }
-.doc h2:first-child { margin-top: 0; }
-.doc p, .doc li { color: var(--ink-2); max-width: 65ch; }
-.doc ul { padding-left: 1.2em; margin: 0 0 12px; display: grid; gap: 10px; }
-.doc strong { color: var(--ink); }
-.contact { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; background: var(--paper-2); border-radius: 20px; padding: 20px 24px; margin-top: 16px; }
-.contact b { font-size: 1.125rem; }
-.copy { height: 40px; padding: 0 16px; border-radius: 999px; border: 0; background: var(--ink); color: var(--paper); font: 700 0.875rem var(--font-ui); cursor: pointer; }
-details { border-top: 1px solid var(--line); padding-block: 4px; }
-details:last-of-type { border-bottom: 1px solid var(--line); }
-summary { cursor: pointer; font-weight: 700; padding-block: 16px; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
-summary::-webkit-details-marker { display: none; }
-summary::after { content: "+"; color: var(--blue); font-weight: 800; font-size: 1.25rem; line-height: 1; transition: transform .2s; }
-details[open] summary::after { transform: rotate(45deg); }
-details p { margin: 0 0 16px; }
-footer { border-top: 1px solid var(--line); padding-block: 32px; color: var(--ink-3); font-size: 0.875rem; }
-footer .row { display: flex; flex-wrap: wrap; gap: 12px 20px; justify-content: space-between; }
-footer a { color: var(--ink-2); font-weight: 600; text-decoration: none; }
-</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,1,0&display=block">
+<link rel="stylesheet" href="../assets/legal.css">
 </head>
 <body>
-<header>
+<header class="site-head">
   <div class="wrap head-row">
-    <a class="brand" href="../"><span class="brand-disc"><img src="../assets/favicon.png" alt=""></span>TruckBuddy</a>
-    <nav aria-label="Main"><a href="../">Home</a><a href="../privacy/" aria-current="page">Privacy</a><a href="../terms/">Terms</a><a href="../support/">Support</a></nav>
+    <a class="brand" href="../" aria-label="TruckBuddy home"><span class="brand-disc"><span class="buddy"><img src="../assets/buddy-body.webp" alt=""><img src="../assets/buddy-eyes.webp" alt=""></span></span>TruckBuddy</a>
+    <nav class="nav" aria-label="Main"><a class="home" href="../">Home</a><a href="../privacy/" aria-current="page">Privacy</a><a href="../terms/">Terms</a><a href="../support/">Support</a></nav>
   </div>
 </header>
-<section class="intro">
+
+<section class="hero">
   <div class="wrap">
-    <span class="eyebrow">Privacy policy</span>
-    <h1>TruckBuddy Privacy Policy</h1>
-    <p>TruckBuddy is a voice copilot for truck drivers. This policy explains what the app collects, why, and who it is shared with.</p>
-    <p class="updated">Last updated: November 4, 2026</p>
+    <span class="eyebrow"><span class="ms" aria-hidden="true">shield</span>Privacy policy</span>
+    <h1>Your data, in plain words.</h1>
+    <p class="lede">What TruckBuddy collects while you drive, why it needs it, and how to delete it.</p>
+    <span class="spec">Last updated: November 7, 2026</span>
+    <div class="promises">
+      <div class="promise"><span class="ic"><span class="ms" aria-hidden="true">mic</span></span>The mic listens only after you tap</div>
+      <div class="promise"><span class="ic ok"><span class="ms" aria-hidden="true">block</span></span>No ads, nothing sold</div>
+      <div class="promise"><span class="ic ink"><span class="ms" aria-hidden="true">delete</span></span>Delete everything from Truck profile</div>
+    </div>
   </div>
 </section>
-<main class="doc wrap">
-  <h2>What we collect</h2>
-  <ul>
-    <li><strong>Location.</strong> While you use the app, your GPS position is used to find truck-friendly parking, fuel, repair shops and routes near you.</li>
-    <li><strong>Voice.</strong> When you tap the copilot, TruckBuddy records what you say and sends it to our server to understand your request. The microphone is only used after a tap.</li>
-    <li><strong>Truck profile and preferences.</strong> Height, trailer length, weight, hazmat, your first name and route preferences you enter. These are stored on your phone and sent with each request so routes fit your truck.</li>
-    <li><strong>Conversation history.</strong> Recent things you said and the copilot&rsquo;s replies are stored on our server, linked to a random ID issued to your device the first time you open the app, so the copilot can remember context. You can clear it in the app (Conversation memory &rarr; Clear memory).</li>
-    <li><strong>Trip events.</strong> While a route is active, the app reports what happens on the drive (route set, rerouted, arrived, a request the copilot could not handle) with the truck&rsquo;s position at that moment. They are stored on our server with your device&rsquo;s random ID for 90 days, so we can find and fix what went wrong. If your phone belongs to a fleet in TruckBuddy, the fleet sees the trip events, never your conversations.</li>
-<li><strong>Crash reports.</strong> If the app crashes or hits an error, a report with the error, the app version and the phone model is sent to Sentry. It does not contain your voice or what you said.</li>
-<li><strong>Hours of service (optional).</strong> If you add a Motive API key in Truck profile, it is kept in your phone&rsquo;s secure storage and sent with copilot requests so our server can read your hours-of-service clocks (drive, shift, break, cycle) from Motive. Our server uses the key for that one request and does not store the key or your clocks.</li>
-  </ul>
-  <p>We do not collect your contacts, photos, or advertising identifiers, and we do not track you across other apps or websites.</p>
 
-  <h2>Who we share it with</h2>
-  <p>We share data only with services that process your request:</p>
-  <ul>
-    <li><strong>OpenAI</strong> receives your voice recordings and transcripts to transcribe speech, understand requests and generate spoken replies. Satellite images of a destination may be sent to OpenAI to check truck parking.</li>
-    <li><strong>HERE, OpenRouteService, Google Maps Platform and OpenStreetMap (Nominatim)</strong> receive locations and truck dimensions to search places, geocode addresses and plan truck routes.</li>
-<li><strong>Google (Gemini API)</strong> receives the name, address and location of a place when you ask what drivers say about it, to answer from Google Maps. Your voice and your position are not sent with it.</li>
-<li><strong>Esri</strong> receives the coordinates of a destination to return its satellite image for the parking check.</li>
-<li><strong>Sentry</strong> receives crash and error reports.</li>
-    <li><strong>The US National Weather Service</strong> receives points along your route to look up weather alerts and forecasts. No information about you is sent with them.</li>
-    <li><strong>Motive</strong>, only if you add your own Motive API key, receives that key so it can return your hours-of-service clocks.</li>
-  </ul>
-  <p>These providers process data under their own terms and are not allowed by them to use API data for advertising. We do not sell your data.</p>
+<main class="wrap">
+  <section class="sheet" aria-labelledby="collect">
+    <h2 id="collect">What the app collects</h2>
+    <p class="sub">You don&rsquo;t sign up with an email or a password. The first time you open the app, it gets a random ID, and what we store is tied to that ID, not to your phone number.</p>
+    <ul class="rows">
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">location_on</span></span><div><h3>Location</h3><p>Your position while you use the app, to find stops, parking and routes near you and to guide you on a route.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">mic</span></span><div><h3>Voice</h3><p>What you say after you tap the copilot. It is turned into text so the copilot understands the request and can answer out loud.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">local_shipping</span></span><div><h3>Truck profile</h3><p>Height, length, weight, hazmat, route preferences and, if you give it, your first name. Stored on your phone and on our server with your random ID, so routes fit your truck on every request.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">forum</span></span><div><h3>Conversation history</h3><p>Your recent requests and the copilot&rsquo;s replies, so it remembers what you were talking about. You can clear it any time in Conversation memory.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">route</span></span><div><h3>Trip events</h3><p>While a route is active: when it starts, changes or ends, and requests the copilot could not handle, with the truck&rsquo;s position at that moment. We use them to find and fix problems. If your phone is set up by your fleet in TruckBuddy, the fleet sees your name, truck profile and trip events, never your conversations.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">bug_report</span></span><div><h3>Crash reports</h3><p>The error, the app version and the phone model when something breaks. No voice and nothing you said.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">schedule</span></span><div><h3>Hours of service</h3><p>If you connect your own ELD, its access key stays in your phone&rsquo;s secure storage and is used only to read your current clocks for a request. If your fleet connects its ELD account in TruckBuddy, our server keeps the fleet&rsquo;s key encrypted and reads your clocks with it. We don&rsquo;t keep the clocks.</p></div></li>
+    </ul>
+    <p>We don&rsquo;t collect contacts, photos or advertising identifiers, and we don&rsquo;t track you across other apps or websites.</p>
+  </section>
 
-  <h2>How long we keep it</h2>
-  <ul>
-    <li>Voice audio is processed and not kept after the reply is generated (generated reply audio is cached briefly).</li>
-    <li>Conversation history is kept until you clear it.</li>
-<li>Trip events are kept for 90 days.</li>
-  </ul>
+  <section class="sheet" aria-labelledby="share">
+    <h2 id="share">Who it is shared with</h2>
+    <p class="sub">Only with services that do part of the work on your request. None of them may use it for advertising, and we don&rsquo;t sell your data.</p>
+    <ul class="rows">
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">neurology</span></span><div><h3>AI providers, such as OpenAI and Google</h3><p>Your voice, transcripts and the place or request you ask about, including map imagery of a destination, to understand you, answer and speak the reply.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">map</span></span><div><h3>Map and routing providers</h3><p>Locations and truck dimensions, to show the map, search places, find addresses, plan truck routes and check parking at a destination.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">partly_cloudy_day</span></span><div><h3>Weather services</h3><p>Points along your route, with nothing about you.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">monitor_heart</span></span><div><h3>Crash reporting</h3><p>The crash reports described above.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">link</span></span><div><h3>Your ELD provider</h3><p>Only if you or your fleet connect it, to return your hours-of-service clocks.</p></div></li>
+    </ul>
+  </section>
 
-  <h2>Your choices</h2>
-  <ul>
-    <li>You can deny location or microphone access in your phone&rsquo;s settings.</li>
-    <li>To delete your conversation history, use Clear memory on the Conversation memory screen. To delete everything we store for your device, use Delete my data in Truck profile, or email us.</li>
-    <li>You can remove your Motive key at any time in Truck profile.</li>
-  </ul>
+  <section class="sheet" aria-labelledby="keep">
+    <h2 id="keep">How long we keep it</h2>
+    <div class="keep">
+      <div><b>Voice recordings</b><span class="spec">Not kept after the reply</span></div>
+      <div><b>Conversation history</b><span class="spec">Until you clear it</span></div>
+      <div><b>Trip events</b><span class="spec">90 days</span></div>
+    </div>
+  </section>
 
-  <h2>Children</h2>
-  <p>TruckBuddy is meant for professional drivers and is not directed at children under 13.</p>
+  <section class="sheet" aria-labelledby="choices">
+    <h2 id="choices">Your choices</h2>
+    <ul class="plain">
+      <li>Turn off location or microphone access in your phone&rsquo;s settings.</li>
+      <li>Clear your conversation history in <strong>Conversation memory &rarr; Clear memory</strong>.</li>
+      <li>Delete everything we store for your phone in <strong>Truck profile &rarr; Delete my data</strong>, or email us.</li>
+      <li>Disconnect your own ELD in Truck profile at any time.</li>
+    </ul>
+  </section>
 
-  <h2>Contact</h2>
-  <p>Questions or deletion requests: <a href="mailto:support@truckbuddy.io">support@truckbuddy.io</a></p>
+  <section class="sheet" aria-labelledby="more">
+    <h2 id="more">Children and changes</h2>
+    <p>TruckBuddy is made for professional drivers and is not directed at children under 13. If this policy changes, the date at the top changes too, and important changes are announced in the app.</p>
+  </section>
+
+  <section class="sheet" aria-labelledby="contact">
+    <h2 id="contact">Questions or deletion requests</h2>
+    <div class="contact"><a class="mail" href="mailto:support@truckbuddy.io">support@truckbuddy.io</a><a class="btn" href="mailto:support@truckbuddy.io"><span class="ms" aria-hidden="true">mail</span>Email us</a></div>
+  </section>
 </main>
-<footer>
-  <div class="wrap row"><span>© 2026 TruckBuddy</span><span><a href="../privacy/">Privacy</a> · <a href="../terms/">Terms</a> · <a href="../support/">Support</a> · support@truckbuddy.io</span></div>
-</footer>
 
+<footer>
+  <div class="wrap foot-row">
+    <a class="brand" href="../"><span class="brand-disc"><span class="buddy"><img src="../assets/buddy-body.webp" alt=""><img src="../assets/buddy-eyes.webp" alt=""></span></span>TruckBuddy</a>
+    <nav class="foot-links" aria-label="Footer"><a href="../">Home</a><a href="../privacy/">Privacy</a><a href="../terms/">Terms</a><a href="../support/">Support</a></nav>
+    <span>Voice copilot for truck drivers. © 2026 TruckBuddy</span>
+  </div>
+</footer>
 </body>
 </html>
