@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { BackHandler, Platform, StyleSheet, TextInput, View } from "react-native";
+import { BackHandler, Platform, TextInput, View } from "react-native";
 import { Text } from "@/src/i18n/Text";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
@@ -10,13 +10,15 @@ import { absoluteUrl, api } from "@/src/api";
 import { Avatar } from "@/src/components/Avatar";
 import { Icon } from "@/src/components/Icon";
 import { MicPermissionCard } from "@/src/components/MicPermissionCard";
-import { PrefsForm, ToggleRow } from "@/src/components/PrefsForm";
+import { PrefsForm } from "@/src/components/PrefsForm";
+import { OnboardingTruckForm } from "@/src/components/OnboardingTruckForm";
+import { styles } from "@/src/components/onboardingStyles";
 import { PressableScale } from "@/src/components/PressableScale";
 import { Waveform } from "@/src/components/Waveform";
 import { saveProfile } from "@/src/data/profile";
 import { setOnboarded, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
-import { fonts, radius, spacing, useTheme } from "@/src/theme";
+import { spacing, useTheme } from "@/src/theme";
 import { truckErrors, truckFromInputs } from "@/src/truck/validate";
 import { LANGS, setLang, t, UK_READY, useLang, type Lang } from "@/src/i18n";
 import { confirmHeight } from "@/src/truck/heightConfirmed";
@@ -27,30 +29,6 @@ type Mode = "speaking" | "listening" | "thinking" | "waiting";
 const toInt = (s: string) => parseInt(s.replace(/[^0-9]/g, ""), 10);
 // Rough speaking time, used as a fallback when audio can't autoplay.
 const speechMs = (text: string) => Math.min(20000, 1500 + text.length * 65);
-
-function Num({ label, value, onChange, unit, testID, bad = false }: { label: string; value: string; onChange: (s: string) => void; unit: string; testID: string; bad?: boolean }) {
-  const { colors } = useTheme();
-  return (
-    <View style={styles.field}>
-      <Text style={[styles.label, { color: colors.onSurfaceSecondary }]}>{label}</Text>
-      <View style={[styles.inputRow, { backgroundColor: colors.surfaceSecondary }, bad && { borderWidth: 1.5, borderColor: colors.error }]}>
-        <TextInput testID={testID} value={value} onChangeText={onChange} keyboardType="number-pad" style={[styles.input, { color: colors.onSurface }]} />
-        <Text style={[styles.unit, { color: colors.muted }]}>{unit}</Text>
-      </View>
-    </View>
-  );
-}
-
-/** The out-of-range message under its own field (one line for all three left the driver guessing). */
-function FieldError({ text, testID }: { text?: string; testID: string }) {
-  const { colors } = useTheme();
-  if (!text) return null;
-  return (
-    <Text testID={testID} style={[styles.error, { color: colors.error }]}>
-      {text}
-    </Text>
-  );
-}
 
 export default function Onboarding() {
   const router = useRouter();
@@ -438,22 +416,19 @@ export default function Onboarding() {
         )}
 
         {typing && step === "truck" && (
-          <Animated.View entering={FadeInDown.duration(220)} style={styles.body}>
-            <View style={styles.row}>
-              <View style={styles.flex}>
-                <Num label="Height" value={feet} onChange={setFeet} unit="ft" testID="onboarding-height-feet-input" bad={!!truckErr.height} />
-              </View>
-              <View style={styles.flex}>
-                <Num label=" " value={inches} onChange={setInches} unit="in" testID="onboarding-height-inches-input" bad={!!truckErr.height} />
-              </View>
-            </View>
-            <FieldError testID="onboarding-height-error" text={truckErr.height} />
-            <Num label="Trailer length" value={trailer} onChange={setTrailer} unit="ft" testID="onboarding-trailer-input" bad={!!truckErr.trailer} />
-            <FieldError testID="onboarding-trailer-error" text={truckErr.trailer} />
-            <Num label="Gross weight" value={weight} onChange={setWeight} unit="lb" testID="onboarding-weight-input" bad={!!truckErr.weight} />
-            <FieldError testID="onboarding-weight-error" text={truckErr.weight} />
-            <ToggleRow title="Hazardous materials" value={draft.hazmat} onChange={(v) => set({ hazmat: v })} testID="onboarding-hazmat-switch" />
-          </Animated.View>
+          <OnboardingTruckForm
+            feet={feet}
+            inches={inches}
+            trailer={trailer}
+            weight={weight}
+            onFeet={setFeet}
+            onInches={setInches}
+            onTrailer={setTrailer}
+            onWeight={setWeight}
+            errors={truckErr}
+            hazmat={draft.hazmat}
+            onHazmat={(v) => set({ hazmat: v })}
+          />
         )}
       </KeyboardAwareScrollView>
 
@@ -491,50 +466,3 @@ export default function Onboarding() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, minHeight: 56 },
-  dots: { flexDirection: "row", gap: 6, alignItems: "center" },
-  dot: { height: 8, borderRadius: 4 },
-  langRow: { flexDirection: "row", alignItems: "center" },
-  skip: { minHeight: 56, minWidth: 56, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing.md },
-  skipText: { fontFamily: fonts.semibold, fontSize: 15 },
-  content: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.lg },
-  centered: { justifyContent: "center" },
-  agent: { alignItems: "center", gap: spacing.md, marginTop: spacing.sm },
-  thoughtWrap: { alignItems: "center", maxWidth: 320 },
-  thought: { borderRadius: 28, paddingHorizontal: spacing.xl, paddingVertical: spacing.lg },
-  thoughtText: { fontFamily: fonts.bold, fontSize: 22, lineHeight: 28, textAlign: "center" },
-  puff1: { width: 16, height: 16, borderRadius: 8, marginTop: 6, marginLeft: 36 },
-  puff2: { width: 9, height: 9, borderRadius: 5, marginTop: 4, marginLeft: 52 },
-  agentRow: { flexDirection: "row-reverse", justifyContent: "flex-end", gap: spacing.md },
-  flexShrink: { flexShrink: 1 },
-  thoughtSmall: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: 20 },
-  thoughtTextSmall: { fontSize: 17, lineHeight: 22, textAlign: "left" },
-  statusBox: { minHeight: 64, alignItems: "center", justifyContent: "center", gap: spacing.sm },
-  status: { fontFamily: fonts.medium, fontSize: 17, textAlign: "center" },
-  summaryLine: { fontFamily: fonts.semibold, fontSize: 15, textAlign: "center" },
-  body: { gap: spacing.md },
-  row: { flexDirection: "row", gap: spacing.md },
-  flex: { flex: 1 },
-  field: { gap: 6 },
-  label: { fontFamily: fonts.medium, fontSize: 13 },
-  inputRow: { flexDirection: "row", alignItems: "center", height: 56, borderRadius: radius.md, paddingHorizontal: spacing.lg, overflow: "hidden" },
-  input: {
-    flex: 1,
-    minWidth: 0,
-    width: 0,
-    height: "100%",
-    fontFamily: fonts.semibold,
-    fontSize: 18,
-    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}),
-  },
-  unit: { fontFamily: fonts.medium, fontSize: 15, marginLeft: spacing.sm, flexShrink: 0 },
-  error: { fontFamily: fonts.medium, fontSize: 13 },
-  footer: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  next: { height: 56, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
-  nextText: { fontFamily: fonts.bold, fontSize: 16 },
-  typeBtn: { height: 56, borderRadius: radius.md, borderWidth: 1.5, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm },
-  typeText: { fontFamily: fonts.semibold, fontSize: 16 },
-});
