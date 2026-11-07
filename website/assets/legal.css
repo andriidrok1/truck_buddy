@@ -1,11 +1,9 @@
-/* Privacy and Terms: the home page's composition (white sheets on the pale map ground, blurred
-   sticky header, Space Mono specs). Tokens are copied from index.html, which takes them from
-   frontend/src/theme.ts. */
+/* Privacy and Terms: same look as the home page. */
 :root {
   color-scheme: light;
   --paper: #FFFFFF; --paper-2: #F2F2F7; --map: #EEF1F4; --cabin: #F7F2EA;
   --ink: #1C1C1E; --ink-2: #3A3A3C; --ink-3: #6C6C70; --line: #E5E5EA;
-  --blue: #007AFF; --blue-soft: rgba(0,122,255,0.16); --rest: #34C759; --rest-deep: #1E7B34; --amber-deep: #A35A00; --on-color: #FFFFFF;
+  --blue: #007AFF; --blue-text: #0058B8; --blue-soft: rgba(0,122,255,0.16); --rest: #34C759; --rest-deep: #1E7B34; --amber-deep: #A35A00; --on-color: #FFFFFF;
   --font-ui: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-spec: "Space Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --r-lg: 20px; --r-xl: 28px; --pill: 999px;
@@ -17,7 +15,7 @@
 body { margin: 0; background: var(--map); color: var(--ink); font-family: var(--font-ui); font-size: 1.0625rem; line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: clip; }
 h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.025em; line-height: 1.1; }
 p { margin: 0; }
-a { color: var(--blue); }
+a { color: var(--blue-text); }
 :focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; border-radius: 10px; }
 ::selection { background: var(--blue); color: var(--on-color); }
 .ms { font-family: "Material Symbols Rounded"; font-weight: normal; font-style: normal; font-size: 22px; line-height: 1; display: inline-block; white-space: nowrap; direction: ltr; font-feature-settings: "liga"; font-variation-settings: "FILL" 1, "wght" 500, "GRAD" 0, "opsz" 24; user-select: none; }
@@ -42,7 +40,7 @@ a { color: var(--blue); }
 .hero { position: relative; overflow: hidden; padding-block: 64px 40px; }
 .hero::before { content: ""; position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(circle at 1px 1px, rgba(28,28,30,0.09) 1px, transparent 1.4px); background-size: 26px 26px; -webkit-mask-image: radial-gradient(700px 420px at 80% 30%, #000 15%, transparent 75%); mask-image: radial-gradient(700px 420px at 80% 30%, #000 15%, transparent 75%); }
 .hero .wrap { position: relative; display: flex; flex-direction: column; gap: 18px; }
-.eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--blue); }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 0.8125rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--blue-text); }
 h1 { font-size: clamp(2.5rem, 1.6rem + 3.6vw, 4.25rem); font-weight: 800; letter-spacing: -0.045em; line-height: 1.02; }
 .lede { font-size: 1.25rem; color: var(--ink-2); max-width: 40ch; line-height: 1.5; }
 .spec { font-family: var(--font-spec); font-size: 0.8125rem; color: var(--ink-3); letter-spacing: -0.01em; }
@@ -92,3 +90,4 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
 .foot-links { display: flex; flex-wrap: wrap; gap: 6px 20px; }
 .foot-links a { text-decoration: none; font-weight: 600; color: var(--ink-2); }
 .foot-links a:hover { color: var(--blue); }
+@media (prefers-reduced-motion: reduce) { .btn, .brand-disc, .nav a { transition: none; } .btn:hover, .btn:active { transform: none; } }

@@ -37,15 +37,15 @@
 <main class="wrap">
   <section class="sheet" aria-labelledby="collect">
     <h2 id="collect">What the app collects</h2>
-    <p class="sub">There is no account. The first time you open the app, it gets a random ID, and what we store is tied to that ID, not to your name or phone number.</p>
+    <p class="sub">You don&rsquo;t sign up with an email or a password. The first time you open the app, it gets a random ID, and what we store is tied to that ID, not to your phone number.</p>
     <ul class="rows">
       <li class="row"><span class="ic"><span class="ms" aria-hidden="true">location_on</span></span><div><h3>Location</h3><p>Your position while you use the app, to find stops, parking and routes near you and to guide you on a route.</p></div></li>
       <li class="row"><span class="ic"><span class="ms" aria-hidden="true">mic</span></span><div><h3>Voice</h3><p>What you say after you tap the copilot. It is turned into text so the copilot understands the request and can answer out loud.</p></div></li>
-      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">local_shipping</span></span><div><h3>Truck profile</h3><p>Height, length, weight, hazmat, route preferences and, if you give it, your first name. Kept on your phone and sent with requests so routes fit your truck.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">local_shipping</span></span><div><h3>Truck profile</h3><p>Height, length, weight, hazmat, route preferences and, if you give it, your first name. Stored on your phone and on our server with your random ID, so routes fit your truck on every request.</p></div></li>
       <li class="row"><span class="ic"><span class="ms" aria-hidden="true">forum</span></span><div><h3>Conversation history</h3><p>Your recent requests and the copilot&rsquo;s replies, so it remembers what you were talking about. You can clear it any time in Conversation memory.</p></div></li>
-      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">route</span></span><div><h3>Trip events</h3><p>While a route is active: when it starts, changes or ends, and requests the copilot could not handle, with the truck&rsquo;s position at that moment. We use them to find and fix problems. If your phone is set up by your fleet in TruckBuddy, the fleet sees trip events, never your conversations.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">route</span></span><div><h3>Trip events</h3><p>While a route is active: when it starts, changes or ends, and requests the copilot could not handle, with the truck&rsquo;s position at that moment. We use them to find and fix problems. If your phone is set up by your fleet in TruckBuddy, the fleet sees your name, truck profile and trip events, never your conversations.</p></div></li>
       <li class="row"><span class="ic"><span class="ms" aria-hidden="true">bug_report</span></span><div><h3>Crash reports</h3><p>The error, the app version and the phone model when something breaks. No voice and nothing you said.</p></div></li>
-      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">schedule</span></span><div><h3>Hours of service, if you connect your ELD</h3><p>Your ELD access key stays in your phone&rsquo;s secure storage. It is used only to read your current clocks for a request, and we keep neither the key nor the clocks.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">schedule</span></span><div><h3>Hours of service</h3><p>If you connect your own ELD, its access key stays in your phone&rsquo;s secure storage and is used only to read your current clocks for a request. If your fleet connects its ELD account in TruckBuddy, our server keeps the fleet&rsquo;s key encrypted and reads your clocks with it. We don&rsquo;t keep the clocks.</p></div></li>
     </ul>
     <p>We don&rsquo;t collect contacts, photos or advertising identifiers, and we don&rsquo;t track you across other apps or websites.</p>
   </section>
@@ -54,11 +54,11 @@
     <h2 id="share">Who it is shared with</h2>
     <p class="sub">Only with services that do part of the work on your request. None of them may use it for advertising, and we don&rsquo;t sell your data.</p>
     <ul class="rows">
-      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">neurology</span></span><div><h3>AI providers (OpenAI and Google)</h3><p>Your voice, transcripts and the place or request you ask about, to understand you and answer.</p></div></li>
-      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">map</span></span><div><h3>Map and routing providers</h3><p>Locations and truck dimensions, to search places, find addresses and plan truck routes.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">neurology</span></span><div><h3>AI providers, such as OpenAI and Google</h3><p>Your voice, transcripts and the place or request you ask about, including map imagery of a destination, to understand you, answer and speak the reply.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">map</span></span><div><h3>Map and routing providers</h3><p>Locations and truck dimensions, to show the map, search places, find addresses, plan truck routes and check parking at a destination.</p></div></li>
       <li class="row"><span class="ic"><span class="ms" aria-hidden="true">partly_cloudy_day</span></span><div><h3>Weather services</h3><p>Points along your route, with nothing about you.</p></div></li>
       <li class="row"><span class="ic"><span class="ms" aria-hidden="true">monitor_heart</span></span><div><h3>Crash reporting</h3><p>The crash reports described above.</p></div></li>
-      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">link</span></span><div><h3>Your ELD provider</h3><p>Only if you connect it, to return your hours-of-service clocks.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">link</span></span><div><h3>Your ELD provider</h3><p>Only if you or your fleet connect it, to return your hours-of-service clocks.</p></div></li>
     </ul>
   </section>
 
@@ -77,7 +77,7 @@
       <li>Turn off location or microphone access in your phone&rsquo;s settings.</li>
       <li>Clear your conversation history in <strong>Conversation memory &rarr; Clear memory</strong>.</li>
       <li>Delete everything we store for your phone in <strong>Truck profile &rarr; Delete my data</strong>, or email us.</li>
-      <li>Disconnect your ELD in Truck profile at any time.</li>
+      <li>Disconnect your own ELD in Truck profile at any time.</li>
     </ul>
   </section>
 
