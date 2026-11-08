@@ -35,3 +35,11 @@ export function truckFromInputs(t: TruckInputs): { height_in: number; trailer_ft
   if (Object.keys(truckErrors(t)).length) return null;
   return { height_in: toInt(t.feet) * 12 + (t.inches.trim() ? toInt(t.inches) : 0), trailer_ft: toInt(t.trailer), weight_lb: toInt(t.weight) };
 }
+
+/** Empty = the server's default (null); 3 to 15 mpg = that; anything else = undefined (invalid, Save disabled). */
+export function parseMpg(raw: string): number | null | undefined {
+  const v = raw.trim().replace(",", ".");
+  if (!v) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 3 && n <= 15 ? Math.round(n * 10) / 10 : undefined;
+}

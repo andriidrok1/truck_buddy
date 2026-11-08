@@ -1,12 +1,13 @@
 import { StyleSheet, View } from "react-native";
 import { Text } from "../i18n/Text";
 
-import { alternativeLabel } from "../geo/routeChoice";
+import { alternativeLabel, routeFacts } from "../geo/routeChoice";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import type { RouteInfo } from "../types";
-import { durationLabel } from "../utils/duration";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
+
+export { routeFacts, routeTag } from "../geo/routeChoice";
 
 type Props = {
   /** The active route; its `alternatives` are what the driver picks from. */
@@ -14,13 +15,6 @@ type Props = {
   onPick: (index: number) => void;
   onClose: () => void;
 };
-
-/** "8 min · 4.2 mi · $12.50 tolls" */
-export function routeFacts(r: RouteInfo) {
-  const parts = [durationLabel(r.duration_s), `${r.distance_mi.toFixed(r.distance_mi < 10 ? 1 : 0)} mi`];
-  if (r.tolls_usd) parts.push(`$${r.tolls_usd.toFixed(2)} tolls`);
-  return parts.join(" · ");
-}
 
 /** The other routes the engine offered for the same destination; tapping one makes it the route. It is drawn
  *  inside the copilot sheet in place of the route card (CopilotSheet `routesPanel`), not over the map: as a panel

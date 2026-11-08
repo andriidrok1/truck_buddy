@@ -20,7 +20,7 @@ from services.geocode import geocode, is_street, where
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
 from services.parking import cached_parking, check_parking, is_town, listed_in_data
 from services.places import get_places_provider
-from services import session_store
+from services import route_cost, session_store
 from services.dialog_state import DialogState
 from services.routing import VIA_STOP_S, get_routing_provider
 from services.flags import on
@@ -38,13 +38,13 @@ from services.agent.phrases import (  # noqa: F401
     STOP_ORDER, THAT_STOP, STOP_KIND, ANOTHER, ROAD_WORDS, LIST_REF, ORDINALS, NOT_A_PLACE, REMEMBER, ROAD_PREFS,
     BYE_PHRASE, numbered, list_reference, _NAME_TOKEN, _name_tokens, named_place, NAME_LIKE, name_like,
     GENERIC_NAME_WORDS, named_in_text, stop_named, stop_to_drop, reject_or_reference_guard, pick_place, ORDER_VERB,
-    WHERE_AM_I)
+    WHERE_AM_I, ROUTE_CHEAPEST, ROUTE_FASTEST)
 from services.agent.driver_name import (  # noqa: F401
     NAME_EVERY, NAME_MIN_WORDS, _SENTENCE_START, _INTERJECTION, _address, _a_place, _cut, GREETING, SHORT_LEAD,
     _vocatives, without_name, name_policy)
 from services.agent.replies import (  # noqa: F401
     NOT_UNDERSTOOD, ROUTE_DOWN, NO_TRUCK_ROUTE, PLACES_DOWN, LLM_DOWN, SOMETHING_BROKE, NO_PLACES, CATEGORY_OFF, NO_CHAIN_NEARBY,
-    WHERE_ON, WHERE_IN, WHERE_UNKNOWN,
+    WHERE_ON, WHERE_IN, WHERE_UNKNOWN, CHEAPER_OFFER, ALREADY_BEST, cheaper_offer,
     NO_WALMART, ALL_REJECTED, heard_not_found, _COUNTRY, _town, _in_town, _street, _speak_street, _label_parts,
     spoken_where, _tokens, _names_match, dest_check, arrival_street, _miles, TEMPLATES, NOTICES, CLOSURE, ALT_REPLY,
     NO_ALT, TILL_SAID, CHAINS_NO_ROUTE, CHAINS_OUTSIDE, CHAINS_NONE, CHAINS_DOWN, ALT_NO_ROUTE, VIA_ADDED, VIA_DWELL,
@@ -343,9 +343,24 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         sess_now = _session_if(req.session_id)
         learned = sess_now.pop("say_learned", None) if sess_now is not None else None
         reply = _with_warnings(first, route, chain_line, weather_line, learned)
+        await route_cost.annotate(route, req.lat, req.lng, req.truck_profile)
+        reply += self._offer_cheaper(req, route, text)
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply,
                              place=place, route=route, parking=approach.for_route(place, route),
                              options=others, source=self.source)
+
+    @staticmethod
+    def _offer_cheaper(req: AgentRequest, route: RouteInfo, text: str) -> str:
+        """" There's a way 15 minutes slower that saves about $12. Want it?" when an alternative saves enough;
+        "yes" switches to it (the pending answer runs `alternative` with prefer=cheapest)."""
+        sess = _session_if(req.session_id)
+        found = route_cost.cheaper_way(route)
+        if sess is None or not found or sess.get("pending"):
+            return ""
+        alt, saves = found
+        sess["pending"] = {"text": text, "kind": "cheaper_route", "no": {"reply": "Okay, staying on this one."},
+                           "d": {"intent": "alternative", "prefer": "cheapest"}}
+        return " " + cheaper_offer(alt.duration_s - route.duration_s, saves)
 
     async def _where_am_i(self, req: AgentRequest, text: str) -> AgentResponse:
         """The road and town the truck is at, read from a reverse geocode."""
@@ -650,8 +665,10 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
                              route=route, parking=approach.for_route(place, route), options=stops, source=self.source)
 
-    async def _alternative(self, req: AgentRequest, sess: dict, text: str) -> AgentResponse:
-        """Next unused alternative route to the active destination; fetched fresh when the dialog has none."""
+    async def _alternative(self, req: AgentRequest, sess: dict, text: str,
+                           prefer: Optional[str] = None) -> AgentResponse:
+        """Next unused alternative route to the active destination; fetched fresh when the dialog has none.
+        `prefer` = "cheapest" | "fastest": the best such way instead of the next one."""
         place = req.active_place
         if not place:
             return AgentResponse(status="chat", transcript=text, reply=ALT_NO_ROUTE, source=self.source)
@@ -668,11 +685,18 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
             cached = sess["alternatives"] = {"place": place.id, "routes": list(fresh.alternatives), "i": 0,
                                              "current": fresh.model_copy(update={"alternatives": []}),
                                              "origin": (req.lat, req.lng), "profile": _profile_key(req.truck_profile)}
-        i = cached["i"]
-        if i >= len(cached["routes"]):
-            return AgentResponse(status="chat", transcript=text, reply=NO_ALT, source=self.source)
-        route = cached["routes"][i]
-        cached["i"] = i + 1
+        if prefer in ("cheapest", "fastest"):
+            route = await self._best_way(req, cached, prefer)
+            if route is None:
+                return AgentResponse(status="chat", transcript=text, source=self.source,
+                                     reply=ALREADY_BEST.format(what=prefer))
+            cached["routes"].remove(route)
+        else:
+            i = cached["i"]
+            if i >= len(cached["routes"]):
+                return AgentResponse(status="chat", transcript=text, reply=NO_ALT, source=self.source)
+            route = cached["routes"][i]
+            cached["i"] = i + 1
         # The route the driver leaves goes to the end of the list: "another way" can come back to it, and
         # the Routes sheet keeps every other way. Before, taking the alternative lost the faster route
         # (QA 2026-10-31, H12).
@@ -682,10 +706,47 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         cached["current"] = route
         sess.pop("last_offer", None)  # the last thing offered is this road now, not a stop
         route.alternatives = [r.model_copy(update={"alternatives": []}) for r in cached["routes"] if r is not route]
+        per_gal = await route_cost.annotate(route, req.lat, req.lng, req.truck_profile)
+        if prev is not None:  # the way left behind, priced the same, so the reply can say what changes
+            route_cost.price([prev], per_gal, route_cost.mpg_of(req.truck_profile))
         reply = _with_warnings(_alt_reply(route, prev), route)  # a closure or a restriction on the other way is new
         return AgentResponse(status="route_set", transcript=text, category=place.category,
                              reply=reply, place=place, route=route, parking=approach.for_route(place, route),
                              source=self.source)
+
+    async def _best_way(self, req: AgentRequest, cached: dict, prefer: str) -> Optional[RouteInfo]:
+        """The cheapest or fastest of the cached ways when it beats the current one, else None. For "cheapest" with
+        tolls on every way, one toll-free route is asked for once per destination (the only extra HERE call)."""
+        current = cached.get("current")
+        ways = [r for r in cached["routes"] if current is None or _route_key(r) != _route_key(current)]
+        if prefer == "cheapest" and not cached.get("tollfree_tried") and not req.truck_profile.avoid_tolls \
+                and all(r.tolls_usd for r in ways + ([current] if current else [])) and req.active_place:
+            cached["tollfree_tried"] = True
+            try:
+                with stage("tools"):
+                    free = await get_routing_provider().route(
+                        req.lat, req.lng, *approach.target(req.active_place),
+                        req.truck_profile.model_copy(update={"avoid_tolls": True}), alternatives=0,
+                        via=self._via_now(req, _session(req.session_id)))
+                free.alternatives = []
+                cached["routes"].append(free)
+                ways.append(free)
+            except Exception as e:  # noqa: BLE001 - the ways at hand still answer
+                logger.info("toll-free route skipped: %s", e)
+        if not ways:
+            return None
+        got = await route_cost.diesel_price(req.lat, req.lng)
+        everyone = ways + ([current] if current else [])
+        route_cost.price(everyone, got[0] if got else None, route_cost.mpg_of(req.truck_profile))
+        if prefer == "fastest":
+            best = min(everyone, key=lambda r: r.duration_s)
+        else:
+            if any(r.cost_usd is None for r in everyone):
+                return None
+            best = min(everyone, key=lambda r: r.cost_usd)
+            if current is not None and best is not current and current.cost_usd - best.cost_usd < route_cost.SAME_COST_USD:
+                best = current
+        return None if best is current else best
 
     def _parking(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
         """Cached verdict -> answer now; otherwise "Let me look" and the app fetches /parking/answer."""
@@ -910,6 +971,12 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
             # (stand QA 2026-11-01), and a hotel lot is the wrong answer for a 53-footer.
             logger.info("agent find hotel for %s -> truck_stop", said(text))
             d = {**d, "category": "truck_stop"}
+        if req.active_place and intent not in ("go", "add_stop", "clear_stops") and ROAD_WORDS.search(text) \
+                and not FUEL_WORDS.search(text):
+            prefer = "cheapest" if ROUTE_CHEAPEST.search(text) else "fastest" if ROUTE_FASTEST.search(text) else None
+            if prefer:
+                logger.info("agent %s -> alternative prefer=%s", said(text), prefer)
+                return await self._alternative(req, sess, text, prefer)
         if intent in ("chat", "unclear") and WHERE_AM_I.search(text):
             return await self._where_am_i(req, text)
         # "Any chain controls ahead?" is a data question, not small talk: the model answered "there may be"
@@ -988,7 +1055,7 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
             if intent == "breakdown":
                 return await breakdown.from_intent(d, req, sess, text, self.source)
             if intent == "alternative":
-                return await self._alternative(req, sess, text)
+                return await self._alternative(req, sess, text, d.get("prefer"))
             if intent == "add_stop":
                 return await self._add_stop(req, d, sess, text)
             if intent == "clear_stops":

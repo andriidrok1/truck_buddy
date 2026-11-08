@@ -143,6 +143,9 @@ class RouteInfo(BaseModel):
     incidents: List[Incident] = Field(default_factory=list)  # closures, construction, accidents (HERE only)
     labels: List[str] = Field(default_factory=list)  # main roads, e.g. ["I-80", "CA-89"] (HERE routeLabels)
     tolls_usd: Optional[float] = None  # cheapest fare per toll, summed; None when HERE lists no USD tolls
+    fuel_usd: Optional[float] = None  # diesel for the trip at the regional average (services/route_cost.py)
+    cost_usd: Optional[float] = None  # fuel_usd + tolls_usd; None without a diesel price
+    tags: List[str] = Field(default_factory=list)  # "fastest" / "cheapest" among this route and its alternatives
     alternatives: List["RouteInfo"] = Field(default_factory=list)  # other truck routes, same destination
     handle: Optional[str] = None  # HERE routeHandle: lets the app re-route back onto this route after a deviation
     via: List[List[float]] = Field(default_factory=list)  # stops on the way, [[lat, lng], ...], in order
@@ -206,6 +209,7 @@ class TruckProfile(BaseModel):
     favorite_chains: List[str] = Field(default_factory=list, max_length=8)
     break_hours: Optional[int] = Field(None, ge=1, le=14)
     chains_on_board: Optional[bool] = None  # None = never asked; drives the chain-control question
+    mpg: Optional[float] = Field(None, ge=3, le=15)  # the truck's fuel economy; None = route_cost.DEFAULT_MPG
 
     @property
     def total_length_ft(self) -> int:

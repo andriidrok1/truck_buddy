@@ -15,6 +15,8 @@ export type TruckProfile = {
   break_hours?: number | null;
   /** Tire chains on the truck; null = never asked (the copilot asks when a chain control is ahead). */
   chains_on_board?: boolean | null;
+  /** Fuel economy in miles per gallon for route cost estimates; null = the server's default (6.5). */
+  mpg?: number | null;
 };
 
 export const DEFAULT_TRUCK: TruckProfile = { height_in: 162, trailer_ft: 53, weight_lb: 80000, hazmat: false, chains_on_board: null };
