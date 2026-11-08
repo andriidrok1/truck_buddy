@@ -129,7 +129,7 @@ const config: ExpoConfig = {
           },
           {
             "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeCrashData",
-            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeLinked": true,
             "NSPrivacyCollectedDataTypeTracking": false,
             "NSPrivacyCollectedDataTypePurposes": [
               "NSPrivacyCollectedDataTypePurposeAppFunctionality"
@@ -153,10 +153,11 @@ const config: ExpoConfig = {
               "NSPrivacyCollectedDataTypePurposeAppFunctionality"
             ]
           },
-          // Sentry performance traces (tracesSampleRate 0.1 in app/_layout.tsx).
+          // Sentry performance traces (tracesSampleRate 0.1 in app/_layout.tsx). Crash and performance data are linked:
+          // events carry the trip_id tag (useTripRestore.ts), and the server maps a trip to the device ID.
           {
             "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePerformanceData",
-            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeLinked": true,
             "NSPrivacyCollectedDataTypeTracking": false,
             "NSPrivacyCollectedDataTypePurposes": [
               "NSPrivacyCollectedDataTypePurposeAppFunctionality"
