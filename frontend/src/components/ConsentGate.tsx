@@ -16,8 +16,8 @@ import { PressableScale } from "./PressableScale";
 const ITEMS: { icon: string; title: string; body: string }[] = [
   {
     icon: "microphone",
-    title: "Your voice goes to OpenAI",
-    body: "When you talk to TruckBuddy, the recording and its transcript are sent to OpenAI to understand you and to speak the answer back.",
+    title: "Your voice and requests go to OpenAI",
+    body: "When you talk to TruckBuddy, the recording, its transcript, your position, truck size and recent requests are sent to OpenAI to understand you and speak the answer. Satellite images of a destination go there too, to check the parking.",
   },
   {
     icon: "map-marker",
@@ -36,7 +36,8 @@ const ITEMS: { icon: string; title: string; body: string }[] = [
   },
 ];
 
-/** Shown once after the access code: the driver agrees to sharing voice and location with third-party services. */
+/** Shown after the language choice and before the access code (again after "Delete my data" or a new consent
+ * version, src/consent.ts): the driver agrees to sharing voice and location with third-party services. */
 export function ConsentGate() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();

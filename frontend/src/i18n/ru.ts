@@ -231,8 +231,8 @@ export const RU: Record<string, string> = {
   // ---- consent, access ----
   "Before we start": "Прежде чем начать",
   "TruckBuddy uses outside services to hear you and find your way.": "TruckBuddy использует внешние сервисы, чтобы слышать тебя и прокладывать путь.",
-  "Your voice goes to OpenAI": "Твой голос уходит в OpenAI",
-  "When you talk to TruckBuddy, the recording and its transcript are sent to OpenAI to understand you and to speak the answer back.": "Когда ты говоришь с TruckBuddy, запись и её текст отправляются в OpenAI, чтобы понять тебя и озвучить ответ.",
+  "Your voice and requests go to OpenAI": "Твой голос и запросы уходят в OpenAI",
+  "When you talk to TruckBuddy, the recording, its transcript, your position, truck size and recent requests are sent to OpenAI to understand you and speak the answer. Satellite images of a destination go there too, to check the parking.": "Когда ты говоришь с TruckBuddy, запись, её текст, твоё положение, размеры трака и недавние запросы отправляются в OpenAI, чтобы понять тебя и озвучить ответ. Туда же уходят спутниковые снимки места назначения, чтобы проверить парковку.",
   "Your location goes to map services": "Твоя геолокация уходит в картографические сервисы",
   "Your position and truck size are sent to map services to find stops and plan truck-safe routes. When you ask what drivers say about a place, its name and location go to Google Gemini.": "Твоё положение и размеры трака отправляются в картографические сервисы, чтобы находить остановки и строить безопасные для фуры маршруты. Когда ты спрашиваешь, что водители говорят о месте, его название и координаты уходят в Google Gemini.",
   "Road signs come first": "Дорожные знаки главнее",
