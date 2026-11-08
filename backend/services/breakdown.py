@@ -462,9 +462,15 @@ async def result(rid: str) -> Optional[AgentResponse]:
 
 # ---------------------------------------------------------------- follow-ups
 
-SUPERLATIVE = re.compile(r"\b(cheapest|fastest|quickest|closest|nearest)\b", re.I)
 DO_CALL = re.compile(r"\b(call|dial|phone|ring)\b", re.I)
 DO_ROUTE = re.compile(r"\b(route|take me|go to|drive to|navigate)\b", re.I)
+# The superlative has to point at the shops: "call the cheapest", "route me to the closest one". Followed by
+# another noun it is a new request ("cheapest diesel on my route", QA 2026-11-08), not a pick from the list.
+SUPERLATIVE_PICK = re.compile(r"\b(cheapest|fastest|quickest|closest|nearest)\b(\s+(one|shop|mechanic|guy|place|"
+                              r"service|option|of them|of those|there))?\s*(please\s*)?([.,!?;]|$)", re.I)
+# Words that mean the driver moved on to another kind of stop: the normal agent takes it from here.
+OTHER_TOPIC = re.compile(r"\b(diesel|fuel|gas|parking|park|truck stop|rest area|hotel|motel|sleep|scale|weigh)\b",
+                         re.I)
 
 
 def pick_superlative(providers: list[Provider], word: str) -> Optional[Provider]:
@@ -481,7 +487,9 @@ def pick_superlative(providers: list[Provider], word: str) -> Optional[Provider]
 
 async def followup(req: AgentRequest, sess: dict, text: str, source: str) -> Optional[AgentResponse]:
     providers: list[Provider] = sess["providers"]
-    sup = SUPERLATIVE.search(text)
+    if OTHER_TOPIC.search(text):
+        return None
+    sup = SUPERLATIVE_PICK.search(text)
     if sup and (DO_CALL.search(text) or DO_ROUTE.search(text)):
         # "call the cheapest one" / "route me to the closest": decided in code, not by the model.
         chosen = pick_superlative(providers, sup.group(1))

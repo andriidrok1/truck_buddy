@@ -84,3 +84,26 @@ def test_session_keeps_provider_models_and_the_model_list_sees_reviews(monkeypat
     assert [p.id for p in sess["places"]] == ["p1", "p2", "p3"] and sess["places"][0].category == "service"
     brief = breakdown._brief(sess["providers"])
     assert "Saa Mobile Tire" in brief and "forty minutes" in brief and "$180 road call" in brief
+
+
+def test_a_new_request_with_a_superlative_is_not_a_pick_from_the_list(monkeypatch):
+    """QA 2026-11-08: after a breakdown list, "cheapest diesel on my route" answered "None of them mention prices.
+    Want me to call Saa Mobile...". Another kind of stop goes back to the normal agent, before any model call."""
+    async def no_llm(*a, **k):
+        raise AssertionError("the follow-up model must not be asked")
+
+    monkeypatch.setattr(breakdown, "_llm", no_llm)
+    sess = _research_turn(monkeypatch)
+    for text in ("cheapest diesel on my route", "route me to the closest truck stop", "where can I park tonight",
+                 "find the nearest rest area"):
+        assert run(breakdown.followup(AgentRequest(text=text, **SAC), sess, text, "t")) is None, text
+    res = run(breakdown.followup(AgentRequest(text="call the cheapest one", **SAC), sess, "call the cheapest one", "t"))
+    assert res.dial_phone == "+15550002"
+
+
+def test_superlative_pick_only_matches_the_shops():
+    for text in ("call the cheapest", "call the cheapest one", "route me to the closest.", "call the fastest guy",
+                 "take me to the nearest shop", "call the cheapest one please"):
+        assert breakdown.SUPERLATIVE_PICK.search(text), text
+    for text in ("cheapest diesel on my route", "closest truck stop", "the nearest Pilot please"):
+        assert not breakdown.SUPERLATIVE_PICK.search(text), text
