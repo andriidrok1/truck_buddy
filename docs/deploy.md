@@ -38,7 +38,7 @@ Read at startup or on use (see README.md "Backend environment" for meanings):
 `ORS_API_KEY`, `GOOGLE_MAPS_API_KEY`, `EIA_API_KEY`, `EIA_ENABLED`, `DATABASE_URL`, `MEMORY_STORE`,
 `MEMORY_SQLITE_PATH`, `PARKING_CACHE_DIR`, `PARKING_WARM`, `TPIMS_ENABLED`, `TPIMS_FEEDS`, `WEATHER_ALERTS`,
 `NWS_USER_AGENT`, `CHAIN_CONTROLS`, `CHAIN_DISTRICTS`, `HOS_MOTIVE`, `PLACE_REVIEWS`, `CATEGORIES_EXTRA`,
-`ROUTE_ALTERNATIVES`, `ROUTE_INCIDENTS`, `ROUTE_SPEED_LIMITS`, `REROUTE_ENABLED`, `RATE_LIMIT_PER_MIN`,
+`ROUTE_ALTERNATIVES`, `ROUTE_INCIDENTS`, `ROUTE_SPEED_LIMITS`, `REROUTE_ENABLED`, `RATE_LIMIT_PER_MIN`, `DEVICES_PER_IP_PER_10MIN`,
 `CORS_ORIGINS`, `DEV_DOCS`, `TRIP_EVENTS_DAYS`, `WORKERS` (or uvicorn's `WEB_CONCURRENCY`), `TTS_DIR`,
 `SESSION_STORE`, `TTS_STREAM`, `CREDENTIALS_KEY`, `LOG_TRANSCRIPTS`, `HEALTH_HERE`.
 
@@ -62,7 +62,8 @@ TPIMS counts) in `feed_cache`; the poller is whichever worker holds the Postgres
 the lock held only one worker fetches each feed (the others read the cached copy); without Postgres every
 worker polls. The lock calls share one connection and run one at a time.
 Set `WORKERS` to the number uvicorn runs: the per-driver budgets (`RATE_LIMIT_PER_MIN`, `RATE_PER_10MIN`,
-`RATE_PER_DAY`) are per process and are divided by it. `TTS_STREAM` is ignored with more than one worker (a
+`RATE_PER_DAY`) are per process and are divided by it. The sign-up limit `DEVICES_PER_IP_PER_10MIN` is per
+process too and is not divided, so with N workers one IP can register up to N times as many devices. `TTS_STREAM` is ignored with more than one worker (a
 stream lives in the process that started it). Shutdown waits up to 5 s for background writes (memory, trip
 events, jobs, parking) before closing the pool, so a deploy mid-dialog loses nothing.
 
