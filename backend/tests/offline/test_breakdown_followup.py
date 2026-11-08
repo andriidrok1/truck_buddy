@@ -88,7 +88,8 @@ def test_session_keeps_provider_models_and_the_model_list_sees_reviews(monkeypat
 
 def test_a_new_request_with_a_superlative_is_not_a_pick_from_the_list(monkeypatch):
     """QA 2026-11-08: after a breakdown list, "cheapest diesel on my route" answered "None of them mention prices.
-    Want me to call Saa Mobile...". Another kind of stop goes back to the normal agent, before any model call."""
+    Want me to call Saa Mobile...". A search for another kind of stop goes back to the normal agent, before any
+    model call."""
     async def no_llm(*a, **k):
         raise AssertionError("the follow-up model must not be asked")
 
@@ -99,6 +100,32 @@ def test_a_new_request_with_a_superlative_is_not_a_pick_from_the_list(monkeypatc
         assert run(breakdown.followup(AgentRequest(text=text, **SAC), sess, text, "t")) is None, text
     res = run(breakdown.followup(AgentRequest(text="call the cheapest one", **SAC), sess, "call the cheapest one", "t"))
     assert res.dial_phone == "+15550002"
+
+
+def test_questions_about_the_shops_that_mention_a_stop_stay_follow_ups(monkeypatch):
+    """Review of the fix: these talk about the shops on the list, so they still reach the follow-up model."""
+    asked = []
+
+    async def llm(system, user):
+        asked.append(user)
+        return {"about_providers": True, "action": "answer", "index": 1, "reply": "Yes."}
+
+    monkeypatch.setattr(breakdown, "_llm", llm)
+    sess = _research_turn(monkeypatch)
+    for text in ("can they come to the truck stop?", "I'm parked at a truck stop, who comes out fastest?",
+                 "can I park my rig there overnight while they fix it", "is the second one open at the scale house",
+                 "does Saa Mobile Tire come to the rest area"):
+        res = run(breakdown.followup(AgentRequest(text=text, **SAC), sess, text, "t"))
+        assert res is not None and res.reply == "Yes.", text
+    assert len(asked) == 5
+
+
+def test_out_of_fuel_the_diesel_questions_are_about_the_providers():
+    p = []
+    assert breakdown.is_new_search("where can I get diesel", p, "tire")
+    assert not breakdown.is_new_search("where can I get diesel", p, "fuel")
+    assert not breakdown.is_new_search("any of them bring diesel", p, "fuel")
+    assert breakdown.is_new_search("find a truck stop", p, "fuel")
 
 
 def test_superlative_pick_only_matches_the_shops():

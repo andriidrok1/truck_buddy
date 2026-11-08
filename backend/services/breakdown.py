@@ -64,7 +64,7 @@ Providers (1-based index, facts extracted from their reviews and websites; anyth
 {providers}
 Classify the driver's LAST utterance. JSON only:
 {{"about_providers": true|false, "action": "call"|"route"|"answer"|"more", "index": integer|null, "reply": string}}
-- about_providers false if the utterance is a new, unrelated request (e.g. find a truck stop, take me to Reno).
+- about_providers false if the utterance is a new, unrelated request (e.g. find a truck stop, take me to Reno, cheapest diesel on my route).
 - call: driver wants to phone one ("call the cheapest one", "call Big Rig"). index = that provider. reply = "Calling <name>."
 - route: driver wants to drive/be routed there ("route me to the mobile one"). index = that provider. reply = "".
 - more: "anyone else", "any other options". reply = "".
@@ -468,9 +468,23 @@ DO_ROUTE = re.compile(r"\b(route|take me|go to|drive to|navigate)\b", re.I)
 # another noun it is a new request ("cheapest diesel on my route", QA 2026-11-08), not a pick from the list.
 SUPERLATIVE_PICK = re.compile(r"\b(cheapest|fastest|quickest|closest|nearest)\b(\s+(one|shop|mechanic|guy|place|"
                               r"service|option|of them|of those|there))?\s*(please\s*)?([.,!?;]|$)", re.I)
-# Words that mean the driver moved on to another kind of stop: the normal agent takes it from here.
-OTHER_TOPIC = re.compile(r"\b(diesel|fuel|gas|parking|park|truck stop|rest area|hotel|motel|sleep|scale|weigh)\b",
-                         re.I)
+# A search for another kind of stop ("cheapest diesel on my route", "where can I park tonight"): the normal agent
+# takes it. Only when nothing points back at the shops: "can they come to the truck stop?" stays a follow-up.
+NEW_SEARCH = re.compile(r"\b(cheapest|closest|nearest|find|where|any|need)\s+(\w+\s+){0,3}?"
+                        r"(?P<what>diesel|fuel|gas|truck stops?|rest areas?|parking|park|hotels?|motels?|scales?)\b",
+                        re.I)
+FUEL_WORDS = {"diesel", "fuel", "gas"}
+BACK_TO_SHOPS = re.compile(r"\b(they|them|their|one|first|second|third|top pick|shop|mechanic|tow|wrecker)\b", re.I)
+
+
+def is_new_search(text: str, providers: list[Provider], kind: Optional[str]) -> bool:
+    """The driver asks for another kind of stop instead of talking about the shops on the list. Out of fuel, the
+    providers bring diesel, so diesel/fuel/gas are about them."""
+    m = NEW_SEARCH.search(text)
+    if not m or (kind == "fuel" and m.group("what").lower() in FUEL_WORDS):
+        return False
+    low = text.lower()
+    return not BACK_TO_SHOPS.search(text) and not any(p.name.lower() in low for p in providers)
 
 
 def pick_superlative(providers: list[Provider], word: str) -> Optional[Provider]:
@@ -487,7 +501,7 @@ def pick_superlative(providers: list[Provider], word: str) -> Optional[Provider]
 
 async def followup(req: AgentRequest, sess: dict, text: str, source: str) -> Optional[AgentResponse]:
     providers: list[Provider] = sess["providers"]
-    if OTHER_TOPIC.search(text):
+    if is_new_search(text, providers, (sess.get("breakdown") or {}).get("kind")):
         return None
     sup = SUPERLATIVE_PICK.search(text)
     if sup and (DO_CALL.search(text) or DO_ROUTE.search(text)):
