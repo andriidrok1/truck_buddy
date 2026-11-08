@@ -237,7 +237,7 @@ def test_superlatives_in_code():
     assert bd.pick_superlative([a, b], "cheapest").id == "a"  # one priced provider is enough
     assert bd.pick_superlative([b], "cheapest") is None
     assert bd.pick_superlative([a, b], "closest").id == "b"
-    assert bd.SUPERLATIVE.search("call the cheapest one") and bd.DO_CALL.search("call the cheapest one")
+    assert bd.SUPERLATIVE_PICK.search("call the cheapest one") and bd.DO_CALL.search("call the cheapest one")
 
 
 def test_price_filter_and_dedupe():

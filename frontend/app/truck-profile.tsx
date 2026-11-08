@@ -315,7 +315,7 @@ export default function TruckProfileScreen() {
           <Text style={[styles.signOutText, { color: colors.error }]}>Delete my data</Text>
         </PressableScale>
         <Text style={[styles.deleteNote, { color: colors.muted }]}>
-          Erases everything stored for this device on our servers (conversation memory) and on this phone: language, settings, the truck profile. The app starts over like a fresh install.
+          Erases everything stored for this device on our servers (conversation memory, trip events, your name and truck profile) and on this phone: language, settings, the truck profile. The app starts over like a fresh install.
         </Text>
         {/* Credits the open place data asks for (backend/scripts/build_places.py: ODbL, CDLA, Apache-2.0), plus HERE and
             openrouteservice routing, NWS weather and Caltrans chain controls. */}
