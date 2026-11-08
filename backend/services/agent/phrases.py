@@ -375,6 +375,11 @@ WHERE_AM_I = re.compile(r"^\W*(?:hey,? )?(?:where am i|where are we|what (?:town
                         re.I)
 
 
+# "Take the cheapest route", "is there a cheaper way", "the fastest way there": a choice among the ways to the same
+# destination (with ROAD_WORDS and no fuel word; "cheapest diesel on my route" is a stop).
+ROUTE_CHEAPEST = re.compile(r"\bcheap(?:est|er)\b|\bsave (?:money|gas|fuel)\b|\bless money\b", re.I)
+ROUTE_FASTEST = re.compile(r"\b(?:fastest|quickest|faster|quicker|shortest time)\b", re.I)
+
 # "How much is diesel there?", "what's fuel cost at the Pilot": the price at one place, not which is cheapest.
 # The model filed it under reviews ("No driver reviews there yet": synthetic voice run 2026-11-08).
 PRICE_AT = re.compile(

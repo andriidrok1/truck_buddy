@@ -85,6 +85,11 @@ export type RouteInfo = {
   chain_controls?: ChainControl[];
   labels?: string[];
   tolls_usd?: number | null;
+  /** Diesel for the trip at the regional weekly average, and that plus tolls (null without a price). */
+  fuel_usd?: number | null;
+  cost_usd?: number | null;
+  /** "fastest" / "cheapest" among this route and its alternatives. */
+  tags?: string[];
   alternatives?: RouteInfo[];
   /** Via stops the driver asked for, echoed back on a reroute. */
   via?: [number, number][];

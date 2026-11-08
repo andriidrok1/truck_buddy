@@ -2,6 +2,7 @@
 // swaps `active.route` locally, nothing goes to the backend.
 
 import type { RouteInfo } from "../types";
+import { durationLabel } from "../utils/duration";
 
 /** "I-80 / US-50" from the engine's labels, or "Alternative N" (1-based) without them. */
 export function alternativeLabel(route: RouteInfo, i: number): string {
@@ -31,4 +32,21 @@ export function swapAlternative(primary: RouteInfo, i: number): { route: RouteIn
   delete previous.alternatives; // no nesting: the list lives on the primary only
   const alternatives = [...alts.filter((_, j) => j !== i), previous];
   return { route: { ...pick, alternatives }, alternatives };
+}
+
+/** "Cheapest · 8 min · 4.2 mi · $12.50 tolls · ~$170": the tag, then the facts, then fuel + tolls at the regional
+ *  diesel average (only when the server could price it). */
+export function routeFacts(r: RouteInfo) {
+  const parts = [durationLabel(r.duration_s), `${r.distance_mi.toFixed(r.distance_mi < 10 ? 1 : 0)} mi`];
+  if (r.tolls_usd) parts.push(`$${r.tolls_usd.toFixed(2)} tolls`);
+  if (r.cost_usd != null) parts.push(`~$${Math.round(r.cost_usd)}`);
+  const tag = routeTag(r);
+  return (tag ? [tag, ...parts] : parts).join(" · ");
+}
+
+/** "Cheapest" wins over "Fastest" when a route is both (there is then no cheaper one to point at). */
+export function routeTag(r: RouteInfo): string | null {
+  if (r.tags?.includes("cheapest")) return "Cheapest";
+  if (r.tags?.includes("fastest")) return "Fastest";
+  return null;
 }

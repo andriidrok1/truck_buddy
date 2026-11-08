@@ -19,7 +19,7 @@ import { DEFAULT_TRUCK, useTruckProfile, type TruckProfile } from "@/src/hooks/u
 import { requestTruckReroute, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts } from "@/src/state/settingsStore";
 import { Chip, PrefsForm, ToggleRow, type Prefs } from "@/src/components/PrefsForm";
 import { setSim } from "@/src/sim";
-import { truckErrors, truckFromInputs } from "@/src/truck/validate";
+import { parseMpg, truckErrors, truckFromInputs } from "@/src/truck/validate";
 import { confirmHeight } from "@/src/truck/heightConfirmed";
 import { spacing, useTheme, setThemePref, useThemePref, type ThemePref } from "@/src/theme";
 import { LANGS, setLang, t, UK_READY, useLang } from "@/src/i18n";
@@ -32,6 +32,7 @@ function Field({
   unit,
   testID,
   error,
+  decimal,
 }: {
   label: string;
   value: string;
@@ -39,6 +40,8 @@ function Field({
   unit: string;
   testID: string;
   error?: boolean;
+  /** A decimal keyboard (mpg); the number pad has no point on iOS. */
+  decimal?: boolean;
 }) {
   const { colors } = useTheme();
   return (
@@ -49,7 +52,7 @@ function Field({
           testID={testID}
           value={value}
           onChangeText={onChange}
-          keyboardType="number-pad"
+          keyboardType={decimal ? "decimal-pad" : "number-pad"}
           returnKeyType="done"
           style={[styles.input, { color: colors.onSurface }]}
           placeholderTextColor={colors.muted}
@@ -115,6 +118,7 @@ export default function TruckProfileScreen() {
   const [trailer, setTrailer] = useState(String(truck.trailer_ft));
   const [weight, setWeight] = useState(String(truck.weight_lb));
   const [hazmat, setHazmat] = useState(truck.hazmat);
+  const [mpg, setMpg] = useState(truck.mpg ? String(truck.mpg) : "");
   const [name, setName] = useState(truck.driver_name ?? "");
   const [prefs, setPrefs] = useState<Prefs>(pickPrefs(truck));
 
@@ -127,6 +131,7 @@ export default function TruckProfileScreen() {
     setTrailer(String(truck.trailer_ft));
     setWeight(String(truck.weight_lb));
     setHazmat(truck.hazmat);
+    setMpg(truck.mpg ? String(truck.mpg) : "");
     setName(truck.driver_name ?? "");
     setPrefs(pickPrefs(truck));
   }
@@ -137,16 +142,18 @@ export default function TruckProfileScreen() {
   const errors = truckErrors({ feet, inches, trailer, weight });
   const sizes = truckFromInputs({ feet, inches, trailer, weight });
   const bad = { feet: !!errors.height, inches: !!errors.height, trailer: !!errors.trailer, weight: !!errors.weight };
-  const valid = sizes !== null;
+  const mpgValue = parseMpg(mpg);
+  const valid = sizes !== null && mpgValue !== undefined;
 
   const onSave = async () => {
-    if (!sizes) return;
+    if (!sizes || mpgValue === undefined) return;
     await saveProfile({
       ...truck,
       ...prefs,
       driver_name: name.trim() || null,
       ...sizes,
       hazmat,
+      mpg: mpgValue,
     });
     await confirmHeight(); // the driver saw and saved the height
     requestTruckReroute(); // the map reroutes an active route for the new size (silently)
@@ -159,6 +166,7 @@ export default function TruckProfileScreen() {
     setTrailer(String(DEFAULT_TRUCK.trailer_ft));
     setWeight(String(DEFAULT_TRUCK.weight_lb));
     setHazmat(DEFAULT_TRUCK.hazmat);
+    setMpg("");
     setName("");
   };
 
@@ -208,6 +216,10 @@ export default function TruckProfileScreen() {
 
         <Field label="Trailer length" value={trailer} onChange={setTrailer} unit="ft" testID="truck-trailer-input" error={bad.trailer} />
         <Field label="Gross weight" value={weight} onChange={setWeight} unit="lb" testID="truck-weight-input" error={bad.weight} />
+        <Field label="Fuel economy" value={mpg} onChange={setMpg} unit="mpg" testID="truck-mpg-input" error={mpgValue === undefined} decimal />
+        <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
+          For the route cost estimate. Leave empty for 6.5.
+        </Text>
 
         <View style={styles.toggleGap}>
           <ToggleRow

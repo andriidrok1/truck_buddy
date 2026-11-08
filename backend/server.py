@@ -24,7 +24,7 @@ from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import account_api, approach, approach_api, auth, chains, db, fleet_api, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services import account_api, approach, approach_api, auth, chains, db, fleet_api, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, route_cost, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
 from services.http import client as http_client  # noqa: E402
 from services.logs import said, transcripts_on  # noqa: E402
 from services.settings import settings  # noqa: E402
@@ -177,7 +177,8 @@ async def build_route(req: RouteRequest, driver: str = Depends(auth.require_driv
         raise HTTPException(status_code=503, detail="Truck routing is unavailable right now")
     # NWS alerts and Caltrans chain controls along the way; slow or down sources cost at most WEATHER_BUDGET_S
     # and never the route itself.
-    await _advisories(route, WEATHER_BUDGET_S, WEATHER_BUDGET_S)
+    await asyncio.gather(_advisories(route, WEATHER_BUDGET_S, WEATHER_BUDGET_S),
+                         route_cost.annotate(route, req.lat, req.lng, req.truck_profile))
     if req.skip_parking:  # breakdown providers: the driver needs the shop, no parking check at all
         return RouteResponse(place=place, route=i18n.localize_route(route), parking=None)
     parking = approach.for_route(place, route)

@@ -1357,6 +1357,8 @@ export interface components {
             approach?: components["schemas"]["Approach"] | null;
             /** Chain Controls */
             chain_controls?: components["schemas"]["ChainControl"][];
+            /** Cost Usd */
+            cost_usd?: number | null;
             /** Distance M */
             distance_m: number;
             /** Distance Mi */
@@ -1365,6 +1367,8 @@ export interface components {
             duration_min: number;
             /** Duration S */
             duration_s: number;
+            /** Fuel Usd */
+            fuel_usd?: number | null;
             /** Geometry */
             geometry: number[][];
             /** Handle */
@@ -1392,6 +1396,8 @@ export interface components {
             stops_s: number;
             /** Summary */
             summary: string;
+            /** Tags */
+            tags?: string[];
             /** Tolls Usd */
             tolls_usd?: number | null;
             /** Traffic */
@@ -1519,6 +1525,8 @@ export interface components {
              * @default 162
              */
             height_in: number;
+            /** Mpg */
+            mpg?: number | null;
             /**
              * Trailer Ft
              * @default 53

@@ -23,6 +23,18 @@ NO_PLACES = "I couldn't find one nearby"
 WHERE_ON = "You're on {street} in {city}, {state}."
 WHERE_IN = "You're in {city}, {state}."
 WHERE_UNKNOWN = "I can't tell where we are right now."
+CHEAPER_OFFER = "There's a way {diff} that saves about ${saves}. Want it?"
+ALREADY_BEST = "This is already the {what} way."
+
+
+def cheaper_offer(extra_s: float, saves: float) -> str:
+    """The spoken offer of a cheaper way: how much longer it takes and roughly what it saves (whole dollars)."""
+    mins = round(extra_s / 60)
+    diff = (f"{_minutes_said(mins)} slower" if mins >= 2 else "about as fast" if mins > -2
+            else f"{_minutes_said(-mins)} faster")
+    return CHEAPER_OFFER.format(diff=diff, saves=int(round(saves)))
+
+
 NO_CHAIN_NEARBY = "I don't see a {chain} nearby."
 CATEGORY_OFF = "I can't look up {what}s yet. Ask me for a truck stop, a hotel or a rest area."
 NO_WALMART = "I couldn't find a Walmart nearby. The closest {what} is {name}, {mi} miles. Want to go there?"
@@ -273,6 +285,10 @@ def _alt_reply(route: RouteInfo, current: Optional[RouteInfo] = None) -> str:
         d = route.duration_min - current.duration_min
         if abs(d) >= 5:
             diff = f", about {_minutes_said(abs(d))} {'longer' if d > 0 else 'faster'}"
+        if route.cost_usd is not None and current.cost_usd is not None:
+            saves = round(current.cost_usd - route.cost_usd)
+            if abs(saves) >= 5:
+                diff += f", about ${abs(saves)} {'cheaper' if saves > 0 else 'more'} in fuel and tolls"
         # The weather is why most drivers ask: say when the other way misses it, or runs into it. Only
         # a completed lookup counts as clear; an unknown road gets no claim of being clear. Weather the new
         # road is known to have is said whatever we know about the old one (QA review 2026-11-01).
