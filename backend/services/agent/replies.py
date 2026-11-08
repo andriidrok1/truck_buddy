@@ -342,6 +342,7 @@ def _diesel_note(p: Place) -> str:
 
 
 NO_PRICE = " I don't have a diesel price for it."
+NO_PRICE_AT = "I don't have a diesel price for {name}."
 NO_PRICES = "None of these list a diesel price, so I can't tell which is cheapest."
 # "I can check the cheapest one in the list if you want" was an offer of nothing (QA 2026-11-02): the closest is
 # what there is to offer, and "yes" goes there.
