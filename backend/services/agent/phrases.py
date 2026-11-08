@@ -373,3 +373,11 @@ ORDER_VERB = re.compile(r"^\s*(?:please\s+|let'?s\s+|just\s+|go ahead and\s+)?(?
 WHERE_AM_I = re.compile(r"^\W*(?:hey,? )?(?:where am i|where are we|what (?:town|city) (?:is this|am i in|are we in)|"
                         r"what(?:'s| is) my (?:location|position)|где я|где мы|де я|де ми)\b(?! (?:going|headed|heading|parking|parked|stopping|sleeping))",
                         re.I)
+
+
+# "How much is diesel there?", "what's fuel cost at the Pilot": the price at one place, not which is cheapest.
+# The model filed it under reviews ("No driver reviews there yet": synthetic voice run 2026-11-08).
+PRICE_AT = re.compile(
+    r"\b(?:price|prices|cost|costs|going for|per gallon|a gallon)\b"
+    r"|\bhow much (?:is|are|does|'s|for)\b"
+    r"|\bwhat(?:'s| is| are) (?:the )?(?:diesel|fuel|gas)\b[^.?!]*\b(?:there|here|at)\b", re.I)

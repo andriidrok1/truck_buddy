@@ -38,13 +38,13 @@ from services.agent.phrases import (  # noqa: F401
     STOP_ORDER, THAT_STOP, STOP_KIND, ANOTHER, ROAD_WORDS, LIST_REF, ORDINALS, NOT_A_PLACE, REMEMBER, ROAD_PREFS,
     BYE_PHRASE, numbered, list_reference, _NAME_TOKEN, _name_tokens, named_place, NAME_LIKE, name_like,
     GENERIC_NAME_WORDS, named_in_text, stop_named, stop_to_drop, reject_or_reference_guard, pick_place, ORDER_VERB,
-    WHERE_AM_I)
+    WHERE_AM_I, PRICE_AT)
 from services.agent.driver_name import (  # noqa: F401
     NAME_EVERY, NAME_MIN_WORDS, _SENTENCE_START, _INTERJECTION, _address, _a_place, _cut, GREETING, SHORT_LEAD,
     _vocatives, without_name, name_policy)
 from services.agent.replies import (  # noqa: F401
     NOT_UNDERSTOOD, ROUTE_DOWN, NO_TRUCK_ROUTE, PLACES_DOWN, LLM_DOWN, SOMETHING_BROKE, NO_PLACES, CATEGORY_OFF, NO_CHAIN_NEARBY,
-    WHERE_ON, WHERE_IN, WHERE_UNKNOWN,
+    WHERE_ON, WHERE_IN, WHERE_UNKNOWN, NO_PRICE_AT,
     NO_WALMART, ALL_REJECTED, heard_not_found, _COUNTRY, _town, _in_town, _street, _speak_street, _label_parts,
     spoken_where, _tokens, _names_match, dest_check, arrival_street, _miles, TEMPLATES, NOTICES, CLOSURE, ALT_REPLY,
     NO_ALT, TILL_SAID, CHAINS_NO_ROUTE, CHAINS_OUTSIDE, CHAINS_NONE, CHAINS_DOWN, ALT_NO_ROUTE, VIA_ADDED, VIA_DWELL,
@@ -346,6 +346,17 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply,
                              place=place, route=route, parking=approach.for_route(place, route),
                              options=others, source=self.source)
+
+    async def _price_at(self, req: AgentRequest, d: dict, sess: dict, text: str) -> AgentResponse:
+        """"How much is diesel there?": the price at the place being talked about, or that there is none."""
+        place = pick_place(d, sess["places"], _id(req.active_place), req.ui.option_ids) or req.active_place or \
+            (sess["places"][0] if sess["places"] else None)
+        timing.note("intent", "price")
+        if not place:
+            return AgentResponse(status="chat", transcript=text, reply=WHICH_PLACE, source=self.source)
+        said_ = _diesel_sentence(place, await self._regional_note(place)).strip()
+        reply = said_ or NO_PRICE_AT.format(name=_short_name(place))
+        return AgentResponse(status="chat", transcript=text, reply=reply, place=place, source=self.source)
 
     async def _where_am_i(self, req: AgentRequest, text: str) -> AgentResponse:
         """The road and town the truck is at, read from a reverse geocode."""
@@ -910,6 +921,9 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
             # (stand QA 2026-11-01), and a hotel lot is the wrong answer for a 53-footer.
             logger.info("agent find hotel for %s -> truck_stop", said(text))
             d = {**d, "category": "truck_stop"}
+        if intent in ("reviews", "chat", "unclear") and FUEL_WORDS.search(text) and PRICE_AT.search(text) \
+                and not CHEAPEST.search(text):
+            return await self._price_at(req, d, sess, text)
         if intent in ("chat", "unclear") and WHERE_AM_I.search(text):
             return await self._where_am_i(req, text)
         # "Any chain controls ahead?" is a data question, not small talk: the model answered "there may be"
