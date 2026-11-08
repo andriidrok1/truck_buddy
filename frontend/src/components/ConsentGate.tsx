@@ -22,7 +22,7 @@ const ITEMS: { icon: string; title: string; body: string }[] = [
   {
     icon: "map-marker",
     title: "Your location goes to map services",
-    body: "Your position and truck size are sent to HERE, OpenRouteService, Google and OpenStreetMap to find stops and plan truck-safe routes. When you ask what drivers say about a place, its name and location go to Google Gemini.",
+    body: "Your position and truck size are sent to map services to find stops and plan truck-safe routes. When you ask what drivers say about a place, its name and location go to Google Gemini.",
   },
   {
     icon: "alert-outline",
