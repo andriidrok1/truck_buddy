@@ -44,7 +44,7 @@ from services.agent.driver_name import (  # noqa: F401
     _vocatives, without_name, name_policy)
 from services.agent.replies import (  # noqa: F401
     NOT_UNDERSTOOD, ROUTE_DOWN, NO_TRUCK_ROUTE, PLACES_DOWN, LLM_DOWN, SOMETHING_BROKE, NO_PLACES, CATEGORY_OFF, NO_CHAIN_NEARBY,
-    WHERE_ON, WHERE_IN, WHERE_UNKNOWN, CHEAPER_OFFER, ALREADY_BEST, cheaper_offer, NO_PRICE_AT,
+    WHERE_ON, WHERE_IN, WHERE_UNKNOWN, CHEAPER_OFFER, ALREADY_BEST, NO_ROUTE_COST, cheaper_offer, NO_PRICE_AT,
     NO_WALMART, ALL_REJECTED, heard_not_found, _COUNTRY, _town, _in_town, _street, _speak_street, _label_parts,
     spoken_where, _tokens, _names_match, dest_check, arrival_street, _miles, TEMPLATES, NOTICES, CLOSURE, ALT_REPLY,
     NO_ALT, TILL_SAID, CHAINS_NO_ROUTE, CHAINS_OUTSIDE, CHAINS_NONE, CHAINS_DOWN, ALT_NO_ROUTE, VIA_ADDED, VIA_DWELL,
@@ -698,9 +698,9 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
                                              "origin": (req.lat, req.lng), "profile": _profile_key(req.truck_profile)}
         if prefer in ("cheapest", "fastest"):
             route = await self._best_way(req, cached, prefer)
-            if route is None:
+            if route is None or route == "unpriced":
                 return AgentResponse(status="chat", transcript=text, source=self.source,
-                                     reply=ALREADY_BEST.format(what=prefer))
+                                     reply=NO_ROUTE_COST if route == "unpriced" else ALREADY_BEST.format(what=prefer))
             cached["routes"].remove(route)
         else:
             i = cached["i"]
@@ -725,8 +725,9 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
                              reply=reply, place=place, route=route, parking=approach.for_route(place, route),
                              source=self.source)
 
-    async def _best_way(self, req: AgentRequest, cached: dict, prefer: str) -> Optional[RouteInfo]:
-        """The cheapest or fastest of the cached ways when it beats the current one, else None. For "cheapest" with
+    async def _best_way(self, req: AgentRequest, cached: dict, prefer: str):
+        """The cheapest or fastest of the cached ways when it beats the current one, else None; "unpriced" when
+        "cheapest" has no diesel price to go on. For "cheapest" with
         tolls on every way, one toll-free route is asked for once per destination (the only extra HERE call)."""
         current = cached.get("current")
         ways = [r for r in cached["routes"] if current is None or _route_key(r) != _route_key(current)]
@@ -753,7 +754,7 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
             best = min(everyone, key=lambda r: r.duration_s)
         else:
             if any(r.cost_usd is None for r in everyone):
-                return None
+                return "unpriced"  # no diesel price: never claim the current way is the cheapest
             best = min(everyone, key=lambda r: r.cost_usd)
             if current is not None and best is not current and current.cost_usd - best.cost_usd < route_cost.SAME_COST_USD:
                 best = current

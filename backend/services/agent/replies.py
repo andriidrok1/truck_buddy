@@ -25,6 +25,7 @@ WHERE_IN = "You're in {city}, {state}."
 WHERE_UNKNOWN = "I can't tell where we are right now."
 CHEAPER_OFFER = "There's a way {diff} that saves about ${saves}. Want it?"
 ALREADY_BEST = "This is already the {what} way."
+NO_ROUTE_COST = "I can't price the routes right now. Try again in a minute."
 
 
 def cheaper_offer(extra_s: float, saves: float) -> str:

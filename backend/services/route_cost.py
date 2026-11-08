@@ -17,26 +17,40 @@ from services.flags import on
 logger = logging.getLogger("truckbuddy.route_cost")
 
 DEFAULT_MPG = 6.5
-PRICE_BUDGET_S = 1.0  # the regional price may add at most this much to a route reply
+PRICE_BUDGET_S = 1.5  # the regional price may add at most this much to a route reply
 SAVE_MIN_USD = 10.0  # a cheaper way is offered by voice only when it saves at least this much
 SAME_COST_USD = 1.0  # within this, two routes cost the same: no "cheapest" tag
 
 
+_inflight: dict[tuple[int, int], "asyncio.Task"] = {}  # one lookup per half-degree cell at a time
+
+
+async def _lookup(lat: float, lng: float) -> Optional[tuple[float, str]]:
+    state = await fuel_index.state_code(lat, lng)
+    area = fuel_index.STATE_TO_DUOAREA.get(state or "", "NUS")
+    avg = await fuel_index.weekly_avg(area)
+    return (avg[0], fuel_index.REGION_NAME.get(area, "the region")) if avg else None
+
+
 async def diesel_price(lat: float, lng: float) -> Optional[tuple[float, str]]:
-    """(regional average $/gal, region name) at a point, or None (no key, EIA off, slow or down)."""
+    """(regional average $/gal, region name) at a point, or None (no key, EIA off, slow or down).
+
+    Cold, the lookup is two calls (HERE state, EIA average) and can take longer than PRICE_BUDGET_S. It is shielded:
+    past the budget this reply goes without a cost, but the lookup finishes in the background and fills the
+    fuel_index caches (a day), so the next route has the price at once. Cancelling it instead left the caches empty
+    and every route timed out (prod 2026-11-08)."""
     if not on("EIA_ENABLED") or not os.environ.get("EIA_API_KEY"):
         return None
-
-    async def lookup():
-        state = await fuel_index.state_code(lat, lng)
-        area = fuel_index.STATE_TO_DUOAREA.get(state or "", "NUS")
-        avg = await fuel_index.weekly_avg(area)
-        return (avg[0], fuel_index.REGION_NAME.get(area, "the region")) if avg else None
-
+    cell = fuel_index._cell(lat, lng)
+    task = _inflight.get(cell)
+    if task is None or task.done():
+        task = asyncio.create_task(_lookup(lat, lng))
+        _inflight[cell] = task
+        task.add_done_callback(lambda t, c=cell: _inflight.pop(c, None) if _inflight.get(c) is t else None)
     try:
-        return await asyncio.wait_for(lookup(), PRICE_BUDGET_S)
+        return await asyncio.wait_for(asyncio.shield(task), PRICE_BUDGET_S)
     except Exception as e:  # noqa: BLE001 - incl. timeout: the route goes out without a cost
-        logger.info("route cost: no diesel price: %s", type(e).__name__)
+        logger.info("route cost: no diesel price yet: %s", type(e).__name__)
         return None
 
 

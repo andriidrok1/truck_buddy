@@ -145,3 +145,31 @@ def test_cheapest_diesel_on_my_route_is_still_a_stop_question():
     from services.agent import FUEL_WORDS, ROAD_WORDS, ROUTE_CHEAPEST
     t = "cheapest diesel on my route"
     assert ROAD_WORDS.search(t) and ROUTE_CHEAPEST.search(t) and FUEL_WORDS.search(t)  # FUEL_WORDS keeps it a stop
+
+
+def test_cheapest_without_a_price_says_so_never_already_cheapest(agent_sandbox, fake_http):
+    fake_http.add("router.hereapi.com", "/v8/routes", json=DATA)
+    agent_sandbox.llm.on(r"cheapest route", {"intent": "chat", "reply": "Sure."})
+    prov = _prov(agent_sandbox)
+    run(prov.handle(_req("take me to Reno", "c7"), None))  # no EIA key in tests: no price
+    res = run(prov.handle(_req("take the cheapest route", "c7", active=RENO), None))
+    assert res.status == "chat" and res.reply == "I can't price the routes right now. Try again in a minute."
+
+
+def test_a_slow_price_lookup_finishes_in_the_background(monkeypatch):
+    import asyncio
+    monkeypatch.setenv("EIA_API_KEY", "k")
+    monkeypatch.setattr(route_cost, "PRICE_BUDGET_S", 0.01)
+    done = []
+
+    async def slow(lat, lng):
+        await asyncio.sleep(0.05)
+        done.append(1)
+        return 8.0, "California"
+    monkeypatch.setattr(route_cost, "_lookup", slow)
+
+    async def go():
+        first = await route_cost.diesel_price(38.58, -121.49)
+        await asyncio.sleep(0.1)  # the shielded lookup was not cancelled with the reply
+        return first
+    assert run(go()) is None and done == [1]
