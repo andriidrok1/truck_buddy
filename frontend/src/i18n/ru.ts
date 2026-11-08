@@ -300,7 +300,7 @@ export const RU: Record<string, string> = {
   "Delete my data": "Удалить мои данные",
   "Delete my data?": "Удалить мои данные?",
   "This removes everything TruckBuddy stored for this device on our servers and on this phone. The app starts over like a fresh install. This can't be undone.": "Это удалит всё, что TruckBuddy хранит для этого телефона на наших серверах и на самом телефоне. Приложение начнётся заново, как после установки. Отменить нельзя.",
-  "Erases everything stored for this device on our servers (conversation memory) and on this phone: language, settings, the truck profile. The app starts over like a fresh install.": "Стирает всё, что хранится для этого телефона на наших серверах (память разговоров) и на самом телефоне: язык, настройки, профиль трака. Приложение начнётся заново, как после установки.",
+  "Erases everything stored for this device on our servers (conversation memory, trip events, your name and truck profile) and on this phone: language, settings, the truck profile. The app starts over like a fresh install.": "Стирает всё, что хранится для этого телефона на наших серверах (память разговоров, события поездок, имя и профиль трака) и на самом телефоне: язык, настройки, профиль трака. Приложение начнётся заново, как после установки.",
   "Delete": "Удалить",
   "Cancel": "Отмена",
   "TruckBuddy keeps guiding you with the screen off.": "TruckBuddy продолжает вести тебя с выключенным экраном.",
