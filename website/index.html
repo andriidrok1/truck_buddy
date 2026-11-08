@@ -964,7 +964,7 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
       <div class="split-copy reveal">
         <span class="eyebrow">Truck parking</span>
         <h2 id="parking-title">It looks at the lot before you take the exit.</h2>
-        <p class="body-copy">A listing saying &ldquo;truck parking&rdquo; isn&rsquo;t the same as room for 70 feet of rig. Buddy looks at the lot from satellite to judge whether a 53 ft tractor-trailer can park there. When it can see the truck entrance, it ends your route at it. Towns get no check, and if the day&rsquo;s satellite checks run out, Buddy tells you so.</p>
+        <p class="body-copy">A listing saying &ldquo;truck parking&rdquo; isn&rsquo;t the same as room for 70 feet of rig. Buddy looks at the lot from satellite to judge whether a 53 ft tractor-trailer can park there. When it can see the truck entrance, it ends your route at it. Towns get no check.</p>
         <div class="verdicts" aria-label="Parking verdicts Buddy can give">
           <span class="verdict listed"><span class="ms" aria-hidden="true">verified</span>Truck parking listed</span>
           <span class="verdict ok"><span class="ms" aria-hidden="true">check_circle</span>Likely fits a truck (satellite check)</span>
@@ -1037,18 +1037,18 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
           <div class="prov-list" aria-label="Example providers">
             <div class="prov best">
               <span class="ic"><span class="ms" aria-hidden="true">build</span></span>
-              <div style="min-width:0"><div class="name">Valley Mobile Truck Tire <span class="tag-best">Closest</span></div><div class="meta"><span>Mobile · ~25 min, per reviews</span><span>Open 24 h</span><span>Takes Comchek</span></div></div>
+              <div style="min-width:0"><div class="name">Valley Mobile Truck Tire</div><div class="meta"><span>Mobile</span><span>24/7</span><span>Trucks</span><span>out within 20&ndash;30 min by reviews</span></div></div>
               <div class="price"><b>$385</b><span>quoted in reviews</span></div>
             </div>
             <div class="prov">
               <span class="ic"><span class="ms" aria-hidden="true">build</span></span>
-              <div style="min-width:0"><div class="name">I-80 Road Service</div><div class="meta"><span>Mobile · ~40 min, per reviews</span><span>4.6 ★ · 212 reviews</span></div></div>
+              <div style="min-width:0"><div class="name">I-80 Road Service</div><div class="meta"><span>Open now</span><span>Mobile</span><span>4.6 ★ (212)</span><span>out within 40 min by reviews</span></div></div>
               <div class="price"><b>$340</b><span>quoted in reviews</span></div>
             </div>
             <div class="prov">
               <span class="ic"><span class="ms" aria-hidden="true">build</span></span>
-              <div style="min-width:0"><div class="name">Capital Diesel &amp; Tire</div><div class="meta"><span>Shop · 9 mi</span><span>Opens 6 AM</span><span>Tow needed</span></div></div>
-              <div class="price"><b>$290</b><span>on their site, + tow</span></div>
+              <div style="min-width:0"><div class="name">Capital Diesel &amp; Tire</div><div class="meta"><span>9 mi</span><span>Shop only</span><span>Trucks</span></div></div>
+              <div class="price"><b>$290</b><span>on their site</span></div>
             </div>
           </div>
           <p class="example-note">Example results, names made up. Wait times come from driver reviews, and a price shows only when a review or the shop&rsquo;s site quotes one.</p>
@@ -1255,19 +1255,19 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
   var S = {
     hotel: { said: "I’m tired, find me a hotel where I can park my rig", filler: "Got it, checking.", reply: "Alright, found you a bed. Motel 6, right off Richards Blvd, about 4 miles out.",
       search: "To: Motel 6 Sacramento", eta: "9 min · 4.1 mi", entry: true, place: "Motel 6 Sacramento North", park: "Likely fits a truck (satellite check)", ok: true, cat: "hotel", icon: "bed", label: "Motel 6", call: false },
-    fuel: { said: "Need fuel", filler: "Sure, one moment.", reply: "Sierra Truck Plaza, 6 miles up on I-80. Diesel and truck parking. Route is set.",
+    fuel: { said: "Need fuel", filler: "Sure, one moment.", reply: "Alright, got one. Sierra Truck Plaza, right off I-80, about 6.2 miles out. Diesel’s $4.89 there.",
       search: "To: Sierra Truck Plaza", eta: "8 min · 6.2 mi", entry: true, place: "Sierra Truck Plaza", park: "Truck parking listed", ok: false, pic: "verified", cat: "stop", icon: "local_gas_station", label: "Sierra Plaza", call: false },
-    near: { said: "Find a truck stop near Reno", filler: "Alright, let me look.", reply: "Closest one to Reno is Mustang Truck Stop, about 2 hours away. Route is set.",
+    near: { said: "Find a truck stop near Reno", filler: "Alright, let me look.", reply: "Found you a stop. Mustang Truck Stop, just up I-80, about 132 miles.",
       search: "To: Mustang Truck Stop", eta: "2 h 10 min · 132 mi", entry: true, place: "Mustang Truck Stop, Reno", park: "Likely fits a truck (satellite check)", ok: true, cat: "stop", icon: "local_gas_station", label: "Mustang", call: false },
     rest: { said: "I need a quick break", filler: "Let me see what’s around.", reply: "Okay, Elk Grove Rest Area is about 11 miles ahead, just up I-5.",
       search: "To: Elk Grove Rest Area", eta: "12 min · 11 mi", entry: false, place: "Elk Grove Rest Area", park: "Truck parking listed", ok: false, pic: "verified", cat: "rest", icon: "park", label: "Rest area", call: false },
     getin: { said: "How do I get in?", filler: "Got it, checking.", reply: "The truck entrance is on your right, off Richards Blvd, past the fuel island.",
       search: "To: Motel 6 Sacramento", eta: "9 min · 4.1 mi", entry: true, place: "Motel 6 Sacramento North", park: "Entrance on your right", ok: false, pic: "login", cat: "hotel", icon: "bed", label: "Motel 6", call: false },
-    closer: { said: "Not that one, something closer", filler: "Sure, one moment.", reply: "Okay, Travel Inn is about 2 miles ahead. I’ll check its parking from above.",
-      search: "To: Travel Inn", eta: "5 min · 2.0 mi", entry: true, place: "Travel Inn Sacramento", park: "Truck parking unclear", ok: false, pic: "help", cat: "hotel", icon: "bed", label: "Travel Inn", call: false },
-    flat: { said: "I’ve got a flat, find someone who can fix it", filler: "Checking who’s around…", reply: "Okay, here’s what I found. Valley Mobile Truck Tire is closest, and drivers say they showed up in about 25 minutes. Tap one to call.",
-      search: "Breakdown help", eta: "3 found nearby", entry: false, place: "Valley Mobile Truck Tire", park: "Open 24 h · ~25 min, per reviews", ok: false, pic: "schedule", cat: "svc", icon: "build", label: "Valley Mobile", call: true },
-    mute: { said: "Mute directions", filler: "", reply: "Directions are muted. Say “turn directions on” when you want them back.",
+    closer: { said: "Not that one, something closer", filler: "Sure, one moment.", reply: "Got a place for you. Travel Inn, just up Richards Blvd, about 2 miles.",
+      search: "To: Travel Inn", eta: "5 min · 2.0 mi", entry: false, place: "Travel Inn Sacramento", park: "Truck parking unclear", ok: false, pic: "help", cat: "hotel", icon: "bed", label: "Travel Inn", call: false },
+    flat: { said: "I’ve got a flat, find someone who can fix it", filler: "Checking who’s around…", reply: "Okay, here’s what I found. Best bet is Valley Mobile Truck Tire, about 6 miles, and they come out to you. Tap one to call, or ask me anything about them.",
+      search: "Breakdown help", eta: "3 found nearby", entry: false, place: "Valley Mobile Truck Tire", park: "Mobile · 24/7 · Trucks", ok: false, pic: "schedule", cat: "svc", icon: "build", label: "Valley Mobile", call: true },
+    mute: { said: "Mute directions", filler: "", reply: "Okay, turn directions are muted.",
       search: "To: Motel 6 Sacramento", eta: "9 min · 4.1 mi", entry: true, place: "Motel 6 Sacramento North", park: "Directions muted", ok: false, pic: "volume_off", cat: "hotel", icon: "bed", label: "Motel 6", call: false }
   };
   var phone = $("phone"), bubble = $("bubble"), face = $("bubble-face"), who = $("bubble-who"), text = $("bubble-text");
