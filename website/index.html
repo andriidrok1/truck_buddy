@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>TruckBuddy</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="TruckBuddy is a hands-free voice copilot for truck drivers. Say what you need and it finds a stop your rig fits, then sets the route.">
+<meta name="description" content="TruckBuddy is a voice copilot for truck drivers. Tap once, say what you need, and it finds a stop and sets a truck route for your rig.">
 <link rel="icon" type="image/png" href="assets/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -745,9 +745,9 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
     </div>
     <div class="wrap hero-grid">
       <div class="hero-copy">
-        <span class="wake-pill"><span class="mic"><span class="ms" aria-hidden="true">mic</span></span> Say <b>&ldquo;Hey Buddy&rdquo;</b> <span class="privacy-dot" aria-hidden="true"></span></span>
-        <h1 id="hero-title"><span class="ln">Just <span class="say">say it.<span class="h1-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></span></span><span class="ln">Buddy finds a spot</span><span class="ln">your rig fits.</span></h1>
-        <p class="lede">TruckBuddy is the hands-free voice copilot for truck drivers. Ask for parking, a hotel, fuel or a mechanic, and it picks a place that fits your truck and sets the route.</p>
+        <span class="wake-pill"><span class="mic"><span class="ms" aria-hidden="true">mic</span></span> <span><b>Tap Buddy</b>, then talk</span> <span class="privacy-dot" aria-hidden="true"></span></span>
+        <h1 id="hero-title"><span class="ln">Tap. Just <span class="say">say it.<span class="h1-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></span></span><span class="ln">Buddy finds a stop</span><span class="ln">and sets the route.</span></h1>
+        <p class="lede">TruckBuddy is a voice copilot for truck drivers. Tap Buddy once and ask for parking, a hotel, fuel or a mechanic. It picks a place, sets a route built for your truck&rsquo;s size and reads the turns out loud.</p>
         <div class="hero-ctas">
           <a class="btn btn-blue" href="#get"><span class="ms" aria-hidden="true">mic</span>Get TruckBuddy</a>
           <a class="btn btn-ghost" href="#how">See how it works</a>
@@ -757,7 +757,7 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
           <div class="try-row" role="group" aria-labelledby="try-label">
             <button class="try-chip" type="button" data-play="hotel" aria-pressed="true"><span class="dot hotel"><span class="ms">bed</span></span>I&rsquo;m tired</button>
             <button class="try-chip" type="button" data-play="fuel" aria-pressed="false"><span class="dot stop"><span class="ms">local_gas_station</span></span>Need fuel</button>
-            <button class="try-chip" type="button" data-play="rest" aria-pressed="false"><span class="dot rest"><span class="ms">park</span></span>Need to sleep</button>
+            <button class="try-chip" type="button" data-play="rest" aria-pressed="false"><span class="dot rest"><span class="ms">park</span></span>Quick break</button>
             <button class="try-chip" type="button" data-play="flat" aria-pressed="false"><span class="dot svc"><span class="ms">build</span></span>Got a flat</button>
           </div>
         </div>
@@ -803,7 +803,7 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
               <span class="face" id="bubble-face"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span><span class="ms you-ic" aria-hidden="true">person</span></span>
               <div>
                 <div class="who" id="bubble-who">Buddy</div>
-                <div class="said" id="bubble-text">Found Motel 6 with truck parking, about 4 miles away. Route is set.</div>
+                <div class="said" id="bubble-text">Alright, found you a bed. Motel 6 Sacramento North, right off Richards Blvd, about 4.1 miles out.</div>
               </div>
             </div>
 
@@ -813,7 +813,7 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
                 <div class="m-eta" id="m-eta">9 min · 4.1 mi</div>
                 <div class="m-entry-row" id="m-entry-row"><span class="ms" aria-hidden="true">login</span><span>Route ends at truck entrance</span></div>
                 <div class="m-place" id="m-place">Motel 6 Sacramento North</div>
-                <div class="m-park" id="m-park"><span class="ms" aria-hidden="true" id="m-park-ic">check_circle</span><span id="m-park-t">Fits a 53 ft trailer</span><span class="sat" aria-hidden="true"></span></div>
+                <div class="m-park" id="m-park"><span class="ms" aria-hidden="true" id="m-park-ic">check_circle</span><span id="m-park-t">Likely fits a truck (satellite check)</span><span class="sat" aria-hidden="true"></span></div>
                 <div class="m-actions">
                   <div class="m-go" id="m-go">Go</div>
                   <div class="m-av"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span></div>
@@ -849,10 +849,10 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
         <p class="body-copy">No menus and no magic words. Buddy turns everyday phrases into the right search, and only asks a follow-up when it really changes the answer.</p>
       </div>
       <div class="phrasebook">
-        <button class="phrase reveal" type="button" data-play="hotel"><q>I&rsquo;m tired, find me a hotel where I can park my rig</q><span class="does"><span class="lbl"><span class="dot hotel"><span class="ms">bed</span></span>Hotel with truck parking</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
+        <button class="phrase reveal" type="button" data-play="hotel"><q>I&rsquo;m tired, find me a hotel where I can park my rig</q><span class="does"><span class="lbl"><span class="dot hotel"><span class="ms">bed</span></span>Hotel, then a parking check</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
         <button class="phrase reveal" type="button" data-play="fuel"><q>Need fuel</q><span class="does"><span class="lbl"><span class="dot stop"><span class="ms">local_gas_station</span></span>Nearest truck stop</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
         <button class="phrase reveal" type="button" data-play="near"><q>Find a truck stop near Reno</q><span class="does"><span class="lbl"><span class="dot stop"><span class="ms">search</span></span>Search near a town</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
-        <button class="phrase reveal" type="button" data-play="rest"><q>I need to sleep</q><span class="does"><span class="lbl"><span class="dot rest"><span class="ms">park</span></span>Rest area</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
+        <button class="phrase reveal" type="button" data-play="rest"><q>I need a quick break</q><span class="does"><span class="lbl"><span class="dot rest"><span class="ms">park</span></span>Rest area</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
         <button class="phrase reveal" type="button" data-play="getin"><q>How do I get in?</q><span class="does"><span class="lbl"><span class="dot stop"><span class="ms">login</span></span>Truck entrance, your side</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
         <button class="phrase reveal" type="button" data-play="closer"><q>Not that one, something closer</q><span class="does"><span class="lbl"><span class="dot svc"><span class="ms">forum</span></span>Remembers the conversation</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
         <button class="phrase reveal" type="button" data-play="flat"><q>I&rsquo;ve got a flat, find someone who can fix it</q><span class="does"><span class="lbl"><span class="dot svc"><span class="ms">build</span></span>Mobile tire service</span><span class="play" aria-hidden="true"><span class="mini-wave"><i></i><i></i><i></i><i></i></span>Play on phone</span></span></button>
@@ -867,17 +867,17 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
     <div class="wrap">
       <div class="sec-head reveal">
         <span class="eyebrow">How it works</span>
-        <h2 id="how-title">From &ldquo;Hey Buddy&rdquo; to a route in one breath.</h2>
+        <h2 id="how-title">From one tap to a route in one breath.</h2>
       </div>
       <ol class="steps">
         <li class="step reveal">
           <div class="ill ill-wake" aria-hidden="true">
-            <span class="hey">&ldquo;Hey Buddy&rdquo;</span>
+            <span class="hey">Tap to talk</span>
             <span class="av"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span></span>
           </div>
           <span class="num">01</span>
-          <h3>Wake it up</h3>
-          <p>Say &ldquo;Hey Buddy&rdquo; or tap the avatar. The wake word is heard on the phone, so nothing leaves it until you talk to Buddy.</p>
+          <h3>Tap Buddy</h3>
+          <p>One tap on Buddy opens the mic. Nothing is recorded or sent before that tap.</p>
         </li>
         <li class="step reveal">
           <div class="ill ill-said" aria-hidden="true">
@@ -901,7 +901,7 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
           </div>
           <span class="num">03</span>
           <h3>Buddy picks and routes</h3>
-          <p>It weighs your truck, the distance and the parking, picks one place and sets the route. The answer is a sentence or two, out loud and on screen.</p>
+          <p>It weighs the distance, the chains you like and what it knows about truck parking, picks one place and sets a route for your truck&rsquo;s height, length and weight. The answer is short, out loud and on screen.</p>
         </li>
         <li class="step reveal">
           <div class="ill ill-go" aria-hidden="true">
@@ -957,20 +957,20 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
         <div class="scan" aria-hidden="true"></div>
         <span class="sat-chip a"><span class="rec" aria-hidden="true"></span>Checking the lot from above</span>
         <div class="sat-chip b">
-          <div class="row"><span class="ms" aria-hidden="true">check_circle</span>Fits a 53 ft trailer</div>
+          <div class="row"><span class="ms" aria-hidden="true">check_circle</span>Likely fits a truck (satellite check)</div>
           <div class="sub">On your right, off Richards Blvd, past the fuel island.</div>
         </div>
       </div>
       <div class="split-copy reveal">
         <span class="eyebrow">Truck parking</span>
         <h2 id="parking-title">It looks at the lot before you take the exit.</h2>
-        <p class="body-copy">A listing saying &ldquo;truck parking&rdquo; isn&rsquo;t the same as room for 70 feet of rig. Buddy checks a 300 m satellite view around the place to judge whether a 53 ft tractor-trailer can park there, finds the truck entrance, and ends your route at it.</p>
+        <p class="body-copy">A listing saying &ldquo;truck parking&rdquo; isn&rsquo;t the same as room for 70 feet of rig. Buddy looks at the lot from satellite to judge whether a 53 ft tractor-trailer can park there. When it can see the truck entrance, it ends your route at it. Towns get no check.</p>
         <div class="verdicts" aria-label="Parking verdicts Buddy can give">
           <span class="verdict listed"><span class="ms" aria-hidden="true">verified</span>Truck parking listed</span>
-          <span class="verdict ok"><span class="ms" aria-hidden="true">check_circle</span>Fits a 53 ft trailer</span>
-          <span class="verdict maybe"><span class="ms" aria-hidden="true">help</span>Tight, check on arrival</span>
+          <span class="verdict ok"><span class="ms" aria-hidden="true">check_circle</span>Likely fits a truck (satellite check)</span>
+          <span class="verdict maybe"><span class="ms" aria-hidden="true">help</span>Truck parking unclear</span>
         </div>
-        <p class="quote-line">Ask &ldquo;where do I park?&rdquo; and Buddy tells you which side the entrance is on, from the direction you&rsquo;re actually coming.</p>
+        <p class="quote-line">Ask &ldquo;where do I park?&rdquo; and, when it can see the entrance, Buddy tells you which side it&rsquo;s on, from the direction you&rsquo;re actually coming.</p>
       </div>
     </div>
   </section>
@@ -1028,7 +1028,7 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
     <div class="wrap">
       <div class="sec-head reveal">
         <span class="eyebrow">Breakdown help</span>
-        <h2 id="bd-title">Stopped on the shoulder? Say so. Buddy does the calling around.</h2>
+        <h2 id="bd-title">Stopped on the shoulder? Say so. Buddy does the looking around.</h2>
         <p class="body-copy">Tell Buddy what happened. It asks at most one question, then reads reviews, hours and payment options while you deal with the truck. You get a short spoken comparison and the exact details to give on the phone. You start it, and Buddy never calls anyone on its own.</p>
       </div>
       <div class="bd">
@@ -1037,29 +1037,29 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
           <div class="prov-list" aria-label="Example providers">
             <div class="prov best">
               <span class="ic"><span class="ms" aria-hidden="true">build</span></span>
-              <div style="min-width:0"><div class="name">Valley Mobile Truck Tire <span class="tag-best">Closest</span></div><div class="meta"><span>Mobile · 25 min out</span><span>Open 24 h</span><span>Takes Comchek</span></div></div>
-              <div class="price"><b>$385</b><span>est. steer tire</span></div>
+              <div style="min-width:0"><div class="name">Valley Mobile Truck Tire</div><div class="meta"><span>Mobile</span><span>24/7</span><span>Trucks</span><span>out within 20&ndash;30 min by reviews</span></div></div>
+              <div class="price"><b>$385</b><span>quoted in reviews</span></div>
             </div>
             <div class="prov">
               <span class="ic"><span class="ms" aria-hidden="true">build</span></span>
-              <div style="min-width:0"><div class="name">I-80 Road Service</div><div class="meta"><span>Mobile · 40 min out</span><span>4.6 ★ · 212 reviews</span></div></div>
-              <div class="price"><b>$340</b><span>est. steer tire</span></div>
+              <div style="min-width:0"><div class="name">I-80 Road Service</div><div class="meta"><span>Open now</span><span>Mobile</span><span>4.6 ★ (212)</span><span>out within 40 min by reviews</span></div></div>
+              <div class="price"><b>$340</b><span>quoted in reviews</span></div>
             </div>
             <div class="prov">
               <span class="ic"><span class="ms" aria-hidden="true">build</span></span>
-              <div style="min-width:0"><div class="name">Capital Diesel &amp; Tire</div><div class="meta"><span>Shop · 9 mi</span><span>Opens 6 AM</span><span>Tow needed</span></div></div>
-              <div class="price"><b>$290</b><span>est. + tow</span></div>
+              <div style="min-width:0"><div class="name">Capital Diesel &amp; Tire</div><div class="meta"><span>9 mi</span><span>Shop only</span><span>Trucks</span></div></div>
+              <div class="price"><b>$290</b><span>on their site</span></div>
             </div>
           </div>
-          <p class="example-note">Example results. Names and prices are illustrative.</p>
+          <p class="example-note">Example results, names made up. Wait times come from driver reviews, and a price shows only when a review or the shop&rsquo;s site quotes one.</p>
         </div>
         <div class="tell reveal">
           <div class="k">What to tell them</div>
           <dl>
-            <div><dt>Where you are</dt><dd>I-80 eastbound, past exit 86, right shoulder</dd></div>
-            <div><dt>Truck</dt><dd><span class="spec">13′6″</span> tractor, 53 ft trailer, loaded</dd></div>
+            <div><dt>Where you are</dt><dd>I-80, Sacramento, CA &middot; GPS 38.59812, -121.48733 &middot; map link</dd></div>
+            <div><dt>Truck</dt><dd><span class="spec">13′6″</span> &middot; 53 ft trailer &middot; 80,000 lb</dd></div>
             <div><dt>Problem</dt><dd>Steer tire blowout, front left</dd></div>
-            <div><dt>Payment</dt><dd>Comchek</dd></div>
+            <div><dt>Ask them</dt><dd>What&rsquo;s your ETA to me? Do you take Comchek or EFS?</dd></div>
           </dl>
           <div class="call"><span class="ms" aria-hidden="true">call</span>Call Valley Mobile</div>
         </div>
@@ -1073,7 +1073,7 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
       <div class="sec-head reveal" style="margin-bottom:0">
         <span class="eyebrow">Driving mode</span>
         <h2 id="night-title">You drive. Buddy keeps working.</h2>
-        <p class="body-copy">Once you tap Go, Buddy keeps going in the background. It checks the lot from above, moves your route to the truck entrance, calls out every turn, and answers when you ask something. Nothing to tap, and every word is on screen too.</p>
+        <p class="body-copy">Once you tap Go, Buddy keeps going in the background. It checks the lot from above, moves your route to the truck entrance when it can see one, and calls out every turn. Tap Buddy to ask something. Every word is on screen too.</p>
       </div>
 
       <div class="drive-grid">
@@ -1142,7 +1142,7 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
                     <div class="rem" id="dn-rem">9 min · 4.1 mi · Motel 6</div>
                     <div class="entry"><span class="ms" aria-hidden="true">login</span>Route ends at truck entrance</div>
                   </div>
-                  <span class="av"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span><span class="wakedot" aria-hidden="true"></span></span>
+                  <span class="av"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span></span>
                   <span class="end">End</span>
                 </div>
               </div>
@@ -1151,33 +1151,33 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
         </div>
 
         <div class="feed reveal">
-          <div class="feed-head"><b><span class="live" aria-hidden="true"></span>What Buddy is doing</b><span class="clock" id="feed-clock">8:33 PM</span></div>
+          <div class="feed-head"><b><span class="live" aria-hidden="true"></span>Behind the scenes</b><span class="clock" id="feed-clock">8:33 PM</span></div>
           <ol class="feed-list" id="feed" aria-live="polite">
             <li class="ev"><span class="ic blue"><span class="ms" aria-hidden="true">route</span></span><div><div class="t">Route set to Motel 6 Sacramento North</div><div class="s">4.1 mi · truck route for 13′ 6″, 53 ft</div></div><span class="when">8:33</span></li>
-            <li class="ev"><span class="ic ok"><span class="ms" aria-hidden="true">satellite_alt</span></span><div><div class="t">Checked the lot from satellite: fits a 53 ft trailer</div><div class="s">Truck entrance is on the back side, off Richards Blvd</div></div><span class="when">8:33</span></li>
+            <li class="ev"><span class="ic ok"><span class="ms" aria-hidden="true">satellite_alt</span></span><div><div class="t">Satellite check: likely fits a truck</div><div class="s">Truck entrance is on the back side, off Richards Blvd</div></div><span class="when">8:33</span></li>
             <li class="ev"><span class="ic blue"><span class="ms" aria-hidden="true">alt_route</span></span><div><div class="t">Moved the route to the truck entrance</div><div class="s">No turning around in the front lot</div></div><span class="when">8:34</span></li>
             <li class="ev"><span class="ic buddy-ic"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span></span><div><div class="t"><q>In half a mile, take exit 86 toward Richards Blvd.</q></div><div class="s">Spoken and shown on screen</div></div><span class="when">8:37</span></li>
-            <li class="ev"><span class="ic"><span class="ms" aria-hidden="true">person</span></span><div><div class="t"><q>How do I get in?</q></div><div class="s">You, hands on the wheel</div></div><span class="when">8:39</span></li>
+            <li class="ev"><span class="ic"><span class="ms" aria-hidden="true">person</span></span><div><div class="t"><q>How do I get in?</q></div><div class="s">You, after one tap on Buddy</div></div><span class="when">8:39</span></li>
             <li class="ev now"><span class="ic buddy-ic"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span></span><div><div class="t"><q>Truck entrance is on your right, off Richards Blvd, past the fuel island.</q></div><div class="s">From the satellite check, for the way you&rsquo;re coming in</div></div><span class="when">8:39</span></li>
           </ol>
-          <div class="feed-foot"><span>Example trip near Sacramento</span><button type="button" id="feed-replay"><span class="ms" aria-hidden="true">replay</span>Replay trip</button></div>
+          <div class="feed-foot"><span>Illustration, not an app screen</span><button type="button" id="feed-replay"><span class="ms" aria-hidden="true">replay</span>Replay trip</button></div>
         </div>
       </div>
 
       <div class="figures reveal">
-        <div class="figure"><div class="n">56<small>px</small></div><p>The smallest button in the app, sized for a bumpy cab.</p></div>
-        <div class="figure"><div class="n">300<small>m</small></div><p>Satellite square Buddy checks around a stop for truck parking.</p></div>
-        <div class="figure"><div class="n">1&ndash;2</div><p>Sentences per spoken answer. The place and the distance, then quiet.</p></div>
-        <div class="figure"><div class="n">0<small>sec</small></div><p>Audio that leaves the phone before you say &ldquo;Hey Buddy&rdquo;.</p></div>
+        <div class="figure"><div class="n">1<small>tap</small></div><p>On Buddy to talk. The rest is your voice.</p></div>
+        <div class="figure"><div class="n">53<small>ft</small></div><p>The trailer the satellite check judges a lot against.</p></div>
+        <div class="figure"><div class="n">1</div><p>Place Buddy picks per request. Say &ldquo;not that one&rdquo; for another.</p></div>
+        <div class="figure"><div class="n">0<small>sec</small></div><p>Audio that leaves the phone before you tap Buddy.</p></div>
       </div>
 
       <div class="cab-grid">
-        <div class="cab reveal"><span class="ic a-tap"><span class="ms" aria-hidden="true">touch_app</span></span><h3>Big targets</h3><p>Every button is at least <span class="fig">56px</span>, easy to hit with a thumb over road noise.</p></div>
+        <div class="cab reveal"><span class="ic a-tap"><span class="ms" aria-hidden="true">touch_app</span></span><h3>One big button</h3><p>Buddy is the talk button: a large circle at the bottom of the screen, easy to hit with a thumb on a bumpy road.</p></div>
         <div class="cab reveal"><span class="ic a-cc"><span class="ms" aria-hidden="true">closed_caption</span></span><h3>Captioned, always</h3><p>What you said and what Buddy answered are always on screen, so it works with the radio up.</p></div>
-        <div class="cab reveal"><span class="ic a-lock"><span class="ms" aria-hidden="true">lock</span></span><h3>Wake word on the phone</h3><p>&ldquo;Hey Buddy&rdquo; is detected on the device. Nothing is recorded or sent until you start talking to it.</p></div>
+        <div class="cab reveal"><span class="ic a-lock"><span class="ms" aria-hidden="true">lock</span></span><h3>Listens only after a tap</h3><p>The mic opens when you tap Buddy. Nothing is recorded or sent before that.</p></div>
         <div class="cab reveal"><span class="ic a-mem"><span class="ms" aria-hidden="true">history</span></span><h3>Remembers the trip</h3><p>Say &ldquo;not that one&rdquo; and Buddy knows what you mean. Clear its memory whenever you like.</p></div>
         <div class="cab reveal"><span class="ic a-map"><span class="ms" aria-hidden="true">streetview</span></span><h3>See it before you arrive</h3><p>From the satellite view, open the lot in Google Street View and check the entrance before you commit.</p></div>
-        <div class="cab reveal"><span class="ic a-talk"><span class="ms" aria-hidden="true">record_voice_over</span></span><h3>Short answers</h3><p>One or two sentences: the place and the distance. Buddy keeps the talking to what you need.</p></div>
+        <div class="cab reveal"><span class="ic a-talk"><span class="ms" aria-hidden="true">record_voice_over</span></span><h3>Short answers</h3><p>The place and the distance first, then what matters for the stop, like diesel price or open truck spots. Then Buddy stops talking.</p></div>
       </div>
     </div>
   </section>
@@ -1191,7 +1191,7 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
         <span class="badge"><span class="ms" aria-hidden="true">mic</span></span>
       </button>
       <div class="say-back" id="say-back" aria-live="polite">Tap me.</div>
-      <h2 id="get-title">Hey Buddy.</h2>
+      <h2 id="get-title">Tap Buddy and talk.</h2>
       <p class="sub">Your copilot for the next stop, the next exit and the long night in between.</p>
       <div class="stores">
         <span class="store"><span class="ms" aria-hidden="true">phone_iphone</span><span class="t"><small>Coming soon</small>iPhone</span></span>
@@ -1253,21 +1253,21 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
 
   /* hero phone: the copilot dialog, one scenario at a time */
   var S = {
-    hotel: { said: "I’m tired, find me a hotel where I can park my rig", filler: "Got it, checking.", reply: "Found Motel 6 with truck parking, about 4 miles away. Route is set.",
-      search: "To: Motel 6 Sacramento", eta: "9 min · 4.1 mi", entry: true, place: "Motel 6 Sacramento North", park: "Fits a 53 ft trailer", ok: true, cat: "hotel", icon: "bed", label: "Motel 6", call: false },
-    fuel: { said: "Need fuel", filler: "Sure, one moment.", reply: "Sierra Truck Plaza, 6 miles up on I-80. Diesel and truck parking. Route is set.",
+    hotel: { said: "I’m tired, find me a hotel where I can park my rig", filler: "Got it, checking.", reply: "Alright, found you a bed. Motel 6 Sacramento North, right off Richards Blvd, about 4.1 miles out.",
+      search: "To: Motel 6 Sacramento", eta: "9 min · 4.1 mi", entry: true, place: "Motel 6 Sacramento North", park: "Likely fits a truck (satellite check)", ok: true, cat: "hotel", icon: "bed", label: "Motel 6", call: false },
+    fuel: { said: "Need fuel", filler: "Sure, one moment.", reply: "Alright, got one. Sierra Truck Plaza, right off I-80, about 6.2 miles out. Diesel’s $4.89 there.",
       search: "To: Sierra Truck Plaza", eta: "8 min · 6.2 mi", entry: true, place: "Sierra Truck Plaza", park: "Truck parking listed", ok: false, pic: "verified", cat: "stop", icon: "local_gas_station", label: "Sierra Plaza", call: false },
-    near: { said: "Find a truck stop near Reno", filler: "Alright, let me look.", reply: "Closest one to Reno is Mustang Truck Stop, about 2 hours away. Route is set.",
-      search: "To: Mustang Truck Stop", eta: "2 h 10 min · 132 mi", entry: true, place: "Mustang Truck Stop, Reno", park: "Fits a 53 ft trailer", ok: true, cat: "stop", icon: "local_gas_station", label: "Mustang", call: false },
-    rest: { said: "I need to sleep", filler: "Let me see what’s around.", reply: "Elk Grove Rest Area, about 11 miles south on I-5. Route is set.",
-      search: "To: Elk Grove Rest Area", eta: "12 min · 11 mi", entry: false, place: "Elk Grove Rest Area", park: "Fits a 53 ft trailer", ok: true, cat: "rest", icon: "park", label: "Rest area", call: false },
+    near: { said: "Find a truck stop near Reno", filler: "Alright, let me look.", reply: "Found you a stop. Mustang Truck Stop, just up I-80, about 132 miles.",
+      search: "To: Mustang Truck Stop", eta: "2 h 10 min · 132 mi", entry: true, place: "Mustang Truck Stop", park: "Likely fits a truck (satellite check)", ok: true, cat: "stop", icon: "local_gas_station", label: "Mustang", call: false },
+    rest: { said: "I need a quick break", filler: "Let me see what’s around.", reply: "Okay. Elk Grove Rest Area is about 11 miles ahead, just up I-5.",
+      search: "To: Elk Grove Rest Area", eta: "12 min · 11 mi", entry: false, place: "Elk Grove Rest Area", park: "Truck parking listed", ok: false, pic: "verified", cat: "rest", icon: "park", label: "Rest area", call: false },
     getin: { said: "How do I get in?", filler: "Got it, checking.", reply: "The truck entrance is on your right, off Richards Blvd, past the fuel island.",
       search: "To: Motel 6 Sacramento", eta: "9 min · 4.1 mi", entry: true, place: "Motel 6 Sacramento North", park: "Entrance on your right", ok: false, pic: "login", cat: "hotel", icon: "bed", label: "Motel 6", call: false },
-    closer: { said: "Not that one, something closer", filler: "Sure, one moment.", reply: "Travel Inn has truck parking too, 2 miles away. Route is set.",
-      search: "To: Travel Inn", eta: "5 min · 2.0 mi", entry: true, place: "Travel Inn Sacramento", park: "Fits a 53 ft trailer", ok: true, cat: "hotel", icon: "bed", label: "Travel Inn", call: false },
-    flat: { said: "I’ve got a flat, find someone who can fix it", filler: "Checking who’s around…", reply: "Valley Mobile Truck Tire can be there in about 25 minutes and takes Comchek.",
-      search: "Breakdown help", eta: "25 min out · mobile", entry: false, place: "Valley Mobile Truck Tire", park: "Open 24 h · Takes Comchek", ok: false, pic: "payments", cat: "svc", icon: "build", label: "Valley Mobile", call: true },
-    mute: { said: "Mute directions", filler: "", reply: "Directions are muted. Say “turn directions on” when you want them back.",
+    closer: { said: "Not that one, something closer", filler: "Sure, one moment.", reply: "Got a place for you. Travel Inn, just up Richards Blvd, about 2 miles.",
+      search: "To: Travel Inn", eta: "5 min · 2.0 mi", entry: false, place: "Travel Inn", park: "Truck parking unclear", ok: false, pic: "help", cat: "hotel", icon: "bed", label: "Travel Inn", call: false },
+    flat: { said: "I’ve got a flat, find someone who can fix it", filler: "Checking who’s around…", reply: "Okay, here’s what I found. Best bet is Valley Mobile Truck Tire, about 6 miles, and they come out to you. Tap one to call, or ask me anything about them.",
+      search: "Breakdown help", eta: "3 found nearby", entry: false, place: "Valley Mobile Truck Tire", park: "Mobile · 24/7 · Trucks", ok: false, pic: "schedule", cat: "svc", icon: "build", label: "Valley Mobile", call: true },
+    mute: { said: "Mute directions", filler: "", reply: "Okay, turn directions are muted.",
       search: "To: Motel 6 Sacramento", eta: "9 min · 4.1 mi", entry: true, place: "Motel 6 Sacramento North", park: "Directions muted", ok: false, pic: "volume_off", cat: "hotel", icon: "bed", label: "Motel 6", call: false }
   };
   var phone = $("phone"), bubble = $("bubble"), face = $("bubble-face"), who = $("bubble-who"), text = $("bubble-text");
@@ -1405,7 +1405,7 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
   var BUDDY = '<span class="ic buddy-ic"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span></span>';
   function ev(icon, cls, t, s, p) { return '<span class="ic ' + cls + '">' + (icon === "spin" ? '<span class="spin"></span>' : '<span class="ms" aria-hidden="true">' + icon + "</span>") + '</span><div><div class="t">' + t + '</div><div class="s">' + s + '</div></div><span class="when">' + hhmm(tripClock(p)) + "</span>"; }
   function said(t, s, p) { return BUDDY + '<div><div class="t"><q>' + t + '</q><span class="wv" aria-hidden="true"><i></i><i></i><i></i><i></i></span></div><div class="s">' + s + '</div></div><span class="when">' + hhmm(tripClock(p)) + "</span>"; }
-  function you(t, p) { return '<span class="ic"><span class="ms" aria-hidden="true">person</span></span><div><div class="t"><q>' + t + '</q></div><div class="s">You, hands on the wheel</div></div><span class="when">' + hhmm(tripClock(p)) + "</span>"; }
+  function you(t, p) { return '<span class="ic"><span class="ms" aria-hidden="true">person</span></span><div><div class="t"><q>' + t + '</q></div><div class="s">You, after one tap on Buddy</div></div><span class="when">' + hhmm(tripClock(p)) + "</span>"; }
   var capTimer;
   function speak(who, text, ms) {
     capFace.className = "face" + (who === "you" ? " you" : ""); capWho.textContent = who === "you" ? "You said" : "Buddy"; capText.textContent = text;
@@ -1417,8 +1417,8 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
     { p: 0.0, run: function (p) { feed.innerHTML = ""; dp.classList.remove("rerouted"); chip.classList.remove("hide"); chipSpin.style.display = ""; chipT.textContent = "Checking parking from above…";
         addEv(ev("route", "blue", "Route set to Motel 6 Sacramento North", "4.1 mi · truck route for 13′ 6″, 53 ft", p), "");
         parkLi = addEv(ev("spin", "blue", "Checking the lot from satellite…", "Can a 53 ft trailer park there? Where do trucks get in?", p)); } },
-    { p: 0.07, run: function (p) { parkLi.innerHTML = ev("satellite_alt", "ok", "Checked the lot from satellite: fits a 53 ft trailer", "Truck entrance is on the back side, off Richards Blvd", p);
-        chipSpin.style.display = "none"; chipT.innerHTML = '<span class="ms" aria-hidden="true">check_circle</span>Fits a 53 ft trailer'; } },
+    { p: 0.07, run: function (p) { parkLi.innerHTML = ev("satellite_alt", "ok", "Satellite check: likely fits a truck", "Truck entrance is on the back side, off Richards Blvd", p);
+        chipSpin.style.display = "none"; chipT.innerHTML = '<span class="ms" aria-hidden="true">check_circle</span>Likely fits a truck'; } },
     { p: 0.11, run: function (p) { dp.classList.add("rerouted"); addEv(ev("alt_route", "blue", "Moved the route to the truck entrance", "No turning around in the front lot", p)); setTimeout(function () { chip.classList.add("hide"); }, 2200); } },
     { p: 0.30, run: function (p) { var t = "In half a mile, take exit 86 toward Richards Blvd."; if (!muted) speak("buddy", t); addEv(said(t, muted ? "Shown on screen (directions muted)" : "Spoken and shown on screen", p)); } },
     { p: 0.43, run: function (p) { var t = "Take exit 86 now."; if (!muted) speak("buddy", t, 2400); addEv(said(t, "Right at the turn", p)); } },
