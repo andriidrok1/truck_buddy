@@ -46,7 +46,9 @@ class Principal(str):
 
 
 MAX_ATTEMPTS, WINDOW_S = 5, 600
-MAX_DEVICES_PER_IP = 20  # new device tokens per IP per WINDOW_S
+# New device tokens per IP per WINDOW_S. Raise it on Railway while Apple reviews a build: reviewers sign up
+# many fresh installs from a few Apple IPs, and a 429 on first launch reads as a broken app.
+MAX_DEVICES_PER_IP = int(os.environ.get("DEVICES_PER_IP_PER_10MIN", "20"))
 _attempts: "defaultdict[str, deque]" = defaultdict(deque)
 _signups: "defaultdict[str, deque]" = defaultdict(deque)
 _calls: "defaultdict[str, tuple[deque, deque]]" = defaultdict(lambda: (deque(), deque()))
