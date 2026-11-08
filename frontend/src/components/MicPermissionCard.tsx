@@ -1,4 +1,4 @@
-import { Linking, StyleSheet, View } from "react-native";
+import { Linking, Platform, StyleSheet, View } from "react-native";
 import { Text } from "../i18n/Text";
 import Animated, { FadeInDown, FadeOutDown } from "react-native-reanimated";
 
@@ -10,7 +10,7 @@ import { PressableScale } from "./PressableScale";
 
 type Props = { state: Exclude<MicPermission, "granted">; bottom: number; onAllow: () => void; onDismiss: () => void; onHeight?: (h: number) => void };
 
-// Pre-permission explanation (state "ask") or a route to Settings once the OS stops asking ("blocked").
+// Pre-permission explanation (state "ask", one Continue that shows the system prompt) or a route to Settings once the OS stops asking ("blocked").
 export function MicPermissionCard({ state, bottom, onAllow, onDismiss, onHeight }: Props) {
   const { colors } = useTheme();
   return (
@@ -31,14 +31,19 @@ export function MicPermissionCard({ state, bottom, onAllow, onDismiss, onHeight 
         </Text>
       </View>
       <View style={styles.row}>
-        <PressableScale
-          testID="mic-permission-dismiss-button"
-          onPress={onDismiss}
-          containerStyle={styles.flex}
-          style={[styles.btn, { backgroundColor: colors.surfaceSecondary }]}
-        >
-          <Text style={[styles.btnText, { color: colors.onSurface }]}>Not now</Text>
-        </PressableScale>
+        {/* 5.1.1(iv): before the system prompt the card has one neutral "Continue" that always shows it, no "Allow"
+            wording and no way to put the prompt off. "Not now" comes back once the OS has stopped asking. Android keeps it
+            (no such rule, and Expo Go on the emulator stand sometimes never answers the request). */}
+        {(state !== "ask" || Platform.OS !== "ios") && (
+          <PressableScale
+            testID="mic-permission-dismiss-button"
+            onPress={onDismiss}
+            containerStyle={styles.flex}
+            style={[styles.btn, { backgroundColor: colors.surfaceSecondary }]}
+          >
+            <Text style={[styles.btnText, { color: colors.onSurface }]}>Not now</Text>
+          </PressableScale>
+        )}
         <PressableScale
           testID={state === "ask" ? "mic-permission-allow-button" : "mic-permission-settings-button"}
           onPress={state === "ask" ? onAllow : () => Linking.openSettings?.()?.catch(() => {})}
@@ -46,7 +51,7 @@ export function MicPermissionCard({ state, bottom, onAllow, onDismiss, onHeight 
           style={[styles.btn, { backgroundColor: colors.brandPrimary }]}
         >
           <Text style={[styles.btnText, { color: colors.onBrandPrimary }]}>
-            {state === "ask" ? "Allow microphone" : "Open Settings"}
+            {state === "ask" ? "Continue" : "Open Settings"}
           </Text>
         </PressableScale>
       </View>
