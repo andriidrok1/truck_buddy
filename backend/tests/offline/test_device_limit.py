@@ -40,8 +40,18 @@ def _limit_with(env: dict) -> int:
     return int(out.stdout.strip().splitlines()[-1])
 
 
-def test_the_limit_comes_from_the_env_and_defaults_to_20():
-    env = {k: v for k, v in os.environ.items() if k != "DEVICES_PER_IP_PER_10MIN"}
-    assert int(subprocess.run([sys.executable, "-c", "from services import auth; print(auth.MAX_DEVICES_PER_IP)"],
-                              cwd=BACKEND, env=env, capture_output=True, text=True, check=True).stdout.split()[-1]) == 20
+def test_the_limit_comes_from_the_env_and_falls_back_to_20():
     assert _limit_with({"DEVICES_PER_IP_PER_10MIN": "200"}) == 200
+    assert _limit_with({"DEVICES_PER_IP_PER_10MIN": ""}) == 20
+    assert _limit_with({"DEVICES_PER_IP_PER_10MIN": "abc"}) == 20
+
+
+def test_zero_turns_the_limit_off(monkeypatch):
+    monkeypatch.setenv("OPEN_ACCESS", "1")
+    monkeypatch.setattr(auth, "MAX_DEVICES_PER_IP", 0)
+    auth._signups.clear()
+    try:
+        for _ in range(5):
+            assert auth.register_device(_request("10.0.0.3"))
+    finally:
+        auth._signups.clear()

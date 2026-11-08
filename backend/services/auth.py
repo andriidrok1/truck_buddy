@@ -45,10 +45,18 @@ class Principal(str):
         return str(self)
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, "") or default)
+    except ValueError:  # a typo in Railway must not take the backend down at import
+        return default
+
+
 MAX_ATTEMPTS, WINDOW_S = 5, 600
 # New device tokens per IP per WINDOW_S. Raise it on Railway while Apple reviews a build: reviewers sign up
 # many fresh installs from a few Apple IPs, and a 429 on first launch reads as a broken app.
-MAX_DEVICES_PER_IP = int(os.environ.get("DEVICES_PER_IP_PER_10MIN", "20"))
+# Per process: with N workers the real cap is up to N times this (the lenient direction). 0 = no limit.
+MAX_DEVICES_PER_IP = _env_int("DEVICES_PER_IP_PER_10MIN", 20)
 _attempts: "defaultdict[str, deque]" = defaultdict(deque)
 _signups: "defaultdict[str, deque]" = defaultdict(deque)
 _calls: "defaultdict[str, tuple[deque, deque]]" = defaultdict(lambda: (deque(), deque()))
@@ -135,7 +143,7 @@ def register_device(request: Request) -> str:
     if not open_access():
         raise HTTPException(status_code=403, detail="Access code required")
     q = _window(_signups, _client_ip(request), WINDOW_S, time.monotonic())
-    if len(q) >= MAX_DEVICES_PER_IP:
+    if MAX_DEVICES_PER_IP > 0 and len(q) >= MAX_DEVICES_PER_IP:
         raise HTTPException(status_code=429, detail="Too many new devices. Try again in a few minutes.")
     q.append(time.monotonic())
     return _token("driver")
