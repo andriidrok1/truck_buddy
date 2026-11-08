@@ -14,7 +14,7 @@ import logging
 import math
 import os
 from pathlib import Path
-from typing import List, Optional, Protocol
+from typing import Callable, List, Optional, Protocol
 
 from models import Category, Place, PlacesResponse
 from services.geo import haversine_km, km_to_mi
@@ -40,6 +40,7 @@ DATA_RADII_KM = (50.0, 150.0, 400.0)  # these are sparse: widen until there's so
 PLACES_DIR = DATA_DIR / "places"
 OWN_RADII_KM = (25.0, 60.0, 150.0)  # truck stops, rest areas, Walmart, motels: near first, then wider
 OWN_MAX = 10
+NAMED_MAX_KM = 150.0  # "find a Love's": the chain's nearest within this, past the radius a plain search stops at
 _data_cache: dict[str, Optional[list[dict]]] = {}
 
 
@@ -234,6 +235,18 @@ class OwnPlacesProvider:
         from services import tpims
         tpims.attach(found)
         return PlacesResponse(category=category, radius_km=radius, widened=widened, places=found, source=self.source)
+
+    async def search_named(self, category: Category, match: Callable[[str], bool], lat: float, lng: float,
+                           max_km: float = NAMED_MAX_KM) -> List[Place]:
+        """The nearest places of a category whose name passes `match`, up to `max_km` away. "Find a Love's" wants
+        the chain, and the nearest Love's is often past the ten closest truck stops a plain search returns
+        (synthetic voice run 2026-11-08: Sacramento got Harbor Truck and Auto Plaza, the Love's is in Lodi)."""
+        rows = [r for r in self.rows(category) if match(str(r.get("name") or ""))]
+        found = sorted((p for p in (_with_distance(r, lat, lng) for r in rows) if (p.distance_km or 0) <= max_km),
+                       key=lambda p: p.distance_km or 0)[:OWN_MAX]
+        from services import tpims
+        tpims.attach(found)
+        return found
 
     async def get(self, place_id: str, lat: float, lng: float) -> Optional[Place]:
         if self._by_id is None:

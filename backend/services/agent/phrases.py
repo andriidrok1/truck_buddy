@@ -366,3 +366,10 @@ def pick_place(d: dict, places: list[Place], current_id: Optional[str] = None,
 
 # "skip / drop / cancel ..." at the start of the driver's words, for reading the stop meant from what follows.
 ORDER_VERB = re.compile(r"^\s*(?:please\s+|let'?s\s+|just\s+|go ahead and\s+)?(?:skip|drop|cancel|remove|ditch|lose)\s+", re.I)
+
+
+# "Where am I?": the town and road from a reverse geocode, never the model (it read out "38.58160, -121.49440":
+# synthetic voice run 2026-11-08).
+WHERE_AM_I = re.compile(r"^\W*(?:hey,? )?(?:where am i|where are we|what (?:town|city) (?:is this|am i in|are we in)|"
+                        r"what(?:'s| is) my (?:location|position)|где я|где мы|де я|де ми)\b(?! (?:going|headed|heading|parking|parked|stopping|sleeping))",
+                        re.I)
