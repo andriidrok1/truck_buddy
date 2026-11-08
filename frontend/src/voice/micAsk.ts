@@ -1,4 +1,4 @@
-// The microphone request behind "Allow microphone". Expo Go sometimes never answers it, so after `slowMs` the card
+// The microphone request behind the mic card's "Continue". Expo Go sometimes never answers it, so after `slowMs` the card
 // offers Settings (`onSlow`), but the request is still awaited: a driver who reads the system dialog for longer
 // than that and taps Allow gets the card closed, not stuck on "Open Settings" with the mic already allowed
 // (UI review 2026-11-05, ui-mic-card-settings-light.png).

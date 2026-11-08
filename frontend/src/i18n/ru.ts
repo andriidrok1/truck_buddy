@@ -168,7 +168,6 @@ export const RU: Record<string, string> = {
   "Location off · Sample area": "Геолокация выключена · пример района",
   "No signal · on the loaded route": "Нет связи · едем по загруженному маршруту",
   "Microphone access is needed to talk to your copilot": "Чтобы говорить со штурманом, нужен доступ к микрофону",
-  "Allow microphone": "Разрешить микрофон",
   "Open Settings": "Открыть настройки",
   "Not now": "Не сейчас",
   "Resume": "Продолжить",
