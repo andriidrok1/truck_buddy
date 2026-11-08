@@ -803,7 +803,7 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
               <span class="face" id="bubble-face"><span class="buddy" data-buddy><img src="assets/buddy-body.webp" alt=""><img class="eyes" src="assets/buddy-eyes.webp" alt=""></span><span class="ms you-ic" aria-hidden="true">person</span></span>
               <div>
                 <div class="who" id="bubble-who">Buddy</div>
-                <div class="said" id="bubble-text">Alright, found you a bed. Motel 6, right off Richards Blvd, about 4 miles out.</div>
+                <div class="said" id="bubble-text">Alright, found you a bed. Motel 6 Sacramento North, right off Richards Blvd, about 4.1 miles out.</div>
               </div>
             </div>
 
@@ -1253,18 +1253,18 @@ footer { background: var(--paper); border-top: 1px solid var(--line); padding-bl
 
   /* hero phone: the copilot dialog, one scenario at a time */
   var S = {
-    hotel: { said: "I’m tired, find me a hotel where I can park my rig", filler: "Got it, checking.", reply: "Alright, found you a bed. Motel 6, right off Richards Blvd, about 4 miles out.",
+    hotel: { said: "I’m tired, find me a hotel where I can park my rig", filler: "Got it, checking.", reply: "Alright, found you a bed. Motel 6 Sacramento North, right off Richards Blvd, about 4.1 miles out.",
       search: "To: Motel 6 Sacramento", eta: "9 min · 4.1 mi", entry: true, place: "Motel 6 Sacramento North", park: "Likely fits a truck (satellite check)", ok: true, cat: "hotel", icon: "bed", label: "Motel 6", call: false },
     fuel: { said: "Need fuel", filler: "Sure, one moment.", reply: "Alright, got one. Sierra Truck Plaza, right off I-80, about 6.2 miles out. Diesel’s $4.89 there.",
       search: "To: Sierra Truck Plaza", eta: "8 min · 6.2 mi", entry: true, place: "Sierra Truck Plaza", park: "Truck parking listed", ok: false, pic: "verified", cat: "stop", icon: "local_gas_station", label: "Sierra Plaza", call: false },
     near: { said: "Find a truck stop near Reno", filler: "Alright, let me look.", reply: "Found you a stop. Mustang Truck Stop, just up I-80, about 132 miles.",
-      search: "To: Mustang Truck Stop", eta: "2 h 10 min · 132 mi", entry: true, place: "Mustang Truck Stop, Reno", park: "Likely fits a truck (satellite check)", ok: true, cat: "stop", icon: "local_gas_station", label: "Mustang", call: false },
-    rest: { said: "I need a quick break", filler: "Let me see what’s around.", reply: "Okay, Elk Grove Rest Area is about 11 miles ahead, just up I-5.",
+      search: "To: Mustang Truck Stop", eta: "2 h 10 min · 132 mi", entry: true, place: "Mustang Truck Stop", park: "Likely fits a truck (satellite check)", ok: true, cat: "stop", icon: "local_gas_station", label: "Mustang", call: false },
+    rest: { said: "I need a quick break", filler: "Let me see what’s around.", reply: "Okay. Elk Grove Rest Area is about 11 miles ahead, just up I-5.",
       search: "To: Elk Grove Rest Area", eta: "12 min · 11 mi", entry: false, place: "Elk Grove Rest Area", park: "Truck parking listed", ok: false, pic: "verified", cat: "rest", icon: "park", label: "Rest area", call: false },
     getin: { said: "How do I get in?", filler: "Got it, checking.", reply: "The truck entrance is on your right, off Richards Blvd, past the fuel island.",
       search: "To: Motel 6 Sacramento", eta: "9 min · 4.1 mi", entry: true, place: "Motel 6 Sacramento North", park: "Entrance on your right", ok: false, pic: "login", cat: "hotel", icon: "bed", label: "Motel 6", call: false },
     closer: { said: "Not that one, something closer", filler: "Sure, one moment.", reply: "Got a place for you. Travel Inn, just up Richards Blvd, about 2 miles.",
-      search: "To: Travel Inn", eta: "5 min · 2.0 mi", entry: false, place: "Travel Inn Sacramento", park: "Truck parking unclear", ok: false, pic: "help", cat: "hotel", icon: "bed", label: "Travel Inn", call: false },
+      search: "To: Travel Inn", eta: "5 min · 2.0 mi", entry: false, place: "Travel Inn", park: "Truck parking unclear", ok: false, pic: "help", cat: "hotel", icon: "bed", label: "Travel Inn", call: false },
     flat: { said: "I’ve got a flat, find someone who can fix it", filler: "Checking who’s around…", reply: "Okay, here’s what I found. Best bet is Valley Mobile Truck Tire, about 6 miles, and they come out to you. Tap one to call, or ask me anything about them.",
       search: "Breakdown help", eta: "3 found nearby", entry: false, place: "Valley Mobile Truck Tire", park: "Mobile · 24/7 · Trucks", ok: false, pic: "schedule", cat: "svc", icon: "build", label: "Valley Mobile", call: true },
     mute: { said: "Mute directions", filler: "", reply: "Okay, turn directions are muted.",
