@@ -6,6 +6,16 @@
 // the same variable makes the JS side pick that map (src/map/provider.ts). Without it the build is
 // unchanged: react-native-maps only, and Expo Go keeps working.
 import type { ExpoConfig } from "expo/config";
+import { withInfoPlist, type ConfigPlugin } from "expo/config-plugins";
+
+// expo-task-manager adds UIBackgroundModes "fetch" for background fetch, which the app never uses (the drive task
+// runs under "location"). An unused background mode is a 2.5.4 rejection risk, so it comes out again here.
+const withoutBackgroundFetch: ConfigPlugin = (c) =>
+  withInfoPlist(c, (m) => {
+    const modes = m.modResults.UIBackgroundModes;
+    if (Array.isArray(modes)) m.modResults.UIBackgroundModes = modes.filter((x: string) => x !== "fetch");
+    return m;
+  });
 
 const mapLibre = process.env.EXPO_PUBLIC_MAP_PROVIDER?.trim().toLowerCase() === "maplibre";
 // EAS project id (from `eas init`; also in EAS env as EXPO_PUBLIC_EAS_PROJECT_ID). Without it there is no
@@ -57,6 +67,27 @@ const config: ExpoConfig = {
             "NSPrivacyAccessedAPITypeReasons": [
               "CA92.1"
             ]
+          },
+          // React Native core (file timestamps, boot-time clock) and expo-file-system (free disk space before a write).
+          // Their pods carry their own manifests, but the prebuilt app manifest held only UserDefaults, and Expo's
+          // privacy guide lists these for the app manifest so an upload is not refused with ITMS-91053.
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "C617.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "35F9.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "E174.1"
+            ]
           }
         ],
         "NSPrivacyTracking": false,
@@ -98,6 +129,33 @@ const config: ExpoConfig = {
           },
           {
             "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeCrashData",
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
+          // The random ID the server hands out on first launch (POST /auth/device): everything above is keyed by it.
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeUserID",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
+          // Trip events (route started, changed, ended, requests the copilot could not handle), kept 90 days.
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeProductInteraction",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
+          // Sentry performance traces (tracesSampleRate 0.1 in app/_layout.tsx).
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypePerformanceData",
             "NSPrivacyCollectedDataTypeLinked": false,
             "NSPrivacyCollectedDataTypeTracking": false,
             "NSPrivacyCollectedDataTypePurposes": [
@@ -146,7 +204,8 @@ const config: ExpoConfig = {
       ],
       "expo-font",
       "expo-image",
-      "expo-secure-store",
+      // No Face ID: the app never stores a key behind biometrics, so no generic NSFaceIDUsageDescription.
+      ["expo-secure-store", { "faceIDPermission": false }],
       "expo-web-browser",
       "expo-status-bar",
       "@react-native-vector-icons/material-design-icons",
@@ -156,6 +215,10 @@ const config: ExpoConfig = {
           "locationWhenInUsePermission": "TruckBuddy uses your location to find truck-friendly parking, fuel and repair shops near you and to plan truck-safe routes.",
           "locationAlwaysAndWhenInUsePermission": false,
           "locationAlwaysPermission": false,
+          // No motion activity and no temporary full-accuracy request in the app: without these the plugin writes
+          // generic "Allow $(PRODUCT_NAME) to ..." purpose strings into the store build.
+          "motionUsagePermission": false,
+          "locationFullAccuracyPermission": false,
           "isAndroidBackgroundLocationEnabled": false,
           // Guidance with the screen off runs as a foreground service with a notification, started from the open
           // app on Go: no ACCESS_BACKGROUND_LOCATION (still blocked below), only the service permissions.
@@ -181,4 +244,4 @@ const config: ExpoConfig = {
     }
   };
 
-export default config;
+export default withoutBackgroundFetch(config);
