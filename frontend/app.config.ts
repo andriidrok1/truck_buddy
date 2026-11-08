@@ -9,9 +9,11 @@ import type { ExpoConfig } from "expo/config";
 
 const mapLibre = process.env.EXPO_PUBLIC_MAP_PROVIDER?.trim().toLowerCase() === "maplibre";
 // EAS project @andrylik/truckbuddy (created with `eas init` on 2026-11-07). The id is not a secret; the env
-// var only exists to point a fork at another project. It turns on OTA (`updates.url`) for store builds.
+// var points a fork at another project, and EXPO_PUBLIC_EAS_PROJECT_ID=none drops it (no OTA, and Expo Go
+// stops asking expo.dev for a signed dev manifest, e.g. offline). It turns on OTA (`updates.url`) for store builds.
 const EAS_PROJECT_ID = "9443d359-aa8f-4b33-b66c-fdefbb6cf99f";
-const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim() || EAS_PROJECT_ID;
+const easEnv = process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim();
+const easProjectId = easEnv === "none" ? undefined : easEnv || EAS_PROJECT_ID;
 // Sentry: organization and project slugs for the source-map upload plugin; the DSN is read at runtime
 // (EXPO_PUBLIC_SENTRY_DSN, app/_layout.tsx). No slugs = no plugin, nothing else changes.
 const sentryOrg = process.env.SENTRY_ORG?.trim() || undefined;
