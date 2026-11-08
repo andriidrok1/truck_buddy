@@ -13,12 +13,12 @@ Three ways the app runs, and only the first two are the real binary:
 
 OTA: `runtimeVersion` follows the app version, so every build of 1.0.0 is one runtime. A JS-only change ships
 with `eas update --branch staging` (or `production`) and is picked up on the next app open; a native change
-(new module, config plugin) needs a new build and a version bump.
+(new module, config plugin) needs a new build and a version bump. Publish with `eas update --branch <channel> --environment <env>`: `eas update` ignores the `env` in `eas.json`, so a local `.env.local` (an emulator backend URL) would ship to drivers. Keep `EXPO_PUBLIC_MAP_PROVIDER` the same as the build's, or the map screen crashes.
 
 Crash reporting: Sentry is initialised in `app/_layout.tsx` and dormant without `EXPO_PUBLIC_SENTRY_DSN`.
 Events carry the `trip_id` tag so a crash sits next to the trip log on the backend.
 
-One-time owner steps: `npx eas-cli login`, `npx eas-cli init` (project id → `EXPO_PUBLIC_EAS_PROJECT_ID`),
+One-time owner steps: `npx eas-cli login` (project `@andrylik/truckbuddy` is already set in `app.config.ts`),
 Sentry project (DSN, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` as EAS secrets), `EXPO_TOKEN` as a
 GitHub secret for the manual `eas-build-dev` workflow job.
 

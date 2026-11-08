@@ -8,10 +8,12 @@
 import type { ExpoConfig } from "expo/config";
 
 const mapLibre = process.env.EXPO_PUBLIC_MAP_PROVIDER?.trim().toLowerCase() === "maplibre";
-// EAS project id (from `eas init`; also in EAS env as EXPO_PUBLIC_EAS_PROJECT_ID). Without it there is no
-// OTA (`updates.url` stays unset) and the config is still valid, so Expo Go and local builds keep working.
-// TODO(owner): run `eas init` once and put the id into EAS env / .env.local.
-const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim() || undefined;
+// EAS project @andrylik/truckbuddy (created with `eas init` on 2026-11-07). The id is not a secret; the env
+// var points a fork at another project, and EXPO_PUBLIC_EAS_PROJECT_ID=none drops it (no OTA, and Expo Go
+// stops asking expo.dev for a signed dev manifest, e.g. offline). It turns on OTA (`updates.url`) for store builds.
+const EAS_PROJECT_ID = "9443d359-aa8f-4b33-b66c-fdefbb6cf99f";
+const easEnv = process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim();
+const easProjectId = easEnv === "none" ? undefined : easEnv || EAS_PROJECT_ID;
 // Sentry: organization and project slugs for the source-map upload plugin; the DSN is read at runtime
 // (EXPO_PUBLIC_SENTRY_DSN, app/_layout.tsx). No slugs = no plugin, nothing else changes.
 const sentryOrg = process.env.SENTRY_ORG?.trim() || undefined;
@@ -20,6 +22,7 @@ const sentryProject = process.env.SENTRY_PROJECT?.trim() || undefined;
 const config: ExpoConfig = {
     "name": "TruckBuddy",
     "slug": "truckbuddy",
+    "owner": "andrylik",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
