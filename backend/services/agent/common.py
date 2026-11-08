@@ -154,6 +154,17 @@ def _chain_of(name: str) -> Optional[str]:
     return CHAIN_SPELLING.get(raw, raw.title())
 
 
+# Chains a driver asks for by name ("find a Love's"); "truck stop" and "travel center" match TRUCK_STOP_NAME too
+# but name no chain.
+NAMED_CHAINS = {"Love's", "Pilot", "Flying J", "TA", "Petro", "Sapp Bros", "Roady's"}
+
+
+def chain_named(text: str) -> Optional[str]:
+    """The truck stop chain the driver named ("find a Love's" -> "Love's"), or None."""
+    c = _chain_of(text)
+    return c if c in NAMED_CHAINS else None
+
+
 def _short_name(p: Place) -> str:
     """"Sacramento 49er Travel Plaza, Sacramento, CA" -> "Sacramento 49er Travel Plaza": how a place is remembered."""
     return p.name.split(",")[0].strip()

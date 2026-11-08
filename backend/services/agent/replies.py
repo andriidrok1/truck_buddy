@@ -20,6 +20,10 @@ SOMETHING_BROKE = "Something went wrong on my end. Try again in a minute."
 
 NO_PLACES = "I couldn't find one nearby"
 
+WHERE_ON = "You're on {street} in {city}, {state}."
+WHERE_IN = "You're in {city}, {state}."
+WHERE_UNKNOWN = "I can't tell where we are right now."
+NO_CHAIN_NEARBY = "I don't see a {chain} nearby."
 CATEGORY_OFF = "I can't look up {what}s yet. Ask me for a truck stop, a hotel or a rest area."
 NO_WALMART = "I couldn't find a Walmart nearby. The closest {what} is {name}, {mi} miles. Want to go there?"
 

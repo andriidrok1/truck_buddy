@@ -424,6 +424,29 @@ async def geocode(q: str, lat: float, lng: float) -> list[Place]:
     return []
 
 
+REVGEOCODE_URL = "https://revgeocode.search.hereapi.com/v1/revgeocode"
+
+
+async def where(lat: float, lng: float) -> Optional[dict]:
+    """The road and town at a point, from HERE reverse geocoding: {"street", "city", "state"} (any may be None),
+    or None without a HERE key or on any failure."""
+    key = os.environ.get("HERE_API_KEY")
+    if not key:
+        return None
+    try:
+        r = await client().get(REVGEOCODE_URL, params={"at": f"{lat},{lng}", "limit": 1, "lang": "en-US", "apiKey": key},
+                               timeout=6)
+        r.raise_for_status()
+        items = r.json().get("items") or []
+    except Exception as e:  # noqa: BLE001 - "where am I" says it can't tell
+        logger.info("reverse geocode failed: %s", type(e).__name__)
+        return None
+    if not items:
+        return None
+    a = items[0].get("address") or {}
+    return {"street": a.get("street"), "city": a.get("city") or a.get("county"), "state": a.get("state")}
+
+
 def is_street(place) -> bool:
     """A bare street from HERE (no house number): what a short business name geocodes to when nothing better matches."""
     return str(getattr(place, "id", "")).startswith("here-street-")
