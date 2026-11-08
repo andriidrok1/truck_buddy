@@ -318,7 +318,7 @@ export default function TruckProfileScreen() {
         </Text>
         {/* Credits the open place data asks for (backend/scripts/build_places.py: ODbL, CDLA, Apache-2.0), plus HERE routing and NWS weather. */}
         <Text testID="data-credits" style={[styles.deleteNote, { color: colors.muted, marginTop: spacing.lg }]}>
-          Places: © OpenStreetMap contributors (ODbL), © Overture Maps Foundation, Foursquare, AllThePlaces, FHWA. Maps and truck routes: © HERE. Weather: National Weather Service. What drivers say: Google Maps.
+          Places: © OpenStreetMap contributors (ODbL), © Overture Maps Foundation, Foursquare, AllThePlaces, FHWA. Maps and truck routes: © HERE. Weather: National Weather Service. Chain controls: Caltrans. What drivers say: Google Maps.
         </Text>
       </KeyboardAwareScrollView>
 
