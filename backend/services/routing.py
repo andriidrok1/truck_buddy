@@ -597,8 +597,8 @@ def _notices(raw: List[dict], t: TruckProfile) -> tuple[List[str], Optional[str]
         elif code == "violatedadminwidevehiclerestriction":
             d = details[0] if details else {}
             kind, _ = _restriction(d)
-            value = next((v for v in (_num(d.get(k)) for k in ("maxHeight", "maxWeight", "maxGrossWeight", "maxLength",
-                                                                 "maxWidth")) if v), 0.0)
+            limits = (_num(d.get(k)) for k in ("maxHeight", "maxWeight", "maxGrossWeight", "maxLength", "maxWidth"))
+            value = next((v for v in limits if v), 0.0)
             states, top = legal.get(kind, ([], 0.0))
             state = str(d.get("state") or d.get("country") or "").strip()
             if state and state not in states:
