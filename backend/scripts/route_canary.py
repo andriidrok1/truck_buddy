@@ -16,6 +16,7 @@ import httpx
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "https://api.truckbuddy.io").rstrip("/") + "/api"
 PAUSE_S = 2.0  # under the per-driver rate limit
+RETRY_S = 30.0
 NO_TURNS = "The truck router is down"
 
 HEAVY = {"weight_lb": 80000}
@@ -66,7 +67,9 @@ def check_route(name: str, origin, dest, body: dict) -> list[str]:
     for i, w in enumerate(ways):
         tag = f"way {i} {w.get('labels')}"
         d = w.get("distance_mi") or 0
-        if not (crow * 0.95 <= d <= crow * 2.5 + 15):
+        # Rivers and truck bans stretch city routes: Jersey City->Brooklyn is 44 mi for a legal 80,000 lb truck
+        # (5.9 mi as the crow flies). The 11-08 backup line was 85 mi; the backup check above names it anyway.
+        if not (crow * 0.95 <= d <= crow * 3 + 40):
             out.append(f"{tag}: {d:.1f} mi for {crow:.1f} mi as the crow flies")
         if not w.get("duration_s") or w["duration_s"] <= 0:
             out.append(f"{tag}: no duration")
@@ -98,6 +101,9 @@ def main() -> int:
                    "place": {"id": f"canary-{name}", "name": name, "category": "destination", "lat": dest[0], "lng": dest[1]}}
             t0 = time.perf_counter()
             res = c.post(f"{BASE}/route", headers=h, json=req)
+            if res.status_code in (502, 503, 504):  # a deploy swapping containers; a real outage fails twice
+                time.sleep(RETRY_S)
+                res = c.post(f"{BASE}/route", headers=h, json=req)
             ms = round((time.perf_counter() - t0) * 1000)
             if res.status_code != 200:
                 problems = [f"HTTP {res.status_code}: {res.text[:200]}"]
