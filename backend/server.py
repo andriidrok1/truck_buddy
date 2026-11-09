@@ -24,7 +24,7 @@ from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import account_api, approach, approach_api, auth, chains, db, fleet_api, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, route_cost, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services import account_api, approach, approach_api, auth, chains, db, fleet_api, fuel_index, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, route_cost, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
 from services.http import client as http_client  # noqa: E402
 from services.logs import said, transcripts_on  # noqa: E402
 from services.settings import settings  # noqa: E402
@@ -656,6 +656,7 @@ app.include_router(fleet_api.router)
 app.include_router(parking_warm.router)
 
 
+_FUEL: list = []  # the EIA refresh loop; not in _BG, so the shutdown drain doesn't wait for it
 DRAIN_S = 5.0  # background writes (memory, trip events, jobs, parking) get this long at shutdown
 
 
@@ -669,6 +670,7 @@ async def _memory_up():
     _bg(trip_events.prune())  # the trip log keeps TRIP_EVENTS_DAYS; the rest goes at every start
     _bg(kv.job_prune())  # breakdown results older than a day
     _bg(parking_store.start())  # verdicts and approaches other workers saved, refreshed every minute
+    _FUEL.append(asyncio.create_task(fuel_index.keep_warm()))  # EIA averages for every region: a route's cost never waits
     _bg(weather.warm())  # the NWS alert feed and its zone polygons, so the first route pays nothing
     await chains.start()  # Caltrans chain-control poller (CHAIN_CONTROLS=0 to skip)
     await tpims.start()  # live truck parking counts (TPIMS_ENABLED=0 to skip)
@@ -690,6 +692,9 @@ async def drain(timeout: float = DRAIN_S) -> int:
 
 @app.on_event("shutdown")
 async def _memory_down():
+    for t in _FUEL:
+        t.cancel()
+    _FUEL.clear()
     await chains.stop()
     await tpims.stop()
     await parking_store.stop()

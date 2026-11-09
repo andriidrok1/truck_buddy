@@ -70,7 +70,7 @@ def test_here_params_unchanged(monkeypatch):
     t = TruckProfile(height_in=162, trailer_ft=53, weight_lb=80000, hazmat=True, avoid_tolls=True)
     p = dict(routing._here_params(t, (38.5, -121.4), (39.5, -119.8)))
     assert p["transportMode"] == "truck" and p["origin"] == "38.5,-121.4" and p["destination"] == "39.5,-119.8"
-    assert p["return"] == "polyline,summary,actions,instructions" and p["spans"] == "dynamicSpeedInfo"
+    assert p["return"] == "polyline,summary,actions,instructions" and p["spans"] == "dynamicSpeedInfo,stateCode"
     assert p["units"] == "imperial" and p["lang"] == "en-US"
     # Rounded up: 162 in = 411.48 cm -> 412; 73 ft = 2225.04 cm -> 2226; 80,000 lb = 36,287.4 kg -> 36288.
     assert p["vehicle[height]"] == "412" and p["vehicle[length]"] == "2226" and p["vehicle[grossWeight]"] == "36288"

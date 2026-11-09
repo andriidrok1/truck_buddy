@@ -22,7 +22,7 @@ def test_every_state_maps_to_an_eia_area():
               "ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY").split()
     assert all(s in STATE_TO_DUOAREA for s in states), [s for s in states if s not in STATE_TO_DUOAREA]
     assert STATE_TO_DUOAREA["CA"] == "SCA" and STATE_TO_DUOAREA["NV"] == "R50" and STATE_TO_DUOAREA["IA"] == "R20"
-    assert STATE_TO_DUOAREA["TX"] == "STX" and STATE_TO_DUOAREA["LA"] == "R30" and STATE_TO_DUOAREA["VT"] == "R1X"
+    assert STATE_TO_DUOAREA["TX"] == "R30" and STATE_TO_DUOAREA["CA"] == "SCA" and STATE_TO_DUOAREA["LA"] == "R30" and STATE_TO_DUOAREA["VT"] == "R1X"
 
 
 def test_parse_weekly_takes_the_newest_valid_row():

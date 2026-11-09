@@ -21,23 +21,23 @@ TTL_S = 24 * 3600
 NEAR_CENTS = 2  # up to this many cents off the average = "right at"
 CELL_DEG = 0.5  # reverse-geocode cache cell
 
-# EIA publishes state series for a few states and PADD (sub)regions for the rest.
-_STATE_SERIES = {"CA": "SCA", "CO": "SCO", "FL": "SFL", "MA": "SMA", "MN": "SMN", "NY": "SNY", "OH": "SOH",
-                 "TX": "STX", "WA": "SWA"}
+# EIA's weekly diesel (EPD2D) has one state series, California; every other state takes its PADD (sub)region.
+# The gasoline survey has more state series (TX, NY, WA...), but not diesel: those duoareas return no rows, so
+# mapping TX to STX left Texas without a price (checked live 2026-11-08).
+_STATE_SERIES = {"CA": "SCA"}
 _PADD = {
-    "R1X": ("CT", "ME", "NH", "RI", "VT"),  # New England (MA has its own series)
-    "R1Y": ("NJ", "PA", "DE", "DC", "MD"),  # Central Atlantic (NY has its own)
-    "R1Z": ("GA", "NC", "SC", "VA", "WV"),  # Lower Atlantic (FL has its own)
-    "R20": ("IL", "IN", "IA", "KS", "KY", "MI", "MO", "NE", "ND", "OK", "SD", "TN", "WI"),  # Midwest (MN, OH own)
-    "R30": ("AL", "AR", "LA", "MS", "NM"),  # Gulf Coast (TX has its own)
-    "R40": ("ID", "MT", "UT", "WY"),  # Rocky Mountain (CO has its own)
-    "R50": ("AK", "AZ", "HI", "NV", "OR"),  # West Coast (CA, WA have their own)
+    "R1X": ("CT", "MA", "ME", "NH", "RI", "VT"),  # New England
+    "R1Y": ("DE", "DC", "MD", "NJ", "NY", "PA"),  # Central Atlantic
+    "R1Z": ("FL", "GA", "NC", "SC", "VA", "WV"),  # Lower Atlantic
+    "R20": ("IL", "IN", "IA", "KS", "KY", "MI", "MN", "MO", "NE", "ND", "OH", "OK", "SD", "TN", "WI"),  # Midwest
+    "R30": ("AL", "AR", "LA", "MS", "NM", "TX"),  # Gulf Coast
+    "R40": ("CO", "ID", "MT", "UT", "WY"),  # Rocky Mountain
+    "R50": ("AK", "AZ", "HI", "NV", "OR", "WA"),  # West Coast less California
 }
 STATE_TO_DUOAREA = {**{s: area for area, states in _PADD.items() for s in states}, **_STATE_SERIES}
-REGION_NAME = {"SCA": "California", "SCO": "Colorado", "SFL": "Florida", "SMA": "Massachusetts", "SMN": "Minnesota",
-               "SNY": "New York", "SOH": "Ohio", "STX": "Texas", "SWA": "Washington", "R1X": "New England",
-               "R1Y": "the Mid-Atlantic", "R1Z": "the Southeast", "R20": "the Midwest", "R30": "the Gulf Coast",
-               "R40": "the Rockies", "R50": "the West Coast", "NUS": "the US"}
+REGION_NAME = {"SCA": "California", "R1X": "New England", "R1Y": "the Mid-Atlantic", "R1Z": "the Southeast",
+               "R20": "the Midwest", "R30": "the Gulf Coast", "R40": "the Rockies", "R50": "the West Coast",
+               "NUS": "the US"}
 
 _avg_cache: dict[str, tuple[float, float, str]] = {}  # duoarea -> (fetched_at, price, period)
 _state_cache: dict[tuple[int, int], tuple[float, Optional[str]]] = {}  # cell -> (fetched_at, state)
@@ -118,6 +118,51 @@ async def weekly_avg(duoarea: str, now: Optional[float] = None) -> Optional[tupl
         return None
     _avg_cache[duoarea] = (now, parsed[0], parsed[1])
     return parsed
+
+
+ALL_AREAS = sorted({*STATE_TO_DUOAREA.values(), "NUS"})
+REFRESH_S = 6 * 3600  # EIA publishes weekly; a few refreshes a day keep the cache from ever going cold
+
+
+async def prewarm(now: Optional[float] = None) -> int:
+    """Fetches the weekly average for every area in one EIA call, so no route ever waits for EIA.
+    Returns how many areas were cached (0 without a key or on failure)."""
+    key = os.environ.get("EIA_API_KEY")
+    if not key or not on("EIA_ENABLED"):
+        return 0
+    now = time.monotonic() if now is None else now
+    params: list[tuple[str, str]] = [("api_key", key), ("frequency", "weekly"), ("data[0]", "value"),
+                                     ("facets[product][]", PRODUCT), ("sort[0][column]", "period"),
+                                     ("sort[0][direction]", "desc"), ("length", str(len(ALL_AREAS) * 3))]
+    params += [("facets[duoarea][]", a) for a in ALL_AREAS]
+    try:
+        r = await client().get(EIA_URL, params=params, timeout=15)
+        if r.is_error:
+            logger.warning("EIA prewarm %s: %s", r.status_code, r.text[:200])
+            return 0
+        rows = ((r.json() or {}).get("response") or {}).get("data") or []
+    except Exception as e:  # noqa: BLE001
+        logger.warning("EIA prewarm failed: %s", e)
+        return 0
+    by_area: dict[str, list] = {}
+    for row in rows:
+        by_area.setdefault(str(row.get("duoarea") or ""), []).append(row)
+    n = 0
+    for area, area_rows in by_area.items():
+        parsed = parse_weekly({"response": {"data": area_rows}})
+        if area in ALL_AREAS and parsed:
+            _avg_cache[area] = (now, parsed[0], parsed[1])
+            n += 1
+    logger.info("EIA prewarm: %d of %d areas", n, len(ALL_AREAS))
+    return n
+
+
+async def keep_warm() -> None:
+    """Startup task: prewarm now and every REFRESH_S."""
+    import asyncio
+    while True:
+        await prewarm()
+        await asyncio.sleep(REFRESH_S)
 
 
 async def regional_note(lat: float, lng: float, price: Optional[float]) -> str:
