@@ -1,0 +1,26 @@
+name: route canary
+
+# Every night a synthetic driver asks the deployed backend for ~17 truck routes across the US and checks the
+# answers (HERE route with turns, plausible miles, cost = fuel + tolls, one "fastest", no dropped HERE parts).
+# No LLM, no voice, no secrets: about 17 HERE + 0-1 EIA calls a night. A red run means prod or a provider
+# changed; the log names the route. Also runnable by hand: Actions -> route canary -> Run workflow.
+
+on:
+  schedule:
+    - cron: "0 13 * * *"  # 05:00 PT
+  workflow_dispatch:
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install httpx==0.28.1
+      - run: python scripts/route_canary.py https://api.truckbuddy.io
