@@ -59,7 +59,8 @@ def parse_weekly(data: dict) -> Optional[tuple[float, str]]:
 def compare(price: float, avg: float, region: str = "the region") -> str:
     """The spoken comparison. `region` is the human name of the baseline area."""
     cents = int(round((price - avg) * 100))
-    where = "the regional average" if region == "the region" else f"the {region} average"
+    name = region.removeprefix("the ")  # REGION_NAME has "the Midwest": "the the Midwest average" before
+    where = "the regional average" if region == "the region" else f"the {name} average"
     if abs(cents) <= NEAR_CENTS:
         return f"That's right at {where}."
     if cents > 0:
