@@ -132,3 +132,7 @@ def test_route_to_adds_the_note_within_the_time_budget(agent_sandbox, fake_http,
                                                            lng=-121.4944), None))
     assert res.status == "route_set"
     assert res.reply.endswith("Diesel's $5.39 there. That's 30 cents above the California average.")
+
+
+def test_region_names_with_the_get_one_article():
+    assert compare(6.0, 5.0, "the Midwest") == "That's 100 cents above the Midwest average."
