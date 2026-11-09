@@ -15,13 +15,13 @@ function spokenEn(step: Step, name: string) {
   const who = name ? `, ${name}` : "";
   switch (step) {
     case "name":
-      return "Hi! I'm TruckBuddy, your copilot on the road. Let's get to know each other. What's your name?";
+      return "Hi! I'm TruckBuddy, your copilot on the road. What would you like me to call you?";
     case "work":
-      return `Nice to meet you${who}! Do you drive for a company, or is it your own truck?`;
+      return `Nice to meet you${who}! Is this your own truck, or do you drive for a company? If it's yours, I can keep track of your loads and earnings.`;
     case "truck":
-      return "Got it. Now tell me about your rig: height, trailer length, weight, and whether you haul hazmat.";
+      return "Would you like me to plan routes for your rig's size? If so, tell me its height, trailer length, weight, and whether you haul hazmat.";
     case "prefs":
-      return "Here are a few things I can keep in mind on every route. If any of these matter to you, just say so and I'll remember.";
+      return "Here are a few things I can keep in mind on every route. Would you like any of them? Just say which.";
     default:
       return `All set${who}! Tap me anytime and tell me where you need to go.`;
   }
@@ -31,13 +31,13 @@ function spokenEn(step: Step, name: string) {
 export function thought(step: Step, name: string) {
   switch (step) {
     case "name":
-      return "What's your name?";
+      return "What should I call you?";
     case "work":
-      return "Company or your own truck?";
+      return "Your own truck, or a company's?";
     case "truck":
-      return "Tell me about your rig";
+      return "Want routes sized for your rig?";
     case "prefs":
-      return "Anything here matter to you?";
+      return "Want any of these?";
     default:
       return name ? `All set, ${name}!` : "All set!";
   }
