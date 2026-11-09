@@ -168,3 +168,11 @@
 {"id": "h_alt_take_other_way_alts", "text": "take the other way", "context_preset": "route_active_alts", "expected": {"intent": "alternative"}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_alt_around_storm_alts", "text": "go around the storm", "context_preset": "route_active_alts", "expected": {"intent": "alternative"}, "tags": ["follow_up"], "source": "hand"}
 {"id": "h_alt_other_way_idle", "text": "take the other way", "context_preset": "idle", "expected": {"intent": "chat"}, "tags": [], "source": "hand"}
+{"id": "h_ledger_add_words", "text": "this load pays twenty four hundred", "context_preset": "route_active", "expected": {"intent": "ledger", "op": "add"}, "tags": ["core"], "source": "hand"}
+{"id": "h_ledger_add_digits", "text": "the rate is 2400 on this one", "context_preset": "route_active", "expected": {"intent": "ledger", "op": "add"}, "tags": [], "source": "hand"}
+{"id": "h_ledger_add_idle", "text": "they paid me 1850 for this load", "context_preset": "idle", "expected": {"intent": "ledger", "op": "add"}, "tags": [], "source": "hand"}
+{"id": "h_ledger_totals_week", "text": "how much did I make this week", "context_preset": "idle", "expected": {"intent": "ledger", "op": "totals", "period": "this week"}, "tags": ["core"], "source": "hand"}
+{"id": "h_ledger_totals_last_month", "text": "what did I gross last month", "context_preset": "route_active", "expected": {"intent": "ledger", "op": "totals", "period": "last month"}, "tags": [], "source": "hand"}
+{"id": "h_ledger_totals_today", "text": "how much have I made today", "context_preset": "idle", "expected": {"intent": "ledger", "op": "totals", "period": "today"}, "tags": [], "source": "hand"}
+{"id": "h_ledger_fix", "text": "that was wrong, it's 2600", "context_preset": "idle", "expected": {"intent": "ledger", "op": "fix"}, "tags": ["follow_up"], "source": "hand"}
+{"id": "h_ledger_delete", "text": "delete the last load", "context_preset": "idle", "expected": {"intent": "ledger", "op": "delete"}, "tags": [], "source": "hand"}

@@ -351,8 +351,8 @@ export interface paths {
         post?: never;
         /**
          * Memory Clear
-         * @description "Delete my data": the dialogs, the remembered turns and facts, the trip events (after the saves still in
-         *     flight land) and the driver's own stored truck profile (a fleet truck's profile belongs to the fleet).
+         * @description "Delete my data": the dialogs, the remembered turns and facts, the ledger of loads, the trip events (after the
+         *     saves still in flight land) and the driver's own stored truck profile (a fleet truck's profile belongs to the fleet).
          *     `deleted` counts turns, as before.
          */
         delete: operations["memory_clear_api_memory_delete"];
@@ -729,6 +729,8 @@ export interface components {
             /** Trip Id */
             trip_id?: string | null;
             truck_profile?: components["schemas"]["TruckProfile"];
+            /** Tz */
+            tz?: string | null;
             ui?: components["schemas"]["UiState"];
         };
         /** AgentResponse */
@@ -1389,6 +1391,10 @@ export interface components {
             source: string;
             /** Speed Limits */
             speed_limits?: components["schemas"]["SpeedLimit"][];
+            /** State Mi */
+            state_mi?: {
+                [key: string]: number;
+            };
             /**
              * Stops S
              * @default 0

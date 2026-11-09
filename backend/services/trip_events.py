@@ -10,7 +10,8 @@ event). Kept RETENTION_DAYS, pruned at startup and lazily.
 The kinds a fleet dashboard reads (DASHBOARD_MODELS) have their data checked against a model; a wrong type is a
 422 for the batch like any other bad event. Extra fields pass, and every other kind is stored as is.
 
-The app's "arrived" events are also counted as visits per place (memory.add_visits), apart from the likes.
+The app's "arrived" events are also counted as visits per place (memory.add_visits), apart from the likes, and an
+arrival at a trip's destination marks that trip's loads delivered in the driver's ledger (services/ledger.py).
 
 The transcript of a failed turn is stored as is (decision 2026-11-01): it is what tells us what drivers say and
 what the copilot missed. It is read only by the driver's own routes and the tester route; the fleet routes
@@ -28,7 +29,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from services import memory, reqid
+from services import ledger, memory, reqid
 
 logger = logging.getLogger("truckbuddy.trips")
 
@@ -220,6 +221,7 @@ async def add(driver: str, events: list[dict], source: str = "app") -> int:
             f"INSERT INTO trip_events ({_INSERT_COLS}) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)", rows)
     if source == "app":
         await _count_visits(str(driver), rows)
+        await _mark_delivered(str(driver), rows)
     _maybe_prune()
     return len(rows)
 
@@ -244,6 +246,19 @@ async def _count_visits(driver: str, rows: list[tuple]) -> None:
         await memory.add_visits(driver, visits)
     except Exception as e:  # noqa: BLE001
         logger.warning("visits not counted: %s: %s", type(e).__name__, e)
+
+
+async def _mark_delivered(driver: str, rows: list[tuple]) -> None:
+    """The app's "arrived" at the destination of a trip marks the loads of that trip in the driver's ledger as
+    delivered. Only the time travels this way; a rate never comes into the trip events (their numbers reach the
+    fleet). Best effort: the events are stored either way."""
+    for r in rows:
+        if r[2] != "arrived" or not r[1] or json.loads(r[5]).get("kind") != "destination":
+            continue
+        try:
+            await ledger.mark_delivered(driver, r[1], r[3])
+        except Exception as e:  # noqa: BLE001
+            logger.warning("loads not marked delivered: %s: %s", type(e).__name__, e)
 
 
 def add_later(driver: Optional[str], trip_id: Optional[str], kind: str, data: Optional[dict] = None,

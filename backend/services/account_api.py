@@ -119,8 +119,8 @@ async def memory_list(driver: str = Depends(auth.require_driver), limit: int = Q
 
 @api.delete("/memory")
 async def memory_clear(driver: str = Depends(auth.require_driver)):
-    """"Delete my data": the dialogs, the remembered turns and facts, the trip events (after the saves still in
-    flight land) and the driver's own stored truck profile (a fleet truck's profile belongs to the fleet).
+    """"Delete my data": the dialogs, the remembered turns and facts, the ledger of loads, the trip events (after the
+    saves still in flight land) and the driver's own stored truck profile (a fleet truck's profile belongs to the fleet).
     `deleted` counts turns, as before."""
     await agent_sessions_drop(driver)
 

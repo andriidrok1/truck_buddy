@@ -1,6 +1,6 @@
-from typing import List, Literal, Optional, Union
+from typing import Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, PrivateAttr, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 # Searchable categories. The first three are the core; the rest are gated by CATEGORIES_EXTRA (see agent).
 Category = Literal["truck_stop", "hotel", "rest_area", "walmart", "cat_scale", "truck_wash", "weigh_station"]
@@ -155,17 +155,19 @@ class RouteInfo(BaseModel):
     weather_known: bool = False  # the NWS lookup for this route completed; only then does an empty list mean clear
     weather_later: List[WeatherAlert] = Field(default_factory=list)  # alerts on the route that start after the truck is through
     chain_controls: List[ChainControl] = Field(default_factory=list)  # active Caltrans chain controls on the route
-    # Share of the route per US state, in order of first entry ({"CA": 0.62, "NV": 0.38}); server-side only, so
-    # route_cost can price diesel state by state. Empty when the router gave no states (ORS, mock).
-    _state_share: dict = PrivateAttr(default_factory=dict)
+    # Miles per US state, in order of first entry ({"CA": 82.1, "NV": 50.3}). A field, not a private attribute:
+    # the dialog keeps the route as JSON, and the driver's ledger (services/ledger.py) saves the miles per state
+    # of the load from that copy (IFTA later). Empty when the router gave no states (ORS, mock).
+    state_mi: Dict[str, float] = Field(default_factory=dict)
 
     def set_state_miles(self, km: dict) -> None:
-        total = sum(km.values())
-        self._state_share = {k: v / total for k, v in km.items()} if total > 0 else {}
+        self.state_mi = {k: v / 1.609344 for k, v in km.items() if v > 0}  # km -> mi (services.geo.KM_PER_MILE)
 
     @property
     def state_share(self) -> dict:
-        return self._state_share
+        """Share of the route per state ({"CA": 0.62, "NV": 0.38}), so route_cost prices diesel state by state."""
+        total = sum(self.state_mi.values())
+        return {k: v / total for k, v in self.state_mi.items()} if total > 0 else {}
 
 
 RouteInfo.model_rebuild()
@@ -401,6 +403,9 @@ class AgentRequest(BaseModel):
     # The same stops as places, in route order (2026-11-02: the trip lives on the phone). When the app sends it, it is
     # the truth for the route's stops, also in a dialog that starts after a restart; an older app sends none.
     route_stops: List[Place] = Field(default_factory=list, max_length=MAX_ROUTE_STOPS)
+    # The phone's IANA time zone ("America/Denver"), for the driver's own "today" and "this week" (the ledger);
+    # without it the zone comes from the state the truck is in. No app sends it yet.
+    tz: Optional[str] = Field(None, max_length=64)
 
     @field_validator("route_via", mode="before")
     @classmethod

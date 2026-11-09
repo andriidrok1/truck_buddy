@@ -31,6 +31,15 @@ class StopsMixin:
             sess.pop("last_offer", None)
 
     @staticmethod
+    def _remember_cost(req: AgentRequest, route: RouteInfo) -> None:
+        """The dialog's copy of the route is taken before the route is priced: the diesel estimate goes onto it
+        too, so the driver's ledger saves a load with the same cost the Routes sheet shows."""
+        sess = _session_if(req.session_id)
+        cur = ((sess or {}).get("alternatives") or {}).get("current")
+        if cur is not None:
+            cur.fuel_usd, cur.cost_usd, cur.tolls_usd = route.fuel_usd, route.cost_usd, route.tolls_usd
+
+    @staticmethod
     def _alternatives_stale(cached: Optional[dict], req: AgentRequest, place: Place) -> bool:
         """The cached alternatives are for this destination, this truck, from near here and for the stops as they
         are; otherwise "another way" plans afresh from where the truck is (QA 2026-11-01: a cached route from

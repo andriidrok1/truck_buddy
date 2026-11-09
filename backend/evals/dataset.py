@@ -14,7 +14,7 @@ from typing import Iterable, Optional
 
 from evals import GENERATED_FILE, HAND_FILE, TAGS
 
-STRING_FIELDS = ("query", "near", "when", "kind")
+STRING_FIELDS = ("query", "near", "when", "kind", "op", "period")
 EXPECTED_FIELDS = ("intent", "category") + STRING_FIELDS + ("where", "place_index", "reply", "actions")
 
 

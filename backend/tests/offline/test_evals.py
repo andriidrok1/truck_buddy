@@ -15,7 +15,7 @@ from services import agent
 
 TESTS_DIR = Path(__file__).resolve().parents[1]
 KNOWN_INTENTS = {"find", "go", "pick", "alternative", "add_stop", "clear_stops", "reviews", "weather", "hos",
-                 "parking", "control", "breakdown", "chat", "bye", "unclear"}
+                 "parking", "control", "breakdown", "ledger", "chat", "bye", "unclear"}
 LATER_INTENTS = {"memory"}  # added by later PRs in the stack; the dataset gains cases for them on merge
 
 

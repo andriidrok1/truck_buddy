@@ -77,7 +77,7 @@ def match_case(expected: dict, got: dict) -> tuple[bool, bool, list[str]]:
         want, g = expected["category"], _norm(got.get("category"))
         if (want is None and g is not None) or (want is not None and g != want):
             mismatches.append(f"category: expected {want!r}, got {g!r}")
-    for name in ("query", "near", "when", "kind"):
+    for name in ("query", "near", "when", "kind", "op", "period"):
         if name in expected:
             _match_string(name, expected[name], got.get(name), mismatches)
     if "where" in expected:  # the place may be named in query or near ("Pilot" + "Fernley, NV")

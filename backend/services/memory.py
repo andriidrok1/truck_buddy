@@ -247,7 +247,8 @@ async def visits(driver: str) -> list[dict]:
 
 
 async def clear(driver: str) -> int:
-    """Everything about the driver: the turns, the learned facts, the visits and the trip events (the count is turns)."""
+    """Everything about the driver: the turns, the learned facts, the visits, the trip events and the ledger of
+    loads (the count is turns)."""
     if _pending.get(driver):
         await asyncio.gather(*list(_pending[driver]), return_exceptions=True)
     kind = store()
@@ -260,6 +261,7 @@ async def clear(driver: str) -> int:
             con.execute("DELETE FROM driver_visits WHERE driver = ?", (driver,))
             con.execute("DELETE FROM driver_visit_trips WHERE driver = ?", (driver,))
             con.execute("DELETE FROM trip_events WHERE driver = ?", (driver,))
+            con.execute("DELETE FROM driver_loads WHERE driver = ?", (driver,))
             return n
         return await _sq_run(_wipe)
     pool = await _db()
@@ -268,4 +270,5 @@ async def clear(driver: str) -> int:
     await pool.execute("DELETE FROM driver_visits WHERE driver = $1", driver)
     await pool.execute("DELETE FROM driver_visit_trips WHERE driver = $1", driver)
     await pool.execute("DELETE FROM trip_events WHERE driver = $1", driver)
+    await pool.execute("DELETE FROM driver_loads WHERE driver = $1", driver)
     return int(status.split()[-1])
