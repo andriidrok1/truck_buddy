@@ -9,6 +9,7 @@ The truck profile (height, length, weight, hazmat) is sent to the real providers
 the route avoids low bridges and weight/length/hazmat restrictions.
 """
 import bisect
+import json
 import logging
 import math
 import os
@@ -248,12 +249,33 @@ def _tolls_usd(sections: List[dict]) -> Optional[float]:
             prices = []
             for fare in (toll or {}).get("fares") or []:
                 price = (fare or {}).get("price") or {}
-                if price.get("currency") == "USD" and isinstance(price.get("value"), (int, float)):
-                    prices.append(float(price["value"]))
+                value = _num(price.get("value"))
+                if price.get("currency") == "USD" and value is not None:
+                    prices.append(value)
             if prices:
                 total += min(prices)
                 seen = True
     return round(total, 2) if seen else None
+
+
+def _part(name: str, fn, default, raw=None):
+    """One optional piece of a HERE route (notices, tolls, limits...). If it can't be read, the route goes out
+    without it and the log keeps a sample of what HERE sent: a parse error is not "the router is down"."""
+    try:
+        return fn()
+    except Exception as e:  # noqa: BLE001
+        PARSE_DEGRADED[name] = PARSE_DEGRADED.get(name, 0) + 1
+        sample = ""
+        if raw is not None:
+            try:
+                sample = json.dumps(raw, default=str)[:400]
+            except Exception:  # noqa: BLE001
+                sample = repr(raw)[:400]
+        logger.warning("here parse degraded: %s: %s: %s %s", name, type(e).__name__, e, sample)
+        return default
+
+
+PARSE_DEGRADED: dict[str, int] = {}  # part -> times it was dropped since start (in /health)
 
 
 def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo:
@@ -272,31 +294,32 @@ def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo
         base = len(geometry)
         bases.append(base)
         spans = s.get("spans") or []
-        for a in s.get("actions") or []:
-            actions.append((base + int(a.get("offset", 0)), a))
-        limits += _speed_limits(spans, base, limits[-1][1] if limits else None)
-        incidents += _incidents(s, spans, base)
+        actions += _part("actions", lambda: [(base + int(a.get("offset", 0)), a) for a in s.get("actions") or []
+                                             if isinstance(a, dict)], [])
+        limits += _part("speed_limits", lambda: _speed_limits(spans, base, limits[-1][1] if limits else None), [])
+        incidents += _part("incidents", lambda: _incidents(s, spans, base), [], s.get("incidents"))
         geometry += pts
-        traffic += _traffic(pts, spans)
+        traffic += _part("traffic", lambda: _traffic(pts, spans), [])
         meters += s["summary"]["length"]
         seconds += s["summary"]["duration"]
         raw += [n for n in (s.get("notices") or []) if isinstance(n, dict)]
-        _add_state_miles(state_km, pts, spans)
+        _part("states", lambda: _add_state_miles(state_km, pts, spans), None)
     stops_s = _stops_s(sections)
     if not geometry:
         raise RuntimeError("HERE route has no geometry")
-    notices, restricted = _notices(raw, truck or TruckProfile())
+    notices, restricted = _part("notices", lambda: _notices(raw, truck or TruckProfile()),
+                                (["Check the route for restrictions."] if raw else [], None), raw)
     n = len(geometry)
     anchors = [min(off, n - 1) for off, _ in actions] + [off for off, _ in limits] + [off for off, _ in incidents] + bases
     idx = _Index(_thin_indices(geometry, anchors))
     info = _info([geometry[i] for i in idx.kept], meters, seconds, "here", notices, True, traffic, restricted,
                  thinned=True)
     info.stops_s = stops_s
-    info.maneuvers = _maneuvers(geometry, actions, idx)
-    info.speed_limits = _remap_limits(limits, idx)
-    info.incidents = [_incident(idx(off), inc) for off, inc in incidents]
-    info.labels = _labels(route)
-    info.tolls_usd = _tolls_usd(sections)
+    info.maneuvers = _part("maneuvers", lambda: _maneuvers(geometry, actions, idx), [])
+    info.speed_limits = _part("speed_limits", lambda: _remap_limits(limits, idx), [])
+    info.incidents = _part("incidents", lambda: [_incident(idx(off), inc) for off, inc in incidents], [])
+    info.labels = _part("labels", lambda: _labels(route), [], route.get("routeLabels"))
+    info.tolls_usd = _part("tolls", lambda: _tolls_usd(sections), None, [x.get("tolls") for x in sections])
     info.section_starts = [idx(b) for b in bases]
     info.set_state_miles(state_km)
     handle = route.get("routeHandle")
@@ -372,8 +395,8 @@ def _speed_limits(spans: List[dict], base: int, prev: Optional[int] = None) -> l
     out: list[tuple[int, Optional[int]]] = []
     last: Optional[int] = prev
     for sp in spans:
-        ms = sp.get("maxSpeed")
-        if not isinstance(ms, (int, float)) or ms <= 0:  # missing, or "unlimited"
+        ms = _num(sp.get("maxSpeed"))
+        if ms is None or ms <= 0:  # missing, or "unlimited"
             if last is not None:
                 out.append((base + int(sp.get("offset", 0)), None))
                 last = None
@@ -505,20 +528,35 @@ def _inches_text(inches: int) -> str:
     return f"{inches // 12} ft {inches % 12} in" if inches % 12 else f"{inches // 12} ft"
 
 
+def _num(x) -> Optional[float]:
+    """A number from HERE however it is shaped: 3628, "3628" or {"value": 3628, "type": ...}. HERE changed
+    maxWeight from a number to an object (2026-11) and every route with a weight restriction failed with
+    "unsupported operand type(s) for /: 'dict' and 'float'"; every numeric HERE field is read through this."""
+    if isinstance(x, bool):
+        return None
+    if isinstance(x, (int, float)):
+        return float(x)
+    if isinstance(x, dict):
+        return _num(x.get("value"))
+    if isinstance(x, str):
+        try:
+            return float(x)
+        except ValueError:
+            return None
+    return None
+
+
 def _lb(kg: float) -> str:
     return f"{int(kg / 0.45359237):,} lb"
 
 
 def _restriction(detail: dict) -> tuple[str, str]:
     """(kind, limit text) from a HERE restriction detail: maxHeight / maxWeight / maxLength / maxWidth in cm or kg."""
-    if isinstance(detail.get("maxHeight"), (int, float)):
-        return "height", _ft_in(detail["maxHeight"])
-    if isinstance(detail.get("maxWeight"), (int, float)) or isinstance(detail.get("maxGrossWeight"), (int, float)):
-        return "weight", _lb(detail.get("maxWeight") or detail.get("maxGrossWeight"))
-    if isinstance(detail.get("maxLength"), (int, float)):
-        return "length", _ft_in(detail["maxLength"])
-    if isinstance(detail.get("maxWidth"), (int, float)):
-        return "width", _ft_in(detail["maxWidth"])
+    for key, kind in (("maxHeight", "height"), ("maxWeight", "weight"), ("maxGrossWeight", "weight"),
+                      ("maxLength", "length"), ("maxWidth", "width")):
+        v = _num(detail.get(key))
+        if v:
+            return kind, (_lb(v) if kind == "weight" else _ft_in(v))
     return "other", ""
 
 
@@ -559,14 +597,15 @@ def _notices(raw: List[dict], t: TruckProfile) -> tuple[List[str], Optional[str]
         elif code == "violatedadminwidevehiclerestriction":
             d = details[0] if details else {}
             kind, _ = _restriction(d)
-            value = d.get("maxHeight") or d.get("maxWeight") or d.get("maxGrossWeight") or d.get("maxLength") or d.get("maxWidth") or 0
+            value = next((v for v in (_num(d.get(k)) for k in ("maxHeight", "maxWeight", "maxGrossWeight", "maxLength",
+                                                                 "maxWidth")) if v), 0.0)
             states, top = legal.get(kind, ([], 0.0))
             state = str(d.get("state") or d.get("country") or "").strip()
             if state and state not in states:
                 states.append(state)
-            legal[kind] = (states, max(top, float(value) if isinstance(value, (int, float)) else 0.0))
+            legal[kind] = (states, max(top, value))
             restricted = restricted or "legal"
-        elif "toll" in code:
+        elif code.startswith("violatedavoidtoll"):  # tollTransponder (info) is on almost every NJ/NY route
             msg = "Tolls couldn't be fully avoided on this route."
             if msg not in other:
                 other.append(msg)

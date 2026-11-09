@@ -23,7 +23,7 @@ from services.google_places import PlacesUnavailable  # noqa: E402
 from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
-from services.routing import RoutingUnavailable, get_routing_provider  # noqa: E402
+from services.routing import PARSE_DEGRADED, RoutingUnavailable, get_routing_provider  # noqa: E402
 from services import account_api, approach, approach_api, auth, chains, db, fleet_api, fuel_index, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, route_cost, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
 from services.http import client as http_client  # noqa: E402
 from services.logs import said, transcripts_on  # noqa: E402
@@ -131,6 +131,7 @@ async def health(deep: bool = Query(False), credentials=Depends(auth._bearer)):
             "tts": voice.provider(),
         },
         "parking_cache": parking_store.stats(),
+        "here_parse_degraded": dict(PARSE_DEGRADED),  # parts of HERE routes dropped since start
     }
     if not deep:
         return out
@@ -246,7 +247,8 @@ async def reroute(req: RerouteRequest, driver: str = Depends(auth.require_driver
     _reroute_event(driver, req, ok=True)
     # The new route needs its own alerts and chain controls, or the advisories vanish after a reroute; the
     # driver is off the route while this runs, so the budget is shorter.
-    await _advisories(route, REROUTE_ADVISORY_BUDGET_S, 0)
+    await asyncio.gather(_advisories(route, REROUTE_ADVISORY_BUDGET_S, 0),
+                         route_cost.annotate(route, req.lat, req.lng, req.truck_profile))  # cost + "fastest" like /route
     return RouteResponse(place=req.place, route=i18n.localize_route(route),
                          parking=await i18n.localize_parking(approach.for_route(req.place, route)))
 
