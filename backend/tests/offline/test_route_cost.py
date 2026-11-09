@@ -173,3 +173,52 @@ def test_a_slow_price_lookup_finishes_in_the_background(monkeypatch):
         await asyncio.sleep(0.1)  # the shielded lookup was not cancelled with the reply
         return first
     assert run(go()) is None and done == [1]
+
+
+def _with_states(data, cut=0.6):
+    """The Sacramento->Reno fixture with stateCode spans: the first `cut` of each section in CA, the rest in NV."""
+    import flexpolyline
+    data = copy.deepcopy(data)
+    for r in data["routes"]:
+        for s in r["sections"]:
+            n = len(flexpolyline.decode(s["polyline"]))
+            s["spans"] = [{"offset": 0, "stateCode": "CA"}, {"offset": int(n * cut), "stateCode": "NV"}]
+    return data
+
+
+def test_the_route_is_priced_state_by_state(monkeypatch):
+    from services import fuel_index, routing
+    monkeypatch.setenv("EIA_API_KEY", "k")
+    now = __import__("time").monotonic()
+    monkeypatch.setitem(fuel_index._avg_cache, "SCA", (now, 8.0, "2026-11-02"))
+    monkeypatch.setitem(fuel_index._avg_cache, "R50", (now, 5.0, "2026-11-02"))
+    route = routing._parse_route(_with_states(DATA)["routes"][0])
+    assert list(route.state_share) == ["CA", "NV"]
+    assert route.state_share["CA"] == pytest.approx(0.6, abs=0.15)
+    diesel = run(route_cost.diesel_for([route], 38.58, -121.49))
+    assert diesel.base == 8.0 and diesel.by_state == {"CA": 8.0, "NV": 5.0}
+    per_gal = diesel.for_route(route)
+    assert 5.0 < per_gal < 8.0
+    route_cost.price([route], diesel, 6.5)
+    assert route.fuel_usd == pytest.approx(route.distance_mi / 6.5 * per_gal, abs=0.01)
+
+
+def test_a_state_without_a_price_leaves_the_route_unpriced():
+    r = _r(100, 100)
+    r.set_state_miles({"CA": 60, "NV": 40})
+    assert route_cost.Diesel(None, {"CA": 8.0}).for_route(r) is None
+    assert route_cost.Diesel(8.0, {"CA": 8.0}).for_route(r) == 8.0  # base covers the unknown state
+    assert route_cost.Diesel(8.0).for_route(_r(10, 10)) == 8.0  # no states: the price at the truck
+
+
+def test_prewarm_caches_every_area_in_one_call(monkeypatch, fake_http):
+    from services import fuel_index
+    monkeypatch.setenv("EIA_API_KEY", "k")
+    monkeypatch.setattr(fuel_index, "_avg_cache", {})
+    rows = [{"duoarea": a, "period": "2026-11-02", "value": "5.5"} for a in fuel_index.ALL_AREAS]
+    rows.append({"duoarea": "SCA", "period": "2026-10-26", "value": "7.0"})  # older week: ignored
+    fake_http.add("api.eia.gov", "/v2/petroleum/pri/gnd/data/", json={"response": {"data": rows}})
+    assert run(fuel_index.prewarm()) == len(fuel_index.ALL_AREAS)
+    assert len(fake_http.calls_to("api.eia.gov")) == 1
+    assert run(fuel_index.weekly_avg("SCA")) == (5.5, "2026-11-02")
+    assert len(fake_http.calls_to("api.eia.gov")) == 1  # served from the cache

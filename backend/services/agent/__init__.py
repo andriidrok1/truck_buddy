@@ -717,9 +717,9 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         cached["current"] = route
         sess.pop("last_offer", None)  # the last thing offered is this road now, not a stop
         route.alternatives = [r.model_copy(update={"alternatives": []}) for r in cached["routes"] if r is not route]
-        per_gal = await route_cost.annotate(route, req.lat, req.lng, req.truck_profile)
+        diesel = await route_cost.annotate(route, req.lat, req.lng, req.truck_profile)
         if prev is not None:  # the way left behind, priced the same, so the reply can say what changes
-            route_cost.price([prev], per_gal, route_cost.mpg_of(req.truck_profile))
+            route_cost.price([prev], diesel, route_cost.mpg_of(req.truck_profile))
         reply = _with_warnings(_alt_reply(route, prev), route)  # a closure or a restriction on the other way is new
         return AgentResponse(status="route_set", transcript=text, category=place.category,
                              reply=reply, place=place, route=route, parking=approach.for_route(place, route),
@@ -747,9 +747,9 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
                 logger.info("toll-free route skipped: %s", e)
         if not ways:
             return None
-        got = await route_cost.diesel_price(req.lat, req.lng)
         everyone = ways + ([current] if current else [])
-        route_cost.price(everyone, got[0] if got else None, route_cost.mpg_of(req.truck_profile))
+        diesel = await route_cost.diesel_for(everyone, req.lat, req.lng)
+        route_cost.price(everyone, diesel, route_cost.mpg_of(req.truck_profile))
         if prefer == "fastest":
             best = min(everyone, key=lambda r: r.duration_s)
         else:

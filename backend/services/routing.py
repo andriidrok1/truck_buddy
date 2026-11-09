@@ -170,7 +170,7 @@ def _traffic(points: List[List[float]], spans: List[dict]) -> List[TrafficSegmen
 
 
 HERE_RETURN = "polyline,summary,actions,instructions"
-HERE_SPANS = "dynamicSpeedInfo"
+HERE_SPANS = "dynamicSpeedInfo,stateCode"  # stateCode: miles per state, for the diesel cost (route_cost)
 MPH_PER_MS = 2.23694
 MIN_LIMIT_MPH = 15  # below this a posted limit is believed only on a private road (a lot, a yard, a driveway)
 INCIDENT_TEXT_MAX = 80
@@ -266,6 +266,7 @@ def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo
     limits: list[tuple[int, Optional[int]]] = []  # (global offset, mph; None = no posted limit known)
     incidents: list[tuple[int, dict]] = []  # (global offset, incident)
     bases: list[int] = []
+    state_km: dict[str, float] = {}
     for s in sections:
         pts = [[round(p[0], 6), round(p[1], 6)] for p in flexpolyline.decode(s["polyline"])]
         base = len(geometry)
@@ -280,6 +281,7 @@ def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo
         meters += s["summary"]["length"]
         seconds += s["summary"]["duration"]
         raw += [n for n in (s.get("notices") or []) if isinstance(n, dict)]
+        _add_state_miles(state_km, pts, spans)
     stops_s = _stops_s(sections)
     if not geometry:
         raise RuntimeError("HERE route has no geometry")
@@ -296,9 +298,20 @@ def _parse_route(route: dict, truck: Optional[TruckProfile] = None) -> RouteInfo
     info.labels = _labels(route)
     info.tolls_usd = _tolls_usd(sections)
     info.section_starts = [idx(b) for b in bases]
+    info.set_state_miles(state_km)
     handle = route.get("routeHandle")
     info.handle = handle if isinstance(handle, str) and handle else None
     return info
+
+
+def _add_state_miles(acc: dict[str, float], pts: List[List[float]], spans: List[dict]) -> None:
+    """Kilometres of one section per US state, from the HERE stateCode spans (route_cost prices each state)."""
+    for start, end, sp in _span_ranges(spans, len(pts)):
+        st = sp.get("stateCode")
+        if not st:
+            continue
+        km = sum(haversine_km(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) for i in range(start, min(end, len(pts) - 1)))
+        acc[st] = acc.get(st, 0.0) + km
 
 
 def _stops_s(sections: List[dict]) -> float:
