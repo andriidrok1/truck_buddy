@@ -1527,6 +1527,8 @@ export interface components {
             height_in: number;
             /** Mpg */
             mpg?: number | null;
+            /** Operator */
+            operator?: ("company" | "owner") | null;
             /**
              * Trailer Ft
              * @default 53

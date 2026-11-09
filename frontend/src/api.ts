@@ -363,7 +363,7 @@ export const api = {
   /** Breakdown research result (long-poll: waits until the research is done). */
   breakdownResult: (id: string, signal?: AbortSignal) =>
     request<AgentResponse>(`/breakdown/${id}?speak=true`, { signal, timeoutMs: 120000 }),
-  onboardingParse: async (uri: string, step: "name" | "truck" | "prefs") => {
+  onboardingParse: async (uri: string, step: "name" | "work" | "truck" | "prefs") => {
     const web = uri.startsWith("blob:") || uri.startsWith("data:");
     const d = deadline(30000);
     try {

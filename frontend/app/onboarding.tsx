@@ -391,6 +391,29 @@ export default function Onboarding() {
           </Text>
         )}
 
+        {/* Two big answers: a tap is as good as saying it. */}
+        {step === "work" && (
+          <Animated.View entering={FadeInDown.duration(260)} style={styles.choices}>
+            {([["company", "I drive for a company"], ["owner", "It's my own truck"]] as const).map(([value, label]) => (
+              <PressableScale
+                key={value}
+                testID={`onboarding-operator-${value}`}
+                onPress={() => {
+                  stopTurn();
+                  applyUpdates({ operator: value });
+                  advance("work");
+                }}
+                style={[
+                  styles.choice,
+                  { borderColor: draft.operator === value ? colors.info : colors.border, backgroundColor: colors.surfaceSecondary },
+                ]}
+              >
+                <Text style={[styles.choiceText, { color: colors.onSurface }]}>{t(label)}</Text>
+              </PressableScale>
+            ))}
+          </Animated.View>
+        )}
+
         {/* The preferences are a list the driver can just talk about (or tap). */}
         {step === "prefs" && (
           <Animated.View entering={FadeInDown.duration(260)}>
@@ -432,7 +455,7 @@ export default function Onboarding() {
         )}
       </KeyboardAwareScrollView>
 
-      {step !== "done" && (
+      {step !== "done" && step !== "work" && (
         <KeyboardStickyView offset={{ opened: insets.bottom }}>
           <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg, backgroundColor: colors.surface }]}>
             {typing || step === "prefs" ? (

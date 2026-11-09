@@ -221,6 +221,9 @@ class TruckProfile(BaseModel):
     break_hours: Optional[int] = Field(None, ge=1, le=14)
     chains_on_board: Optional[bool] = None  # None = never asked; drives the chain-control question
     mpg: Optional[float] = Field(None, ge=3, le=15)  # the truck's fuel economy; None = route_cost.DEFAULT_MPG
+    # "owner" = owner-operator (their own truck: pays the fuel, keeps the money), "company" = drives for a carrier.
+    # Asked in onboarding; None = never asked. Decides what the driver's ledger and reminders are about.
+    operator: Optional[Literal["company", "owner"]] = None
 
     @property
     def total_length_ft(self) -> int:
@@ -237,6 +240,10 @@ class TruckProfile(BaseModel):
         p = []
         if self.driver_name:
             p.append(f"Driver's name: {self.driver_name} (use it now and then, not every reply)")
+        if self.operator == "owner":
+            p.append("owner-operator: drives their own truck")
+        elif self.operator == "company":
+            p.append("company driver")
         if self.avoid_tolls:
             p.append("avoids toll roads")
         if self.avoid_ferries_tunnels:

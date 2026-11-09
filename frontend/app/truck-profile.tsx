@@ -119,6 +119,7 @@ export default function TruckProfileScreen() {
   const [weight, setWeight] = useState(String(truck.weight_lb));
   const [hazmat, setHazmat] = useState(truck.hazmat);
   const [mpg, setMpg] = useState(truck.mpg ? String(truck.mpg) : "");
+  const [operator, setOperator] = useState(truck.operator ?? null);
   const [name, setName] = useState(truck.driver_name ?? "");
   const [prefs, setPrefs] = useState<Prefs>(pickPrefs(truck));
 
@@ -132,6 +133,7 @@ export default function TruckProfileScreen() {
     setWeight(String(truck.weight_lb));
     setHazmat(truck.hazmat);
     setMpg(truck.mpg ? String(truck.mpg) : "");
+    setOperator(truck.operator ?? null);
     setName(truck.driver_name ?? "");
     setPrefs(pickPrefs(truck));
   }
@@ -154,6 +156,7 @@ export default function TruckProfileScreen() {
       ...sizes,
       hazmat,
       mpg: mpgValue,
+      operator,
     });
     await confirmHeight(); // the driver saw and saved the height
     requestTruckReroute(); // the map reroutes an active route for the new size (silently)
@@ -220,6 +223,17 @@ export default function TruckProfileScreen() {
         <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
           For the route cost estimate. Leave empty for 6.5.
         </Text>
+
+        <View style={styles.toggleGap}>
+          <ToggleRow
+            title="My own truck"
+            subtitle="Owner-operator. Off: you drive for a company"
+            testID="truck-owner-switch"
+            value={operator === "owner"}
+            onChange={(v) => setOperator(v ? "owner" : "company")}
+            onColor={colors.brandPrimary}
+          />
+        </View>
 
         <View style={styles.toggleGap}>
           <ToggleRow

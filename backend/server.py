@@ -591,7 +591,7 @@ async def speak(req: SpeakRequest):
 
 @api.post("/onboarding/parse")
 async def onboarding_parse(audio: UploadFile = File(...), step: str = Form(...)):
-    if step not in ("name", "truck", "prefs"):
+    if step not in ("name", "work", "truck", "prefs"):
         raise HTTPException(status_code=422, detail="Invalid step")
     data = await audio.read()
     if not data:

@@ -17,6 +17,8 @@ export type TruckProfile = {
   chains_on_board?: boolean | null;
   /** Fuel economy in miles per gallon for route cost estimates; null = the server's default (6.5). */
   mpg?: number | null;
+  /** "owner" = owner-operator (own truck), "company" = drives for a carrier; null = never asked. */
+  operator?: "company" | "owner" | null;
 };
 
 export const DEFAULT_TRUCK: TruckProfile = { height_in: 162, trailer_ft: 53, weight_lb: 80000, hazmat: false, chains_on_board: null };
