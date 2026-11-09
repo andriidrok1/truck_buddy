@@ -209,7 +209,7 @@ export const RU: Record<string, string> = {
   // ---- onboarding ----
   "Hi! I'm TruckBuddy, your copilot on the road. What would you like me to call you?": "Привет! Я TruckBuddy, твой штурман в дороге. Как к тебе обращаться?",
   "What should I call you?": "Как к тебе обращаться?",
-  "Nice to meet you{name}! Is this your own truck, or do you drive for a company? If it's yours, I can keep track of your loads and earnings.": "Приятно познакомиться{name}! Трак твой или ты работаешь на компанию? Если твой, могу вести учёт рейсов и заработка.",
+  "Nice to meet you{name}! Is this your own truck, or do you drive for a company?": "Приятно познакомиться{name}! Трак твой или ты работаешь на компанию?",
   "Would you like me to plan routes for your rig's size? If so, tell me its height, trailer length, weight, and whether you haul hazmat.": "Хочешь, я буду строить маршруты под размер твоей фуры? Тогда скажи высоту, длину трейлера, вес и возишь ли hazmat.",
   "Want routes sized for your rig?": "Маршруты под твою фуру?",
   "Your own truck, or a company's?": "Трак свой или компании?",

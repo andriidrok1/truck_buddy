@@ -17,7 +17,7 @@ function spokenEn(step: Step, name: string) {
     case "name":
       return "Hi! I'm TruckBuddy, your copilot on the road. What would you like me to call you?";
     case "work":
-      return `Nice to meet you${who}! Is this your own truck, or do you drive for a company? If it's yours, I can keep track of your loads and earnings.`;
+      return `Nice to meet you${who}! Is this your own truck, or do you drive for a company?`;
     case "truck":
       return "Would you like me to plan routes for your rig's size? If so, tell me its height, trailer length, weight, and whether you haul hazmat.";
     case "prefs":
