@@ -1,8 +1,8 @@
 // The onboarding conversation's steps and lines (moved verbatim from app/onboarding.tsx).
 import { t } from "../i18n";
 
-export type Step = "name" | "truck" | "prefs" | "done";
-export const STEPS: Step[] = ["name", "truck", "prefs", "done"];
+export type Step = "name" | "work" | "truck" | "prefs" | "done";
+export const STEPS: Step[] = ["name", "work", "truck", "prefs", "done"];
 export const NOT_CAUGHT = "Sorry, I didn't catch that.";
 export const TAP_TO_TALK = "Tap me to answer by voice, or type.";
 
@@ -16,8 +16,10 @@ function spokenEn(step: Step, name: string) {
   switch (step) {
     case "name":
       return "Hi! I'm TruckBuddy, your copilot on the road. Let's get to know each other. What's your name?";
+    case "work":
+      return `Nice to meet you${who}! Do you drive for a company, or is it your own truck?`;
     case "truck":
-      return `Nice to meet you${who}! Now tell me about your rig: height, trailer length, weight, and whether you haul hazmat.`;
+      return "Got it. Now tell me about your rig: height, trailer length, weight, and whether you haul hazmat.";
     case "prefs":
       return "Here are a few things I can keep in mind on every route. If any of these matter to you, just say so and I'll remember.";
     default:
@@ -30,6 +32,8 @@ export function thought(step: Step, name: string) {
   switch (step) {
     case "name":
       return "What's your name?";
+    case "work":
+      return "Company or your own truck?";
     case "truck":
       return "Tell me about your rig";
     case "prefs":
