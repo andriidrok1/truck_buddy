@@ -1,7 +1,7 @@
 import { Image, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { LANGS, setLang, UK_READY, useLang, type Lang } from "../i18n";
+import { LANGS, setLang, t, UK_READY, useLang, type Lang } from "../i18n";
 import { Text } from "../i18n/Text";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import { PressableScale } from "./PressableScale";
@@ -30,7 +30,7 @@ export function LanguageGate() {
             key={l.code}
             testID={`language-${l.code}`}
             accessibilityRole="button"
-            accessibilityLabel={l.label}
+            accessibilityLabel={t(l.label)}
             onPress={() => setLang(l.code as Lang)}
             style={[styles.button, { backgroundColor: l.code === current ? colors.brandPrimary : colors.surfaceSecondary }]}
           >

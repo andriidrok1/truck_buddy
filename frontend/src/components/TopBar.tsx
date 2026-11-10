@@ -70,16 +70,16 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, bl
             returnKeyType="search"
             autoCorrect={false}
             style={[styles.input, { color: colors.onSurface, fontFamily: fontFor(fonts.medium, lang) }]}
-            accessibilityLabel="Where to?"
+            accessibilityLabel={t("Where to?")}
           />
           {!!text.trim() && (
-            <PressableScale testID="search-submit" accessibilityLabel="Search" onPress={submit} hitSlop={8} style={[styles.go, { backgroundColor: colors.brandPrimary }]}>
+            <PressableScale testID="search-submit" accessibilityLabel={t("Search")} onPress={submit} hitSlop={8} style={[styles.go, { backgroundColor: colors.brandPrimary }]}>
               <Icon name="arrow-right" size={20} color={colors.onBrandPrimary} />
             </PressableScale>
           )}
         </View>
 
-        <PressableScale testID="truck-profile-button" accessibilityLabel={`Truck settings: ${truckLabel}`} onPress={onTruckPress} style={[card, styles.circle]}>
+        <PressableScale testID="truck-profile-button" accessibilityLabel={t("Truck settings: {what}", { what: t(truckLabel) })} onPress={onTruckPress} style={[card, styles.circle]}>
           <Icon name="truck" size={26} color={colors.onSurface} />
           {hazmat && (
             <View testID="truck-hazmat-badge" style={[styles.hazmat, { backgroundColor: colors.warning, borderColor: colors.surface }]}>
@@ -91,14 +91,14 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, bl
 
       <View style={styles.second} pointerEvents="box-none">
         {simLabel ? (
-          <PressableScale testID="sim-location-tag" accessibilityLabel="Test location" onPress={onTesterPress} style={[card, styles.demo]}>
+          <PressableScale testID="sim-location-tag" accessibilityLabel={t("Test location")} onPress={onTesterPress} style={[card, styles.demo]}>
             <View style={[styles.demoDot, { backgroundColor: colors.warning }]} />
             <Text style={[styles.demoText, { color: colors.onSurfaceSecondary }]} numberOfLines={1}>{simLabel}</Text>
           </PressableScale>
         ) : isDemo ? (
           <PressableScale
             testID="demo-location-tag"
-            accessibilityLabel="Location is off. Turn on location"
+            accessibilityLabel={t("Location is off. Turn on location")}
             onPress={onLocationPress}
             style={[card, styles.demo]}
           >
@@ -111,11 +111,11 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, bl
           <View />
         )}
         <View style={styles.side} pointerEvents="box-none">
-          <PressableScale testID="history-button" accessibilityLabel="Conversation memory" onPress={onHistoryPress} style={[card, styles.small]}>
+          <PressableScale testID="history-button" accessibilityLabel={t("Conversation memory")} onPress={onHistoryPress} style={[card, styles.small]}>
             <Icon name="chat-processing-outline" size={22} color={colors.onSurface} />
           </PressableScale>
           {tester && (
-            <PressableScale testID="tester-button" accessibilityLabel="Test scenarios" onPress={onTesterPress} style={[card, styles.small]}>
+            <PressableScale testID="tester-button" accessibilityLabel={t("Test scenarios")} onPress={onTesterPress} style={[card, styles.small]}>
               <Icon name="flask-outline" size={22} color={colors.onSurface} />
             </PressableScale>
           )}

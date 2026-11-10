@@ -21,6 +21,7 @@ from typing import Optional
 from models import AgentRequest, AgentResponse, CallCard, Place, Provider
 from services import kv, llm, session_store
 from services import providers_search as ps
+from services.geo import without_country
 from services.http import client
 from services.routing import get_routing_provider
 from services.timing import stage
@@ -127,7 +128,7 @@ async def where(lat: float, lng: float) -> str:
                                    timeout=4)
             items = r.json().get("items", []) if r.status_code == 200 else []
             if items:
-                return (items[0].get("address") or {}).get("label") or ""
+                return without_country((items[0].get("address") or {}).get("label")) or ""
         r = await client().get("https://nominatim.openstreetmap.org/reverse",
                                params={"lat": lat, "lon": lng, "format": "jsonv2", "zoom": 17},
                                headers={"User-Agent": "TruckBuddy/1.0 (truck copilot demo)"}, timeout=4)

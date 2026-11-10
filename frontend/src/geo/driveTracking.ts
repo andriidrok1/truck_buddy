@@ -15,6 +15,7 @@ import * as TaskManager from "expo-task-manager";
 import { AppState, Platform } from "react-native";
 
 import { publishFix } from "./location";
+import { t } from "../i18n";
 
 export const DRIVE_TASK = "truckbuddy-drive";
 
@@ -50,8 +51,9 @@ export async function startDriveTracking(destination: string): Promise<boolean> 
       pausesUpdatesAutomatically: false,
       showsBackgroundLocationIndicator: true,
       foregroundService: {
-        notificationTitle: `Navigating to ${destination}`,
-        notificationBody: "TruckBuddy keeps guiding you with the screen off.",
+        // The phone's notification shade is outside <Text>: translated here (QA 2026-11-09, S14).
+        notificationTitle: t("Navigating to {name}", { name: destination }),
+        notificationBody: t("TruckBuddy keeps guiding you with the screen off."),
         killServiceOnDestroy: true,
       },
     });

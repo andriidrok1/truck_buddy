@@ -9,6 +9,7 @@ import type { Maneuver } from "../types";
 import { AdvisoryStrip } from "./AdvisoryStrip";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
+import { t } from "../i18n";
 
 function maneuverIcon(m: Maneuver | null) {
   if (!m) return "arrow-up";
@@ -91,14 +92,14 @@ export function NavBanner({ topInset, next, toNextM, voiceOn, onToggleVoice, onL
           <Text testID="nav-distance" style={[styles.dist, { color: colors.onNavBanner }]}>
             {formatDistance(toNextM)}
           </Text>
-          <Text testID="nav-instruction" numberOfLines={2} style={[styles.instr, { color: colors.onNavBanner }]}>
+          <Text testID="nav-instruction" numberOfLines={3} style={[styles.instr, { color: colors.onNavBanner }]}>
             {next?.instruction ?? "Follow the route"}
           </Text>
         </Animated.View>
         {limitMph != null && <SpeedShield limitMph={limitMph} speedMph={speedMph} />}
         <PressableScale
           testID="voice-guidance-toggle"
-          accessibilityLabel={voiceOn ? "Mute directions" : "Unmute directions"}
+          accessibilityLabel={voiceOn ? t("Mute directions") : t("Unmute directions")}
           onPress={onToggleVoice}
           style={[styles.voice, { backgroundColor: voiceOn ? colors.navButton : colors.error }]}
         >

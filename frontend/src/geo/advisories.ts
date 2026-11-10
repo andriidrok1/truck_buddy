@@ -2,6 +2,7 @@
 // controls). Pure: no React, no timers; the hook (useRouteAdvisories) feeds it the match and
 // the clock.
 
+import { getLang, t, type Lang } from "../i18n";
 import type { RouteInfo, SpeedLimit } from "../types";
 
 /**
@@ -174,15 +175,24 @@ export function chipAhead(m: number) {
   return mi < 10 ? `in ${mi.toFixed(mi < 1 ? 1 : 0).replace(/\.0$/, "")} mi` : `in ${Math.round(mi)} mi`;
 }
 
-/** The spoken line for an advisory. */
-export function advisoryText(a: Advisory): string {
-  const where = spokenAhead(a.aheadM);
+/** The spoken line for an advisory, in the driver's language: built from whole templates with every piece
+ *  translated, so Russian never comes out as "Внимание: дорога закрыта in half a mile. Accident." (QA 2026-11-09,
+ *  S10). The server translates the descriptions and weather events themselves. */
+export function advisoryText(a: Advisory, lang: Lang = getLang()): string {
+  const where = t(spokenAhead(a.aheadM), undefined, lang);
   switch (a.kind) {
-    case "incident":
-      return a.severity === 3 ? `Heads up: road closed ${where}. ${a.text.replace(/^Road closed: /, "")}.` : `Heads up: ${a.text.replace(/: /, " " + where + ": ")}.`;
+    case "incident": {
+      if (a.severity === 3) return t("Heads up: road closed {where}. {what}.", { where, what: a.text.replace(/^Road closed: /, "") }, lang);
+      const cut = a.text.indexOf(": ");
+      // HERE's "other" kind says nothing: the description alone.
+      if (a.text.startsWith("Other: ")) return t("Heads up: {what} {where}.", { what: a.text.slice(7), where }, lang);
+      if (cut < 0) return t("Heads up: {what} {where}.", { what: t(a.text, undefined, lang), where }, lang);
+      return t("Heads up: {what} {where}: {detail}.", { what: t(a.text.slice(0, cut), undefined, lang), where, detail: a.text.slice(cut + 2) }, lang);
+    }
     case "weather":
-      return `${a.text} ${where}.`;
+      return `${t(a.text, undefined, lang)} ${where}.`;
     case "chain":
-      return `Chain control ${where}: ${a.text.replace(/^Chains /, "chains ")}.`;
+      // "Chains R-2 on US-50, Twin Bridges": English says "chains R-2 on …", Russian "Нужны цепи …: R-2 на US-50, …".
+      return t("Chain control {where}: {what}.", { where, what: lang === "ru" ? a.text.replace(/^Chains (.+?) on /, "$1 на ") : a.text.replace(/^Chains /, "chains ") }, lang);
   }
 }

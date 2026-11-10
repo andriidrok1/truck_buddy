@@ -1,4 +1,6 @@
 import math
+import re
+from typing import Optional
 
 EARTH_RADIUS_KM = 6371.0088
 KM_PER_MILE = 1.609344
@@ -14,3 +16,16 @@ def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 
 def km_to_mi(km: float) -> float:
     return km / KM_PER_MILE
+
+
+_COUNTRY_TAIL = re.compile(r",\s*(?:United States(?: of America)?|USA|US)\s*$", re.I)
+
+
+def without_country(text: Optional[str]) -> Optional[str]:
+    """'Reno, NV, United States' -> 'Reno, NV'; '2100 Garson Rd, Verdi, NV 89439, USA' -> '... NV 89439'. Every place
+    is in the US: the tail only made the card longer, and in Russian it stayed English (QA 2026-11-09, bug 8).
+    A bare 'United States' (HERE's address of a town, once the title is cut off it) becomes empty."""
+    if not text:
+        return text
+    out = _COUNTRY_TAIL.sub("", text.strip())
+    return "" if re.fullmatch(r"(?:United States(?: of America)?|USA|US)", out, re.I) else out

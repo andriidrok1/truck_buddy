@@ -224,7 +224,8 @@ export default function Onboarding() {
       }
       if (run.current !== token) return;
       setHeard(NOT_CAUGHT);
-      if (attempt === 0) await say(`${NOT_CAUGHT} ${thought(s, "")}`, token);
+      // Each half in the driver's language: the glued English line had no entry and was spoken in English (S5).
+      if (attempt === 0) await say(`${t(NOT_CAUGHT)} ${t(thought(s, ""))}`, token);
     }
     if (run.current === token) setMode("waiting");
   };
@@ -369,7 +370,7 @@ export default function Onboarding() {
             {!compact && <View style={[styles.puff2, { backgroundColor: colors.surfaceSecondary }]} />}
           </Animated.View>
 
-          <PressableScale testID="onboarding-avatar-button" accessibilityLabel="Talk to copilot" onPress={onAvatar}>
+          <PressableScale testID="onboarding-avatar-button" accessibilityLabel={t("Talk to copilot")} onPress={onAvatar}>
             <Avatar size={compact ? 64 : 150} mode={mode === "listening" ? "listening" : mode === "thinking" ? "thinking" : voice.speaking ? "speaking" : "idle"} showMic={false} />
           </PressableScale>
 
@@ -386,7 +387,7 @@ export default function Onboarding() {
         {step === "truck" && !typing && (
           <Text testID="onboarding-truck-summary" style={[styles.summaryLine, { color: truckHeard ? colors.onSurface : colors.muted }]}>
             {truckHeard
-              ? `${feet} ft ${inches} in · ${trailer} ft trailer · ${Number(toInt(weight) || 0).toLocaleString()} lb${draft.hazmat ? " · HAZMAT" : ""}`
+              ? `${feet} ft ${inches} in · ${trailer} ft trailer · ${Number(toInt(weight) || 0).toLocaleString("en-US")} lb${draft.hazmat ? " · HAZMAT" : ""}`
               : "Say it like: “13 foot 6, 53 foot trailer, 80,000 pounds, no hazmat”"}
           </Text>
         )}

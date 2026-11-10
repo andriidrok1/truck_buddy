@@ -12,6 +12,7 @@ import { fonts, radius, spacing, useTheme } from "../theme";
 import { startLocation } from "../geo/location";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
+import { t } from "../i18n";
 
 const ITEMS: { icon: string; title: string; body: string }[] = [
   {
@@ -81,7 +82,7 @@ export function ConsentGate() {
         </View>
         <PressableScale
           testID="consent-agree"
-          accessibilityLabel="Agree and continue"
+          accessibilityLabel={t("Agree and continue")}
           onPress={() => agree()}
           disabled={busy}
           style={[styles.button, { backgroundColor: colors.brandPrimary }]}
@@ -98,9 +99,10 @@ export function ConsentGate() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  links: { flexDirection: "row", justifyContent: "center", gap: spacing.xl },
+  // Wraps: "Политика конфиденциальности" and "Условия использования" don't fit one row (QA 2026-11-09, bug 5).
+  links: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", columnGap: spacing.xl },
   // Text links still get a 56 pt target (in-cab rule); the label stays a link, the row around it is the hit zone.
-  linkHit: { minHeight: 56, minWidth: 56, justifyContent: "center", paddingHorizontal: spacing.sm },
+  linkHit: { minHeight: 56, minWidth: 56, maxWidth: "100%", justifyContent: "center", paddingHorizontal: spacing.sm },
   wrap: { alignItems: "center", paddingHorizontal: spacing.xl, gap: spacing.md, paddingBottom: spacing.md },
   avatar: { width: 96, height: 96, borderRadius: 48, marginBottom: spacing.sm },
   title: { fontFamily: fonts.bold, fontSize: 26, textAlign: "center" },

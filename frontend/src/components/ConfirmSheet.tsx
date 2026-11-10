@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "../i18n/Text";
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import { PressableScale } from "./PressableScale";
+import { t } from "../i18n";
 
 type Props = {
   /** Null hides the sheet. */
@@ -36,7 +37,7 @@ export function ConfirmSheet({ title, confirmLabel, cancelLabel, onConfirm, onCa
   };
   return (
     <Modal visible={!!title} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
-      <Pressable testID={`${testID}-backdrop`} accessibilityLabel={cancelLabel} onPress={onCancel} style={[styles.backdrop, { backgroundColor: colors.scrim }]} />
+      <Pressable testID={`${testID}-backdrop`} accessibilityLabel={t(cancelLabel)} onPress={onCancel} style={[styles.backdrop, { backgroundColor: colors.scrim }]} />
       <View testID={testID} style={[styles.sheet, shadow(colors, 2), { backgroundColor: colors.surface, paddingBottom: insets.bottom + spacing.lg }]}>
         <Text style={[styles.title, { color: colors.onSurface }]}>{title ?? ""}</Text>
         <PressableScale testID={`${testID}-cancel`} accessibilityRole="button" onPress={onCancel} style={[styles.btn, { backgroundColor: colors.surfaceSecondary }]}>

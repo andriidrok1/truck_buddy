@@ -4,6 +4,7 @@ import { Text } from "../i18n/Text";
 import { fonts, spacing, useTheme } from "../theme";
 import type { Review } from "../types";
 import { Icon } from "./Icon";
+import { formatNumber, t } from "../i18n";
 
 /** Opens a review on Google; a missing or odd URI is ignored instead of throwing. */
 export function openReview(uri?: string | null) {
@@ -15,7 +16,7 @@ export function openReview(uri?: string | null) {
 export function reviewsGistLine(reviews: Review[] | undefined, rating?: number | null): string | null {
   const first = reviews?.find((r) => r.text?.trim());
   if (!first) return null;
-  const stars = rating != null ? `★ ${rating.toFixed(1)} · ` : "";
+  const stars = rating != null ? `★ ${formatNumber(rating, undefined, 1)} · ` : "";
   return `${stars}“${first.text.trim()}”`;
 }
 
@@ -24,7 +25,7 @@ function Stars({ rating }: { rating?: number | null }) {
   if (rating == null) return null;
   const full = Math.round(rating);
   return (
-    <View style={styles.stars} accessibilityLabel={`${rating} stars`}>
+    <View style={styles.stars} accessibilityLabel={t("{n} stars", { n: rating })}>
       {[1, 2, 3, 4, 5].map((i) => (
         <Icon key={i} name={i <= full ? "star" : "star-outline"} size={12} color={colors.warning} />
       ))}
@@ -51,7 +52,7 @@ export function ReviewsGist({ reviews, idSuffix = "" }: Props) {
           key={`${r.author}-${i}`}
           testID={`review-${i}${idSuffix}`}
           accessibilityRole={r.uri ? "link" : undefined}
-          accessibilityLabel={`Review by ${r.author}`}
+          accessibilityLabel={t("Review by {name}", { name: r.author })}
           onPress={() => openReview(r.uri)}
           disabled={!r.uri}
           style={styles.review}
@@ -72,7 +73,7 @@ export function ReviewsGist({ reviews, idSuffix = "" }: Props) {
           Reviews from Google
         </Text>
         {!!more && (
-          <Pressable testID={`reviews-more${idSuffix}`} accessibilityRole="link" accessibilityLabel="More reviews on Google" onPress={() => openReview(more)} hitSlop={8} style={styles.moreBtn}>
+          <Pressable testID={`reviews-more${idSuffix}`} accessibilityRole="link" accessibilityLabel={t("More reviews on Google")} onPress={() => openReview(more)} hitSlop={8} style={styles.moreBtn}>
             <Text style={[styles.more, { color: colors.info }]}>More</Text>
             <Icon name="open-in-new" size={13} color={colors.info} />
           </Pressable>

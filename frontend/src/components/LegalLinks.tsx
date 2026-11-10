@@ -22,8 +22,9 @@ export function LegalLinks() {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", justifyContent: "center", gap: spacing.xl, marginTop: spacing.sm },
+  // Wraps to a second row when the language's words don't fit one (QA 2026-11-09, bug 5).
+  row: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", columnGap: spacing.xl, marginTop: spacing.sm },
   // Text links still get a 56 pt target (in-cab rule); the label stays a link, the area around it is the hit zone.
-  hit: { minHeight: 56, minWidth: 56, justifyContent: "center", paddingHorizontal: spacing.sm },
+  hit: { minHeight: 56, minWidth: 56, maxWidth: "100%", justifyContent: "center", paddingHorizontal: spacing.sm },
   link: { fontFamily: fonts.semibold, fontSize: 15 },
 });

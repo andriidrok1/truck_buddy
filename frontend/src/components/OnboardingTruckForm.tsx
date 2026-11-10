@@ -2,6 +2,7 @@
 // out-of-range message) and hazmat.
 import { TextInput, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
+import { groupedInput, useLang } from "../i18n";
 import { Text } from "../i18n/Text";
 
 import { useTheme } from "../theme";
@@ -9,13 +10,14 @@ import type { TruckField } from "../truck/validate";
 import { styles } from "./onboardingStyles";
 import { ToggleRow } from "./PrefsForm";
 
-function Num({ label, value, onChange, unit, testID, bad = false }: { label: string; value: string; onChange: (s: string) => void; unit: string; testID: string; bad?: boolean }) {
+function Num({ label, value, onChange, unit, testID, bad = false, grouped = false }: { label: string; value: string; onChange: (s: string) => void; unit: string; testID: string; bad?: boolean; grouped?: boolean }) {
   const { colors } = useTheme();
+  const lang = useLang();
   return (
     <View style={styles.field}>
       <Text style={[styles.label, { color: colors.onSurfaceSecondary }]}>{label}</Text>
       <View style={[styles.inputRow, { backgroundColor: colors.surfaceSecondary }, bad && { borderWidth: 1.5, borderColor: colors.error }]}>
-        <TextInput testID={testID} value={value} onChangeText={onChange} keyboardType="number-pad" style={[styles.input, { color: colors.onSurface }]} />
+        <TextInput testID={testID} value={grouped ? groupedInput(value, lang) : value} onChangeText={onChange} keyboardType="number-pad" style={[styles.input, { color: colors.onSurface }]} />
         <Text style={[styles.unit, { color: colors.muted }]}>{unit}</Text>
       </View>
     </View>
@@ -71,7 +73,7 @@ export function OnboardingTruckForm({
       <FieldError testID="onboarding-height-error" text={errors.height} />
       <Num label="Trailer length" value={trailer} onChange={onTrailer} unit="ft" testID="onboarding-trailer-input" bad={!!errors.trailer} />
       <FieldError testID="onboarding-trailer-error" text={errors.trailer} />
-      <Num label="Gross weight" value={weight} onChange={onWeight} unit="lb" testID="onboarding-weight-input" bad={!!errors.weight} />
+      <Num label="Gross weight" value={weight} onChange={onWeight} unit="lb" testID="onboarding-weight-input" bad={!!errors.weight} grouped />
       <FieldError testID="onboarding-weight-error" text={errors.weight} />
       <ToggleRow title="Hazardous materials" value={hazmat} onChange={onHazmat} testID="onboarding-hazmat-switch" />
     </Animated.View>

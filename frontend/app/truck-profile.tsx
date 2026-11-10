@@ -22,7 +22,7 @@ import { setSim } from "@/src/sim";
 import { parseMpg, truckErrors, truckFromInputs } from "@/src/truck/validate";
 import { confirmHeight } from "@/src/truck/heightConfirmed";
 import { spacing, useTheme, setThemePref, useThemePref, type ThemePref } from "@/src/theme";
-import { LANGS, setLang, t, UK_READY, useLang } from "@/src/i18n";
+import { groupedInput, LANGS, setLang, t, UK_READY, useLang } from "@/src/i18n";
 
 
 function Field({
@@ -33,6 +33,7 @@ function Field({
   testID,
   error,
   decimal,
+  grouped,
 }: {
   label: string;
   value: string;
@@ -42,15 +43,18 @@ function Field({
   error?: boolean;
   /** A decimal keyboard (mpg); the number pad has no point on iOS. */
   decimal?: boolean;
+  /** Thousands shown split in Russian ("80 000"); the value itself stays digits (src/truck/validate.ts toInt). */
+  grouped?: boolean;
 }) {
   const { colors } = useTheme();
+  const lang = useLang();
   return (
     <View style={styles.field}>
       <Text style={[styles.label, { color: colors.onSurfaceSecondary }]}>{label}</Text>
       <View style={[styles.inputRow, { backgroundColor: colors.surfaceSecondary, borderColor: error ? colors.error : colors.surfaceSecondary }]}>
         <TextInput
           testID={testID}
-          value={value}
+          value={grouped ? groupedInput(value, lang) : value}
           onChangeText={onChange}
           keyboardType={decimal ? "decimal-pad" : "number-pad"}
           returnKeyType="done"
@@ -74,6 +78,10 @@ const confirmDestructive = (title: string, message: string, action: string, onYe
     { text: t(action), style: "destructive", onPress: onYes },
   ]);
 };
+
+const MPG_ERROR = "Fuel economy must be 3 to 15 mpg.";
+const DATA_CREDITS =
+  "Places: © OpenStreetMap contributors (ODbL), © Overture Maps Foundation, Foursquare, AllThePlaces, FHWA. Search and truck routes: © HERE, openrouteservice. Weather: National Weather Service. Chain controls: Caltrans. What drivers say: Google Maps.";
 
 const DELETE_MSG = "This removes everything TruckBuddy stored for this device on our servers and on this phone. The app starts over like a fresh install. This can't be undone.";
 
@@ -176,7 +184,7 @@ export default function TruckProfileScreen() {
   return (
     <View style={[styles.root, { backgroundColor: colors.surface }]} testID="truck-profile-screen">
       <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-        <PressableScale testID="truck-profile-back-button" accessibilityLabel="Back" onPress={close} style={[styles.back, { backgroundColor: colors.surfaceSecondary }]}>
+        <PressableScale testID="truck-profile-back-button" accessibilityLabel={t("Back")} onPress={close} style={[styles.back, { backgroundColor: colors.surfaceSecondary }]}>
           <Icon name="arrow-left" size={24} color={colors.onSurface} />
         </PressableScale>
         <Text style={[styles.title, { color: colors.onSurface }]}>Your truck</Text>
@@ -218,7 +226,7 @@ export default function TruckProfileScreen() {
         </View>
 
         <Field label="Trailer length" value={trailer} onChange={setTrailer} unit="ft" testID="truck-trailer-input" error={bad.trailer} />
-        <Field label="Gross weight" value={weight} onChange={setWeight} unit="lb" testID="truck-weight-input" error={bad.weight} />
+        <Field label="Gross weight" value={weight} onChange={setWeight} unit="lb" testID="truck-weight-input" error={bad.weight} grouped />
         <Field label="Fuel economy" value={mpg} onChange={setMpg} unit="mpg" testID="truck-mpg-input" error={mpgValue === undefined} decimal />
         <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
           For the route cost estimate. Leave empty for 6.5.
@@ -295,17 +303,25 @@ export default function TruckProfileScreen() {
 
         <OfflineMapsSection />
 
+        {/* One line per field, each translated on its own: glued into one string, the Russian pattern for the
+            height took the weight message into its {max} and left it English (QA 2026-11-09, bug 2). */}
         {!valid && (
-          <Text testID="truck-profile-error" style={[styles.error, { color: colors.error }]}>
-            {[errors.height, errors.trailer, errors.weight].filter(Boolean).join(" ")}
-          </Text>
+          <View testID="truck-profile-error">
+            {[errors.height, errors.trailer, errors.weight, mpgValue === undefined ? MPG_ERROR : undefined]
+              .filter((e): e is string => !!e)
+              .map((e) => (
+                <Text key={e} style={[styles.error, { color: colors.error }]}>
+                  {e}
+                </Text>
+              ))}
+          </View>
         )}
 
         {/* Reset lives down here with a confirmation: a text link in the header was small and wiped the form in one
             tap (UI review 2026-11-05). It only resets the form; nothing is saved until Save truck. */}
         <PressableScale
           testID="truck-profile-reset-button"
-          accessibilityLabel="Reset truck to defaults"
+          accessibilityLabel={t("Reset truck to defaults")}
           onPress={() => confirmReset(onReset)}
           style={[styles.signOut, { borderColor: colors.border }]}
         >
@@ -317,7 +333,7 @@ export default function TruckProfileScreen() {
         {signedInWithCode() && (
           <PressableScale
             testID="sign-out"
-            accessibilityLabel="Sign out"
+            accessibilityLabel={t("Sign out")}
             onPress={async () => {
               setSim(null);
               requestCode(); // back to the access-code screen, not an automatic sign-in
@@ -333,7 +349,7 @@ export default function TruckProfileScreen() {
         {/* 5.1.1(v): a device identity with server records counts as an account; deletion must be in-app. */}
         <PressableScale
           testID="delete-my-data"
-          accessibilityLabel="Delete my data"
+          accessibilityLabel={t("Delete my data")}
           onPress={() => confirmDelete(() => onDeleteMyData(router))}
           style={[styles.signOut, { borderColor: colors.error, marginTop: spacing.md }]}
         >
@@ -346,7 +362,7 @@ export default function TruckProfileScreen() {
         {/* Credits the open place data asks for (backend/scripts/build_places.py: ODbL, CDLA, Apache-2.0), plus HERE and
             openrouteservice routing, NWS weather and Caltrans chain controls. */}
         <Text testID="data-credits" style={[styles.deleteNote, { color: colors.muted, marginTop: spacing.lg }]}>
-          Places: © OpenStreetMap contributors (ODbL), © Overture Maps Foundation, Foursquare, AllThePlaces, FHWA. Search and truck routes: © HERE, openrouteservice. Weather: National Weather Service. Chain controls: Caltrans. What drivers say: Google Maps.
+          {DATA_CREDITS}
         </Text>
         <LegalLinks />
       </KeyboardAwareScrollView>

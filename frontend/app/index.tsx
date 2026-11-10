@@ -65,7 +65,7 @@ import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 import { routeFailText } from "@/src/utils/routeFail";
 import { searchRequest } from "@/src/utils/searchRequest";
-import { nearbyLine, statusLine } from "@/src/voice/parkingLines";
+import { verdictLine } from "@/src/voice/parkingLines";
 import { recorder } from "@/src/geo/driveRecorder";
 import { tripLog } from "@/src/net/tripEvents";
 import { t } from "@/src/i18n";
@@ -299,7 +299,7 @@ export default function MapScreen() {
       // Spoken right after the answer: the verdict only. The entry and parking tips stay on the card and
       // are said when the truck is within half a mile (approachTips below) or on "how do I get in".
       // The whole set after every answer ran 17 s (QA 2026-10-28, U5).
-      const text = pk.verdict === "unlikely" ? `Heads up: from the satellite, parking there looks tight for a rig.${nearbyLine(pk)}` : statusLine(pk);
+      const text = verdictLine(pk);
       if (!text) return;
       const audio = api.speak(text); // generate while the first answer is still playing
       await replyDone;
@@ -453,7 +453,7 @@ export default function MapScreen() {
     setThinkingText("Checking who's around…");
     const intro = sayReply(res, ctx.isCurrent);
     let done = false;
-    const interimAudio = api.speak(RESEARCH_INTERIM).catch(() => null);
+    const interimAudio = api.speak(t(RESEARCH_INTERIM)).catch(() => null);
     let interimPlayed: Promise<unknown> = Promise.resolve();
     const interim = setTimeout(() => {
       if (done || !ctx.isCurrent()) return;
@@ -573,9 +573,9 @@ export default function MapScreen() {
   /** The End route button. Mid-trip it asks first: one stray tap ended a 2.5-hour trip with no way back
    *  (QA 2026-11-02). Near the end, or before Go, it ends at once. */
   const onEndRoutePress = () => {
-    const name = trip().active?.place.name.split(",")[0] ?? "this route";
+    const name = trip().active?.place.name.split(",")[0];
     if (!trip().driving || guidance.remainingS < END_CONFIRM_ABOVE_S) return onEndRoute();
-    setEndConfirm(t("End the route to {name}?", { name }));
+    setEndConfirm(name ? t("End the route to {name}?", { name }) : t("End the route?"));
   };
 
   const onEndRoute = () => {

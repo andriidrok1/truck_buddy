@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef } from "react";
 
 import { absoluteUrl, api } from "../api";
+import { t, useLang } from "../i18n";
 import { planFiller, type FillerPlan } from "../voice/fillers";
 
 export const FILLER_DELAY_MS = 300; // after the driver stops talking; an answer faster than this needs no filler
@@ -35,16 +36,24 @@ export function useFillers(playAndWait: (url: string, maxMs: number) => Promise<
   const urls = useRef<Map<string, string>>(new Map());
   const lastFiller = useRef<string | null>(null);
   const lastTurnSlow = useRef(false);
+  // Keyed by the English text, voiced in the driver's language: "Hang on." was said in English to a Russian
+  // driver on every turn (QA 2026-11-09, S1). A language change makes the set again.
+  const lang = useLang();
   useEffect(() => {
     const texts = [...FILLERS, FILLER_SECOND];
-    Promise.allSettled(texts.map((t) => api.speak(t).then((r) => absoluteUrl(r.audio_url)))).then((all) => {
+    let live = true;
+    Promise.allSettled(texts.map((en) => api.speak(t(en, undefined, lang)).then((r) => absoluteUrl(r.audio_url)))).then((all) => {
+      if (!live) return;
       const m = new Map<string, string>();
       all.forEach((r, i) => {
         if (r.status === "fulfilled") m.set(texts[i], r.value);
       });
       urls.current = m;
     });
-  }, []);
+    return () => {
+      live = false;
+    };
+  }, [lang]);
   const schedule = useCallback(() => {
     const have = urls.current;
     return planFiller({

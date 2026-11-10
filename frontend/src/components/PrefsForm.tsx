@@ -8,6 +8,7 @@ import type { TruckProfile } from "../hooks/useTruckProfile";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import { PressableScale } from "./PressableScale";
 import { ThemedSwitch } from "./ThemedSwitch";
+import { t } from "../i18n";
 
 export const CHAINS = ["Pilot", "Flying J", "Love's", "TA", "Petro", "Sapp Bros", "Kwik Trip", "Buc-ee's"];
 export const BREAKS: (number | null)[] = [null, 2, 3, 4, 6, 8];
@@ -38,7 +39,7 @@ export function ToggleRow({
       testID={`${testID}-row`}
       accessibilityRole="switch"
       accessibilityState={{ checked: value }}
-      accessibilityLabel={title}
+      accessibilityLabel={t(title)}
       onPress={() => onChange(!value)}
       style={[styles.toggle, !!subtitle && styles.toggleTall, { backgroundColor: colors.surfaceSecondary }]}
     >
