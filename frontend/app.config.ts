@@ -46,7 +46,7 @@ const config: ExpoConfig = {
       : {}),
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "io.truckbuddy.app",
+      "bundleIdentifier": "io.truckbuddy.ios",
       "infoPlist": {
         "LSApplicationQueriesSchemes": [
           "comgooglemaps",

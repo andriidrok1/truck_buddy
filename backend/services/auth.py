@@ -25,6 +25,10 @@ from typing import Optional
 from services import db, spend, tenancy
 
 JWT_DAYS = 30  # access token; the refresh token gets a new one
+# An expired driver token keeps working this many days past its exp while its device row is still there (see
+# _grace). Build 2 of the app (iOS 1.0) never calls /api/auth/refresh and signs up as a brand-new device on a 401,
+# which loses the driver's memory, history and profile after 30 days. 0 turns the grace off.
+GRACE_DAYS_DEFAULT = 365
 
 
 class Principal(str):
@@ -193,15 +197,86 @@ def take_token(driver: str, now: float, per_min: Optional[int] = None) -> bool:
     return True
 
 
+def grace_days() -> int:
+    return max(0, _env_int("TOKEN_GRACE_DAYS", GRACE_DAYS_DEFAULT))
+
+
+def _grace_cutoff() -> Optional[datetime]:
+    """TOKEN_GRACE_NOT_BEFORE (ISO date/time, UTC when no zone): expired tokens issued before it get no grace.
+    The kill switch for a leak; tokens that have not expired are untouched (rotate JWT_SECRET for those)."""
+    raw = os.environ.get("TOKEN_GRACE_NOT_BEFORE", "").strip()
+    if not raw:
+        return None
+    try:
+        t = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:  # a typo must not open the grace up: treat it as "no grace for anything issued until now"
+        logging.getLogger("truckbuddy.auth").warning("bad TOKEN_GRACE_NOT_BEFORE %r: grace is off", raw)
+        return datetime.now(timezone.utc)
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
+def _expired() -> HTTPException:
+    return HTTPException(status_code=401, detail="Invalid or expired token")
+
+
 def _claims(credentials: HTTPAuthorizationCredentials | None) -> dict:
-    """The Bearer token's claims; 401 when missing or invalid."""
+    """The Bearer token's claims; 401 when missing or invalid. A token that is ours but past its exp comes back
+    with `_expired` set while it is inside the grace window (the device row is checked later, in _grace)."""
     if not credentials or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Access code required")
+    opts = {"require": ["sub", "iat", "exp"]}
     try:
-        return jwt.decode(credentials.credentials, _secret(), algorithms=["HS256"],
-                          options={"require": ["sub", "iat", "exp"]})
+        return jwt.decode(credentials.credentials, _secret(), algorithms=["HS256"], options=opts)
+    except jwt.ExpiredSignatureError:
+        pass
     except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        raise _expired()
+    # The signature checked out (PyJWT verifies it before the exp); only the date is wrong.
+    try:
+        claims = jwt.decode(credentials.credentials, _secret(), algorithms=["HS256"],
+                            options={**opts, "verify_exp": False})
+    except jwt.PyJWTError:
+        raise _expired()
+    days = grace_days()
+    if days <= 0 or claims.get("role") != "driver":
+        raise _expired()  # testers and fleet owners/dispatchers sign in again, as before
+    now = datetime.now(timezone.utc)
+    try:
+        exp = datetime.fromtimestamp(int(claims["exp"]), timezone.utc)
+        iat = datetime.fromtimestamp(int(claims["iat"]), timezone.utc)
+    except (TypeError, ValueError, OverflowError):
+        raise _expired()
+    cutoff = _grace_cutoff()
+    if now > exp + timedelta(days=days) or (cutoff is not None and iat < cutoff):
+        raise _expired()
+    claims["_expired"] = True
+    return claims
+
+
+async def _grace(claims: dict) -> None:
+    """An expired driver token is honoured only for a device the store still knows, as a driver, that has not said
+    "Delete my data" since the token was issued. 401 otherwise; 503 when the store cannot answer (a 401 would make
+    the app throw the token away and sign up as a new device, which is the loss the grace is there to prevent)."""
+    if not claims.get("_expired"):
+        return
+    sub = claims["sub"]
+    if db.store() == "off":
+        raise _expired()
+    try:
+        info = await tenancy.grace_info(sub)
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger("truckbuddy.auth").warning("grace lookup failed for %s: %s", sub, e)
+        raise HTTPException(status_code=503, detail="Sign-in is unavailable right now")
+    if info is None:
+        raise _expired()
+    role, not_before = info
+    iat = datetime.fromtimestamp(int(claims["iat"]), timezone.utc)
+    if role != "driver" or (not_before is not None and iat < not_before):
+        raise _expired()
+    try:
+        await tenancy.touch(sub)
+    except Exception as e:  # noqa: BLE001 - seen_at is bookkeeping
+        logging.getLogger("truckbuddy.auth").warning("seen_at update failed for %s: %s", sub, e)
 
 
 async def _principal(claims: dict) -> Principal:
@@ -235,6 +310,7 @@ async def require_driver(credentials: HTTPAuthorizationCredentials | None = Depe
     """The device behind the Bearer token (a Principal: the driver id as a str, plus org/vehicle/role); 401 when
     missing or invalid."""
     claims = _claims(credentials)
+    await _grace(claims)
     if claims.get("role") != "tester":
         _limit(claims["sub"])
     spend.exempt_role(str(claims.get("role") or "driver"))  # a tester's calls are not counted (services/spend.py)
