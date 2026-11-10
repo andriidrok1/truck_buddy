@@ -15,7 +15,7 @@ from typing import Optional
 
 import imageio_ffmpeg
 
-from services import llm
+from services import llm, spend
 from services.logs import said
 from services.settings import settings
 from services.http import client
@@ -156,6 +156,7 @@ async def transcribe_full(data: bytes, filename: str, hint: Optional[str] = None
             stt.create(file=buf, model=STT_MODEL, response_format="json", **lang_arg,
                        prompt=prompt, temperature=0.0, include=["logprobs"]),
             STT_TIMEOUT_S)
+        spend.record_stt(STT_MODEL, res, len(data))
         return Transcript(_clean((getattr(res, "text", "") or "").strip()),
                           confidence_of(getattr(res, "logprobs", None)))
     except asyncio.TimeoutError:
@@ -170,6 +171,7 @@ async def transcribe_full(data: bytes, filename: str, hint: Optional[str] = None
             STT_TIMEOUT_S)
     except asyncio.TimeoutError:
         raise SttTimeout(f"whisper-1 took longer than {STT_TIMEOUT_S:.0f}s")
+    spend.record_stt("whisper-1", res, len(data))
     segments = getattr(res, "segments", None) or []
     # Whisper invents text on silence/noise; drop segments that are most likely not speech.
     if segments:
@@ -239,8 +241,11 @@ _FALLBACK_IDS: "OrderedDict[str, None]" = OrderedDict()  # audio ids spoken by t
 def eleven_voice() -> Optional[str]:
     """ElevenLabs voice id when enabled and the key is set, else None (OpenAI is used).
     Off by default: the app speaks with one female OpenAI voice ("sage") everywhere.
-    Set ELEVENLABS_ENABLED=1 to switch back to ElevenLabs."""
+    Set ELEVENLABS_ENABLED=1 to switch back to ElevenLabs. Skipped once the day's spend reaches the cap
+    (services/spend.py, stage cheap_voice)."""
     if os.environ.get("ELEVENLABS_ENABLED") != "1" or not os.environ.get("ELEVENLABS_API_KEY"):
+        return None
+    if spend.voice_cheap():
         return None
     return os.environ.get("ELEVENLABS_VOICE_ID") or ELEVEN_DEFAULT_VOICE
 
@@ -298,6 +303,7 @@ async def _eleven(text: str, voice_id: str, previous_text: Optional[str] = None,
         logger.warning("ElevenLabs TTS %s, falling back to OpenAI: %s", r.status_code, r.text[:200])
         _eleven_failed()
         return None
+    spend.record_tts("elevenlabs", len(text))
     return r.content
 
 
@@ -372,6 +378,7 @@ async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str
             res = await llm.client().audio.speech.create(input=text, model=model, voice=voice or DEFAULT_VOICE,
                                                          response_format="mp3", **extra)
             audio = res.content
+            spend.record_tts(model, len(text))
         except Exception:
             logger.exception("TTS failed")
             return None
@@ -600,6 +607,7 @@ async def _openai_stream(text: str):
     """Raw mp3 chunks from gpt-4o-mini-tts as they are generated."""
     model = STREAM_MODEL
     extra = {"instructions": instructions_for(text)} if model == "gpt-4o-mini-tts" else {}
+    spend.record_tts(model, len(text))
     async with llm.client().audio.speech.with_streaming_response.create(
             input=text, model=model, voice=DEFAULT_VOICE, response_format="mp3", stream_format="audio",
             **extra) as resp:

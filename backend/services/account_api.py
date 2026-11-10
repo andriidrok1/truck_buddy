@@ -58,6 +58,17 @@ async def auth_refresh(req: RefreshRequest):
     return await auth.refresh(req.refresh_token)
 
 
+@api.post("/auth/renew")
+async def auth_renew(principal: auth.Principal = Depends(auth.require_driver)):
+    """A fresh access token and refresh token for the device behind the Bearer token (valid, or expired inside the
+    grace window). For app builds that never stored a refresh token: they trade the token they have for both."""
+    try:
+        return await auth.issue(principal.sub, principal.role)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("renew failed: %s", e)
+        raise HTTPException(status_code=503, detail="Sign-in is unavailable right now")
+
+
 @api.post("/auth/fleet-code")
 async def auth_fleet_code(req: FleetCodeRequest, principal: auth.Principal = Depends(auth.require_driver)):
     """Binds this device to the fleet (and truck) the code was made for; answers with a token carrying the org."""
@@ -125,6 +136,7 @@ async def memory_clear(driver: str = Depends(auth.require_driver)):
     await agent_sessions_drop(driver)
 
     async def wipe() -> dict:
+        await tenancy.revoke_grace(driver)  # old tokens die at their exp; a stolen one cannot ride the grace
         events = await trip_events.clear(driver)
         turns = await memory.clear(driver)
         return {"deleted": turns, "trip_events": events, "profile": await tenancy.profile_clear(driver)}

@@ -90,6 +90,15 @@ def check_route(name: str, origin, dest, body: dict) -> list[str]:
     return out
 
 
+def spend_line(health: dict) -> str:
+    """Today's estimated API spend from /health (services/spend.py), for the log; informational, never a failure."""
+    if "spend_today_usd" not in health:
+        return "spend: not reported by this backend"
+    calls = " ".join(f"{k}={v}" for k, v in (health.get("calls_today") or {}).items())
+    return (f"spend today ${health['spend_today_usd']:.2f} of ${health.get('spend_cap_usd', 0):g}, "
+            f"stage {health.get('spend_stage')}" + (f", calls {calls}" if calls else ""))
+
+
 def main() -> int:
     c = httpx.Client(timeout=40)
     tok = c.post(f"{BASE}/auth/device").json()["access_token"]
@@ -119,6 +128,7 @@ def main() -> int:
                 print(f"ok   {name}: {r['distance_mi']:.0f} mi, ${r['cost_usd']:.0f}, {len(r.get('alternatives') or [])} alt, {ms} ms")
             time.sleep(PAUSE_S)
         health = c.get(f"{BASE}/health").json()
+        print(spend_line(health))
         degraded = health.get("here_parse_degraded") or {}
         if degraded:
             failed += 1
