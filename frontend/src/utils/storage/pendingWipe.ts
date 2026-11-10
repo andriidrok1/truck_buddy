@@ -24,7 +24,7 @@ export const APP_KEYS = [
 ] as const;
 
 /** Keychain keys (AsyncStorage on web). */
-export const SECURE_KEYS = ["auth_token", "auth_role", "auth_via", "eld_token_v1"] as const;
+export const SECURE_KEYS = ["auth_token", "auth_role", "auth_via", "auth_refresh", "eld_token_v1"] as const;
 
 type Remove = (key: string) => Promise<unknown>;
 

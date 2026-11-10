@@ -3,6 +3,7 @@ import { AgentResponseSchema, checkContract, RouteResultSchema } from "./api/sch
 import { eldHeader } from "./eld";
 import { ensureTruckProfile, type TruckProfile } from "./hooks/useTruckProfile";
 import { isNetworkError, offlineHint } from "./net/offlineHint";
+import { after401 } from "./net/tokenRenewal";
 import { stopsAhead, viaOf } from "./state/tripStore";
 import { uploadForm } from "./utils/upload";
 import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, Nudge, NudgeRequest, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
@@ -60,11 +61,12 @@ export class ApiError extends Error {
 export const isNoTruckRoute = (e: unknown): boolean =>
   e instanceof ApiError && e.status === 422 && /no truck route/i.test(e.detail ?? "");
 
-/** A rejected token (expired / code changed) sends the driver back to the access-code screen. */
-/** `sent`: the token the request carried. A 401 signs the phone out only when that token is still the current one:
- *  a request sent without it (or with one already replaced) says nothing about the driver's sign-in. */
-async function check(res: Response, path: string, sent: string | null): Promise<void> {
-  if (res.status === 401 && sent !== null && sent === getToken()) setToken(null);
+/** `sent`: the token the request carried. A 401 on the current token first tries a renewal (net/tokenRenewal.ts); the
+ *  phone signs out only when the server rejects the identity, never because the network is down. A request sent
+ *  without the token (or with one already replaced) says nothing about the driver's sign-in. `renew: false`: the
+ *  caller already went through that (request() after its retry). */
+async function check(res: Response, path: string, sent: string | null, renew = true): Promise<void> {
+  if (renew && res.status === 401 && sent !== null && sent === getToken()) await after401(sent);
   if (res.ok) return;
   let detail: string | null = null;
   try {
@@ -148,13 +150,26 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
   try {
     const hold = tokenHold();
     if (hold) await hold;
-    const sent = getToken();
-    const res = await fetchTracked(`${BASE}${path}`, {
-      ...rest,
-      signal: d.signal,
-      headers: { "Content-Type": "application/json", ...authHeader(), ...(rest.headers ?? {}) },
-    });
-    await check(res, path, sent);
+    const send = () =>
+      fetchTracked(`${BASE}${path}`, {
+        ...rest,
+        signal: d.signal,
+        headers: { "Content-Type": "application/json", ...authHeader(), ...(rest.headers ?? {}) },
+      });
+    let sent = getToken();
+    let res = await send();
+    if (res.status === 401 && sent !== null) {
+      // An expired token: renew once (or take the one another request just renewed) and send it again.
+      const now = getToken();
+      const replaced = now !== null && now !== sent;
+      if (replaced || (now === sent && (await after401(sent)))) {
+        sent = getToken();
+        res = await send();
+      }
+      await check(res, path, sent, false);
+    } else {
+      await check(res, path, sent);
+    }
     return json<T>(res, path);
   } finally {
     d.done();
@@ -178,8 +193,8 @@ export async function registerDevice() {
   if (res.status === 403) throw new CodeRequiredError("Access code required");
   if (res.status === 429) throw new Error("Too many tries. Wait a few minutes and try again.");
   if (!res.ok) throw new Error("Something went wrong. Try again.");
-  const data = (await res.json()) as { access_token: string };
-  await setToken(data.access_token, "driver");
+  const data = (await res.json()) as { access_token: string; refresh_token?: string };
+  await setToken(data.access_token, "driver", "device", data.refresh_token ?? null);
 }
 
 export async function redeemAccessCode(code: string) {
@@ -200,8 +215,8 @@ export async function redeemAccessCode(code: string) {
   if (res.status === 429) throw new Error("Too many tries. Wait a few minutes and try again.");
   if (res.status === 401) throw new Error("That code isn't right. Check it and try again.");
   if (!res.ok) throw new Error("Something went wrong. Try again.");
-  const data = await json<{ access_token: string; role?: "driver" | "tester" }>(res, "/auth");
-  await setToken(data.access_token, data.role === "tester" ? "tester" : "driver", "code");
+  const data = await json<{ access_token: string; refresh_token?: string; role?: "driver" | "tester" }>(res, "/auth");
+  await setToken(data.access_token, data.role === "tester" ? "tester" : "driver", "code", data.refresh_token ?? null);
   requestCode(false);
 }
 
