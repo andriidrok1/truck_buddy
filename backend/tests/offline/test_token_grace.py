@@ -1,6 +1,5 @@
 """Expired driver tokens inside the grace window (services/auth.py _claims/_grace): build 2 of the app never refreshes
 and signs up as a new device on a 401, so the backend keeps the old token working while the device row is there."""
-import json
 from datetime import datetime, timedelta, timezone
 
 import jwt
