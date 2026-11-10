@@ -60,7 +60,9 @@ STT_PER_MIN = {"gpt-4o-mini-transcribe": 0.003, "gpt-4o-transcribe": 0.006, "whi
 STT_TOKENS_PER_M = {"gpt-4o-mini-transcribe": (1.25, 5.00), "gpt-4o-transcribe": (2.50, 10.00)}  # audio in, text out
 STT_BYTES_PER_S = 8000  # 64 kbps: seconds from the upload size when the response has no duration (errs high)
 TTS_PER_M_CHARS = {"gpt-4o-mini-tts": 17.0, "tts-1": 15.0, "tts-1-hd": 30.0, "elevenlabs": 40.0}
-PER_CALL = {"here": 0.0025, "gemini": 0.014}  # HERE routing past the free tier (EUR 2.20/1K, geocoding is cheaper); Gemini 3.x Maps grounding per prompt (free monthly allowance ignored)
+# HERE: routing past the free tier (EUR 2.20/1K; geocoding is cheaper). Gemini: 3.x Maps grounding per prompt,
+# the free monthly allowance ignored.
+PER_CALL = {"here": 0.0025, "gemini": 0.014}
 METERED_HOSTS = (("hereapi.com", "here"), ("generativelanguage.googleapis.com", "gemini"))
 
 # ---- caps and stages -------------------------------------------------------------------------------------------
