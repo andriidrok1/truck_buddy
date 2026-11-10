@@ -5,12 +5,13 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import { useEffect, useState } from "react";
-import { LogBox, StyleSheet } from "react-native";
+import { AppState, LogBox, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ReducedMotionConfig, ReduceMotion } from "react-native-reanimated";
 import { KeyboardProvider } from "@/src/keyboard";
 
 import { useAuthState } from "@/src/auth";
+import { renewOnStart } from "@/src/net/tokenRenewal";
 import { loadThemePref, useTheme } from "@/src/theme";
 import { ConsentGate } from "@/src/components/ConsentGate";
 import { LanguageGate } from "@/src/components/LanguageGate";
@@ -63,6 +64,16 @@ function RootLayout() {
     loadThemePref().finally(() => setThemeReady(true));
   }, []);
   const auth = useAuthState();
+  // Keep the device token alive (30-day access token): on start and on every return to the foreground, renew when it
+  // is close to expiry or no refresh token is stored yet. Offline it just tries again next time.
+  useEffect(() => {
+    if (auth !== "in") return;
+    renewOnStart().catch(() => {});
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") renewOnStart().catch(() => {});
+    });
+    return () => sub.remove();
+  }, [auth]);
   const consent = useConsent();
   const langLoaded = useLangStore((s) => s.loaded);
   const langChosen = useLangStore((s) => s.chosen);
