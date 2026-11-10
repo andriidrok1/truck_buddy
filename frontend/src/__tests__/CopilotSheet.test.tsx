@@ -288,3 +288,39 @@ describe("CopilotSheet type row (UI review 2026-11-05, N8)", () => {
     }
   });
 });
+
+describe("CopilotSheet how-to link (Figma 71:2)", () => {
+  const idle = (onHowTo: () => void, lastReply: string | null = null) => (
+    <CopilotSheet
+      phase="ready"
+      speaking={false}
+      onShowOptions={noop}
+      options={[]}
+      parking={{}}
+      onOptionParking={noop}
+      onOptionRoute={noop}
+      active={null}
+      driving={false}
+      remaining={null}
+      onGo={noop}
+      bottomInset={0}
+      onAvatarPress={noop}
+      onSubmitText={noop}
+      onClose={noop}
+      onEndRoute={noop}
+      onLayout={noop}
+      lastReply={lastReply}
+      onHowTo={onHowTo}
+    />
+  );
+
+  test("under the empty sheet's title it opens How to use; an answer takes its place", async () => {
+    const onHowTo = jest.fn();
+    await render(idle(onHowTo));
+    expect(screen.getByText("How to talk to me")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("how-to-link"));
+    expect(onHowTo).toHaveBeenCalledTimes(1);
+    await render(idle(onHowTo, "Pilot in Fernley, 12 miles."));
+    expect(screen.queryByTestId("how-to-link")).toBeNull();
+  });
+});

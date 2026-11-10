@@ -83,10 +83,12 @@ type Props = {
   /** The copilot's answer when the map has no room for the bubble (130 % font, a tall Russian route card): it is
    *  shown at the top of the route card instead, so it is never on screen nowhere (UI review 2026-11-05, N1). */
   replyInSheet?: string | null;
+  /** "How to talk to me" under the idle title (Figma 71:2): opens the "How to use" screen. */
+  onHowTo?: () => void;
 };
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, micLevel, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel, quiet, routesPanel, replyInSheet } = props;
+  const { phase, speaking, micLevel, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel, quiet, routesPanel, replyInSheet, onHowTo } = props;
   const tr = useT();
   const lang = useLang();
   const routesChip = active && !driving ? routesChipText(active.route) : null;
@@ -272,6 +274,21 @@ export function CopilotSheet(props: Props) {
               </Text>
             )}
             {!!lastReply && <MapsSources sources={lastReplySources} center />}
+            {!lastReply && !!onHowTo && (
+              <PressableScale
+                testID="how-to-link"
+                accessibilityRole="button"
+                accessibilityLabel={t("How to talk to me")}
+                onPress={onHowTo}
+                hitSlop={8}
+                containerStyle={styles.howToWrap}
+                style={[styles.howTo, { backgroundColor: colors.avatarGlowSoft }]}
+              >
+                <Icon name="help-circle-outline" size={20} color={colors.info} />
+                <Text style={[styles.howToText, { color: colors.info }]}>How to talk to me</Text>
+                <Icon name="chevron-right" size={20} color={colors.info} />
+              </PressableScale>
+            )}
           </View>
         )}
         {phase === "listening" && (
@@ -557,6 +574,10 @@ const styles = StyleSheet.create({
   header: { minHeight: 36, justifyContent: "center" },
   title: { fontFamily: fonts.bold, fontSize: 22, textAlign: "center" },
   sheetReply: { fontFamily: fonts.medium, fontSize: 17, lineHeight: 24, marginBottom: spacing.sm },
+  // A 40 pt pill plus an 8 pt slop all round: a 56 pt target, like the search bar's arrow.
+  howToWrap: { alignSelf: "center", marginTop: spacing.sm },
+  howTo: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 40, paddingHorizontal: spacing.lg, borderRadius: radius.pill },
+  howToText: { fontFamily: fonts.bold, fontSize: 16, flexShrink: 1 },
   lastReply: { fontFamily: fonts.regular, fontSize: 17, lineHeight: 24, textAlign: "center", marginTop: spacing.xs },
   listenRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.md },
   navInfo: { gap: 2 },

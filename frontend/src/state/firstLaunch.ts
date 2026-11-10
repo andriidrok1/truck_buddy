@@ -21,6 +21,7 @@ import { forgetThemePref } from "../theme";
 import { forgetHeight } from "../truck/heightConfirmed";
 import { removeAllAppKeys } from "../utils/storage";
 import { markWipePending } from "../utils/storage/pendingWipe";
+import { forgetHowTo } from "./howTo";
 import { clearSavedRoute } from "./routeStore";
 import { forgetSettings } from "./settingsStore";
 import { useTripStore } from "./tripStore";
@@ -41,7 +42,7 @@ export async function resetToFirstLaunch(): Promise<string[]> {
   await step(resetProfile); // the default truck in memory and in the query cache, no pending server sync
   await step(() => queryClient.clear()); // conversation memory, the server profile: fetched again for the new identity
   await Promise.all(
-    [forgetTruckProfile, forgetHeight, forgetSettings, clearSavedRoute, forgetArrived, () => tripLog.clear(), () => setEldToken(null), forgetThemePref].map(step),
+    [forgetTruckProfile, forgetHeight, forgetHowTo, forgetSettings, clearSavedRoute, forgetArrived, () => tripLog.clear(), () => setEldToken(null), forgetThemePref].map(step),
   );
   // The gates last, language first: once `chosen` is false the layout shows the language screen, so the token
   // removal below cannot start an automatic sign-in behind it.

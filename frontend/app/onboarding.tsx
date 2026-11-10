@@ -22,6 +22,7 @@ import { spacing, useTheme } from "@/src/theme";
 import { truckErrors, truckFromInputs } from "@/src/truck/validate";
 import { LANGS, setLang, t, UK_READY, useLang, type Lang } from "@/src/i18n";
 import { confirmHeight } from "@/src/truck/heightConfirmed";
+import { markHowToDue } from "@/src/state/howTo";
 import { NOT_CAUGHT, spoken, STEPS, TAP_TO_TALK, thought, type Step } from "@/src/voice/onboardingLines";
 
 type Mode = "speaking" | "listening" | "thinking" | "waiting";
@@ -103,6 +104,7 @@ export default function Onboarding() {
       voice.cancelRecording().catch(() => {});
       await saveProfile({ ...data, driver_name: data.driver_name?.trim() || null });
       await setOnboarded();
+      await markHowToDue(); // the map opens "How to use" once (src/state/howTo.ts)
       if (router.canGoBack()) router.back();
       else router.replace("/");
     },
