@@ -68,10 +68,12 @@ type Props = {
   place?: Place | null;
   /** Active route geometry; its last ~300 m is drawn on the zoomable map. */
   route?: [number, number][] | null;
+  /** One line: the verdict only (the short route card). Tips, the satellite and the note stay for the full card. */
+  compact?: boolean;
 };
 
 /** Parking verdict, how to enter / where to park, and the satellite thumbnail (tap for a zoomable map). */
-export function ParkingStatus({ parking, idSuffix = "", place, route }: Props) {
+export function ParkingStatus({ parking, idSuffix = "", place, route, compact }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
@@ -84,6 +86,16 @@ export function ParkingStatus({ parking, idSuffix = "", place, route }: Props) {
     );
   }
   const { icon, color } = look(colors, parking.verdict);
+  if (compact) {
+    return (
+      <View testID={`parking-status-compact${idSuffix}`} style={[styles.labelRow, styles.compact]}>
+        <Icon name={icon} size={18} color={color} />
+        <Text testID={`parking-status-label${idSuffix}`} numberOfLines={1} style={[styles.label, { color: colors.onSurface }]}>
+          {parking.label}
+        </Text>
+      </View>
+    );
+  }
   const uri = parking.image_path ? apiUrl(parking.image_path) : null;
   const spots = parking.spots ?? [];
   const center = parking.image_path ? frameCenter(parking.image_path) : null;
@@ -177,6 +189,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: spacing.sm },
   textCol: { flex: 1, gap: 4 },
   labelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  compact: { marginTop: spacing.sm },
   label: { fontFamily: fonts.semibold, fontSize: 14, flexShrink: 1 },
   reason: { fontFamily: fonts.regular, fontSize: 12, marginTop: 2 },
   tipRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
