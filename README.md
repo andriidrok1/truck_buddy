@@ -40,6 +40,10 @@ the Bearer token the app gets by redeeming the access code.
 | `PARKING_CACHE_DIR`, `PARKING_WARM` | Satellite parking check cache; `PARKING_WARM=1` pre-checks the demo places at startup (off by default) |
 | `RATE_LIMIT_PER_MIN` | Requests per minute per driver on authenticated routes (default 40, `0` = off for test backends) |
 | `DEVICES_PER_IP_PER_10MIN` | New device sign-ups per IP per 10 min (default 20, `0` = no limit; raise to ~200 while a build is in App Review) |
+| `TURNS_PER_DAY`, `NEW_DEVICE_TURNS`, `SAT_NEW_PER_DAY` | Copilot turns per driver per Pacific day (default 150), turns on a device's first 24 h (default 30), new satellite checks per day service-wide (default 300); `0` = off (`services/quota.py`) |
+| `DAILY_USD_CAP` | Estimated paid-API spend per Pacific day, whole service, in dollars (default 5, `0` = off). 80% alerts; 100% skips ElevenLabs and new `/speak` clips; 110% stops new satellite checks and Gemini grounding; 120% refuses copilot turns with a spoken line. Map, routes and place search keep working. Prices in `services/spend.py`; `spend_today_usd` and `spend_stage` in `/api/health` |
+| `GEMINI_CALLS_PER_DAY`, `HERE_CALLS_PER_DAY` | Daily call caps per provider against loops (default 200 and 3000, `0` = off); a call over the cap is refused before it is sent |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Where spend alerts go (one per threshold per day); without them the alert is only a log line |
 | `TOKEN_GRACE_DAYS`, `TOKEN_GRACE_NOT_BEFORE` | An expired driver token keeps working this many days past its exp while the device row exists and "Delete my data" has not been used since (default 365, `0` = off; app build 2 never refreshes its token). `TOKEN_GRACE_NOT_BEFORE` (ISO date) refuses the grace to tokens issued before it; rotating `JWT_SECRET` kills every token |
 | `DEV_DOCS` | `1` enables Swagger at `/api/docs` (dev only) |
 | `ROUTE_SPEED_LIMITS`, `ROUTE_INCIDENTS`, `ROUTE_ALTERNATIVES`, `REROUTE_ENABLED` | HERE extras on every route: posted limits, closures, 2 alternatives with road labels and tolls, route handle for `POST /api/reroute` (all default on) |

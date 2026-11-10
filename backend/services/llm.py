@@ -7,7 +7,7 @@ from typing import Optional
 
 from openai import AsyncOpenAI
 
-from services import timing
+from services import spend, timing
 
 _client: Optional[AsyncOpenAI] = None
 
@@ -52,6 +52,7 @@ async def complete_full(system: str, text: str, model: str = "gpt-5.4-mini", ima
         model=model, messages=[{"role": "system", "content": system}, {"role": "user", "content": content}],
         extra_body=extra or None)
     usage = _usage(res)
+    spend.record_chat(model, usage)
     for k in ("prompt_tokens", "completion_tokens", "cached_tokens"):
         if usage.get(k):
             timing.add(f"n_{k}", usage[k])

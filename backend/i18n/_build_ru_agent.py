@@ -183,3 +183,5 @@ t("Say that again.", "Повтори.")
 t("Something went wrong on my end. Try again in a minute.", "У меня что-то сломалось. Попробуй через минуту.")
 t("That's all the free questions for today. They come back at midnight Pacific. The map and the route keep working.",
   "На сегодня бесплатные вопросы закончились. Они вернутся в полночь по тихоокеанскому времени. Карта и маршрут работают как обычно.")
+t("I'm taking a break from answering for the rest of today; I'm back at midnight Pacific. The map and the routes keep working.",
+  "Сегодня я больше не отвечаю, вернусь в полночь по тихоокеанскому времени. Карта и маршруты работают как обычно.")

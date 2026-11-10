@@ -22,7 +22,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from services.settings import settings
 from typing import Optional
 
-from services import db, tenancy
+from services import db, spend, tenancy
 
 JWT_DAYS = 30  # access token; the refresh token gets a new one
 # An expired driver token keeps working this many days past its exp while its device row is still there (see
@@ -313,6 +313,7 @@ async def require_driver(credentials: HTTPAuthorizationCredentials | None = Depe
     await _grace(claims)
     if claims.get("role") != "tester":
         _limit(claims["sub"])
+    spend.exempt_role(str(claims.get("role") or "driver"))  # a tester's calls are not counted (services/spend.py)
     return await _principal(claims)
 
 
@@ -321,6 +322,7 @@ async def require_tester(credentials: HTTPAuthorizationCredentials | None = Depe
     claims = _claims(credentials)
     if claims.get("role") != "tester":
         raise HTTPException(status_code=403, detail="Tester access required")
+    spend.exempt_role("tester")
     return await _principal(claims)
 
 
