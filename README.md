@@ -40,6 +40,7 @@ the Bearer token the app gets by redeeming the access code.
 | `PARKING_CACHE_DIR`, `PARKING_WARM` | Satellite parking check cache; `PARKING_WARM=1` pre-checks the demo places at startup (off by default) |
 | `RATE_LIMIT_PER_MIN` | Requests per minute per driver on authenticated routes (default 40, `0` = off for test backends) |
 | `DEVICES_PER_IP_PER_10MIN` | New device sign-ups per IP per 10 min (default 20, `0` = no limit; raise to ~200 while a build is in App Review) |
+| `TOKEN_GRACE_DAYS`, `TOKEN_GRACE_NOT_BEFORE` | An expired driver token keeps working this many days past its exp while the device row exists and "Delete my data" has not been used since (default 365, `0` = off; app build 2 never refreshes its token). `TOKEN_GRACE_NOT_BEFORE` (ISO date) refuses the grace to tokens issued before it; rotating `JWT_SECRET` kills every token |
 | `DEV_DOCS` | `1` enables Swagger at `/api/docs` (dev only) |
 | `ROUTE_SPEED_LIMITS`, `ROUTE_INCIDENTS`, `ROUTE_ALTERNATIVES`, `REROUTE_ENABLED` | HERE extras on every route: posted limits, closures, 2 alternatives with road labels and tolls, route handle for `POST /api/reroute` (all default on) |
 | `PLACE_REVIEWS` | Google reviews on places and the spoken gist ("what do drivers say about it?"); same SKU, no extra cost |
