@@ -4,7 +4,7 @@ Every paid call records an estimate in USD: OpenAI chat from the usage tokens, s
 seconds (or tokens, or the upload size when the response has neither), TTS from the characters spoken; Gemini
 (Maps grounding) and HERE per call. The prices are the tables below, the one place to edit when a price changes.
 
-Counters are per US Pacific day (like services/quota.py) in the `spend_daily` table (migration 0012), so they
+Counters are per US Pacific day (like services/quota.py) in the `spend_daily` table (migration 0013), so they
 survive a restart and every worker sees the others' spend. A call never waits on the database: it adds to this
 worker's pending counters, and a background flush (at most every FLUSH_S) writes them and reads back the day's
 totals; the totals any worker uses are the last read plus what it has not written yet. With the store off
@@ -57,10 +57,10 @@ CHAT_PER_M = {  # model: (input, cached input, output) per 1M tokens; reasoning 
 }
 CHAT_UNKNOWN = "gpt-5.5"  # a model missing from the table is priced as the dearest one
 STT_PER_MIN = {"gpt-4o-mini-transcribe": 0.003, "gpt-4o-transcribe": 0.006, "whisper-1": 0.006}
-STT_TOKENS_PER_M = {"gpt-4o-mini-transcribe": (3.00, 5.00), "gpt-4o-transcribe": (6.00, 10.00)}  # audio in, text out
+STT_TOKENS_PER_M = {"gpt-4o-mini-transcribe": (1.25, 5.00), "gpt-4o-transcribe": (2.50, 10.00)}  # audio in, text out
 STT_BYTES_PER_S = 8000  # 64 kbps: seconds from the upload size when the response has no duration (errs high)
-TTS_PER_M_CHARS = {"gpt-4o-mini-tts": 17.0, "tts-1": 15.0, "tts-1-hd": 30.0, "elevenlabs": 100.0}
-PER_CALL = {"here": 0.001, "gemini": 0.025}  # HERE past the free tier; Gemini = Maps grounding per prompt
+TTS_PER_M_CHARS = {"gpt-4o-mini-tts": 17.0, "tts-1": 15.0, "tts-1-hd": 30.0, "elevenlabs": 40.0}
+PER_CALL = {"here": 0.0025, "gemini": 0.014}  # HERE routing past the free tier (EUR 2.20/1K, geocoding is cheaper); Gemini 3.x Maps grounding per prompt (free monthly allowance ignored)
 METERED_HOSTS = (("hereapi.com", "here"), ("generativelanguage.googleapis.com", "gemini"))
 
 # ---- caps and stages -------------------------------------------------------------------------------------------
