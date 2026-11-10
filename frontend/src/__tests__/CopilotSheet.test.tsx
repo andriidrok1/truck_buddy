@@ -6,9 +6,17 @@ import { CopilotSheet } from "../components/CopilotSheet";
 // Reanimated's native worklets are not installed under jest: plain views, no-op animations.
 jest.mock("react-native-reanimated", () => {
   const { View, Text, ScrollView } = jest.requireActual<typeof import("react-native")>("react-native");
+  // Layout animations chain (FadeInDown.delay(80).duration(260)); any call returns the same stub.
+  const anim: object = new Proxy(() => anim, { get: () => () => anim });
   return {
     __esModule: true,
     default: { View, Text, ScrollView },
+    FadeIn: anim,
+    FadeInDown: anim,
+    FadeInUp: anim,
+    FadeOut: anim,
+    ZoomIn: anim,
+    withTiming: (v: unknown) => v,
     useSharedValue: (v: unknown) => {
       const sv = { value: v, get: () => sv.value, set: (n: unknown) => void (sv.value = n) };
       return sv;

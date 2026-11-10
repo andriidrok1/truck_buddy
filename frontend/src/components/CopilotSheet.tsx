@@ -3,7 +3,7 @@ import { Keyboard, Platform, Pressable, StyleSheet, TextInput, useWindowDimensio
 import { Text } from "../i18n/Text";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import { KeyboardStickyView } from "@/src/keyboard";
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown, FadeOut, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming, type SharedValue } from "react-native-reanimated";
 
 import { routesChipText } from "../geo/routeChoice";
 import type { OfflineMapState } from "../hooks/useOfflineMap";
@@ -35,6 +35,30 @@ const SNAP_SPRING = { damping: 22, stiffness: 240, mass: 0.9, overshootClamping:
 /** Vertical travel before the drag takes over; sideways travel that hands the touch to a chip row. */
 const PAN_ACTIVE_Y: [number, number] = [-8, 8];
 const PAN_FAIL_X: [number, number] = [-24, 24];
+
+/** What More opens arrives softly instead of popping in (fade, a short slide for the buttons). */
+const REVEAL_MS = 220;
+function Reveal({ children }: { children: ReactNode }) {
+  return (
+    <Animated.View entering={FadeIn.duration(REVEAL_MS)} exiting={FadeOut.duration(120)}>
+      {children}
+    </Animated.View>
+  );
+}
+
+/** The chevron on More turns over instead of swapping icons. */
+function MoreChevron({ open, color }: { open: boolean; color: string }) {
+  const turn = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    turn.set(withTiming(open ? 1 : 0, { duration: REVEAL_MS }));
+  }, [open, turn]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.get() * 180}deg` }] }));
+  return (
+    <Animated.View style={style}>
+      <Icon name="chevron-up" size={20} color={color} />
+    </Animated.View>
+  );
+}
 
 type Props = {
   phase: Phase;
@@ -338,12 +362,12 @@ export function CopilotSheet(props: Props) {
             {more && (() => {
               const e = entrySpot(active.parking);
               return e && routeEndsAt(active.route, e) ? (
-                <View style={styles.entryRow}>
+                <Animated.View entering={FadeIn.duration(REVEAL_MS)} exiting={FadeOut.duration(120)} style={styles.entryRow}>
                   <Icon name="login-variant" size={16} color={colors.info} />
                   <Text testID="route-to-entry" style={[styles.notice, { color: colors.info }]}>
                     Route ends at truck entrance
                   </Text>
-                </View>
+                </Animated.View>
               ) : null;
             })()}
             {active.route.truck_aware === false && (
@@ -368,12 +392,12 @@ export function CopilotSheet(props: Props) {
               {active.place.name}
             </Text>
             {more && (
-            <View style={styles.tagRow}>
+            <Animated.View entering={FadeIn.duration(REVEAL_MS)} exiting={FadeOut.duration(120)} style={styles.tagRow}>
               <Icon name={active.place.tags.length ? "truck" : "map-marker-outline"} size={18} color={colors.onSurfaceSecondary} />
               <Text testID="route-place-tags" numberOfLines={2} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
                 {active.place.tags.length ? placeTagLine(active.place.tags, tr) : active.place.address ?? (active.place.category === "destination" ? "Destination" : "Address unknown")}
               </Text>
-            </View>
+            </Animated.View>
             )}
             {!!active.stops?.length && (
               <View testID="stops-row" style={styles.stopsRow}>
@@ -391,10 +415,14 @@ export function CopilotSheet(props: Props) {
               </View>
             )}
             {!more && active.place.category !== "service" && <ParkingStatus compact parking={active.parking} place={active.place} />}
-            {more && !!active.place.reviews?.length && <ReviewsGist reviews={active.place.reviews} />}
-            {more && <ParkingLiveBadge place={active.place} />}
-            {more && active.place.category !== "service" && <ParkingStatus parking={active.parking} place={active.place} route={active.route.geometry} />}
-            {more && offlineMap && <OfflineMapButton state={offlineMap} onPress={onDownloadMap} />}
+            {more && (
+              <Reveal>
+                {!!active.place.reviews?.length && <ReviewsGist reviews={active.place.reviews} />}
+                <ParkingLiveBadge place={active.place} />
+                {active.place.category !== "service" && <ParkingStatus parking={active.parking} place={active.place} route={active.route.geometry} />}
+                {offlineMap && <OfflineMapButton state={offlineMap} onPress={onDownloadMap} />}
+              </Reveal>
+            )}
           </View>
         )}
       </View>
@@ -406,7 +434,7 @@ export function CopilotSheet(props: Props) {
           the scrolling card: a long answer plus the permit line pushed them below the fold, and the driver never
           learned there were other routes or places (QA 2026-11-05, M-3). */}
       {navigating && active && !driving && !routesPanel && more && (options.length > 0 || routesChip) && (
-        <View style={styles.linkRow}>
+        <Animated.View entering={FadeInDown.duration(REVEAL_MS)} exiting={FadeOut.duration(120)} style={styles.linkRow}>
           {routesChip && (
             <PressableScale
               testID="routes-chip"
@@ -433,7 +461,7 @@ export function CopilotSheet(props: Props) {
               </Text>
             </PressableScale>
           )}
-        </View>
+        </Animated.View>
       )}
 
       {/* Go sits under the scrolling card, never inside it: with three stops, or at a 130 % font, the card
@@ -458,7 +486,7 @@ export function CopilotSheet(props: Props) {
             onPress={() => setMoreFor(more ? null : moreKey)}
             style={[styles.moreBtn, { backgroundColor: colors.surfaceSecondary }]}
           >
-            <Icon name={more ? "chevron-down" : "chevron-up"} size={20} color={colors.onSurface} />
+            <MoreChevron open={more} color={colors.onSurface} />
             <Text style={[styles.linkText, { color: colors.onSurface }]}>{more ? "Less" : "More"}</Text>
           </PressableScale>
         </View>

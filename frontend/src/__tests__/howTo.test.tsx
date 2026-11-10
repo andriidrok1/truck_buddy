@@ -1,3 +1,4 @@
+import { StyleSheet } from "react-native";
 // "How to use" (Figma f5Uha6gopQHRmcGlMXdCD9, section 68:2): the screen, its chips and buttons, the once-only
 // auto-show after onboarding, the dot on "?" and the Russian side.
 import { act, fireEvent, render, renderHook, screen } from "@testing-library/react-native";
@@ -12,10 +13,17 @@ import { storage } from "../utils/storage";
 
 jest.mock("react-native-reanimated", () => {
   const { View } = jest.requireActual<typeof import("react-native")>("react-native");
+  // Layout animations chain (FadeInDown.delay(80).duration(260)); any call returns the same stub.
+  const anim: object = new Proxy(() => anim, { get: () => () => anim });
   return {
     __esModule: true,
     default: { View },
-    FadeInDown: { springify: () => ({ damping: () => ({}) }) },
+    FadeIn: anim,
+    FadeInDown: anim,
+    FadeInUp: anim,
+    FadeOut: anim,
+    ZoomIn: anim,
+    withTiming: (v: unknown) => v,
     useSharedValue: (v: unknown) => {
       const sv = { value: v, get: () => sv.value, set: (n: unknown) => void (sv.value = n) };
       return sv;
@@ -88,6 +96,25 @@ describe("HowToSheet", () => {
 
     await render(<HowToSheet mode="first" name={null} motive={false} onAsk={noop} onTryNow={noop} onClose={noop} />);
     expect(screen.getByText("All set. One thing before we drive.")).toBeTruthy();
+  });
+
+  test("the three steps light up in turn, one at a time, and loop", async () => {
+    jest.useFakeTimers();
+    try {
+      await render(<HowToSheet mode="help" motive={false} onAsk={noop} onTryNow={noop} onClose={noop} />);
+      const lit = () =>
+        [0, 1, 2].filter((i) => {
+          const st = StyleSheet.flatten(screen.getByTestId(`how-to-step-${i}`).props.style) as { backgroundColor?: string };
+          return st.backgroundColor === "#007AFF";
+        });
+      expect(lit()).toEqual([0]);
+      await act(async () => jest.advanceTimersByTime(1500));
+      expect(lit()).toEqual([1]);
+      await act(async () => jest.advanceTimersByTime(3000));
+      expect(lit()).toEqual([0]);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test("hidden without a mode", async () => {

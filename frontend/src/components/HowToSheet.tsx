@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
+import Animated, { FadeInDown, FadeInUp, useAnimatedStyle, useSharedValue, withSpring, ZoomIn } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { t } from "../i18n";
@@ -29,6 +31,36 @@ const STEPS: { icon: string; label: string }[] = [
   { icon: "volume-high", label: "I answer out loud" },
 ];
 
+/** The three steps light up in turn and the mascot acts each one out (idle → listening → speaking), so the screen
+ *  shows the loop instead of only describing it. */
+const DEMO_STEP_MS = 1500;
+const DEMO_MODES = ["idle", "listening", "speaking"] as const;
+/** Entrance: the parts arrive top to bottom, quickly enough that a driver never waits for a button. */
+const IN_MS = 260;
+const stagger = (ms: number) => FadeInDown.delay(ms).duration(IN_MS);
+
+const LIFT = { damping: 14, stiffness: 220, mass: 0.6 };
+
+function StepItem({ icon, label, index, active }: { icon: string; label: string; index: number; active: boolean }) {
+  const { colors } = useTheme();
+  const scale = useSharedValue(1);
+  useEffect(() => {
+    scale.set(withSpring(active ? 1.12 : 1, LIFT));
+  }, [active, scale]);
+  const lift = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
+  return (
+    <View style={styles.step}>
+      <Animated.View testID={`how-to-step-${index}`} style={[styles.stepIcon, lift, { backgroundColor: active ? colors.info : colors.avatarGlowSoft }]}>
+        <Icon name={icon} size={26} color={active ? colors.onInfo : colors.info} />
+        <View style={[styles.stepNum, { backgroundColor: colors.brandPrimary, borderColor: colors.surface }]}>
+          <Text style={[styles.stepNumText, { color: colors.onBrandPrimary }]}>{String(index + 1)}</Text>
+        </View>
+      </Animated.View>
+      <Text style={[styles.stepLabel, { color: colors.onSurface }]}>{label}</Text>
+    </View>
+  );
+}
+
 export type HowToMode = "first" | "help";
 
 type Props = {
@@ -52,6 +84,12 @@ export function HowToSheet({ mode, name, motive, onAsk, onTryNow, onClose }: Pro
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { height: windowH } = useWindowDimensions();
+  const [demo, setDemo] = useState(0);
+  useEffect(() => {
+    if (!mode) return;
+    const id = setInterval(() => setDemo((d) => (d + 1) % STEPS.length), DEMO_STEP_MS);
+    return () => clearInterval(id);
+  }, [mode]);
   if (!mode) return null;
   const first = mode === "first";
   const who = name?.trim();
@@ -59,44 +97,40 @@ export function HowToSheet({ mode, name, motive, onAsk, onTryNow, onClose }: Pro
 
   const body = (
     <>
-      <View style={styles.avatar}>
-        <Avatar size={first ? 76 : 112} />
-      </View>
+      <Animated.View entering={ZoomIn.springify().damping(14)} style={styles.avatar}>
+        <Avatar size={first ? 76 : 112} mode={DEMO_MODES[demo]} />
+      </Animated.View>
       {first && (
-        <Text testID="how-to-all-set" style={[styles.allSet, { color: colors.muted }]}>
-          {who ? t("All set, {name}. One thing before we drive.", { name: who }) : t("All set. One thing before we drive.")}
-        </Text>
+        <Animated.View entering={stagger(60)}>
+          <Text testID="how-to-all-set" style={[styles.allSet, { color: colors.muted }]}>
+            {who ? t("All set, {name}. One thing before we drive.", { name: who }) : t("All set. One thing before we drive.")}
+          </Text>
+        </Animated.View>
       )}
-      <Text testID="how-to-title" accessibilityRole="header" style={[styles.title, { color: colors.onSurface }]}>
-        Just tap and ask
-      </Text>
-      <Text style={[styles.subtitle, { color: colors.onSurfaceSecondary }]}>No typing. Talk to me like you&apos;d talk to a friend.</Text>
+      <Animated.View entering={stagger(120)}>
+        <Text testID="how-to-title" accessibilityRole="header" style={[styles.title, { color: colors.onSurface }]}>
+          Just tap and ask
+        </Text>
+        <Text style={[styles.subtitle, { color: colors.onSurfaceSecondary }]}>No typing. Talk to me like you&apos;d talk to a friend.</Text>
+      </Animated.View>
 
       <View style={styles.steps}>
         {STEPS.map((s, i) => (
-          <View key={s.label} style={styles.stepWrap}>
+          <Animated.View key={s.label} entering={stagger(200 + i * 90)} style={styles.stepWrap}>
             {i > 0 && <Icon name="chevron-right" size={20} color={colors.onSurfaceTertiary} style={styles.chevron} />}
-            <View style={styles.step}>
-              <View style={[styles.stepIcon, { backgroundColor: colors.avatarGlowSoft }]}>
-                <Icon name={s.icon} size={26} color={colors.info} />
-                <View style={[styles.stepNum, { backgroundColor: colors.brandPrimary, borderColor: colors.surface }]}>
-                  <Text style={[styles.stepNumText, { color: colors.onBrandPrimary }]}>{String(i + 1)}</Text>
-                </View>
-              </View>
-              <Text style={[styles.stepLabel, { color: colors.onSurface }]}>{s.label}</Text>
-            </View>
-          </View>
+            <StepItem icon={s.icon} label={s.label} index={i} active={demo === i} />
+          </Animated.View>
         ))}
       </View>
 
-      <View style={styles.tryHead}>
+      <Animated.View entering={stagger(460)} style={styles.tryHead}>
         <Text style={[styles.tryTitle, { color: colors.onSurface }]}>Try saying</Text>
         <Text style={[styles.tryHint, { color: colors.muted }]}>Tap one and I ask it</Text>
-      </View>
+      </Animated.View>
       <View style={styles.chips}>
         {chips.map((c, i) => (
+          <Animated.View key={c.text} entering={stagger(520 + i * 50)}>
           <PressableScale
-            key={c.text}
             testID={`how-to-chip-${i}`}
             accessibilityRole="button"
             accessibilityLabel={c.motive && !motive ? t("{phrase} (needs Motive)", { phrase: t(c.text) }) : t(c.text)}
@@ -110,13 +144,14 @@ export function HowToSheet({ mode, name, motive, onAsk, onTryNow, onClose }: Pro
               </View>
             )}
           </PressableScale>
+          </Animated.View>
         ))}
       </View>
     </>
   );
 
   const actions = (
-    <View style={styles.actions}>
+    <Animated.View entering={FadeInUp.delay(380).duration(IN_MS)} style={styles.actions}>
       <PressableScale testID="how-to-try" accessibilityRole="button" haptic="medium" onPress={onTryNow} style={[styles.tryBtn, { backgroundColor: colors.brandPrimary }]}>
         <Icon name="microphone" size={22} color={colors.onBrandPrimary} />
         <Text style={[styles.tryBtnText, { color: colors.onBrandPrimary }]}>Try it now</Text>
@@ -126,7 +161,7 @@ export function HowToSheet({ mode, name, motive, onAsk, onTryNow, onClose }: Pro
           <Text style={[styles.notNowText, { color: colors.onSurface }]}>Not now</Text>
         </PressableScale>
       )}
-    </View>
+    </Animated.View>
   );
 
   return (
