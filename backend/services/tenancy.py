@@ -14,7 +14,7 @@ import sqlite3
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -69,6 +69,39 @@ async def device_of(sub: str) -> Optional[Device]:
     d = Device(*row)
     _devices[sub] = (d, time.monotonic())
     return d
+
+
+_created: dict[str, Optional[datetime]] = {}  # sub -> its driver row's created_at (never changes), per process
+
+
+async def device_created(sub: Optional[str]) -> Optional[datetime]:
+    """When this phone first got a driver row: devices has no created_at of its own (bound_at moves on a fleet
+    bind), and the driver row is made with the device and moves with it into a fleet. None when the store is off,
+    the device is unknown or the lookup fails (the caller then treats the device as not new)."""
+    if not sub:
+        return None
+    if sub in _created:
+        return _created[sub]
+    k = db.store()
+    if k == "off":
+        return None
+    try:
+        sql = "SELECT r.created_at FROM devices d JOIN drivers r ON r.id = d.driver_id WHERE d.sub = {p}"
+        if k == "sqlite":
+            row = await db._sq_run(lambda con: con.execute(sql.format(p="?"), (sub,)).fetchone())
+            at = _at(row[0]) if row else None
+        else:
+            pool = await db._db()
+            v = await pool.fetchval(sql.format(p="$1"), sub)
+            at = _at(v) if v is not None else None
+    except Exception as e:  # noqa: BLE001 - a store hiccup must not cost the driver a turn
+        logger.warning("device age lookup failed for %s: %s", sub, type(e).__name__)
+        return None
+    if at is not None:
+        if len(_created) > 50_000:
+            _created.clear()
+        _created[sub] = at
+    return at
 
 
 async def ensure_solo_org(sub: str, role: str = "driver") -> Optional[Device]:
@@ -330,6 +363,72 @@ async def sub_by_refresh(refresh_hash: str) -> Optional[str]:
     return await pool.fetchval("SELECT sub FROM devices WHERE refresh_hash = $1", refresh_hash)
 
 
+# ---- expired-token grace (services/auth.py _grace) ----------------------------------------------------------
+
+_grace: dict[str, tuple[Optional[tuple[str, Optional[object]]], float]] = {}  # sub -> ((role, not_before) | None, read at)
+_touched: dict[str, float] = {}  # sub -> when this worker last wrote seen_at for a grace request
+TOUCH_EVERY_S = 3600.0
+
+
+async def grace_info(sub: str) -> Optional[tuple[str, Optional[object]]]:
+    """(role, grace_not_before) of the device row, or None when the store does not know the sub. Cached like
+    device_of, so an expired token costs one small read per worker per DEVICE_TTL_S."""
+    hit = _grace.get(sub)
+    if hit and time.monotonic() - hit[1] < DEVICE_TTL_S:
+        return hit[0]
+    k = db.store()
+    if k == "off":
+        return None
+    if k == "sqlite":
+        row = await db._sq_run(lambda con: con.execute(
+            "SELECT role, grace_not_before FROM devices WHERE sub = ?", (sub,)).fetchone())
+    else:
+        pool = await db._db()
+        r = await pool.fetchrow("SELECT role, grace_not_before FROM devices WHERE sub = $1", sub)
+        row = tuple(r) if r else None
+    info = None if not row else (row[0], _at(row[1]) if row[1] is not None else None)
+    if len(_grace) > 50_000:
+        _grace.clear()
+    _grace[sub] = (info, time.monotonic())
+    return info
+
+
+async def touch(sub: str) -> None:
+    """seen_at = now for a device on an expired token (at most once an hour per worker)."""
+    now_m = time.monotonic()
+    last = _touched.get(sub)
+    if last is not None and now_m - last < TOUCH_EVERY_S:
+        return
+    if len(_touched) > 50_000:
+        _touched.clear()
+    _touched[sub] = now_m
+    k = db.store()
+    if k == "off":
+        return
+    now = _now()
+    if k == "sqlite":
+        await db._sq_run(lambda con: con.execute("UPDATE devices SET seen_at = ? WHERE sub = ?", (_iso(now), sub)))
+    else:
+        pool = await db._db()
+        await pool.execute("UPDATE devices SET seen_at = $1 WHERE sub = $2", now, sub)
+
+
+async def revoke_grace(sub: str) -> None:
+    """Tokens issued before now get no grace once they expire ("Delete my data"). Tokens still inside their 30 days
+    keep working, and a refresh hands out new ones, so the app in use is not signed out."""
+    k = db.store()
+    if k == "off":
+        return
+    now = _now().replace(microsecond=0)  # iat is whole seconds: a token minted in this second still counts
+    if k == "sqlite":
+        await db._sq_run(lambda con: con.execute(
+            "UPDATE devices SET grace_not_before = ? WHERE sub = ?", (_iso(now), sub)))
+    else:
+        pool = await db._db()
+        await pool.execute("UPDATE devices SET grace_not_before = $1 WHERE sub = $2", now, sub)
+    _grace.pop(sub, None)
+
+
 # ---- truck profile -------------------------------------------------------------------------------------------
 
 _profiles: dict[str, tuple[Optional[TruckProfile], float]] = {}  # sub -> (profile, monotonic time)
@@ -557,3 +656,6 @@ def reset_caches() -> None:
     _profiles.clear()
     _credentials.clear()
     _motive_users.clear()
+    _created.clear()
+    _grace.clear()
+    _touched.clear()
