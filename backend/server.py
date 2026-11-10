@@ -24,7 +24,7 @@ from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import PARSE_DEGRADED, RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import account_api, approach, approach_api, auth, chains, db, fleet_api, fuel_index, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, route_cost, session_store, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services import account_api, approach, approach_api, auth, chains, db, fleet_api, fuel_index, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, route_cost, session_store, spend, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
 from services.http import client as http_client  # noqa: E402
 from services.logs import said, transcripts_on  # noqa: E402
 from services.settings import settings  # noqa: E402
@@ -132,6 +132,7 @@ async def health(deep: bool = Query(False), credentials=Depends(auth._bearer)):
         },
         "parking_cache": parking_store.stats(),
         "here_parse_degraded": dict(PARSE_DEGRADED),  # parts of HERE routes dropped since start
+        **spend.health(),  # spend_today_usd, spend_cap_usd, spend_stage, calls_today (services/spend.py)
     }
     if not deep:
         return out
@@ -297,9 +298,18 @@ async def satellite(lat: float = Query(..., ge=-90, le=90), lng: float = Query(.
 async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = None) -> AgentResponse:
     if driver and req.session_id:
         req.session_id = f"{driver}:{req.session_id}"[:64]  # sessions can't be shared across drivers
-    if not quota.take_turn(driver, getattr(driver, "role", "driver")):
+    role = getattr(driver, "role", "driver")
+    if not spend.turns_open(role):
+        # The day's money is spent (services/spend.py, stage no_ai): no model call, a stored line.
+        logger.info("turn refused for %s: spend stage %s", driver, spend.stage())
+        return await _speak(AgentResponse(status="chat", transcript=req.text, reply=spend.AI_PAUSED, source="spend"), speak)
+    new_device = False
+    if driver and role != "tester":
+        created = await tenancy.device_created(driver)
+        new_device = created is not None and (db.utcnow() - created).total_seconds() < quota.NEW_DEVICE_S
+    if not quota.take_turn(driver, role, new_device=new_device):
         # Free release: the day's copilot turns are spent (services/quota.py). Said, not an error screen.
-        logger.info("turn budget spent for %s", driver)
+        logger.info("turn budget spent for %s%s", driver, " (new device)" if new_device else "")
         return await _speak(AgentResponse(status="chat", transcript=req.text, reply=quota.OUT_OF_TURNS,
                                           source="quota"), speak)
     res = await get_agent_provider().handle(req, driver)
@@ -318,6 +328,12 @@ async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
             res.message = await i18n.localize(res.message)
         res.route = i18n.localize_route(res.route)
         res.parking = await i18n.localize_parking(res.parking)
+    if speak and res.reply and res.source in FIXED_SOURCES:
+        res.reply_parts = [res.reply]
+        audio_id = await _fixed_clip(res.reply)
+        if audio_id:
+            res.audio_url = f"/api/voice/audio/{audio_id}"
+        return res
     if speak and res.reply:
         # The first clip (first clause, or first sentence with TTS_CLAUSE_SPLIT=0) is spoken as soon as it's
         # ready; the rest is generated in parallel and the app plays it right after.
@@ -336,6 +352,20 @@ async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
         if audio_id:
             res.audio_url = f"/api/voice/audio/{audio_id}"
     return res
+
+
+FIXED_SOURCES = ("quota", "spend")  # budget lines: the same words every time, made once and kept
+
+
+async def _fixed_clip(text: str) -> Optional[str]:
+    """A fixed line's clip, made once per text and voice and kept on disk (no TTS call per refused turn)."""
+    key = f"{voice.cache_tag()}|{text}"
+    audio_id = voice.pinned(key)
+    if audio_id:
+        return audio_id
+    with timing.stage("tts"):
+        audio_id = await voice.synthesize(text)
+    return voice.pin(audio_id, key) if audio_id else None
 
 
 TURN_STAGES = ("upload", "stt", "llm_round_1", "tools", "tts")
@@ -568,6 +598,10 @@ async def speak(req: SpeakRequest):
     key = f"{voice.cache_tag(req.voice, req.model, req.eleven_voice_id)}|{req.text}"
     audio_id = _SPEAK_CACHE.get(key) or voice.pinned(key)
     if not audio_id or voice.get_audio(audio_id) is None:
+        if spend.voice_cheap() and key not in _SPEAK_PENDING:
+            # Past the day's spend cap (services/spend.py): no new clips; the app says this line with the phone's
+            # own voice (src/hooks/useSpeechQueue.ts falls back to it on any error).
+            raise HTTPException(status_code=503, detail="Voice paused for today")
         task = _SPEAK_PENDING.get(key)
         if task is None:
             async def _gen() -> Optional[str]:
@@ -669,6 +703,7 @@ async def _memory_up():
                 auth.per_worker(auth.RATE_PER_MIN), auth.per_worker(s.rate_per_10min), auth.per_worker(s.rate_per_day),
                 " (TTS_STREAM off: more than one worker)" if s.workers > 1 and flags.on("TTS_STREAM", "0") else "")
     _bg(memory.warm())
+    _bg(spend.refresh())  # today's spend so far: the cap holds across restarts
     _bg(trip_events.prune())  # the trip log keeps TRIP_EVENTS_DAYS; the rest goes at every start
     _bg(kv.job_prune())  # breakdown results older than a day
     _bg(parking_store.start())  # verdicts and approaches other workers saved, refreshed every minute
@@ -680,7 +715,7 @@ async def _memory_up():
 
 def _draining() -> list:
     return [t for t in (*_BG, *memory._tasks, *trip_events._tasks, *approach._tasks, *breakdown._tasks,
-                        *parking_store.pending(), *voice._PENDING.values()) if not t.done()]
+                        *parking_store.pending(), *voice._PENDING.values(), *spend.pending_tasks()) if not t.done()]
 
 
 async def drain(timeout: float = DRAIN_S) -> int:
@@ -703,6 +738,7 @@ async def _memory_down():
     left = await drain()
     if left:
         logger.warning("shutdown: %d background tasks still running after %.0f s", left, DRAIN_S)
+    await spend.close()  # the last counters, before the store closes
     await leader.close()
     await memory.close()
 

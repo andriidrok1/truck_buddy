@@ -41,6 +41,13 @@ OFFLINE_ENV = {
     # Daily budgets off: a module-scoped client makes hundreds of turns as one driver (test_quota turns them on).
     "TURNS_PER_DAY": "0",
     "SAT_NEW_PER_DAY": "0",
+    "NEW_DEVICE_TURNS": "0",
+    # Spend caps off for the same reason (test_spend turns them on); no Telegram from a test.
+    "DAILY_USD_CAP": "0",
+    "GEMINI_CALLS_PER_DAY": "0",
+    "HERE_CALLS_PER_DAY": "0",
+    "TELEGRAM_BOT_TOKEN": "",
+    "TELEGRAM_CHAT_ID": "",
 }
 
 
@@ -53,8 +60,9 @@ def _offline_env(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("MEMORY_STORE", "off")  # no store unless a test asks for sqlite
     monkeypatch.delenv("EXPO_PUBLIC_BACKEND_URL", raising=False)
-    from services import i18n
-    i18n._model_cache.clear()  # model translations are cached per process; each test starts without them
+    from services import i18n, spend
+    i18n._model_cache.clear()
+    spend.reset()  # today's spend is process-wide; each test starts at $0  # model translations are cached per process; each test starts without them
 
 
 def fixture_json(name: str) -> Any:

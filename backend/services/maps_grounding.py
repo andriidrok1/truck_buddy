@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from models import Place
+from services import spend
 from services.flags import on
 from services.http import client
 
@@ -87,7 +88,7 @@ def parse(body: dict) -> Optional[Grounded]:
 
 async def drivers_say(place: Place) -> Optional[Grounded]:
     """The grounded answer for one place, or None (off, no key, timeout, no text, no Maps source)."""
-    if not enabled():
+    if not enabled() or not spend.allow_call("gemini"):  # off past the spend stage or the call cap (services/spend.py)
         return None
     address = f", {place.address}" if place.address else ""
     body = {"model": model(), "input": PROMPT.format(name=place.name, address=address),

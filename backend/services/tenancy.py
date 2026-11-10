@@ -14,7 +14,7 @@ import sqlite3
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -69,6 +69,39 @@ async def device_of(sub: str) -> Optional[Device]:
     d = Device(*row)
     _devices[sub] = (d, time.monotonic())
     return d
+
+
+_created: dict[str, Optional[datetime]] = {}  # sub -> its driver row's created_at (never changes), per process
+
+
+async def device_created(sub: Optional[str]) -> Optional[datetime]:
+    """When this phone first got a driver row: devices has no created_at of its own (bound_at moves on a fleet
+    bind), and the driver row is made with the device and moves with it into a fleet. None when the store is off,
+    the device is unknown or the lookup fails (the caller then treats the device as not new)."""
+    if not sub:
+        return None
+    if sub in _created:
+        return _created[sub]
+    k = db.store()
+    if k == "off":
+        return None
+    try:
+        sql = "SELECT r.created_at FROM devices d JOIN drivers r ON r.id = d.driver_id WHERE d.sub = {p}"
+        if k == "sqlite":
+            row = await db._sq_run(lambda con: con.execute(sql.format(p="?"), (sub,)).fetchone())
+            at = _at(row[0]) if row else None
+        else:
+            pool = await db._db()
+            v = await pool.fetchval(sql.format(p="$1"), sub)
+            at = _at(v) if v is not None else None
+    except Exception as e:  # noqa: BLE001 - a store hiccup must not cost the driver a turn
+        logger.warning("device age lookup failed for %s: %s", sub, type(e).__name__)
+        return None
+    if at is not None:
+        if len(_created) > 50_000:
+            _created.clear()
+        _created[sub] = at
+    return at
 
 
 async def ensure_solo_org(sub: str, role: str = "driver") -> Optional[Device]:
@@ -557,3 +590,4 @@ def reset_caches() -> None:
     _profiles.clear()
     _credentials.clear()
     _motive_users.clear()
+    _created.clear()

@@ -709,6 +709,10 @@
    "ru": "На сегодня бесплатные вопросы закончились. Они вернутся в полночь по тихоокеанскому времени. Карта и маршрут работают как обычно."
   },
   {
+   "en": "I'm taking a break from answering for the rest of today; I'm back at midnight Pacific. The map and the routes keep working.",
+   "ru": "Сегодня я больше не отвечаю, вернусь в полночь по тихоокеанскому времени. Карта и маршруты работают как обычно."
+  },
+  {
    "en": "Weather warning: {event} ahead near {area}.",
    "ru": "Погодное предупреждение: впереди {event|nom} в районе {area}."
   },
