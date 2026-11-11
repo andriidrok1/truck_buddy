@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import Animated, { FadeInDown, FadeInUp, useAnimatedStyle, useSharedValue, withSpring, ZoomIn } from "react-native-reanimated";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import type { ReactNode } from "react";
+import type { StyleProp, ViewStyle } from "react-native";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { t } from "../i18n";
 import { Text } from "../i18n/Text";
@@ -166,12 +168,14 @@ export function HowToSheet({ mode, name, motive, onAsk, onTryNow, onClose }: Pro
 
   return (
     <Modal visible transparent animationType={first ? "slide" : "fade"} onRequestClose={onClose} statusBarTranslucent>
+      {/* A Modal is its own window: the app's provider and a bare SafeAreaView both gave 0 insets inside it
+          (Android: buttons on the gesture bar; iPhone 2026-11-11: the close button sat on the battery icon and
+          "Try it now" on the home indicator). A provider inside the Modal measures the modal's window. */}
+      <SafeAreaProvider>
       {first ? (
         <>
           <Pressable testID="how-to-backdrop" accessibilityLabel={t("Not now")} onPress={onClose} style={[styles.backdrop, { backgroundColor: colors.scrim }]} />
-          {/* SafeAreaView measures the modal's own window: inside a Modal the provider's insets came back 0 on Android,
-              and the bottom buttons sat on the gesture bar. */}
-          <SafeAreaView
+          <SafeArea
             edges={["bottom"]}
             testID="how-to"
             style={[styles.sheet, shadow(colors, 2), { backgroundColor: colors.surface, maxHeight: windowH - insets.top - SHEET_TOP_GAP, paddingBottom: spacing.sm }]}
@@ -181,10 +185,10 @@ export function HowToSheet({ mode, name, motive, onAsk, onTryNow, onClose }: Pro
               {body}
             </ScrollView>
             {actions}
-          </SafeAreaView>
+          </SafeArea>
         </>
       ) : (
-        <SafeAreaView edges={["top", "bottom"]} testID="how-to" style={[styles.full, { backgroundColor: colors.surface, paddingBottom: spacing.sm }]}>
+        <SafeArea edges={["top", "bottom"]} testID="how-to" style={[styles.full, { backgroundColor: colors.surface, paddingBottom: spacing.sm }]}>
           <View style={styles.closeRow}>
             <PressableScale testID="how-to-close" accessibilityRole="button" accessibilityLabel={t("Close")} onPress={onClose} style={[styles.close, { backgroundColor: colors.surfaceSecondary }]}>
               <Icon name="close" size={24} color={colors.onSurface} />
@@ -194,9 +198,29 @@ export function HowToSheet({ mode, name, motive, onAsk, onTryNow, onClose }: Pro
             {body}
           </ScrollView>
           {actions}
-        </SafeAreaView>
+        </SafeArea>
       )}
+      </SafeAreaProvider>
     </Modal>
+  );
+}
+
+/** Pads `edges` by the insets of the window it is in (inside the Modal's own provider), on top of the style's padding. */
+function SafeArea({ edges, style, testID, children }: { edges: ("top" | "bottom")[]; style: StyleProp<ViewStyle>; testID?: string; children: ReactNode }) {
+  const insets = useSafeAreaInsets();
+  const flat = StyleSheet.flatten(style) ?? {};
+  const base = (k: "paddingTop" | "paddingBottom") => (typeof flat[k] === "number" ? (flat[k] as number) : 0);
+  return (
+    <View
+      testID={testID}
+      style={[
+        style,
+        edges.includes("top") && { paddingTop: base("paddingTop") + insets.top },
+        edges.includes("bottom") && { paddingBottom: base("paddingBottom") + insets.bottom },
+      ]}
+    >
+      {children}
+    </View>
   );
 }
 
