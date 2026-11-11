@@ -395,6 +395,7 @@ export const RU: Record<string, string> = {
   "Yesterday": "Вчера",
   "Ask:": "Спроси:",
   "More": "Ещё",
+  "Less": "Скрыть",
 
   // ---- height card ----
   "How tall is your truck? I plan routes under bridges by it.": "Какая высота у твоего трака? По ней я строю маршруты под мостами.",

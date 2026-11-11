@@ -95,6 +95,12 @@ export function CopilotSheet(props: Props) {
   const canType = phase === "ready" || phase === "navigating" || phase === "options" || phase === "providers";
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState("");
+  // The route card starts short (Figma "14 · Parking answer", variant A, 2026-11-10): time, place, one parking line
+  // and Go. Tags, entry tips, the satellite, reviews, other routes and places open with More. A new place or phase
+  // starts short again.
+  const moreKey = `${phase}:${active?.place.id ?? ""}`;
+  const [moreFor, setMoreFor] = useState<string | null>(null);
+  const more = moreFor === moreKey;
 
   // Drag: three resting heights, all derived from the content (src/utils/sheetSnap.ts): peek
   // (grabber + first header line + controls), auto (the content's own height, where every phase
@@ -312,7 +318,7 @@ export function CopilotSheet(props: Props) {
                 {active.route.summary}
               </Text>
             </View>
-            {(() => {
+            {more && (() => {
               const e = entrySpot(active.parking);
               return e && routeEndsAt(active.route, e) ? (
                 <View style={styles.entryRow}>
@@ -344,12 +350,14 @@ export function CopilotSheet(props: Props) {
             <Text testID="route-place-name" numberOfLines={1} style={[styles.placeName, { color: colors.onSurface }]}>
               {active.place.name}
             </Text>
+            {more && (
             <View style={styles.tagRow}>
               <Icon name={active.place.tags.length ? "truck" : "map-marker-outline"} size={18} color={colors.onSurfaceSecondary} />
               <Text testID="route-place-tags" numberOfLines={2} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
                 {active.place.tags.length ? placeTagLine(active.place.tags, tr) : active.place.address ?? (active.place.category === "destination" ? "Destination" : "Address unknown")}
               </Text>
             </View>
+            )}
             {!!active.stops?.length && (
               <View testID="stops-row" style={styles.stopsRow}>
                 <Text style={[styles.stopsLabel, { color: colors.onSurfaceSecondary }]}>Stops</Text>
@@ -365,10 +373,11 @@ export function CopilotSheet(props: Props) {
                 ))}
               </View>
             )}
-            {!!active.place.reviews?.length && <ReviewsGist reviews={active.place.reviews} />}
-            <ParkingLiveBadge place={active.place} />
-            {active.place.category !== "service" && <ParkingStatus parking={active.parking} place={active.place} route={active.route.geometry} />}
-            {offlineMap && <OfflineMapButton state={offlineMap} onPress={onDownloadMap} />}
+            {!more && active.place.category !== "service" && <ParkingStatus compact parking={active.parking} place={active.place} />}
+            {more && !!active.place.reviews?.length && <ReviewsGist reviews={active.place.reviews} />}
+            {more && <ParkingLiveBadge place={active.place} />}
+            {more && active.place.category !== "service" && <ParkingStatus parking={active.parking} place={active.place} route={active.route.geometry} />}
+            {more && offlineMap && <OfflineMapButton state={offlineMap} onPress={onDownloadMap} />}
           </View>
         )}
       </View>
@@ -379,7 +388,7 @@ export function CopilotSheet(props: Props) {
           buttons of the same weight, full 56 pt (UI review 2026-11-05: 31 pt text links). They sit with Go under
           the scrolling card: a long answer plus the permit line pushed them below the fold, and the driver never
           learned there were other routes or places (QA 2026-11-05, M-3). */}
-      {navigating && active && !driving && !routesPanel && (options.length > 0 || routesChip) && (
+      {navigating && active && !driving && !routesPanel && more && (options.length > 0 || routesChip) && (
         <View style={styles.linkRow}>
           {routesChip && (
             <PressableScale
@@ -413,16 +422,29 @@ export function CopilotSheet(props: Props) {
       {/* Go sits under the scrolling card, never inside it: with three stops, or at a 130 % font, the card
           outgrew the sheet and the main button was half under the bottom bar (QA 2026-10-31, Н9, Н25). */}
       {navigating && active && !driving && !routesPanel && (
-        <PressableScale
-          testID="go-button"
-          accessibilityLabel={t("Go")}
-          onPress={onGo}
-          haptic="heavy"
-          style={[styles.goBtn, { backgroundColor: colors.info }]}
-        >
-          <Icon name="navigation-variant" size={22} color={colors.onInfo} />
-          <Text style={[styles.goText, { color: colors.onInfo }]}>Go</Text>
-        </PressableScale>
+        <View style={styles.goRow}>
+          <PressableScale
+            testID="go-button"
+            accessibilityLabel={t("Go")}
+            onPress={onGo}
+            haptic="heavy"
+            containerStyle={styles.goItem}
+            style={[styles.goBtn, { backgroundColor: colors.info }]}
+          >
+            <Icon name="navigation-variant" size={22} color={colors.onInfo} />
+            <Text style={[styles.goText, { color: colors.onInfo }]}>Go</Text>
+          </PressableScale>
+          <PressableScale
+            testID="more-button"
+            accessibilityLabel={t(more ? "Less" : "More")}
+            accessibilityState={{ expanded: more }}
+            onPress={() => setMoreFor(more ? null : moreKey)}
+            style={[styles.moreBtn, { backgroundColor: colors.surfaceSecondary }]}
+          >
+            <Icon name={more ? "chevron-down" : "chevron-up"} size={20} color={colors.onSurface} />
+            <Text style={[styles.linkText, { color: colors.onSurface }]}>{more ? "Less" : "More"}</Text>
+          </PressableScale>
+        </View>
       )}
 
       {typing && canType ? (
@@ -514,7 +536,10 @@ export function CopilotSheet(props: Props) {
 const styles = StyleSheet.create({
   wrap: { position: "absolute", left: 0, right: 0, bottom: 0 },
   driveInfo: { alignItems: "center", gap: 2 },
-  goBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, height: 56, borderRadius: 28, marginTop: spacing.sm },
+  goRow: { flexDirection: "row", alignItems: "stretch", gap: spacing.sm, marginTop: spacing.sm },
+  goItem: { flex: 1 },
+  goBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, height: 56, borderRadius: 28 },
+  moreBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, minHeight: 56, paddingHorizontal: spacing.lg, borderRadius: 28 },
   goText: { fontFamily: fonts.bold, fontSize: 18 },
   inputRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.md },
   input: { flex: 1, minWidth: 0, width: 0, minHeight: 56, borderRadius: 28, paddingHorizontal: spacing.lg, fontFamily: fonts.medium, fontSize: 16, ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}) },
