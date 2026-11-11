@@ -161,8 +161,11 @@ def test_reroute_endpoint_records_a_request(api_client, fake_http, sqlite_store,
     fake_http.add("router.hereapi.com", "/v8/routes", json=fixture_json("here/error_no_route")["body"])
     assert api_client.post("/api/reroute", json=body).status_code == 422
     events = api_client.get("/api/trips/trip-r/events").json()["events"]
-    assert [(e["kind"], e["data"].get("ok"), e["data"].get("error")) for e in events] == [
-        ("reroute_requested", True, None), ("route_failed", None, "no_truck_route"), ("reroute_requested", False, "no_truck_route")]
+    # The failed reroute writes two events in the same millisecond; their order by time is a tie (flaky on CI).
+    got = [(e["kind"], e["data"].get("ok"), e["data"].get("error")) for e in events]
+    assert got[0] == ("reroute_requested", True, None)
+    assert sorted(got[1:], key=str) == sorted(
+        [("route_failed", None, "no_truck_route"), ("reroute_requested", False, "no_truck_route")], key=str)
     data = events[0]["data"]
     assert {k: data[k] for k in ("section_index", "handle", "via", "ok")} == {"section_index": 0, "handle": False, "via": 0, "ok": True}
     assert (data["lat"], data["lng"]) == (38.9, -121.07) and len(data["req"]) == 16  # where the truck was, the request id

@@ -1,7 +1,10 @@
-"""Speech in / speech out: Whisper (STT); TTS via ElevenLabs (when enabled) or OpenAI gpt-4o-mini-tts."""
+"""Speech in / speech out: Whisper (STT); TTS via Gemini TTS or ElevenLabs (when enabled), else OpenAI
+gpt-4o-mini-tts."""
 import asyncio
+import base64
 import hashlib
 import io
+import json
 import time
 import logging
 import math
@@ -251,11 +254,14 @@ def eleven_voice() -> Optional[str]:
 
 
 def provider() -> str:
-    return "elevenlabs" if eleven_voice() else "openai"
+    return "gemini" if gemini_voice() else "elevenlabs" if eleven_voice() else "openai"
 
 
 def cache_tag(voice: Optional[str] = None, model: Optional[str] = None, eleven_voice_id: Optional[str] = None) -> str:
     """Identifies who speaks a cached line: provider + voice (changes invalidate /speak cache)."""
+    if not voice and not model and not eleven_voice_id and gemini_voice():
+        # The style prompt and the gain are in the tag too: a new style or level re-records the fixed lines.
+        return f"gemini|{gemini_model()}|{gemini_voice()}|g{GEMINI_GAIN_DB}|s{GEMINI_STYLE_TAG}"
     if not voice and not model and eleven_voice():
         return f"elevenlabs|{ELEVEN_MODEL}|{eleven_voice_id or eleven_voice()}"
     # The gain is part of the tag: clips boosted differently must not be served from the old cache.
@@ -317,13 +323,18 @@ INSTRUCTIONS_UK = ("Спокійний, теплий, впевнений шту�
                    "чітко. Англійські назви місць і трас (Love's, Pilot, I-80) вимовляй по-американськи.")
 
 
+def lang_of(text: str) -> str:
+    """The language of a line by its script: "uk" for Ukrainian letters, "ru" for other Cyrillic, else "en"."""
+    if re.search(r"[ІіЇїЄєҐґ]", text or ""):
+        return "uk"
+    if re.search(r"[А-Яа-яЁё]", text or ""):
+        return "ru"
+    return "en"
+
+
 def instructions_for(text: str) -> str:
     """The TTS style for this line, by its script: Ukrainian letters, other Cyrillic, else English."""
-    if re.search(r"[ІіЇїЄєҐґ]", text or ""):
-        return INSTRUCTIONS_UK
-    if re.search(r"[А-Яа-яЁё]", text or ""):
-        return INSTRUCTIONS_RU
-    return INSTRUCTIONS
+    return {"uk": INSTRUCTIONS_UK, "ru": INSTRUCTIONS_RU}.get(lang_of(text), INSTRUCTIONS)
 
 
 # OpenAI TTS is quiet and uneven: gpt-4o-mini-tts/sage measures -31 to -35 LUFS raw depending on the sentence
@@ -356,21 +367,179 @@ async def louder(mp3: bytes) -> bytes:
     return mp3
 
 
+# ---- Gemini TTS (GEMINI_TTS_ENABLED=1) ---------------------------------------------------------------------------
+# The voice the owner picked by ear (2026-11-10): gemini-3.8-flash-lite-tts, "Achird", told to sound like a friend in
+# the passenger seat. A whole clip takes 1.2 s for "Alright, got one.", 1.9-2.6 s for a sentence or two (live,
+# 2026-11-10); streamed (TTS_STREAM=1, synthesize_stream, SSE) the first audio comes in about 0.5 s.
+# Rate limits on the TTS models are low: a 429 pauses Gemini like any failure and OpenAI speaks.
+
+GEMINI_TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+GEMINI_TTS_DEFAULT_MODEL = "gemini-3.8-flash-lite-tts"
+GEMINI_TTS_DEFAULT_VOICE = "Achird"
+GEMINI_TTS_TIMEOUT_S = 6.0
+GEMINI_TTS_COOLDOWN_S = 60  # after a 429, a timeout or an error, skip Gemini for a while (OpenAI speaks)
+GEMINI_PCM_RATE = 24000  # 16-bit mono 24 kHz: a WAV (3.8 models, RIFF header) or raw PCM s16le (older models)
+_gemini_down_until = 0.0
+_gemini_slots = asyncio.Semaphore(int(os.environ.get("GEMINI_TTS_CONCURRENCY", "2")))
+
+# The style the owner liked, sent as the part's speech_metadata.style. Gemini 3.8 TTS reads the text part as a
+# verbatim transcript: the style glued in front of the line ("style\n\ntext", and a "notes / transcript" layout too)
+# was read aloud before it, in every sample and in two live calls (2026-11-10, whisper.cpp transcripts). The docs
+# (speech-generation, migration guide) put style in speech_metadata for this reason.
+GEMINI_STYLE = ("Say this like a relaxed friend riding along in the passenger seat, talking to a trucker buddy: warm, "
+                "casual, a little smile, natural pauses, never like an announcer or a GPS.")
+GEMINI_STYLE_RU = ("Скажи это как расслабленный друг на пассажирском сиденье, который болтает с приятелем-дальнобойщиком: "
+                   "тепло, по-свойски, с лёгкой улыбкой, с живыми паузами, не как диктор и не как навигатор. "
+                   "Английские названия говори по-американски.")
+GEMINI_STYLE_UK = ("Скажи це як розслаблений друг на пасажирському сидінні, який балакає з приятелем-далекобійником: "
+                   "тепло, по-свійськи, з легкою усмішкою, з живими паузами, не як диктор і не як навігатор. "
+                   "Англійські назви кажи по-американськи.")
+GEMINI_STYLE_TAG = hashlib.sha1("|".join((GEMINI_STYLE, GEMINI_STYLE_RU, GEMINI_STYLE_UK))
+                                .encode()).hexdigest()[:8]
+# Gemini Lite TTS / Achird measures -20.3 to -22.2 LUFS raw (three live clips, en/ru, 2026-11-10), about 10 dB louder
+# than OpenAI sage. Through this chain: +3 dB gave -18.1 to -19.6, +5 dB -16.6 to -18.0, +6 dB -15.9 to -17.3 LUFS
+# (peaks -1.4 to -1.6 dBFS, held by the limiter): +6 sits with the boosted OpenAI clips (-16 to -21) and clears
+# the >= -19 LUFS spec (see OPENAI_GAIN_DB) with margin.
+GEMINI_GAIN_DB = 6
+
+
+def gemini_model() -> str:
+    return os.environ.get("GEMINI_TTS_MODEL") or GEMINI_TTS_DEFAULT_MODEL
+
+
+def gemini_voice() -> Optional[str]:
+    """The Gemini TTS voice when GEMINI_TTS_ENABLED=1 and GEMINI_API_KEY is set, else None. Off by default.
+    Skipped once the day's spend reaches the cap (services/spend.py, stage cheap_voice): OpenAI speaks then."""
+    if os.environ.get("GEMINI_TTS_ENABLED") != "1" or not os.environ.get("GEMINI_API_KEY"):
+        return None
+    if spend.voice_cheap():
+        return None
+    return os.environ.get("GEMINI_TTS_VOICE") or GEMINI_TTS_DEFAULT_VOICE
+
+
+def gemini_active() -> bool:
+    """Gemini would speak the next line now (enabled and not paused after a failure)."""
+    return bool(gemini_voice()) and time.monotonic() >= _gemini_down_until
+
+
+def gemini_style_for(text: str) -> str:
+    return {"uk": GEMINI_STYLE_UK, "ru": GEMINI_STYLE_RU}.get(lang_of(text), GEMINI_STYLE)
+
+
+def gemini_body(text: str, voice_name: str) -> dict:
+    """generateContent request: the line as the transcript, the style beside it (never inside it)."""
+    return {"contents": [{"parts": [{"text": text, "speech_metadata": {"style": gemini_style_for(text)}}]}],
+            "generationConfig": {"responseModalities": ["AUDIO"],
+                                 "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice_name}}}}}
+
+
+def _gemini_failed() -> None:
+    global _gemini_down_until
+    _gemini_down_until = time.monotonic() + GEMINI_TTS_COOLDOWN_S
+
+
+def _gemini_pcm(body: dict) -> Optional[bytes]:
+    """candidates[0].content.parts[*].inlineData.data (base64 WAV or raw PCM) -> bytes, or None."""
+    try:
+        for part in body["candidates"][0]["content"]["parts"]:
+            data = (part.get("inlineData") or part.get("inline_data") or {}).get("data")
+            if data:
+                return base64.b64decode(data)
+    except (KeyError, IndexError, TypeError, AttributeError, ValueError):
+        return None
+    return None
+
+
+def _is_wav(audio: bytes) -> bool:
+    return audio[:4] == b"RIFF" and audio[8:12] == b"WAVE"
+
+
+def audio_seconds(audio: bytes) -> float:
+    """Length of a Gemini clip (WAV or raw PCM, 16-bit mono 24 kHz)."""
+    return max(0, len(audio) - (44 if _is_wav(audio) else 0)) / (2 * GEMINI_PCM_RATE)
+
+
+async def pcm_to_mp3(pcm: bytes, gain_db: float = GEMINI_GAIN_DB) -> Optional[bytes]:
+    """Gemini's audio (WAV, or raw PCM s16le 24 kHz mono) -> a boosted mp3 like the other clips, or None."""
+    fmt = [] if _is_wav(pcm) else ["-f", "s16le", "-ar", str(GEMINI_PCM_RATE), "-ac", "1"]
+    try:
+        p = await asyncio.create_subprocess_exec(
+            _FFMPEG, "-hide_banner", "-loglevel", "error", *fmt, "-i", "pipe:0",
+            "-af", f"volume={gain_db}dB,alimiter=limit=0.84:level=false",
+            "-c:a", "libmp3lame", "-b:a", "64k", "-f", "mp3", "pipe:1",
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try:
+            out, err = await asyncio.wait_for(p.communicate(pcm), timeout=5)
+        except asyncio.TimeoutError:
+            p.kill()
+            raise
+        if p.returncode == 0 and out:
+            return out
+        logger.warning("gemini pcm->mp3 failed: %s", err[:200])
+    except Exception as e:  # noqa: BLE001
+        logger.warning("gemini pcm->mp3 failed: %s", e)
+    return None
+
+
+async def _gemini(text: str, voice_name: str) -> Optional[bytes]:
+    """One clip from Gemini TTS as mp3, or None (paused, 429, timeout, error, no audio: Gemini pauses)."""
+    if time.monotonic() < _gemini_down_until:
+        return None
+    model = gemini_model()
+    body = gemini_body(text, voice_name)
+    try:
+        async with _gemini_slots:
+            # extensions: the shared client's spend hook counts this as gemini_tts, not against the Maps grounding
+            # call cap (services/spend.py)
+            r = await client().post(GEMINI_TTS_URL.format(model=model), json=body,
+                                    headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]},
+                                    timeout=GEMINI_TTS_TIMEOUT_S, extensions={"spend": "gemini_tts"})
+    except Exception as e:  # noqa: BLE001 - timeout or transport error
+        logger.warning("Gemini TTS failed, OpenAI speaks for %ds: %s", GEMINI_TTS_COOLDOWN_S, type(e).__name__)
+        _gemini_failed()
+        return None
+    if r.status_code != 200:
+        logger.warning("Gemini TTS %s, OpenAI speaks for %ds: %s", r.status_code, GEMINI_TTS_COOLDOWN_S, r.text[:200])
+        _gemini_failed()
+        return None
+    try:
+        payload = r.json()
+    except ValueError:
+        payload = {}
+    pcm = _gemini_pcm(payload)
+    if not pcm:
+        logger.warning("Gemini TTS answered without audio, OpenAI speaks for %ds", GEMINI_TTS_COOLDOWN_S)
+        _gemini_failed()
+        return None
+    spend.record_gemini_tts(audio_seconds(pcm), payload.get("usageMetadata"), len(text) + len(gemini_style_for(text)))
+    mp3 = await pcm_to_mp3(pcm)
+    if mp3 is None:
+        _gemini_failed()
+    return mp3
+
+
 async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str] = None,
                      previous_text: Optional[str] = None, next_text: Optional[str] = None,
                      eleven_voice_id: Optional[str] = None, audio_id: Optional[str] = None) -> Optional[str]:
     """Returns an id for GET /api/voice/audio/{id}, or None if TTS failed.
-    ElevenLabs first (when configured and no explicit OpenAI voice/model is asked), then OpenAI. The clip goes to
-    the in-process cache and to TTS_DIR on disk, so any worker (or this one after a restart) can serve the id.
+    Gemini TTS when enabled (and not paused), else ElevenLabs when enabled, then OpenAI; an explicit OpenAI
+    voice/model skips both. When Gemini or ElevenLabs fails, OpenAI speaks and the clip is marked as a fallback.
+    The clip goes to the in-process cache and to TTS_DIR on disk, so any worker (or this one after a restart) can
+    serve the id.
     `audio_id` lets a caller hand out the id before the clip exists (synthesize_later)."""
     text = spoken(text)[:4000]  # everything spoken goes through the text-for-speech layer
     previous_text = spoken(previous_text) if previous_text else None
     next_text = spoken(next_text) if next_text else None
     audio = None
-    eleven = eleven_voice() if not voice and not model else None
+    # An explicit OpenAI voice/model or ElevenLabs voice (voice comparison via /speak) is spoken by that provider.
+    gemini = gemini_voice() if not voice and not model and not eleven_voice_id else None
+    if gemini:
+        audio = await _gemini(text, gemini)
+    # Gemini failed: OpenAI at once (no second slow provider in the way); the clip is marked as a fallback.
+    eleven = eleven_voice() if not voice and not model and not gemini else None
     if eleven:
         audio = await _eleven(text, eleven_voice_id or eleven, previous_text, next_text)
-    fell_back = bool(eleven) and audio is None
+    fell_back = bool(gemini or eleven) and audio is None
     if audio is None:
         model = model or fallback_model()
         try:
@@ -566,19 +735,34 @@ def is_streaming(audio_id: str) -> bool:
     return audio_id in _STREAMS
 
 
-async def _gain_pipe(src, out: "asyncio.Queue[Optional[bytes]]") -> None:
-    """Feed mp3 chunks through one long-lived ffmpeg (+OPENAI_GAIN_DB, same loudness as louder()) and put the
-    boosted mp3 chunks on `out`; None marks the end. Without ffmpeg the chunks pass through untouched."""
+MP3_IN = ("-f", "mp3")  # OpenAI streams mp3
+# Gemini streams raw PCM. Without nobuffer / a tiny probe ffmpeg sat on the first second of input before it wrote
+# any mp3 (first PCM in -> first mp3 out: 1.03 s; with them 0.03 s, measured 2026-11-10). Raw PCM has nothing to
+# probe: the format is given.
+PCM_IN = ("-fflags", "nobuffer", "-probesize", "32", "-analyzeduration", "0",
+          "-f", "s16le", "-ar", str(GEMINI_PCM_RATE), "-ac", "1")
+
+
+async def _gain_pipe(src, out: "asyncio.Queue", input_fmt: tuple = MP3_IN, gain_db: float = OPENAI_GAIN_DB) -> None:
+    """Feed audio chunks (`input_fmt`: mp3 from OpenAI, PCM from Gemini) through one long-lived ffmpeg (+gain_db
+    and the limiter, the same loudness as the whole clips) and put the boosted mp3 chunks on `out`. The end is None;
+    an error in `src` goes on the queue first (so a stream cut midway is not taken for a finished one). Without
+    ffmpeg mp3 passes through untouched; PCM cannot (the app plays mp3), so that raises."""
     try:
         p = await asyncio.create_subprocess_exec(
-            _FFMPEG, "-hide_banner", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
-            "-af", f"volume={OPENAI_GAIN_DB}dB,alimiter=limit=0.84:level=false",
+            _FFMPEG, "-hide_banner", "-loglevel", "error", *input_fmt, "-i", "pipe:0",
+            "-af", f"volume={gain_db}dB,alimiter=limit=0.84:level=false",
             "-c:a", "libmp3lame", "-b:a", "64k", "-f", "mp3", "-flush_packets", "1", "pipe:1",
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
     except Exception as e:  # noqa: BLE001 - no ffmpeg: unboosted stream is better than none
+        if input_fmt != MP3_IN:
+            raise
         logger.warning("stream gain unavailable, passing audio through: %s", e)
-        async for chunk in src:
-            await out.put(chunk)
+        try:
+            async for chunk in src:
+                await out.put(chunk)
+        except Exception as err:  # noqa: BLE001
+            await out.put(err)
         await out.put(None)
         return
 
@@ -597,10 +781,19 @@ async def _gain_pipe(src, out: "asyncio.Queue[Optional[bytes]]") -> None:
             if not chunk:
                 break
             await out.put(chunk)
-    finally:
-        await feeder
-        await p.wait()
-        await out.put(None)
+    except BaseException:  # cancelled (first-chunk budget): stop the source and ffmpeg, don't wait on them
+        feeder.cancel()
+        try:
+            p.kill()
+        except ProcessLookupError:
+            pass
+        await asyncio.gather(feeder, return_exceptions=True)
+        raise
+    fed = (await asyncio.gather(feeder, return_exceptions=True))[0]
+    await p.wait()
+    if isinstance(fed, Exception):
+        await out.put(fed)
+    await out.put(None)
 
 
 async def _openai_stream(text: str):
@@ -616,18 +809,109 @@ async def _openai_stream(text: str):
                 yield chunk
 
 
-async def _safe_pump(src, out: asyncio.Queue) -> None:
+GEMINI_STREAM_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent"
+
+
+class GeminiStreamError(Exception):
+    """Gemini's stream answered with an error status (a 429 included)."""
+
+
+def _sse_events(lines: list[str]):
+    """One SSE event's `data:` lines -> its JSON (None for an empty or unparsable event)."""
+    data = "\n".join(line[5:].lstrip() for line in lines if line.startswith("data:"))
+    if not data:
+        return None
+    try:
+        return json.loads(data)
+    except ValueError:
+        return None
+
+
+async def _gemini_stream(text: str, voice_name: str):
+    """Raw PCM chunks (s16le, 24 kHz, mono) from Gemini TTS over SSE (streamGenerateContent?alt=sse, the same body
+    as generateContent). The first audio comes in about 0.5 s. The cost is recorded at the end, also for a stream
+    cut midway: usageMetadata (in the last event) when it came, else the PCM length."""
+    model = gemini_model()
+    pcm_bytes, usage, header_checked = 0, None, False
+    try:
+        async with client().stream(
+                "POST", GEMINI_STREAM_URL.format(model=model), params={"alt": "sse"}, json=gemini_body(text, voice_name),
+                headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]}, timeout=GEMINI_TTS_TIMEOUT_S,
+                extensions={"spend": "gemini_tts"}) as r:
+            if r.status_code != 200:
+                detail = (await r.aread())[:200]
+                raise GeminiStreamError(f"HTTP {r.status_code}: {detail!r}")
+            event: list[str] = []
+            async for line in r.aiter_lines():
+                if line.strip():
+                    event.append(line)
+                    continue
+                body, event = _sse_events(event), []
+                if not isinstance(body, dict):
+                    continue
+                if isinstance(body.get("usageMetadata"), dict):
+                    usage = body["usageMetadata"]
+                for chunk in _gemini_chunks(body):
+                    if not header_checked:
+                        header_checked = True
+                        if _is_wav(chunk):  # a model that streams WAV: drop the header, the rest is the same PCM
+                            chunk = chunk[44:]
+                    pcm_bytes += len(chunk)
+                    if chunk:
+                        yield chunk
+            body = _sse_events(event)  # a last event without the blank line after it
+            if isinstance(body, dict):
+                if isinstance(body.get("usageMetadata"), dict):
+                    usage = body["usageMetadata"]
+                for chunk in _gemini_chunks(body):
+                    pcm_bytes += len(chunk)
+                    yield chunk
+    finally:
+        if pcm_bytes:
+            spend.record_gemini_tts(pcm_bytes / (2 * GEMINI_PCM_RATE), usage,
+                                    len(text) + len(gemini_style_for(text)))
+
+
+def _gemini_chunks(body: dict) -> list[bytes]:
+    out = []
+    try:
+        for cand in body.get("candidates") or []:
+            for part in (cand.get("content") or {}).get("parts") or []:
+                data = (part.get("inlineData") or part.get("inline_data") or {}).get("data")
+                if data:
+                    out.append(base64.b64decode(data))
+    except (AttributeError, TypeError, ValueError):
+        return out
+    return out
+
+
+async def _safe_pump(src, out: asyncio.Queue, input_fmt: tuple = MP3_IN, gain_db: float = OPENAI_GAIN_DB) -> None:
     """_gain_pipe that always ends the queue: an exception becomes an item, then None."""
     try:
-        await _gain_pipe(src, out)
+        await _gain_pipe(src, out, input_fmt, gain_db)
+    except asyncio.CancelledError:
+        raise
     except Exception as e:  # noqa: BLE001
         await out.put(e)
         await out.put(None)
 
 
-async def _run_stream(audio_id: str, text: str, buf: StreamBuf, previous_text: Optional[str]) -> None:
+def _stream_sources(text: str) -> list[tuple[str, object, tuple, float]]:
+    """(name, chunk source, input format, gain) to try in order: Gemini first when it is on and not paused, then
+    OpenAI. The sources are async generators, made lazily so an unused one never sends a request."""
+    sources = []
+    gemini = gemini_voice() if gemini_active() else None
+    if gemini:
+        sources.append(("gemini", lambda: _gemini_stream(text, gemini), PCM_IN, GEMINI_GAIN_DB))
+    sources.append(("openai", lambda: _openai_stream(text), MP3_IN, OPENAI_GAIN_DB))
+    return sources
+
+
+async def _stream_one(make_src, input_fmt: tuple, gain_db: float, buf: StreamBuf) -> bool:
+    """Streams one source into `buf`. True when it finished; False when it gave no audio (error, nothing within
+    STREAM_FIRST_CHUNK_S): the caller tries the next source. Raises when it broke after audio was sent."""
     out: asyncio.Queue = asyncio.Queue()
-    pump = asyncio.create_task(_safe_pump(_openai_stream(text), out))
+    pump = asyncio.create_task(_safe_pump(make_src(), out, input_fmt, gain_db))
     got_any = False
     try:
         while True:
@@ -645,23 +929,44 @@ async def _run_stream(audio_id: str, text: str, buf: StreamBuf, previous_text: O
                 buf.cond.notify_all()
         if not got_any:
             raise RuntimeError("empty stream")
-    except Exception as e:  # noqa: BLE001 - fall back to the one-shot path, same id, same URL
-        logger.warning("streaming TTS failed (%s), falling back to one-shot", e)
-        pump.cancel()
-        if not got_any:
-            tmp = await synthesize(text, previous_text=previous_text)
-            data = _AUDIO_CACHE.pop(tmp, None) if tmp else None
-            if data:
-                async with buf.cond:
-                    buf.chunks = [data]
-                    buf.cond.notify_all()
-            else:
-                buf.error = "tts failed"
-        else:
-            buf.error = "stream cut off"
+        return True
+    except Exception as e:  # noqa: BLE001
+        if got_any:
+            raise
+        logger.warning("streaming TTS gave no audio (%s: %s)", type(e).__name__, str(e)[:200])
+        return False
     finally:
         if not pump.done():
             pump.cancel()
+            await asyncio.gather(pump, return_exceptions=True)
+
+
+async def _run_stream(audio_id: str, text: str, buf: StreamBuf, previous_text: Optional[str]) -> None:
+    try:
+        for name, make_src, input_fmt, gain_db in _stream_sources(text):
+            try:
+                if await _stream_one(make_src, input_fmt, gain_db, buf):
+                    return
+            except Exception as e:  # noqa: BLE001 - cut midway: the driver already hears this voice, no restart
+                logger.warning("streaming TTS (%s) cut off: %s", name, e)
+                if name == "gemini":
+                    _gemini_failed()
+                buf.error = "stream cut off"
+                return
+            if name == "gemini":  # 429, error or too slow before the first audio: pause it, OpenAI speaks
+                logger.warning("Gemini TTS stream failed, OpenAI speaks for %ds", GEMINI_TTS_COOLDOWN_S)
+                _gemini_failed()
+        # no stream gave audio: the one-shot path, same id, same URL
+        logger.warning("streaming TTS failed, falling back to one-shot")
+        tmp = await synthesize(text, previous_text=previous_text)
+        data = _AUDIO_CACHE.pop(tmp, None) if tmp else None
+        if data:
+            async with buf.cond:
+                buf.chunks = [data]
+                buf.cond.notify_all()
+        else:
+            buf.error = "tts failed"
+    finally:
         async with buf.cond:
             buf.done = True
             buf.cond.notify_all()
@@ -674,7 +979,8 @@ async def _run_stream(audio_id: str, text: str, buf: StreamBuf, previous_text: O
 
 
 def synthesize_stream(text: str, previous_text: Optional[str] = None) -> str:
-    """Starts a streamed clip and returns its id at once; GET /api/voice/audio/{id} serves bytes as they come."""
+    """Starts a streamed clip and returns its id at once; GET /api/voice/audio/{id} serves bytes as they come.
+    Gemini when it is on and not paused (first audio in ~0.5 s), else OpenAI; see _run_stream for the fallbacks."""
     audio_id = uuid.uuid4().hex
     buf = StreamBuf()
     _STREAMS[audio_id] = buf
