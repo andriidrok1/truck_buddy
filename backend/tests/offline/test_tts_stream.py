@@ -50,7 +50,7 @@ def speech(monkeypatch):
         monkeypatch.setattr(voice.llm, "client", lambda: SimpleNamespace(audio=SimpleNamespace(speech=sp)))
         return sp
 
-    async def passthrough(src, out):
+    async def passthrough(src, out, *fmt):
         async for c in src:
             await out.put(c)
         await out.put(None)
