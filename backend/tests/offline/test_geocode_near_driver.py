@@ -43,7 +43,7 @@ def test_boomtown_from_sacramento_is_the_casino_at_verdi_not_the_street_in_vegas
     found = run(geocode.geocode("Boomtown, NV", *SAC))
     assert len(found) == 1 and found[0].name == "Boomtown Casino Hotel", found
     assert (found[0].lat, found[0].lng) == VERDI and found[0].distance_mi == 106.0
-    assert found[0].address == "2100 Garson Rd, Verdi, NV 89439, United States"
+    assert found[0].address == "2100 Garson Rd, Verdi, NV 89439"  # the country tail is cut (QA 2026-11-09, bug 8)
     assert _around_calls(fake_http) == []  # the first answer was already close
 
 

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Linking, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { formatNumber, t } from "../i18n";
 import { Text } from "../i18n/Text";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
@@ -29,7 +30,13 @@ const minPrice = (p: Provider) => Math.min(...p.facts.prices.map((x) => x.amount
 const eta = (p: Provider) => p.facts.wait_time?.typical_min_high ?? Infinity;
 const money = (x: PriceFact) =>
   x.amount_usd_low === x.amount_usd_high ? `$${x.amount_usd_low}` : `$${x.amount_usd_low}–${x.amount_usd_high}`;
-const priceLine = (x: PriceFact) => `${x.source === "review" ? "drivers" : "website"}: ${money(x)} ${x.what}`;
+/** "drivers: $120 tire repair", in the driver's language; the server translates `what` (QA 2026-11-09, S7). */
+const priceLine = (x: PriceFact) => `${t(x.source === "review" ? "drivers" : "website")}: ${money(x)} ${x.what}`;
+/** "out within 10–30 min per website" as one line from one template. */
+const etaLine = (w: NonNullable<Provider["facts"]["wait_time"]>) => {
+  const range = `${w.typical_min_low > 0 ? `${w.typical_min_low}–` : ""}${w.typical_min_high}`;
+  return t(w.source === "website" ? "out within {range} min per website" : "out within {range} min by reviews", { range });
+};
 
 export const dial = (phone?: string | null) => {
   if (phone) Linking.openURL(`tel:${phone.replace(/[^\d+]/g, "")}`).catch(() => {});
@@ -88,7 +95,7 @@ function TellThem({ card }: { card: CallCard }) {
         <View testID="tell-them-details" style={styles.tellBody}>
           {rows.map(([k, v]) => (
             <Text key={k} style={[styles.small, { color: colors.onSurfaceSecondary }]}>
-              <Text style={{ fontFamily: fonts.semibold, color: colors.onSurface }}>{k}: </Text>
+              <Text style={{ fontFamily: fonts.semibold, color: colors.onSurface }}>{`${t(k)}: `}</Text>
               {v}
             </Text>
           ))}
@@ -122,12 +129,12 @@ function ProviderCard({ p, index, onRoute }: { p: Provider; index: number; onRou
           <Icon name={open ? "chevron-up" : "chevron-down"} size={20} color={colors.muted} />
         </View>
         <View style={styles.row}>
-          {p.distance_mi != null && <Text style={[styles.meta, { color: colors.onSurfaceSecondary }]}>{p.distance_mi} mi</Text>}
+          {p.distance_mi != null && <Text style={[styles.meta, { color: colors.onSurfaceSecondary }]}>{`${p.distance_mi} mi`}</Text>}
           {p.rating != null && (
             <>
               <Icon name="star" size={14} color={colors.warning} />
               <Text testID={`provider-rating-${p.id}`} style={[styles.meta, { color: colors.onSurface }]}>
-                {p.rating.toFixed(1)} ({p.rating_count})
+                {`${formatNumber(p.rating, undefined, 1)} (${p.rating_count})`}
               </Text>
             </>
           )}
@@ -146,8 +153,7 @@ function ProviderCard({ p, index, onRoute }: { p: Provider; index: number; onRou
         )}
         {f.wait_time && (
           <Text testID={`provider-eta-${p.id}`} style={[styles.line, { color: colors.onSurface }]}>
-            out within {f.wait_time.typical_min_low > 0 ? `${f.wait_time.typical_min_low}–` : ""}
-            {f.wait_time.typical_min_high} min {f.wait_time.source === "website" ? "per website" : "by reviews"}
+            {etaLine(f.wait_time)}
           </Text>
         )}
         {quote && (
@@ -166,11 +172,11 @@ function ProviderCard({ p, index, onRoute }: { p: Provider; index: number; onRou
             {f.prices.length === 0 && <Text style={[styles.small, { color: colors.muted }]}>No prices posted — ask when you call.</Text>}
             {f.prices.map((x, i) => (
               <Text key={i} style={[styles.small, { color: colors.onSurfaceSecondary }]}>
-                <Text style={{ fontFamily: fonts.semibold, color: colors.onSurface }}>{money(x)} {x.what}</Text> ({x.source}): “{x.quote}”
+                <Text style={{ fontFamily: fonts.semibold, color: colors.onSurface }}>{`${money(x)} ${x.what}`}</Text>{` (${t(x.source)}): “${x.quote}”`}
               </Text>
             ))}
             {f.payment.length > 0 && (
-              <Text style={[styles.small, { color: colors.onSurfaceSecondary }]}>Payment: {f.payment.join(", ")}</Text>
+              <Text style={[styles.small, { color: colors.onSurfaceSecondary }]}>{t("Payment: {what}", { what: f.payment.join(", ") })}</Text>
             )}
             {p.quotes.slice(1, 2).map((q) => (
               <Text key={q} style={[styles.quote, { color: colors.onSurfaceSecondary }]}>“{q}”</Text>

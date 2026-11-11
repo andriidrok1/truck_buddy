@@ -6,6 +6,7 @@ import { fonts, radius, spacing, useTheme } from "../theme";
 import type { RouteInfo } from "../types";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
+import { t } from "../i18n";
 
 export { routeFacts, routeTag } from "../geo/routeChoice";
 
@@ -27,7 +28,7 @@ export function AlternativesSheet({ primary, onPick, onClose }: Props) {
     <View testID="alternatives-sheet" style={styles.wrap}>
       <View style={styles.head}>
         <Text style={[styles.title, { color: colors.onSurface }]}>Routes</Text>
-        <PressableScale testID="alternatives-close" accessibilityLabel="Close routes" onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.surfaceSecondary }]}>
+        <PressableScale testID="alternatives-close" accessibilityLabel={t("Close routes")} onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.surfaceSecondary }]}>
           <Icon name="close" size={24} color={colors.onSurface} />
         </PressableScale>
       </View>
@@ -44,7 +45,7 @@ export function AlternativesSheet({ primary, onPick, onClose }: Props) {
         <PressableScale
           key={r.handle ?? `${i}-${r.summary}`}
           testID={`alternative-${i}`}
-          accessibilityLabel={`Switch to ${alternativeLabel(r, i)}`}
+          accessibilityLabel={t("Switch to {name}", { name: t(alternativeLabel(r, i)) })}
           onPress={() => onPick(i)}
           haptic="medium"
           style={[styles.row, { borderColor: colors.border }]}

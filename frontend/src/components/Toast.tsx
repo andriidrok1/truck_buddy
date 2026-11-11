@@ -8,6 +8,7 @@ import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import type { MapsSource } from "../types";
 import { Icon } from "./Icon";
 import { MapsSources } from "./MapsSources";
+import { t } from "../i18n";
 
 export type ToastData = { id: number; text: string; kind: "error" | "info" };
 
@@ -142,7 +143,7 @@ export function CaptionBubble({
           <Pressable
             testID="agent-reply-dismiss"
             accessibilityRole="button"
-            accessibilityLabel="Close the reply"
+            accessibilityLabel={t("Close the reply")}
             onPress={onDismiss}
             style={styles.dismiss}
           >

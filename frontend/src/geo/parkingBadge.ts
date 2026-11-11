@@ -1,5 +1,7 @@
 // Live truck-parking badge text, pure so it can be unit-tested without React.
+import { getLang, t, type Lang } from "../i18n";
 import type { ParkingTrend, Place } from "../types";
+import { clockTime } from "../utils/arrivalClock";
 
 /** A count older than this is shown greyed with its clock time instead of as live. */
 export const STALE_AFTER_MS = 30 * 60 * 1000;
@@ -19,7 +21,7 @@ export type ParkingBadge = {
   /** "low" when the lot is almost full, "stale" when the count is older than STALE_AFTER_MS. */
   tone: "live" | "low" | "stale";
   trend: ParkingTrend | null;
-  /** Set when stale: "as of 7:42 pm". */
+  /** Set when stale: "as of 7:42 pm" / "на 19:42". */
   asOf: string | null;
 };
 
@@ -29,17 +31,17 @@ const hasAny = (p: Place) =>
 /** Only truck stops and rest areas carry live counts; everything else has no badge. */
 export const showsParkingBadge = (p: Place) => (p.category === "truck_stop" || p.category === "rest_area") && hasAny(p);
 
-function clock(iso: string): string | null {
+function clock(iso: string, lang: Lang): string | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
+  return clockTime(d, lang).toLowerCase();
 }
 
 /**
  * Badge for a place's live parking fields, or null when there is nothing to show.
  * `now` is injectable for tests.
  */
-export function parkingBadgeText(place: Place, now: number = Date.now()): ParkingBadge | null {
+export function parkingBadgeText(place: Place, now: number = Date.now(), lang: Lang = getLang()): ParkingBadge | null {
   if (!hasAny(place)) return null;
   const avail = place.parking_available ?? null;
   const cap = place.parking_capacity ?? null;
@@ -59,12 +61,13 @@ export function parkingBadgeText(place: Place, now: number = Date.now()): Parkin
   let tone: ParkingBadge["tone"] = place.parking_low ? "low" : "live";
   let asOf: string | null = null;
   if (place.parking_updated) {
-    const t = new Date(place.parking_updated).getTime();
-    if (!Number.isNaN(t) && now - t > STALE_AFTER_MS) {
+    const at = new Date(place.parking_updated).getTime();
+    if (!Number.isNaN(at) && now - at > STALE_AFTER_MS) {
       tone = "stale";
-      asOf = clock(place.parking_updated);
-      if (asOf) asOf = `as of ${asOf}`;
+      asOf = clock(place.parking_updated, lang);
+      if (asOf) asOf = t("as of {time}", { time: asOf }, lang);
     }
   }
-  return { text, tone, trend, asOf };
+  // "12/40 open · almost full" fact by fact in Russian (src/i18n/ru.ts), English as it was (QA 2026-11-09, S9).
+  return { text: t(text, undefined, lang), tone, trend, asOf };
 }

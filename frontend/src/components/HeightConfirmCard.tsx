@@ -5,6 +5,7 @@ import { Text } from "../i18n/Text";
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
+import { t } from "../i18n";
 
 /** The two heights almost every van and reefer has: 13'6" (the eastern legal limit) and 14' (the western). */
 export const COMMON_HEIGHTS_IN = [162, 168] as const;
@@ -41,8 +42,8 @@ export function HeightConfirmCard({ bottom, current, onPick, onOther, onHeight }
           <PressableScale
             key={h}
             testID={`height-confirm-${h}`}
-            accessibilityLabel={`My truck is ${Math.floor(h / 12)} feet ${h % 12} inches`}
-            accessibilityHint={h === current ? "Saved in your truck profile now" : undefined}
+            accessibilityLabel={t("My truck is {f} feet {i} inches", { f: Math.floor(h / 12), i: h % 12 })}
+            accessibilityHint={h === current ? t("Saved in your truck profile now") : undefined}
             onPress={() => onPick(h)}
             containerStyle={styles.flex}
             style={[styles.btn, { backgroundColor: colors.surfaceSecondary, borderColor: colors.borderStrong }]}
@@ -52,7 +53,7 @@ export function HeightConfirmCard({ bottom, current, onPick, onOther, onHeight }
         ))}
         <PressableScale
           testID="height-confirm-other"
-          accessibilityLabel="Another height"
+          accessibilityLabel={t("Another height")}
           onPress={onOther}
           containerStyle={styles.flex}
           style={[styles.btn, { backgroundColor: colors.surfaceSecondary, borderColor: colors.borderStrong }]}

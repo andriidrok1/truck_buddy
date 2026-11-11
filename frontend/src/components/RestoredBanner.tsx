@@ -5,6 +5,7 @@ import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import { withoutCountry } from "../utils/placeName";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
+import { t } from "../i18n";
 
 type Props = {
   /** Destination of the route that came back from disk. */
@@ -42,10 +43,10 @@ export function RestoredBanner({ placeName, note, top, onResume, onDismiss }: Pr
           </View>
         </View>
         <View style={styles.actions}>
-          <PressableScale testID="restored-dismiss" accessibilityLabel="Drop the restored route" onPress={onDismiss} style={styles.btn}>
+          <PressableScale testID="restored-dismiss" accessibilityLabel={t("Drop the restored route")} onPress={onDismiss} style={styles.btn}>
             <Text style={[styles.btnText, { color: colors.error }]}>Drop route</Text>
           </PressableScale>
-          <PressableScale testID="restored-resume" accessibilityLabel="Resume route" onPress={onResume} style={[styles.btn, styles.primary, { backgroundColor: colors.info }]}>
+          <PressableScale testID="restored-resume" accessibilityLabel={t("Resume route")} onPress={onResume} style={[styles.btn, styles.primary, { backgroundColor: colors.info }]}>
             <Text style={[styles.btnText, { color: colors.onInfo }]}>Resume</Text>
           </PressableScale>
         </View>

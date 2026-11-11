@@ -12,6 +12,7 @@ import type { Guidance } from "./useGuidance";
 import type { OfflineGuidance } from "./useOfflineGuidance";
 import { isOnline } from "./useOnline";
 import type { SayOptions } from "./useSpeechQueue";
+import { t } from "../i18n";
 
 const trip = useTripStore.getState;
 
@@ -32,10 +33,13 @@ export function useReroute(
   const warnRestricted = (route: RouteInfo) => {
     if (!route.restricted || !trip().driving) return;
     const line = route.notices?.[0] ?? "";
+    // Whole templates through t(): the queue's own t() left "Внимание: this route needs a permit…" half English (S11).
     const text =
       route.restricted === "legal"
-        ? `Heads up: ${line || "this route needs a permit for your truck."}`
-        : `Heads up, the new route isn't cleared for your truck. ${line} Watch the signs.`;
+        ? line
+          ? t("Heads up: {line}", { line })
+          : t("Heads up: this route needs a permit for your truck.")
+        : t("Heads up, the new route isn't cleared for your truck. {line} Watch the signs.", { line });
     say(text.replace(/\s+/g, " ").trim(), { priority: PRIORITY.MANEUVER, kind: "system", key: "route-restricted", ttlMs: 30000 });
   };
 

@@ -12,6 +12,7 @@ import json
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from typing import Awaitable, Callable
 
 from services import db
 from services.db import _db, _sq_run, close, sqlite_path, store  # noqa: F401 - the store's plumbing lives in db.py
@@ -58,11 +59,12 @@ async def add(driver: str, turns: list[tuple[str, str]]) -> None:
     await pool.executemany("INSERT INTO conversation (driver, role, text, at) VALUES ($1, $2, $3, $4)", rows)
 
 
-def add_later(driver: str, turns: list[tuple[str, str]]) -> None:
-    """add() as a background task: the voice reply never waits on the database."""
+def add_later(driver: str, turns: list[tuple[str, "str | Callable[[], Awaitable[str]]"]]) -> None:
+    """add() as a background task: the voice reply never waits on the database. A turn's text may be an async
+    callable, run in the task: the copilot's line as the driver saw it (translated) is ready only after the reply."""
     async def _save():
         try:
-            await add(driver, turns)
+            await add(driver, [(r, (await t()) if callable(t) else t) for r, t in turns])
         except Exception as e:  # noqa: BLE001
             logger.warning("memory save failed: %s", e)
 

@@ -1,7 +1,7 @@
 # flake8: noqa  (a data list executed by i18n/build_ru.py, which supplies t, T, MI and the rest)
 MI = "{mi|plural:миля,мили,миль}"
 MI_GEN = "{mi|plural:мили,миль,миль}"
-MI_PREP = "{mi|plural:миле,милях,милях}"
+MI_PREP = "{mi|plural:миле,милях,милях,мили}"
 T2 = []
 def t(en, ru, part=False):
     T2.append({"en": en, "ru": ru, **({"part": True} if part else {})})
@@ -19,9 +19,9 @@ t("The way via {via} misses it{diff}.", "Путь через {via|and} это о
 t("The other way misses it{diff}. Say 'take the other way' if you want it.", "Другой путь это обходит{diff|tr}. Скажи «давай другим путём», если хочешь.")
 t("The way via {via} only runs into a {event}{diff}. Say 'take the other way' if you want it.", "На пути через {via|and} только {event|nom}{diff|tr}. Скажи «давай другим путём», если хочешь.")
 t("Say 'take the other way' if you want it.", "Скажи «давай другим путём», если хочешь.")
-t("No truck route around it.", "Объезда для фуры нет.")
-t("I don't have another truck route to try.", "Другого маршрута для фуры у меня нет.")
-t("No truck route around it; it should clear by {till}.", "Объезда для фуры нет; должно закончиться к {till|clock}.")
+t("No truck route around it.", "Объезда для трака нет.")
+t("I don't have another truck route to try.", "Другого маршрута для трака у меня нет.")
+t("No truck route around it; it should clear by {till}.", "Объезда для трака нет; должно закончиться к {till|clock}.")
 t("Heads up, a {event} near {area} starts {onset}; at this pace you're through there by {hit}.", "Внимание, {event|nom} в районе {area} начнётся {onset|clock}; в таком темпе проедешь там к {hit|clock}.")
 t("{place} {when}: {temp} degrees and {forecast}{wind}.", "{place} {when|clock}: {temp|plural:градус,градуса,градусов} по Фаренгейту, {forecast|tr}{wind|tr}.")
 t("Heads up, there's a {event} in effect there.", "Внимание, там действует {event|nom}.")
@@ -35,20 +35,20 @@ t(", calm", ", штиль", True)
 t("Chains or snow tires required on {route} near {location}.", "На {route} у {location} нужны цепи или зимняя резина.")
 t("Heads up, chains required on {route} near {location}.", "Внимание, на {route} у {location} нужны цепи.")
 t("Heads up, chains required on every vehicle, {route} near {location}.", "Внимание, цепи нужны всем, {route} у {location}.")
-t("And {n} more chain control along the route.", "И ещё {n} контроль цепей по маршруту.")
-t("And {n} more chain controls along the route.", "И ещё {n|plural:контроль,контроля,контролей} цепей по маршруту.")
-t("Set a route and I'll check Caltrans chain controls along it.", "Задай маршрут, и я проверю контроль цепей Caltrans по нему.")
-t("I only have chain controls for California, and this route doesn't go through it.", "Контроль цепей у меня только по Калифорнии, а этот маршрут через неё не идёт.")
-t("No chain controls on your route right now.", "Сейчас на маршруте контроля цепей нет.")
-t("I can't check chain controls on your route right now. Try again in a minute.", "Сейчас не могу проверить контроль цепей. Попробуй через минуту.")
-t("I can't check chain controls on your route right now.", "Сейчас не могу проверить контроль цепей.")
+t("And {n} more chain control along the route.", "И ещё в одном месте по маршруту нужны цепи.")
+t("And {n} more chain controls along the route.", "И ещё в {n|plural:месте,местах,местах} по маршруту нужны цепи.")
+t("Set a route and I'll check Caltrans chain controls along it.", "Задай маршрут, и я проверю по Caltrans, где на нём нужны цепи.")
+t("I only have chain controls for California, and this route doesn't go through it.", "Где нужны цепи, я знаю только по Калифорнии, а этот маршрут через неё не идёт.")
+t("No chain controls on your route right now.", "Сейчас цепи на маршруте нигде не нужны.")
+t("I can't check chain controls on your route right now. Try again in a minute.", "Сейчас не могу проверить, нужны ли на маршруте цепи. Попробуй через минуту.")
+t("I can't check chain controls on your route right now.", "Сейчас не могу проверить, нужны ли на маршруте цепи.")
 t("Chains required ahead on {route} near {location}. Do you have chains on board?", "Впереди на {route} у {location} нужны цепи. Цепи у тебя есть?")
 t("Chains required ahead on {route} near {location}.", "Впереди на {route} у {location} нужны цепи.")
 t("Do you have chains on board?", "Цепи у тебя есть?")
-t("Got it, no chains on board. The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?", "Понял, цепей нет. Последний трак-стоп перед контролем: {name}, через " + MI + ", добавить?")
-t("The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?", "Последний трак-стоп перед контролем: {name}, через " + MI + ", добавить?")
-t("Got it, no chains on board. I couldn't find a truck stop before the control, keep an eye out for a safe spot.", "Понял, цепей нет. Трак-стоп перед контролем не нашёл, присматривай безопасное место.")
-t("I couldn't find a truck stop before the control, keep an eye out for a safe spot.", "Трак-стоп перед контролем не нашёл, присматривай безопасное место.")
+t("Got it, no chains on board. The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?", "Понял, цепей нет. Последний трак-стоп до участка с цепями: {name}, через " + MI + ", добавить?")
+t("The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?", "Последний трак-стоп до участка с цепями: {name}, через " + MI + ", добавить?")
+t("Got it, no chains on board. I couldn't find a truck stop before the control, keep an eye out for a safe spot.", "Понял, цепей нет. Трак-стоп до участка с цепями не нашёл, присматривай безопасное место.")
+t("I couldn't find a truck stop before the control, keep an eye out for a safe spot.", "Трак-стоп до участка с цепями не нашёл, присматривай безопасное место.")
 t("Chains required ahead on {route} near {location}, and you've got no chains on board. The last truck stop before it is {name}, {mi} miles ahead, want me to add it?", "Впереди на {route} у {location} нужны цепи, а у тебя их нет. Последний трак-стоп перед этим: {name}, через " + MI + ", добавить?")
 t("Chains required ahead on {route} near {location}, and you've got no chains on board.", "Впереди на {route} у {location} нужны цепи, а у тебя их нет.")
 t("The last truck stop before it is {name}, {mi} miles ahead, want me to add it?", "Последний трак-стоп перед этим: {name}, через " + MI + ", добавить?")
@@ -80,9 +80,9 @@ t("You're out of drive time. Let's find you a place to stop.", "Время за 
 t("Let me look at the satellite.", "Сейчас посмотрю по спутнику.")
 t("Still looking at the satellite, I'll tell you when I have it.", "Ещё смотрю по спутнику, скажу, когда будет.")
 t("They list truck parking there.", "Там указана парковка для траков.")
-t("From the satellite, it looks like your rig will fit.", "По спутнику похоже, что твоя фура поместится.")
-t("Heads up, from the satellite it looks tight for a rig.", "Внимание, по спутнику там тесно для фуры.")
-t("I can't tell for sure from the satellite if a rig fits.", "По спутнику не могу точно сказать, поместится ли фура.")
+t("From the satellite, it looks like your rig will fit.", "По спутнику похоже, что твой трак поместится.")
+t("Heads up, from the satellite it looks tight for a rig.", "Внимание, по спутнику там тесно для трака.")
+t("I can't tell for sure from the satellite if a rig fits.", "По спутнику не могу точно сказать, поместится ли трак.")
 t("The truck entrance is {tip}.", "Въезд для траков {tip|mt}.")
 t("To get in: {tip}.", "Как заехать: {tip|mt}.")
 t("on your {side}, off {street}", "{side|side}, с {street}", True)
@@ -146,12 +146,12 @@ for en, ru in [("There's no route yet. Where do you want to go?", "Маршру�
                ("Okay. Tap the copilot when you need me.", "Хорошо. Нажми на меня, когда понадоблюсь."),
                ("That height doesn't look right. It has to be between 5 feet and 16 foot 11.", "Высота какая-то не та. Она должна быть от 5 футов до 16 футов 11 дюймов."),
                ("The trailer has to be between 10 and 65 feet.", "Трейлер должен быть от 10 до 65 футов."),
-               ("The weight has to be between 5,000 and 200,000 pounds.", "Вес должен быть от 5000 до 200000 фунтов."),
+               ("The weight has to be between 5,000 and 200,000 pounds.", "Вес должен быть от 5\u00a0000 до 200\u00a0000 фунтов."),
                ("Hazmat is on, I'll keep you on hazmat-legal roads.", "Hazmat включён, поведу по дорогам, где hazmat разрешён."),
                ("Hazmat is off.", "Hazmat выключен."), ("I'll avoid toll roads.", "Буду объезжать платные дороги."),
                ("Toll roads are fine now.", "Платные дороги теперь можно."), ("I'll avoid ferries and tunnels.", "Буду объезжать паромы и тоннели."),
                ("Ferries and tunnels are fine now.", "Паромы и тоннели теперь можно."),
-               ("You already have eight favorites. Remove one first.", "У тебя уже восемь любимых. Сначала убери одну."),
+               ("You already have eight favorites. Remove one first.", "У тебя уже восемь любимых трак-стопов. Сначала убери один."),
                ("Break reminders are off.", "Напоминания о перерыве выключены."), ("Break reminders can be every 1 to 14 hours.", "Напоминать о перерыве можно раз в 1–14 часов."),
                ("Chains on board, yes or no?", "Цепи есть, да или нет?"), ("Suggestions on or off?", "Подсказки включить или выключить?"),
                ("I'll speak up with suggestions again.", "Снова буду подсказывать."), ("Okay, I'll stop suggesting things.", "Хорошо, больше не буду ничего предлагать."),
@@ -167,7 +167,7 @@ t("Added {name} to your favorites.", "Добавил {name} в любимые.")
 t("Removed {name} from your favorites.", "Убрал {name} из любимых.")
 t("{name} isn't in your favorites.", "{name} нет в любимых.")
 t("I'll remind you to take a break every {n} hours.", "Буду напоминать о перерыве каждые {n|plural:час,часа,часов}.")
-t("I'll remind you to take a break every {n} hour.", "Буду напоминать о перерыве каждый час.")
+t("I'll remind you to take a break every {n} hour.", "Буду напоминать о перерыве каждый {n} час.")
 t("Done, {items}.", "Готово: {items|tr}.")
 t("Done. {rest}", "Готово. {rest|tr}")
 for en, ru in [(", height is now {ft} foot {inch}", ", высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}"),
@@ -210,7 +210,7 @@ t("Calling {name}.", "Звоню {name}.")
 t("Sorry, I lost that. Tell me again what happened?", "Извини, потерял нить. Расскажи ещё раз, что случилось?")
 
 # --- places messages ---
-t("No demo places here. Demo data covers the Bay Area and Sacramento.", "Здесь демо-мест нет. Демо-данные только по Bay Area и Сакраменто.")
+t("No demo places here. Demo data covers the Bay Area and Sacramento.", "Здесь демо-мест нет. Демо-данные есть только по району Сан-Франциско и Сакраменто.")
 t("I don't have {what} data loaded yet.", "Данных по {what|dat} у меня пока нет.")
 
 W = {
@@ -259,12 +259,127 @@ W = {
     "hurricane force wind warning": "предупреждение об ураганном ветре", "avalanche warning": "предупреждение о лавинах",
     "dense smoke advisory": "предупреждение о густом дыме",
 }
-for en, ru in [("Likely fits a truck (satellite check)", "Скорее всего, фура встанет (по спутнику)"),
-               ("Unlikely to fit a truck (satellite check)", "Скорее всего, фура не встанет (по спутнику)"),
-               ("Truck parking unclear", "Неясно, есть ли парковка для фур"), ("Truck parking listed", "Указана парковка для траков"),
+for en, ru in [("Likely fits a truck (satellite check)", "Скорее всего, трак встанет (по спутнику)"),
+               ("Unlikely to fit a truck (satellite check)", "Скорее всего, трак не встанет (по спутнику)"),
+               ("Truck parking unclear", "Неясно, есть ли парковка для траков"), ("Truck parking listed", "Указана парковка для траков"),
                ("Truck parking listed, not visible on satellite", "Парковка для траков указана, но по спутнику не видна"),
                ("No parking check for a town", "Для города парковку не проверяю"), ("Satellite image unavailable.", "Спутниковый снимок недоступен."),
                ("Couldn't read the satellite image.", "Не удалось разобрать спутниковый снимок."),
                ("The place info lists truck parking.", "В данных о месте указана парковка для траков."),
                ("Daily satellite checks are used up; I'll check this one tomorrow.", "Проверки по спутнику на сегодня закончились; это место проверю завтра.")]:
     t(en, ru)
+
+# --- QA 2026-11-09: lines that went to the model or stayed English ---
+W["size"] = {"dat": "габаритам"}
+# where am I (S17)
+t("You're on {street} in {city}, {state}.", "Ты на {street}, это {city}, {state}.")
+t("You're in {city}, {state}.", "Ты в {city}, {state}.")
+t("I can't tell where we are right now.", "Сейчас не могу понять, где мы.")
+# a cheaper way (S17)
+t("There's a way {diff} that saves about ${saves}. Want it?", "Есть путь {diff|tr}, экономия около ${saves}. Поедем по нему?")
+t("There's a way {diff} that saves about ${saves}.", "Есть путь {diff|tr}, экономия около ${saves}.")
+t("{d} slower", "на {d|time} дольше", True)
+t("{d} faster", "на {d|time} быстрее", True)
+t("about as fast", "примерно за то же время", True)
+t("Want it?", "Поедем по нему?")
+t("Okay, staying on this one.", "Хорошо, остаёмся на этом.")
+t("This is already the cheapest way.", "Это и так самый дешёвый путь.")
+t("This is already the fastest way.", "Это и так самый быстрый путь.")
+t("I can't price the routes right now. Try again in a minute.", "Сейчас не могу посчитать, сколько стоят маршруты. Попробуй через минуту.")
+t("I can't price the routes right now.", "Сейчас не могу посчитать, сколько стоят маршруты.")
+# the other way: "..., about $5 cheaper in fuel and tolls" (S17, ALT_REPLY)
+t(", about ${usd} cheaper in fuel and tolls", ", примерно на ${usd} дешевле по топливу и платным дорогам", True)
+t(", about ${usd} more in fuel and tolls", ", примерно на ${usd} дороже по топливу и платным дорогам", True)
+# prices, chains nearby (S17)
+t("I don't have a diesel price for {name}.", "Цены на дизель в {name} у меня нет.")
+t("I don't see a {chain} nearby.", "Рядом не вижу {chain}.")
+# route notices (S18 and the router's other lines)
+t("The truck router is down, so this is a backup route: no turn prompts, follow the line on the map.",
+  "Сервис маршрутов для траков сейчас не работает, это запасной маршрут: подсказок поворотов не будет, езжай по линии на карте.")
+t("Tolls couldn't be fully avoided on this route.", "Все платные дороги на этом маршруте объехать не получилось.")
+t("Route includes a ferry.", "На маршруте паром.")
+t("A tunnel couldn't be avoided on this route.", "Тоннель на этом маршруте объехать не получилось.")
+t("Check the route for restrictions.", "Проверь маршрут на ограничения.")
+t("Your truck is over the legal {what} limit in this state ({limit}); that takes a permit.",
+  "Твой трак больше законного лимита по {what|dat} в этом штате ({limit|tr}), нужен пермит.")
+t("the posted value", "указано на знаке", True)
+t("{n} lb", "{n|plural:фунт,фунта,фунтов}", True)
+t("{n} lb", "{n|plural:фунт,фунта,фунтов}")
+# breakdown (S7)
+t("I couldn't find anyone nearby who comes out to you. The closest shop is {name}, about {mi} miles, but you'd need a tow to get there. Tap it to call, or ask me to look for a tow.",
+  "Рядом не нашёл никого, кто выезжает к тебе. Ближайшая мастерская: {name}, около " + MI_GEN + ", но туда нужен эвакуатор. Нажми, чтобы позвонить, или попроси поискать эвакуатор.")
+t("I couldn't find anyone nearby who comes out to you.", "Рядом не нашёл никого, кто выезжает к тебе.")
+t("The closest shop is {name}, about {mi} miles, but you'd need a tow to get there.", "Ближайшая мастерская: {name}, около " + MI_GEN + ", но туда нужен эвакуатор.")
+t("Tap it to call, or ask me to look for a tow.", "Нажми, чтобы позвонить, или попроси поискать эвакуатор.")
+t("Nobody nearby says they come out. Closest shop: {name}, {mi} mi, needs a tow.", "Никто рядом не пишет, что выезжает. Ближайшая мастерская: {name}, " + MI + ", нужен эвакуатор.")
+t("The closest is {name}, about {mi} miles.", "Ближайший: {name}, около " + MI_GEN + ".")
+t("Okay, here's what I found.", "Так, вот что я нашёл.")
+t("Best bet is {name}, about {mi} miles{rest}.", "Лучший вариант: {name}, около " + MI_GEN + "{rest|tr}.")
+t(" and they come out to you", ", и они выезжают к тебе", True)
+t(", {n} stars", ", {n} из 5", True)
+t("Tap one to call, or ask me anything about them.", "Нажми, чтобы позвонить, или спроси меня о них.")
+t("Nobody posts prices, you'll have to ask. Tap one to call, or ask me anything about them.",
+  "Цен никто не пишет, придётся спросить. Нажми, чтобы позвонить, или спроси меня о них.")
+t("Nobody posts prices, you'll have to ask.", "Цен никто не пишет, придётся спросить.")
+t("Ask for the road call fee and their ETA.", "Спроси, сколько стоит выезд и когда приедут.")
+# the call card: questions to ask, the tire, the truck (S7, models.TruckProfile.label)
+t("What's your road call fee?", "Сколько стоит выезд?")
+t("What's your ETA to me?", "Когда сможете ко мне приехать?")
+t("Do you take Comchek or EFS?", "Принимаете Comchek или EFS?")
+t("{pos} tire {size}", "{pos|tire}, {size}")
+t("{pos} tire", "{pos|tire}")
+for hz in ("", ", hazmat"):
+    t("{h} tall, {len} ft trailer (~{total} ft total), {w} lb gross" + hz,
+      "высота {h|tr}, трейлер {len|plural:фут,фута,футов} (всего около {total|plural:фута,футов,футов}), полная масса "
+      "{w|plural:фунт,фунта,фунтов}" + (", опасный груз" if hz else ""))
+W["steer"] = {"tire": "рулевое колесо"}
+W["drive"] = {"tire": "ведущее колесо"}
+W["trailer"] = {"tire": "колесо трейлера"}
+
+# --- incidents on the route (HERE type and description; S10) ---
+for typ, ru in [("accident", "Авария"), ("congestion", "Пробка"), ("construction", "Ремонт дороги"),
+                ("disabledVehicle", "Сломанная машина"), ("massTransit", "Общественный транспорт"),
+                ("plannedEvent", "Мероприятие"), ("roadHazard", "Опасность на дороге"), ("roadClosure", "Дорога закрыта"),
+                ("weather", "Погода"), ("laneRestriction", "Сужение дороги"), ("other", "Происшествие")]:
+    W[typ.lower()] = ru
+for en, ru in [("Road construction", "Ремонт дороги"), ("Major road construction", "Большой ремонт дороги"),
+               ("Road maintenance operations", "Дорожные работы"), ("Construction work", "Дорожные работы"),
+               ("Roadworks", "Дорожные работы"), ("Accident", "Авария"), ("Multi-vehicle accident", "Авария с несколькими машинами"),
+               ("Road closed", "Дорога закрыта"), ("Closed", "Закрыто"), ("Bridge closed", "Мост закрыт"),
+               ("Ramp closed", "Съезд закрыт"), ("Exit closed", "Съезд закрыт"), ("Entry ramp closed", "Въезд закрыт"),
+               ("Exit ramp closed", "Съезд закрыт"), ("Lane closed", "Полоса закрыта"), ("Right lane closed", "Правая полоса закрыта"),
+               ("Left lane closed", "Левая полоса закрыта"), ("One lane closed", "Одна полоса закрыта"),
+               ("Two lanes closed", "Две полосы закрыты"), ("Three lanes closed", "Три полосы закрыты"),
+               ("Shoulder closed", "Обочина закрыта"), ("Hard shoulder closed", "Обочина закрыта"),
+               ("Stationary traffic", "Стоячая пробка"), ("Slow traffic", "Медленное движение"), ("Queuing traffic", "Затор"),
+               ("Heavy traffic", "Плотное движение"), ("Disabled vehicle", "Сломанная машина"),
+               ("Broken down vehicle", "Сломанная машина"), ("Debris on road", "Мусор на дороге"),
+               ("Object on roadway", "Предмет на дороге"), ("Vehicle fire", "Горит машина"), ("Flooding", "Подтопление"),
+               ("Road closed due to construction", "Дорога закрыта на ремонт"), ("Closed due to accident", "Закрыто из-за аварии")]:
+    t(en, ru)
+    t(en + ".", ru + ".")
+t("{n} lanes closed", "Закрыто полос: {n}")
+t("{n} lanes closed.", "Закрыто полос: {n}.")
+
+# --- Caltrans chain-control descriptions (S10; the app shows R-1..R-3 and these) ---
+for en, ru in [("No chain controls are in effect at this time.", "Сейчас цепи нигде не нужны."),
+               ("Chains or snow tires are required.", "Нужны цепи или зимняя резина."),
+               ("Chains are required on all vehicles except 4-wheel drive vehicles with snow tires on all 4 wheels.",
+                "Цепи нужны всем, кроме полноприводных машин с зимней резиной на всех колёсах."),
+               ("Chains are required on all vehicles.", "Цепи нужны всем машинам."),
+               ("Chains are required on all vehicles - no exceptions.", "Цепи нужны всем, без исключений.")]:
+    t(en, ru)
+
+# --- NWS events outside services/weather.EVENTS: a route can carry them (S10) ---
+W.update({
+    "winter storm warning": "предупреждение о зимнем шторме", "frost advisory": "предупреждение о заморозках",
+    "freeze warning": "предупреждение о морозе", "freeze watch": "возможны заморозки", "hard freeze warning": "предупреждение о сильном морозе",
+    "heat advisory": "предупреждение о жаре", "excessive heat warning": "предупреждение о сильной жаре",
+    "extreme heat warning": "предупреждение о сильной жаре", "red flag warning": "пожароопасная погода",
+    "fire weather watch": "возможна пожароопасная погода", "lake effect snow warning": "предупреждение о сильном снегопаде",
+    "wind chill warning": "предупреждение о ледяном ветре", "wind chill advisory": "предупреждение о холодном ветре",
+    "cold weather advisory": "предупреждение о холоде", "extreme cold watch": "возможен сильный мороз",
+    "flood advisory": "предупреждение о подтоплении", "flood watch": "возможно наводнение", "flash flood watch": "возможно внезапное наводнение",
+    "severe thunderstorm watch": "возможна сильная гроза", "tornado watch": "возможен торнадо", "avalanche watch": "возможны лавины",
+    "special weather statement": "особое сообщение о погоде", "air quality alert": "плохое качество воздуха",
+})

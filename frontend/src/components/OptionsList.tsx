@@ -3,7 +3,7 @@ import { Text } from "../i18n/Text";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { categoryColor, categoryIcon } from "../constants";
-import { useT } from "../i18n";
+import { formatNumber, useLang, useT } from "../i18n";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import type { ParkingState, Place } from "../types";
 import { Icon } from "./Icon";
@@ -23,12 +23,13 @@ type Props = {
 
 function Rating({ place }: { place: Place }) {
   const { colors } = useTheme();
+  const lang = useLang(); // "4,5" in Russian
   if (place.rating == null) return null; // "No rating yet" on every card was noise (UI review 2026-11-05)
   return (
     <View style={styles.ratingRow}>
       <Icon name="star" size={16} color={colors.warning} />
       <Text testID={`option-rating-${place.id}`} style={[styles.ratingText, { color: colors.onSurface }]}>
-        {place.rating.toFixed(1)}
+        {formatNumber(place.rating, lang, 1)}
       </Text>
       {place.rating_count != null && (
         <Text style={[styles.meta, { color: colors.muted }]}>({place.rating_count})</Text>
@@ -52,7 +53,7 @@ function OptionCard({ place, state, onParking, onRoute, index }: { place: Place;
     <Pressable
       testID={`option-card-${place.id}`}
       accessibilityRole="button"
-      accessibilityLabel={`Route to ${place.name}`}
+      accessibilityLabel={tr("Route to {name}", { name: place.name })}
       onPress={onRoute}
       style={({ pressed }) => [styles.card, { backgroundColor: colors.surfaceSecondary, opacity: pressed ? 0.85 : 1 }]}
     >
@@ -74,7 +75,9 @@ function OptionCard({ place, state, onParking, onRoute, index }: { place: Place;
             )}
             {place.diesel_price != null && (
               <Text testID={`option-diesel-${place.id}`} style={[styles.meta, { color: colors.onSurface }]}>
-                <Text style={{ color: colors.muted }}>·</Text> Diesel ${place.diesel_price.toFixed(2)}{place.diesel_kind === "auto" ? " (car pumps)" : ""}
+                <Text style={{ color: colors.muted }}>·</Text>
+                {/* The dot is an element, so Text leaves the rest alone: translated here (QA 2026-11-09, S8). */}
+                {` ${tr(place.diesel_kind === "auto" ? "Diesel {price} (car pumps)" : "Diesel {price}", { price: `$${place.diesel_price.toFixed(2)}` })}`}
               </Text>
             )}
           </View>

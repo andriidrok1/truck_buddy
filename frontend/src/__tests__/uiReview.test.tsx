@@ -32,10 +32,10 @@ afterEach(() => useLangStore.setState({ lang: "en" }));
 
 describe("Russian route sheet and options", () => {
   test("the route summary and distances read in Russian units", () => {
-    expect(t("11 min · 4.5 mi", undefined, "ru")).toBe("11 мин · 4.5 мили");
+    expect(t("11 min · 4.5 mi", undefined, "ru")).toBe("11 мин · 4,5 мили");
     expect(t("1 h 5 min · 62 mi", undefined, "ru")).toBe("1 ч 5 мин · 62 мили");
     expect(t("2 h · 121 mi", undefined, "ru")).toBe("2 ч · 121 миля");
-    expect(t("4.0 mi", undefined, "ru")).toBe("4.0 мили");
+    expect(t("4.0 mi", undefined, "ru")).toBe("4,0 мили");
     expect(t("25 min", undefined, "ru")).toBe("25 мин");
     expect(t("12 mph", undefined, "ru")).toBe("12 миль/ч");
   });

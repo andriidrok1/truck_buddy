@@ -13,7 +13,7 @@ from typing import Optional
 from services.http import client
 
 from models import Place
-from services.geo import haversine_km, km_to_mi
+from services.geo import haversine_km, km_to_mi, without_country
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
 
 logger = logging.getLogger("truckbuddy.geocode")
@@ -191,6 +191,7 @@ def _overlap(query: str, text: str) -> float:
 
 def _place(pid: str, name: str, lat: float, lng: float, address: Optional[str], at: tuple[float, float]) -> Place:
     km = haversine_km(at[0], at[1], lat, lng)
+    name, address = without_country(name) or name, without_country(address) or None
     if address and address.lower().startswith(name.lower() + ", "):
         address = address[len(name) + 2:]  # Discover labels repeat the title
     if address and address.strip().lower() == name.strip().lower():

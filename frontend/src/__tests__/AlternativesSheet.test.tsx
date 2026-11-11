@@ -68,9 +68,9 @@ describe("AlternativesSheet", () => {
     useLangStore.setState({ lang: "ru" });
     try {
       await render(<AlternativesSheet primary={primary} onPick={() => {}} onClose={() => {}} />);
-      expect(screen.getByText("8 мин · 4.2 мили · текущий")).toBeTruthy();
-      expect(screen.getByText("1 ч 5 мин · 61 миля · $12.50 за платные дороги")).toBeTruthy();
-      expect(screen.getByText("10 мин · 5.0 мили")).toBeTruthy();
+      expect(screen.getByText("8 мин · 4,2 мили · текущий")).toBeTruthy();
+      expect(screen.getByText("1 ч 5 мин · 61 миля · $12,50 за платные дороги")).toBeTruthy();
+      expect(screen.getByText("10 мин · 5,0 мили")).toBeTruthy();
     } finally {
       useLangStore.setState({ lang: "en" });
     }

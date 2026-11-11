@@ -66,7 +66,7 @@ def test_parking_card_follows_each_requests_language(api_client, cached, order):
             assert card == EN_JSON  # byte-identical English, untouched by an earlier Russian request
         else:
             _russian(card)
-            assert card["label"] == "Скорее всего, фура не встанет (по спутнику)"
+            assert card["label"] == "Скорее всего, трак не встанет (по спутнику)"
             assert card["reason"] == ("Площадка маленькая и тесная; есть площадка с трейлерами к северу, "
                                       "похоже, общая стоянка.")
     assert parking._verdict_cache[cached].model_dump(mode="json") == EN_JSON  # the cache stays English
@@ -75,7 +75,7 @@ def test_parking_card_follows_each_requests_language(api_client, cached, order):
 def test_spoken_parking_answer_follows_the_language(api_client, cached):
     place = {"place": PLACE.model_dump(mode="json"), "wait_s": 1}
     ru = api_client.post("/api/parking/answer", json=place, headers={"X-Lang": "ru"}).json()
-    assert ru["reply"] == ("Внимание, по спутнику там тесно для фуры. Есть площадка с трейлерами к северу, похоже, "
+    assert ru["reply"] == ("Внимание, по спутнику там тесно для трака. Есть площадка с трейлерами к северу, похоже, "
                            "общая стоянка. Как заехать: Заезжай через широкий южный въезд. Вставай вдоль восточной стороны "
                            "рядом с уже стоящими трейлерами.")
     _russian(ru["parking"])
@@ -152,7 +152,7 @@ def test_slow_model_leaves_the_card_to_the_catalog(api_client, cached, fake_llm,
     monkeypatch.setattr(llm, "complete", slow)
     monkeypatch.setattr(i18n, "CARD_BUDGET_S", 0.05)
     card = api_client.post("/api/parking", json={"place": PLACE.model_dump(mode="json")}, headers={"X-Lang": "ru"}).json()
-    assert card["label"] == "Скорее всего, фура не встанет (по спутнику)"
+    assert card["label"] == "Скорее всего, трак не встанет (по спутнику)"
     assert card["park_tip"] == EN.park_tip
     assert card["reason"] == "The lot is small and tight; есть площадка с трейлерами к северу, похоже, общая стоянка."
 

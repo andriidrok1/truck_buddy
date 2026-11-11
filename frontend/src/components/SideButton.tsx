@@ -4,6 +4,7 @@ import { Text } from "../i18n/Text";
 import { fonts, useTheme } from "../theme";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
+import { t } from "../i18n";
 
 /** A round button beside the copilot's avatar (Close, End route); moved verbatim from CopilotSheet.tsx. */
 export function SideButton({
@@ -21,7 +22,7 @@ export function SideButton({
 }) {
   const { colors } = useTheme();
   return (
-    <PressableScale testID={testID} accessibilityLabel={label} onPress={onPress} style={styles.side} haptic={danger ? "heavy" : "light"}>
+    <PressableScale testID={testID} accessibilityLabel={t(label)} onPress={onPress} style={styles.side} haptic={danger ? "heavy" : "light"}>
       <View style={[styles.sideCircle, { backgroundColor: danger ? colors.error : colors.surfaceSecondary }]}>
         <Icon name={icon} size={24} color={danger ? colors.onError : colors.onSurface} />
       </View>

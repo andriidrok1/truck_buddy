@@ -234,7 +234,7 @@ export function CopilotSheet(props: Props) {
         <Pressable
           testID="sheet-grabber"
           accessibilityRole="button"
-          accessibilityLabel={state === "peek" ? "Show details" : "Hide details"}
+          accessibilityLabel={state === "peek" ? t("Show details") : t("Hide details")}
           onPress={toggleGrabber}
           hitSlop={{ top: 12, bottom: 4 }}
           style={styles.grab}
@@ -346,7 +346,7 @@ export function CopilotSheet(props: Props) {
             </Text>
             <View style={styles.tagRow}>
               <Icon name={active.place.tags.length ? "truck" : "map-marker-outline"} size={18} color={colors.onSurfaceSecondary} />
-              <Text testID="route-place-tags" numberOfLines={1} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
+              <Text testID="route-place-tags" numberOfLines={2} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
                 {active.place.tags.length ? placeTagLine(active.place.tags, tr) : active.place.address ?? (active.place.category === "destination" ? "Destination" : "Address unknown")}
               </Text>
             </View>
@@ -358,7 +358,7 @@ export function CopilotSheet(props: Props) {
                     <Text numberOfLines={1} style={[styles.stopName, { color: colors.onSurface }]}>
                       {s.name}
                     </Text>
-                    <Pressable testID={`stop-remove-${s.id}`} accessibilityLabel={`Remove stop ${s.name}`} hitSlop={10} onPress={() => onRemoveStop?.(s)}>
+                    <Pressable testID={`stop-remove-${s.id}`} accessibilityLabel={t("Remove stop {name}", { name: s.name })} hitSlop={10} onPress={() => onRemoveStop?.(s)}>
                       <Icon name="close" size={16} color={colors.onSurfaceSecondary} />
                     </Pressable>
                   </View>
@@ -384,7 +384,7 @@ export function CopilotSheet(props: Props) {
           {routesChip && (
             <PressableScale
               testID="routes-chip"
-              accessibilityLabel="Other routes"
+              accessibilityLabel={t("Other routes")}
               onPress={onShowRoutes}
               containerStyle={styles.linkItem}
               style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
@@ -396,7 +396,7 @@ export function CopilotSheet(props: Props) {
           {options.length > 0 && (
             <PressableScale
               testID="other-options-button"
-              accessibilityLabel="Other places"
+              accessibilityLabel={t("Other places")}
               onPress={onShowOptions}
               containerStyle={styles.linkItem}
               style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
@@ -415,7 +415,7 @@ export function CopilotSheet(props: Props) {
       {navigating && active && !driving && !routesPanel && (
         <PressableScale
           testID="go-button"
-          accessibilityLabel="Go"
+          accessibilityLabel={t("Go")}
           onPress={onGo}
           haptic="heavy"
           style={[styles.goBtn, { backgroundColor: colors.info }]}
@@ -444,7 +444,7 @@ export function CopilotSheet(props: Props) {
           />
           <PressableScale
             testID="copilot-send-button"
-            accessibilityLabel="Send"
+            accessibilityLabel={t("Send")}
             onPress={send}
             disabled={!draft.trim()}
             style={[styles.roundBtn, { backgroundColor: draft.trim() ? colors.info : colors.surfaceTertiary }]}
@@ -453,7 +453,7 @@ export function CopilotSheet(props: Props) {
           </PressableScale>
           <PressableScale
             testID="copilot-text-close"
-            accessibilityLabel="Done typing"
+            accessibilityLabel={t("Done typing")}
             onPress={() => {
               Keyboard.dismiss();
               setTyping(false);
@@ -474,7 +474,7 @@ export function CopilotSheet(props: Props) {
         <Pressable
           testID="copilot-avatar-button"
           accessibilityRole="button"
-          accessibilityLabel={caption}
+          accessibilityLabel={t(caption)}
           onPress={() => {
             haptic("medium");
             onAvatarPress();
@@ -488,7 +488,7 @@ export function CopilotSheet(props: Props) {
           />
           <View style={styles.captionRow}>
             {!!wakePhrase && (
-              <View testID="wake-indicator" accessibilityLabel="Listening for wake word" style={[styles.wakeDot, { backgroundColor: colors.success }]} />
+              <View testID="wake-indicator" accessibilityLabel={t("Listening for wake word")} style={[styles.wakeDot, { backgroundColor: colors.success }]} />
             )}
             <Text testID="avatar-caption" style={[styles.caption, { color: colors.onSurfaceSecondary }]}>
               {caption}
