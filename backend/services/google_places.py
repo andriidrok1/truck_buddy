@@ -13,7 +13,7 @@ from services.http import client
 
 from models import Category, Place, PlacesResponse, Review
 from services.flags import on
-from services.geo import haversine_km, km_to_mi
+from services.geo import haversine_km, km_to_mi, without_country
 from services import tpims
 from services.places import DATA_ONLY, search_data
 
@@ -217,7 +217,7 @@ class GooglePlacesProvider:
                 category=category,
                 lat=loc["latitude"],
                 lng=loc["longitude"],
-                address=p.get("formattedAddress"),
+                address=without_country(p.get("formattedAddress")) or None,
                 rating=p.get("rating"),
                 rating_count=p.get("userRatingCount"),
                 summary=(p.get("editorialSummary") or {}).get("text"),
@@ -303,7 +303,7 @@ class GooglePlacesProvider:
             category=category,
             lat=loc["latitude"],
             lng=loc["longitude"],
-            address=p.get("formattedAddress"),
+            address=without_country(p.get("formattedAddress")) or None,
             rating=p.get("rating"),
             rating_count=p.get("userRatingCount"),
             summary=(p.get("editorialSummary") or {}).get("text"),

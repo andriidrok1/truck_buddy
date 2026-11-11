@@ -56,5 +56,80 @@ W3 = {
     "northeast": {"to": "северо-восток"}, "northwest": {"to": "северо-запад"}, "southeast": {"to": "юго-восток"},
     "southwest": {"to": "юго-запад"},
     "1st": {"ord": "первый"}, "2nd": {"ord": "второй"}, "3rd": {"ord": "третий"}, "4th": {"ord": "четвёртый"},
-    "5th": {"ord": "пятый"}, "6th": {"ord": "шестой"},
+    "5th": {"ord": "пятый"}, "6th": {"ord": "шестой"}, "7th": {"ord": "седьмой"}, "8th": {"ord": "восьмой"},
+    "9th": {"ord": "девятый"}, "10th": {"ord": "десятый"},
+    "left": {"ramp": "левый"}, "right": {"ramp": "правый"}, "middle": {"ramp": "средний"},
 }
+
+# --- QA 2026-11-09 (S19): HERE maneuvers the catalog missed ("Take middle ramp onto I-5 N toward Redding") ---
+# A turn the catalog still misses stays English whole (i18n.localize_route), never half-translated.
+SIDES = [("left", "левый", "левее"), ("right", "правый", "правее"), ("middle", "средний", "посередине")]
+for side, adj, keep in SIDES:
+    if side == "middle":  # left/right have these above
+        t("Keep middle", "Держись посередине")
+        t("Keep middle toward {to}", "Держись посередине в сторону {to}")
+        t("Keep middle onto {road}", "Держись посередине на {road}")
+        t("Keep middle onto {road} toward {to}", "Держись посередине на {road} в сторону {to}")
+        t("Take middle ramp onto {road} toward {to}", "Заезжай на средний съезд на {road} в сторону {to}")
+        t("Take middle ramp onto {road}", "Заезжай на средний съезд на {road}")
+        t("Take the middle exit onto {road}", "Уходи на средний съезд на {road}")
+        t("Take the middle exit onto {road} toward {to}", "Уходи на средний съезд на {road} в сторону {to}")
+        t("Take the middle exit toward {to}", "Уходи на средний съезд в сторону {to}")
+    t(f"Keep {side} on {{road}}", f"Держись {keep} на {{road}}")
+    t(f"Keep {side} on {{road}} toward {{to}}", f"Держись {keep} на {{road}} в сторону {{to}}")
+    t(f"Take {side} ramp toward {{to}}", f"Заезжай на {adj} съезд в сторону {{to}}")
+    t(f"Take {side} ramp", f"Заезжай на {adj} съезд")
+    t(f"Take the {side} exit", f"Уходи на {adj} съезд")
+    t(f"Take the {side} exit {{n}}", f"Уходи на {adj} съезд {{n}}")
+    t(f"Take the {side} exit {{n}} toward {{to}}", f"Уходи на {adj} съезд {{n}} в сторону {{to}}")
+    t(f"Take the {side} exit {{n}} onto {{road}}", f"Уходи на {adj} съезд {{n}} на {{road}}")
+    t(f"Take the {side} exit {{n}} onto {{road}} toward {{to}}", f"Уходи на {adj} съезд {{n}} на {{road}} в сторону {{to}}")
+    t(f"Take the {side} exit {{n}} toward {{to}} onto {{road}}", f"Уходи на {adj} съезд {{n}} в сторону {{to}} на {{road}}")
+    t(f"Take the {side} exit toward {{to}} onto {{road}}", f"Уходи на {adj} съезд в сторону {{to}} на {{road}}")
+    t(f"Merge {side} onto {{road}}", f"Перестраивайся {keep} на {{road}}")
+    t(f"Merge {side} onto {{road}} toward {{to}}", f"Перестраивайся {keep} на {{road}} в сторону {{to}}")
+for en, ru in DIRS + [("sharply left", "резко налево"), ("sharply right", "резко направо")]:
+    t(f"Turn {en} and take ramp toward {{to}}", f"Поверни {ru} и заезжай на съезд в сторону {{to}}")
+    t(f"Turn {en} and take ramp", f"Поверни {ru} и заезжай на съезд")
+    t(f"Turn {en} and take {{side}} ramp onto {{road}} toward {{to}}", f"Поверни {ru} и заезжай на {{side|ramp}} съезд на {{road}} в сторону {{to}}")
+    t(f"Turn {en} and take {{side}} ramp onto {{road}}", f"Поверни {ru} и заезжай на {{side|ramp}} съезд на {{road}}")
+    t(f"Turn {en} at {{road}}", f"Поверни {ru} на {{road}}")
+    t(f"Make a {en} turn onto {{road}}", f"Поверни {ru} на {{road}}")
+for en, ru in [("sharply left", "резко налево"), ("sharply right", "резко направо")]:
+    t(f"Turn {en}", f"Поверни {ru}")
+    t(f"Turn {en} onto {{road}}", f"Поверни {ru} на {{road}}")
+    t(f"Turn {en} onto {{road}} toward {{to}}", f"Поверни {ru} на {{road}} в сторону {{to}}")
+    t(f"Turn {en} toward {{to}}", f"Поверни {ru} в сторону {{to}}")
+t("Head toward {to} on {road}", "Езжай по {road} в сторону {to}")
+t("Head {dir} toward {to}", "Езжай на {dir|to} в сторону {to}")
+t("Head {dir} on {road} toward {to}", "Езжай на {dir|to} по {road} в сторону {to}")
+t("Take ramp toward {to}", "Заезжай на съезд в сторону {to}")
+t("Take ramp", "Заезжай на съезд")
+t("Take exit {n}", "Съезд {n}")
+t("Take the exit", "Уходи на съезд")
+t("Take the exit toward {to} onto {road} toward {to2}", "Уходи на съезд в сторону {to} на {road} в сторону {to2}")
+t("Take exit {n} toward {to} onto {road} toward {to2}", "Съезд {n} в сторону {to} на {road} в сторону {to2}")
+t("Merge onto {road}", "Перестраивайся на {road}")
+t("Merge onto {road} toward {to}", "Перестраивайся на {road} в сторону {to}")
+t("Continue", "Продолжай движение")
+t("Continue straight", "Продолжай прямо")
+t("Continue straight on {road}", "Продолжай прямо по {road}")
+t("Go straight", "Езжай прямо")
+t("Go straight on {road}", "Езжай прямо по {road}")
+t("Take the {nth} exit from roundabout toward {to}", "На круге {nth|ord} съезд в сторону {to}")
+t("Take the {nth} exit from roundabout onto {road} and continue toward {to}", "На круге {nth|ord} съезд на {road}, дальше в сторону {to}")
+t("Enter the roundabout", "Въезжай на круг")
+t("Pass {n} roundabouts", "Проедь {n|plural:круг,круга,кругов}")
+t("Pass {n} roundabouts and continue toward {to}", "Проедь {n|plural:круг,круга,кругов} и продолжай в сторону {to}")
+t("Pass the roundabout and continue on {road}", "Проедь круг и продолжай по {road}")
+t("Make a U-turn toward {to}", "Развернись в сторону {to}")
+t("Make a U-turn at {road}", "Развернись на {road}")
+t("Arrive at {place} on the left", "Прибытие: {place}, слева")
+t("Arrive at {place} on the right", "Прибытие: {place}, справа")
+t("Your destination is on the left.", "Место назначения слева.")
+t("Your destination is on the right.", "Место назначения справа.")
+t("Your destination is straight ahead.", "Место назначения прямо.")
+t("Arrive at {place}.", "Прибытие: {place}.")
+t("Take the ferry {name}", "Заезжай на паром {name}")
+t("Board the ferry", "Заезжай на паром")
+t("Leave the ferry", "Съезжай с парома")

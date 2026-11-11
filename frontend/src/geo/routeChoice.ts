@@ -1,6 +1,7 @@
 // Picking between the routes the engine offered (`RouteInfo.alternatives`). Pure: the map screen
 // swaps `active.route` locally, nothing goes to the backend.
 
+import { getLang, t, type Lang } from "../i18n";
 import type { RouteInfo } from "../types";
 import { durationLabel } from "../utils/duration";
 
@@ -16,8 +17,11 @@ export function routesChipText(route: RouteInfo): string | null {
 }
 
 /** What the copilot says after a swap: "Switched to the I-80 route." / "Switched to alternative 2." */
-export function switchedLine(route: RouteInfo, i: number): string {
-  return route.labels?.length ? `Switched to the ${route.labels.join(" and ")} route.` : `Switched to alternative ${i + 1}.`;
+export function switchedLine(route: RouteInfo, i: number, lang: Lang = getLang()): string {
+  // Each label on its own: "Fastest ETA and Cheapest" as one name stayed English in Russian (QA 2026-11-09, S15).
+  if (!route.labels?.length) return t("Switched to alternative {n}.", { n: i + 1 }, lang);
+  const name = route.labels.map((l) => t(l, undefined, lang)).join(` ${t("and", undefined, lang)} `);
+  return t("Switched to the {name} route.", { name }, lang);
 }
 
 /**

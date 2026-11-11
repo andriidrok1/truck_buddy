@@ -14,6 +14,7 @@ export const APP_KEYS = [
   "onboarded_v1",
   "lang_v1",
   "height_confirmed_v1",
+  "how_to_seen_v1",
   "theme_pref_v1",
   "truck_profile_v1",
   "profile_unsynced_v1",

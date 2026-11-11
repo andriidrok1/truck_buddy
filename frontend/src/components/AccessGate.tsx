@@ -64,7 +64,7 @@ export function AccessGate({ onSkip }: { onSkip?: () => void }) {
       )}
       <PressableScale
         testID="access-code-submit"
-        accessibilityLabel="Continue"
+        accessibilityLabel={t("Continue")}
         onPress={submit}
         disabled={!code.trim() || busy}
         containerStyle={styles.buttonWrap}

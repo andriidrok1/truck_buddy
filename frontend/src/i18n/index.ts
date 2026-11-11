@@ -80,18 +80,48 @@ export function pluralRu(n: number, one: string, few: string, many: string): str
   return many;
 }
 
-/** `{n}` placeholders filled from vars; a Russian `{n|plural:миля,мили,миль}` gets the number and its form. */
-function fill(s: string, vars?: Record<string, string | number>): string {
+/** A number as Russian writes it: decimal comma ("4,5"), thousands split by a no-break space ("80 000"). A four-digit
+ *  number stays whole ("2026", "5000") unless the English text grouped it ("5,000" is a quantity, not a year).
+ *  Anything that is not just a number (a name, "Exit 522", "12 MB") comes back as it is. */
+const PLAIN_NUMBER = /^([$~]?)(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?$/;
+export function numRu(v: string | number): string {
+  const s = String(v);
+  const m = PLAIN_NUMBER.exec(s);
+  if (!m) return s;
+  const [, sign, int, frac] = m;
+  const digits = int.replace(/,/g, "");
+  const whole = int.includes(",") || digits.length > 4 ? digits.replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0") : digits;
+  return `${sign}${whole}${frac !== undefined ? `,${frac}` : ""}`;
+}
+
+/** A whole number the driver types (the weight), shown grouped in Russian ("80 000"); what they typed is kept as
+ *  digits by the reader (toInt strips the spaces). English shows it as typed. QA 2026-11-09, bug 24. */
+export function groupedInput(value: string, lang: Lang): string {
+  if (lang !== "ru") return value;
+  const digits = value.replace(/\D/g, "");
+  return digits ? numRu(digits) : value;
+}
+
+/** A number in the app's language: "4.5" / "80,000" in English, "4,5" / "80 000" in Russian. */
+export function formatNumber(n: number, lang: Lang = getLang(), digits?: number): string {
+  const en = digits === undefined ? n.toLocaleString("en-US") : n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return lang === "ru" ? numRu(en) : en;
+}
+
+/** `{n}` placeholders filled from vars; a Russian `{n|plural:миля,мили,миль}` gets the number and its form. In Russian
+ *  (`ru`) every value that is a plain number is written the Russian way (numRu): one place for all the callers. */
+function fill(s: string, vars?: Record<string, string | number>, ru = false): string {
   return s.replace(/\{(\w+)(?:\|plural:([^}]+))?\}/g, (_m, name: string, forms?: string) => {
     const v = vars?.[name];
     if (v === undefined) return `{${name}}`;
+    const shown = ru ? numRu(v) : String(v);
     if (forms) {
       const [one, few, many] = forms.split(",");
       // "80,000" is 80000; any written fraction ("5.0 mi") takes the fraction form, as "2.7 мили" does.
       const raw = String(v).replace(/,/g, "");
-      return `${v} ${raw.includes(".") ? few : pluralRu(Number(raw), one, few, many)}`;
+      return `${shown} ${raw.includes(".") ? few : pluralRu(Number(raw), one, few, many)}`;
     }
-    return String(v);
+    return shown;
   });
 }
 
@@ -137,7 +167,7 @@ function compiled(): Pattern[] {
 export function t(en: string, vars?: Record<string, string | number>, lang: Lang = getLang()): string {
   if (lang !== "ru" || !en) return fill(en, vars);
   const exact = RU[en];
-  if (exact !== undefined) return fill(exact, vars);
+  if (exact !== undefined) return fill(exact, vars, true);
   if (vars) return fill(en, vars);
   const facts = en.includes(" · ");
   for (const p of compiled()) {
@@ -150,12 +180,37 @@ export function t(en: string, vars?: Record<string, string | number>, lang: Lang
     p.names.forEach((n, i) => {
       got[n] = m[i + 1];
     });
-    return fill(p.target, Object.fromEntries(Object.entries(got).map(([k, v]) => [k, RU[v] ?? (MEASURE.test(v) ? t(v, undefined, lang) : v)])));
+    if (swallowsSentence(en, Object.values(got), lang)) continue;
+    return fill(p.target, Object.fromEntries(Object.entries(got).map(([k, v]) => [k, RU[v] ?? (MEASURE.test(v) ? t(v, undefined, lang) : v)])), true);
   }
   // A line of facts joined by " · " ("8 min · 2.7 mi · current", "14 ft 0 in · 53 ft trailer · 80,000 lb") that has
   // no entry as a whole: each fact on its own, so a unit never stays English next to a translated one (QA M-4).
   if (facts) return en.split(" · ").map((part) => t(part, undefined, lang)).join(" · ");
+  // Two sentences with no entry as a whole ("Height must be … Gross weight must be …"): each on its own.
+  const parts = sentences(en);
+  if (parts.length > 1) {
+    const out = parts.map((part) => t(part, undefined, lang));
+    if (out.some((x, i) => x !== parts[i])) return out.join(" ");
+  }
   return en;
+}
+
+/** "A. B." -> ["A.", "B."]: a break is a stop followed by a capital letter ("St. Louis" splits too, which only
+ *  matters when the pieces have entries of their own). */
+function sentences(en: string): string[] {
+  return en.replace(/([.!?])\s+(?=[A-Z])/g, "$1\u0000").split("\u0000");
+}
+
+/** A word slot that took a whole next sentence the dictionary knows ("{max}" = "16 ft 11 in. Gross weight must be
+ *  5,000 to 200,000 lb"): the match is wrong, the two sentences are translated one by one instead (QA bug 2). */
+function swallowsSentence(en: string, values: string[], lang: Lang): boolean {
+  return values.some((v) => {
+    const pieces = sentences(v);
+    if (pieces.length < 2) return false;
+    const from = en.indexOf(v) + v.indexOf(pieces[1]);
+    const rest = en.slice(from);
+    return t(rest, undefined, lang) !== rest;
+  });
 }
 
 /** A captured value that starts with a number ("10 ft", "0.4 mi", "$12.50") carries a unit worth translating;

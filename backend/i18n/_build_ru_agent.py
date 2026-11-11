@@ -1,7 +1,7 @@
 # flake8: noqa  (a data list executed by i18n/build_ru.py, which supplies t, T, MI and the rest)
 MI = "{mi|plural:миля,мили,миль}"
 MI_GEN = "{mi|plural:мили,миль,миль}"  # после «около»
-MI_PREP = "{mi|plural:миле,милях,милях}"  # после «в»
+MI_PREP = "{mi|plural:миле,милях,милях,мили}"  # после «в»
 T = []
 def t(en, ru, part=False):
     T.append({"en": en, "ru": ru, **({"part": True} if part else {})})
@@ -10,7 +10,7 @@ def t(en, ru, part=False):
 t(", right off {street}", ", рядом с {street}", True)
 t(", just up {street}", ", дальше по {street}", True)
 t(", about {mi} miles ahead", ", примерно через " + MI, True)
-t(", counting {minutes} minutes at {each}", ", с учётом {minutes} минут на {each|part}", True)
+t(", counting {minutes} minutes at {each}", ", с учётом {minutes|plural:минуты,минут,минут} на {each|part}", True)
 t("the stop", "остановку", True)
 t("each stop", "каждую остановку", True)
 t(" via {r1} and {r2}", " через {r1} и {r2}", True)
@@ -57,29 +57,29 @@ t("CAT scale at {name}{off}, {mi} miles away.", "Кэт-скейл на {name}{o
 t("{name}{off}, about {mi} miles out. Open or closed, watch the sign.", "{name}{off|part}, примерно в " + MI_PREP + ". Открыта или нет, смотри по табло.")
 t("{name} is about {mi} miles ahead{up}. I can't see if it's open.", "{name} примерно через " + MI + "{up|part}. Открыта ли, я не вижу.")
 t("{name}{off}, {mi} miles away. Check the sign for open or closed.", "{name}{off|part}, в " + MI_PREP + ". Открыта или закрыта, смотри по табло.")
-t("{name}{off}, about {mi} miles out, might be tight for a rig.", "{name}{off|part}, примерно в " + MI_PREP + ", для фуры может быть тесно.")
+t("{name}{off}, about {mi} miles out, might be tight for a rig.", "{name}{off|part}, примерно в " + MI_PREP + ", для трака может быть тесно.")
 t("{name}, {d} miles from your delivery, {mi} miles from you.", "{name}, {d|plural:миля,мили,миль} от разгрузки, " + MI + " от тебя.")
 
 # --- route notices and warnings ---
 t("Heads up, couldn't dodge all the tolls on this one.", "Внимание, все платные дороги объехать не получилось.")
-t("Heads up, part of this route might be tight for your rig, so watch the signs.", "Внимание, часть маршрута может быть тесной для твоей фуры, следи за знаками.")
+t("Heads up, part of this route might be tight for your rig, so watch the signs.", "Внимание, часть маршрута может быть тесной для твоего трака, следи за знаками.")
 t("Heads up, there's a ferry on this one.", "Внимание, на маршруте паром.")
-t("Heads up, the truck router is down, so this is a backup route with no turn prompts. Follow the line on the map.", "Внимание, грузовой маршрутизатор не работает, это запасной маршрут без подсказок поворотов. Езжай по линии на карте.")
+t("Heads up, the truck router is down, so this is a backup route with no turn prompts. Follow the line on the map.", "Внимание, сервис маршрутов для траков сейчас не работает, это запасной маршрут без подсказок поворотов. Езжай по линии на карте.")
 t("Heads up, check this route for restrictions.", "Внимание, проверь маршрут на ограничения.")
 t("Heads up, there's a road closure on this route: {description}.", "Внимание, на маршруте перекрытие: {description}.")
 t("Heads up, I couldn't find a legal truck route to there. {line} Don't take this one blind: check the signs, or give me another destination.",
-  "Внимание, законного маршрута для фуры туда я не нашёл. {line|tr} Не езжай вслепую: смотри знаки или дай другой адрес.")
-t("Heads up, I couldn't find a legal truck route to there.", "Внимание, законного маршрута для фуры туда я не нашёл.")
+  "Внимание, законного маршрута для трака туда я не нашёл. {line|tr} Не езжай вслепую: смотри знаки или дай другой адрес.")
+t("Heads up, I couldn't find a legal truck route to there.", "Внимание, законного маршрута для трака туда я не нашёл.")
 t("Don't take this one blind: check the signs, or give me another destination.", "Не езжай вслепую: смотри знаки или дай другой адрес.")
 t("Heads up: {line}", "Внимание: {line|tr}")
 t("This route goes under a {limit} clearance; your truck is {truck}.", "На маршруте проезд высотой {limit|tr}, а твой трак {truck|tr}.")
-t("This route crosses a {limit} weight limit; your truck is {truck}.", "На маршруте ограничение по весу {limit}, а твой трак {truck}.")
+t("This route crosses a {limit} weight limit; your truck is {truck}.", "На маршруте ограничение по весу {limit|tr}, а твой трак {truck|tr}.")
 t("This route has a {limit} length limit; your truck is {truck}.", "На маршруте ограничение по длине {limit|tr}, а твой трак {truck|tr}.")
 t("This route has a {limit} width limit.", "На маршруте ограничение по ширине {limit|tr}.")
 t("Part of this route is on a road closed to trucks.", "Часть маршрута идёт по дороге, закрытой для траков.")
 t("Part of this route is on a road with a truck restriction.", "Часть маршрута идёт по дороге с ограничением для траков.")
 t("Part of this route uses roads not approved for trucks.", "Часть маршрута идёт по дорогам, не разрешённым для траков.")
-t("Your truck is over the legal {what} limit in {where} ({limit}); that takes a permit.", "Твой трак выше законного лимита по {what|dat} в {where} ({limit|tr}), нужен пермит.")
+t("Your truck is over the legal {what} limit in {where} ({limit}); that takes a permit.", "Твой трак больше законного лимита по {what|dat} в {where|and} ({limit|tr}), нужен пермит.")
 t("{ft} ft {inch} in", "{ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}", True)
 t("{ft} ft", "{ft|plural:фут,фута,футов}", True)
 t("{ft} ft {inch} in", "{ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}")
@@ -87,7 +87,7 @@ t("{ft} ft", "{ft|plural:фут,фута,футов}")
 
 # --- alternatives, stops ---
 t("Here's another way{via}, {time}, {mi} miles{rest}.", "Вот другой путь{via|tr}, {time|time}, " + MI + "{rest|tr}.")
-t("That's the only truck route I've got.", "Другого маршрута для фуры у меня нет.")
+t("That's the only truck route I've got.", "Другого маршрута для трака у меня нет.")
 t("Set a route first and I'll look for other ways.", "Сначала задай маршрут, потом поищу другие пути.")
 t("Added {name}{ahead}. New total {time}, {mi} miles{dwell}.", "Добавил {name}{ahead|part}. Всего теперь {time|time}, " + MI + "{dwell|tr}.")
 t("Added {name}{ahead}.", "Добавил {name}{ahead|part}.")
@@ -171,10 +171,10 @@ t("Sorry, I didn't catch that. Try again.", "Извини, не расслыша
 t("Sorry, I didn't catch that.", "Извини, не расслышал.")
 t("Try again.", "Попробуй ещё раз.")
 t("Try again in a minute.", "Попробуй через минуту.")
-t("I couldn't build a truck route there right now. Try again in a minute.", "Сейчас не получилось построить туда маршрут для фуры. Попробуй через минуту.")
-t("I couldn't build a truck route there right now.", "Сейчас не получилось построить туда маршрут для фуры.")
-t("I can't find a truck route there from here. Try another destination, or an address on a main road nearby.", "Отсюда туда маршрута для фуры нет. Попробуй другое место или адрес на большой дороге рядом.")
-t("I can't find a truck route there from here.", "Отсюда туда маршрута для фуры нет.")
+t("I couldn't build a truck route there right now. Try again in a minute.", "Сейчас не получилось построить туда маршрут для трака. Попробуй через минуту.")
+t("I couldn't build a truck route there right now.", "Сейчас не получилось построить туда маршрут для трака.")
+t("I can't find a truck route there from here. Try another destination, or an address on a main road nearby.", "Отсюда туда маршрута для трака нет. Попробуй другое место или адрес на большой дороге рядом.")
+t("I can't find a truck route there from here.", "Отсюда туда маршрута для трака нет.")
 t("Try another destination, or an address on a main road nearby.", "Попробуй другое место или адрес на большой дороге рядом.")
 t("Place search is down right now. Give me an address instead.", "Поиск мест сейчас не работает. Дай лучше адрес.")
 t("Give me a second, I lost my train of thought. Say that again.", "Секунду, сбился с мысли. Повтори.")

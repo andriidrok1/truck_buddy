@@ -14,8 +14,8 @@ describe("i18n", () => {
   });
 
   test("patterns move values over and put nouns in their form", () => {
-    expect(t("In 500 feet, поверни налево на El Centro Rd.", undefined, "ru")).toBe("Через 500 футов, поверни налево на El Centro Rd.");
-    expect(t("In 1.2 miles, keep right.", undefined, "ru")).toBe("Через 1.2 мили, keep right.");
+    expect(t("In 500 feet, поверни налево на El Centro Rd.", undefined, "ru")).toBe("Через 500 футов поверни налево на El Centro Rd.");
+    expect(t("In 1.2 miles, keep right.", undefined, "ru")).toBe("Через 1,2 мили keep right.");
     expect(t("In 1 miles", undefined, "ru")).toBe("Через 1 милю");
     expect(t("Navigating to Reno, NV", undefined, "ru")).toBe("Едем в Reno, NV");
     expect(t("End the route to {name}?", { name: "Reno" }, "ru")).toBe("Завершить маршрут до Reno?");

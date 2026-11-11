@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- jest.resetModules needs a fresh require */
 import { AppState } from "react-native";
 
-jest.mock("expo", () => ({ isRunningInExpoGo: () => false }));
+jest.mock("expo", () => ({ ...jest.requireActual("expo"), isRunningInExpoGo: () => false }));
 jest.mock("expo-task-manager", () => ({ defineTask: jest.fn() }));
 jest.mock("expo-location", () => ({
   Accuracy: { BestForNavigation: 6 },

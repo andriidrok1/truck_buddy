@@ -4,6 +4,7 @@ import { fonts, radius, spacing, useTheme } from "../theme";
 import { Text } from "../i18n/Text";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
+import { t } from "../i18n";
 
 export const HISTORY_ERROR = "Couldn't load your conversations.";
 export const HISTORY_EMPTY = "Nothing yet. Talk to your copilot and it will remember.";
@@ -23,7 +24,7 @@ export function HistoryEmpty({ error, retrying, onRetry }: { error: boolean; ret
         <PressableScale
           testID="history-retry"
           accessibilityRole="button"
-          accessibilityLabel="Retry"
+          accessibilityLabel={t("Retry")}
           onPress={onRetry}
           disabled={retrying}
           style={[styles.retry, { backgroundColor: colors.brandPrimary }]}

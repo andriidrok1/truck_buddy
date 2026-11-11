@@ -2,6 +2,7 @@ import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { fonts, spacing, useTheme } from "../theme";
 import type { MapsSource } from "../types";
+import { t } from "../i18n";
 
 /**
  * The Google Maps places a grounded answer came from ("what do drivers say about it?"). Google's terms for
@@ -21,7 +22,7 @@ export function MapsSources({ sources, center = false }: { sources?: MapsSource[
           key={s.url}
           testID="maps-source-link"
           accessibilityRole="link"
-          accessibilityLabel={`${s.name} on Google Maps`}
+          accessibilityLabel={t("{name} on Google Maps", { name: s.name })}
           hitSlop={8}
           onPress={() => Linking.openURL(s.url).catch(() => {})}
         >

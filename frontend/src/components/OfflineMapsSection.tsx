@@ -8,11 +8,14 @@ import { useTheme } from "../theme";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
 import { styles } from "./truckProfileStyles";
+import { t, useLang } from "../i18n";
+import { numericDate } from "../utils/arrivalClock";
 
 /** MapLibre builds only: with the Apple provider there is no pack to list and nothing to delete. */
 export function OfflineMapsSection() {
   const { colors } = useTheme();
   const offlineMaps = usePacks();
+  const lang = useLang(); // the download date in the app's language, not the phone's (QA 2026-11-09, S16)
   if (!offlineMaps.available) return null;
   return (
     <>
@@ -32,10 +35,10 @@ export function OfflineMapsSection() {
                 </Text>
                 <Text style={[styles.switchSub, { color: colors.onSurfaceSecondary }]}>
                   {p.complete ? formatBytes(p.bytes) : `${Math.round(p.percentage)}% · ${formatBytes(p.bytes)}`}
-                  {p.createdAt ? ` · ${new Date(p.createdAt).toLocaleDateString()}` : ""}
+                  {p.createdAt ? ` · ${numericDate(new Date(p.createdAt), lang)}` : ""}
                 </Text>
               </View>
-              <PressableScale testID={`offline-pack-delete-${p.name}`} accessibilityLabel={`Delete ${p.name}`} onPress={() => removePack(p.name)} style={styles.packDelete}>
+              <PressableScale testID={`offline-pack-delete-${p.name}`} accessibilityLabel={t("Delete {name}", { name: p.name })} onPress={() => removePack(p.name)} style={styles.packDelete}>
                 <Icon name="delete-outline" size={22} color={colors.error} />
               </PressableScale>
             </View>

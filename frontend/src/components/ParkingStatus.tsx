@@ -14,6 +14,7 @@ import { Icon } from "./Icon";
 import ParkingSatMap from "./ParkingSatMap";
 import { PressableScale } from "./PressableScale";
 import { SpotBadge } from "./SpotBadge";
+import { t } from "../i18n";
 
 function look(c: ThemeColors, v: ParkingCheck["verdict"]) {
   if (v === "listed") return { icon: "check-circle", color: c.success };
@@ -52,7 +53,8 @@ function Tip({ icon, text, testID }: { icon: string; text: string; testID: strin
   return (
     <View style={styles.tipRow}>
       <Icon name={icon} size={16} color={colors.onSurfaceSecondary} />
-      <Text testID={testID} numberOfLines={2} style={[styles.tip, { color: colors.onSurface }]}>
+      {/* Whole: a Russian entry tip cut at "…изогнутый по…" could not be opened (QA 2026-11-09, bug 18). */}
+      <Text testID={testID} style={[styles.tip, { color: colors.onSurface }]}>
         {text}
       </Text>
     </View>
@@ -66,10 +68,12 @@ type Props = {
   place?: Place | null;
   /** Active route geometry; its last ~300 m is drawn on the zoomable map. */
   route?: [number, number][] | null;
+  /** One line: the verdict only (the short route card). Tips, the satellite and the note stay for the full card. */
+  compact?: boolean;
 };
 
 /** Parking verdict, how to enter / where to park, and the satellite thumbnail (tap for a zoomable map). */
-export function ParkingStatus({ parking, idSuffix = "", place, route }: Props) {
+export function ParkingStatus({ parking, idSuffix = "", place, route, compact }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
@@ -82,6 +86,16 @@ export function ParkingStatus({ parking, idSuffix = "", place, route }: Props) {
     );
   }
   const { icon, color } = look(colors, parking.verdict);
+  if (compact) {
+    return (
+      <View testID={`parking-status-compact${idSuffix}`} style={[styles.labelRow, styles.compact]}>
+        <Icon name={icon} size={18} color={color} />
+        <Text testID={`parking-status-label${idSuffix}`} numberOfLines={1} style={[styles.label, { color: colors.onSurface }]}>
+          {parking.label}
+        </Text>
+      </View>
+    );
+  }
   const uri = parking.image_path ? apiUrl(parking.image_path) : null;
   const spots = parking.spots ?? [];
   const center = parking.image_path ? frameCenter(parking.image_path) : null;
@@ -111,7 +125,7 @@ export function ParkingStatus({ parking, idSuffix = "", place, route }: Props) {
       </View>
 
       {uri && (
-        <PressableScale testID={`parking-satellite-thumb${idSuffix}`} accessibilityLabel="Open satellite view" onPress={() => setOpen(true)}>
+        <PressableScale testID={`parking-satellite-thumb${idSuffix}`} accessibilityLabel={t("Open satellite view")} onPress={() => setOpen(true)}>
           <View style={styles.thumbWrap}>
             {/* Icon shows through until the image loads */}
             <View pointerEvents="none" style={[styles.thumbIcon, { backgroundColor: colors.surfaceTertiary }]}>
@@ -130,7 +144,7 @@ export function ParkingStatus({ parking, idSuffix = "", place, route }: Props) {
               {open && <ParkingSatMap center={center} place={place} spots={spots} tail={route?.length ? routeTail(route) : []} />}
               <PressableScale
                 testID={`parking-satellite-close${idSuffix}`}
-                accessibilityLabel="Close satellite view"
+                accessibilityLabel={t("Close satellite view")}
                 onPress={close}
                 containerStyle={[styles.closeWrap, { top: insets.top + spacing.sm }]}
                 style={[styles.closeBtn, { backgroundColor: colors.surface }]}
@@ -140,7 +154,7 @@ export function ParkingStatus({ parking, idSuffix = "", place, route }: Props) {
             </View>
             <Pressable
               testID={`parking-satellite-footer${idSuffix}`}
-              accessibilityLabel="Tap to close"
+              accessibilityLabel={t("Tap to close")}
               onPress={close}
               style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}
             >
@@ -155,7 +169,7 @@ export function ParkingStatus({ parking, idSuffix = "", place, route }: Props) {
               )}
               <PressableScale
                 testID={`parking-open-google${idSuffix}`}
-                accessibilityLabel="Open in Google Maps"
+                accessibilityLabel={t("Open in Google Maps")}
                 onPress={() => openStreetView(place?.lat ?? center.lat, place?.lng ?? center.lng)}
                 style={[styles.gmBtn, { backgroundColor: colors.surface }]}
               >
@@ -175,6 +189,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: spacing.sm },
   textCol: { flex: 1, gap: 4 },
   labelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  compact: { marginTop: spacing.sm },
   label: { fontFamily: fonts.semibold, fontSize: 14, flexShrink: 1 },
   reason: { fontFamily: fonts.regular, fontSize: 12, marginTop: 2 },
   tipRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },

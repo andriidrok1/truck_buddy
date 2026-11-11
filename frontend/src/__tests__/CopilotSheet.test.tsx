@@ -6,9 +6,17 @@ import { CopilotSheet } from "../components/CopilotSheet";
 // Reanimated's native worklets are not installed under jest: plain views, no-op animations.
 jest.mock("react-native-reanimated", () => {
   const { View, Text, ScrollView } = jest.requireActual<typeof import("react-native")>("react-native");
+  // Layout animations chain (FadeInDown.delay(80).duration(260)); any call returns the same stub.
+  const anim: object = new Proxy(() => anim, { get: () => () => anim });
   return {
     __esModule: true,
     default: { View, Text, ScrollView },
+    FadeIn: anim,
+    FadeInDown: anim,
+    FadeInUp: anim,
+    FadeOut: anim,
+    ZoomIn: anim,
+    withTiming: (v: unknown) => v,
     useSharedValue: (v: unknown) => {
       const sv = { value: v, get: () => sv.value, set: (n: unknown) => void (sv.value = n) };
       return sv;
@@ -161,7 +169,8 @@ describe("CopilotSheet route preview", () => {
     expect(screen.queryByTestId("end-route-button")).toBeNull();
     await fireEvent.press(screen.getByTestId("cancel-route-button"));
     expect(onEnd).toHaveBeenCalledTimes(1);
-    for (const id of ["routes-chip", "other-options-button", "go-button"]) {
+    await fireEvent.press(screen.getByTestId("more-button"));
+    for (const id of ["routes-chip", "other-options-button", "go-button", "more-button"]) {
       // PressableScale: the testID is on the Pressable, the size on the view inside it.
       const inner = screen.getByTestId(id).children[0] as unknown as { props: { style: unknown } };
       const box = StyleSheet.flatten(inner.props.style as never) as { height?: number; minHeight?: number };
@@ -197,6 +206,10 @@ describe("CopilotSheet route preview", () => {
         onLayout={noop}
       />,
     );
+    // Safety stays on the short card: the permit line is never behind More.
+    expect(screen.getByTestId("route-restricted")).toBeTruthy();
+    expect(screen.getByTestId("route-notices")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("more-button"));
     const body = screen.getByTestId("sheet-body");
     expect(within(body).getByTestId("sheet-reply")).toBeTruthy();
     expect(within(body).getByTestId("route-notices")).toBeTruthy();
@@ -211,6 +224,7 @@ describe("CopilotSheet route preview", () => {
     useLangStore.setState({ lang: "ru" });
     try {
       await render(preview(false));
+      await fireEvent.press(screen.getByTestId("more-button"));
       const label = screen.getByTestId("routes-chip-label");
       expect(label.props.children).toBe("Маршруты (3)");
       expect(label.props.numberOfLines).toBe(2);
@@ -224,6 +238,21 @@ describe("CopilotSheet route preview", () => {
     } finally {
       useLangStore.setState({ lang: "en" });
     }
+  });
+
+  test("the route card starts short: time, place, one parking line, Go and More; the rest opens with More (Figma variant A)", async () => {
+    await render(preview(false));
+    expect(screen.getByTestId("route-summary")).toBeTruthy();
+    expect(screen.getByTestId("route-place-name")).toBeTruthy();
+    expect(screen.getByTestId("go-button")).toBeTruthy();
+    for (const id of ["routes-chip", "other-options-button", "route-place-tags"]) expect(screen.queryByTestId(id)).toBeNull();
+    const more = screen.getByTestId("more-button");
+    expect(more.props.accessibilityLabel).toBe("More");
+    await fireEvent.press(more);
+    for (const id of ["routes-chip", "other-options-button", "route-place-tags"]) expect(screen.getByTestId(id)).toBeTruthy();
+    expect(screen.getByTestId("more-button").props.accessibilityLabel).toBe("Less");
+    await fireEvent.press(screen.getByTestId("more-button"));
+    expect(screen.queryByTestId("routes-chip")).toBeNull();
   });
 
   test("driving: End route is there, Cancel is gone", async () => {
@@ -265,5 +294,41 @@ describe("CopilotSheet type row (UI review 2026-11-05, N8)", () => {
       expect(st.width).toBeGreaterThanOrEqual(56);
       expect(st.height).toBeGreaterThanOrEqual(56);
     }
+  });
+});
+
+describe("CopilotSheet how-to link (Figma 71:2)", () => {
+  const idle = (onHowTo: () => void, lastReply: string | null = null) => (
+    <CopilotSheet
+      phase="ready"
+      speaking={false}
+      onShowOptions={noop}
+      options={[]}
+      parking={{}}
+      onOptionParking={noop}
+      onOptionRoute={noop}
+      active={null}
+      driving={false}
+      remaining={null}
+      onGo={noop}
+      bottomInset={0}
+      onAvatarPress={noop}
+      onSubmitText={noop}
+      onClose={noop}
+      onEndRoute={noop}
+      onLayout={noop}
+      lastReply={lastReply}
+      onHowTo={onHowTo}
+    />
+  );
+
+  test("under the empty sheet's title it opens How to use; an answer takes its place", async () => {
+    const onHowTo = jest.fn();
+    await render(idle(onHowTo));
+    expect(screen.getByText("How to talk to me")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("how-to-link"));
+    expect(onHowTo).toHaveBeenCalledTimes(1);
+    await render(idle(onHowTo, "Pilot in Fernley, 12 miles."));
+    expect(screen.queryByTestId("how-to-link")).toBeNull();
   });
 });

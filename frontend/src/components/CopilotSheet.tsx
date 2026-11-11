@@ -3,7 +3,7 @@ import { Keyboard, Platform, Pressable, StyleSheet, TextInput, useWindowDimensio
 import { Text } from "../i18n/Text";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import { KeyboardStickyView } from "@/src/keyboard";
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown, FadeOut, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming, type SharedValue } from "react-native-reanimated";
 
 import { routesChipText } from "../geo/routeChoice";
 import type { OfflineMapState } from "../hooks/useOfflineMap";
@@ -35,6 +35,30 @@ const SNAP_SPRING = { damping: 22, stiffness: 240, mass: 0.9, overshootClamping:
 /** Vertical travel before the drag takes over; sideways travel that hands the touch to a chip row. */
 const PAN_ACTIVE_Y: [number, number] = [-8, 8];
 const PAN_FAIL_X: [number, number] = [-24, 24];
+
+/** What More opens arrives softly instead of popping in (fade, a short slide for the buttons). */
+const REVEAL_MS = 220;
+function Reveal({ children }: { children: ReactNode }) {
+  return (
+    <Animated.View entering={FadeIn.duration(REVEAL_MS)} exiting={FadeOut.duration(120)}>
+      {children}
+    </Animated.View>
+  );
+}
+
+/** The chevron on More turns over instead of swapping icons. */
+function MoreChevron({ open, color }: { open: boolean; color: string }) {
+  const turn = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    turn.set(withTiming(open ? 1 : 0, { duration: REVEAL_MS }));
+  }, [open, turn]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.get() * 180}deg` }] }));
+  return (
+    <Animated.View style={style}>
+      <Icon name="chevron-up" size={20} color={color} />
+    </Animated.View>
+  );
+}
 
 type Props = {
   phase: Phase;
@@ -83,10 +107,12 @@ type Props = {
   /** The copilot's answer when the map has no room for the bubble (130 % font, a tall Russian route card): it is
    *  shown at the top of the route card instead, so it is never on screen nowhere (UI review 2026-11-05, N1). */
   replyInSheet?: string | null;
+  /** "How to talk to me" under the idle title (Figma 71:2): opens the "How to use" screen. */
+  onHowTo?: () => void;
 };
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, micLevel, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel, quiet, routesPanel, replyInSheet } = props;
+  const { phase, speaking, micLevel, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel, quiet, routesPanel, replyInSheet, onHowTo } = props;
   const tr = useT();
   const lang = useLang();
   const routesChip = active && !driving ? routesChipText(active.route) : null;
@@ -95,6 +121,12 @@ export function CopilotSheet(props: Props) {
   const canType = phase === "ready" || phase === "navigating" || phase === "options" || phase === "providers";
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState("");
+  // The route card starts short (Figma "14 · Parking answer", variant A, 2026-11-10): time, place, one parking line
+  // and Go. Tags, entry tips, the satellite, reviews, other routes and places open with More. A new place or phase
+  // starts short again.
+  const moreKey = `${phase}:${active?.place.id ?? ""}`;
+  const [moreFor, setMoreFor] = useState<string | null>(null);
+  const more = moreFor === moreKey;
 
   // Drag: three resting heights, all derived from the content (src/utils/sheetSnap.ts): peek
   // (grabber + first header line + controls), auto (the content's own height, where every phase
@@ -234,7 +266,7 @@ export function CopilotSheet(props: Props) {
         <Pressable
           testID="sheet-grabber"
           accessibilityRole="button"
-          accessibilityLabel={state === "peek" ? "Show details" : "Hide details"}
+          accessibilityLabel={state === "peek" ? t("Show details") : t("Hide details")}
           onPress={toggleGrabber}
           hitSlop={{ top: 12, bottom: 4 }}
           style={styles.grab}
@@ -266,6 +298,21 @@ export function CopilotSheet(props: Props) {
               </Text>
             )}
             {!!lastReply && <MapsSources sources={lastReplySources} center />}
+            {!lastReply && !!onHowTo && (
+              <PressableScale
+                testID="how-to-link"
+                accessibilityRole="button"
+                accessibilityLabel={t("How to talk to me")}
+                onPress={onHowTo}
+                hitSlop={8}
+                containerStyle={styles.howToWrap}
+                style={[styles.howTo, { backgroundColor: colors.avatarGlowSoft }]}
+              >
+                <Icon name="help-circle-outline" size={20} color={colors.info} />
+                <Text style={[styles.howToText, { color: colors.info }]}>How to talk to me</Text>
+                <Icon name="chevron-right" size={20} color={colors.info} />
+              </PressableScale>
+            )}
           </View>
         )}
         {phase === "listening" && (
@@ -312,15 +359,15 @@ export function CopilotSheet(props: Props) {
                 {active.route.summary}
               </Text>
             </View>
-            {(() => {
+            {more && (() => {
               const e = entrySpot(active.parking);
               return e && routeEndsAt(active.route, e) ? (
-                <View style={styles.entryRow}>
+                <Animated.View entering={FadeIn.duration(REVEAL_MS)} exiting={FadeOut.duration(120)} style={styles.entryRow}>
                   <Icon name="login-variant" size={16} color={colors.info} />
                   <Text testID="route-to-entry" style={[styles.notice, { color: colors.info }]}>
                     Route ends at truck entrance
                   </Text>
-                </View>
+                </Animated.View>
               ) : null;
             })()}
             {active.route.truck_aware === false && (
@@ -344,12 +391,14 @@ export function CopilotSheet(props: Props) {
             <Text testID="route-place-name" numberOfLines={1} style={[styles.placeName, { color: colors.onSurface }]}>
               {active.place.name}
             </Text>
-            <View style={styles.tagRow}>
+            {more && (
+            <Animated.View entering={FadeIn.duration(REVEAL_MS)} exiting={FadeOut.duration(120)} style={styles.tagRow}>
               <Icon name={active.place.tags.length ? "truck" : "map-marker-outline"} size={18} color={colors.onSurfaceSecondary} />
-              <Text testID="route-place-tags" numberOfLines={1} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
+              <Text testID="route-place-tags" numberOfLines={2} style={[styles.tags, { color: colors.onSurfaceSecondary }]}>
                 {active.place.tags.length ? placeTagLine(active.place.tags, tr) : active.place.address ?? (active.place.category === "destination" ? "Destination" : "Address unknown")}
               </Text>
-            </View>
+            </Animated.View>
+            )}
             {!!active.stops?.length && (
               <View testID="stops-row" style={styles.stopsRow}>
                 <Text style={[styles.stopsLabel, { color: colors.onSurfaceSecondary }]}>Stops</Text>
@@ -358,17 +407,22 @@ export function CopilotSheet(props: Props) {
                     <Text numberOfLines={1} style={[styles.stopName, { color: colors.onSurface }]}>
                       {s.name}
                     </Text>
-                    <Pressable testID={`stop-remove-${s.id}`} accessibilityLabel={`Remove stop ${s.name}`} hitSlop={10} onPress={() => onRemoveStop?.(s)}>
+                    <Pressable testID={`stop-remove-${s.id}`} accessibilityLabel={t("Remove stop {name}", { name: s.name })} hitSlop={10} onPress={() => onRemoveStop?.(s)}>
                       <Icon name="close" size={16} color={colors.onSurfaceSecondary} />
                     </Pressable>
                   </View>
                 ))}
               </View>
             )}
-            {!!active.place.reviews?.length && <ReviewsGist reviews={active.place.reviews} />}
-            <ParkingLiveBadge place={active.place} />
-            {active.place.category !== "service" && <ParkingStatus parking={active.parking} place={active.place} route={active.route.geometry} />}
-            {offlineMap && <OfflineMapButton state={offlineMap} onPress={onDownloadMap} />}
+            {!more && active.place.category !== "service" && <ParkingStatus compact parking={active.parking} place={active.place} />}
+            {more && (
+              <Reveal>
+                {!!active.place.reviews?.length && <ReviewsGist reviews={active.place.reviews} />}
+                <ParkingLiveBadge place={active.place} />
+                {active.place.category !== "service" && <ParkingStatus parking={active.parking} place={active.place} route={active.route.geometry} />}
+                {offlineMap && <OfflineMapButton state={offlineMap} onPress={onDownloadMap} />}
+              </Reveal>
+            )}
           </View>
         )}
       </View>
@@ -379,12 +433,12 @@ export function CopilotSheet(props: Props) {
           buttons of the same weight, full 56 pt (UI review 2026-11-05: 31 pt text links). They sit with Go under
           the scrolling card: a long answer plus the permit line pushed them below the fold, and the driver never
           learned there were other routes or places (QA 2026-11-05, M-3). */}
-      {navigating && active && !driving && !routesPanel && (options.length > 0 || routesChip) && (
-        <View style={styles.linkRow}>
+      {navigating && active && !driving && !routesPanel && more && (options.length > 0 || routesChip) && (
+        <Animated.View entering={FadeInDown.duration(REVEAL_MS)} exiting={FadeOut.duration(120)} style={styles.linkRow}>
           {routesChip && (
             <PressableScale
               testID="routes-chip"
-              accessibilityLabel="Other routes"
+              accessibilityLabel={t("Other routes")}
               onPress={onShowRoutes}
               containerStyle={styles.linkItem}
               style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
@@ -396,7 +450,7 @@ export function CopilotSheet(props: Props) {
           {options.length > 0 && (
             <PressableScale
               testID="other-options-button"
-              accessibilityLabel="Other places"
+              accessibilityLabel={t("Other places")}
               onPress={onShowOptions}
               containerStyle={styles.linkItem}
               style={[styles.linkBtn, { backgroundColor: colors.surfaceSecondary }]}
@@ -407,22 +461,35 @@ export function CopilotSheet(props: Props) {
               </Text>
             </PressableScale>
           )}
-        </View>
+        </Animated.View>
       )}
 
       {/* Go sits under the scrolling card, never inside it: with three stops, or at a 130 % font, the card
           outgrew the sheet and the main button was half under the bottom bar (QA 2026-10-31, Н9, Н25). */}
       {navigating && active && !driving && !routesPanel && (
-        <PressableScale
-          testID="go-button"
-          accessibilityLabel="Go"
-          onPress={onGo}
-          haptic="heavy"
-          style={[styles.goBtn, { backgroundColor: colors.info }]}
-        >
-          <Icon name="navigation-variant" size={22} color={colors.onInfo} />
-          <Text style={[styles.goText, { color: colors.onInfo }]}>Go</Text>
-        </PressableScale>
+        <View style={styles.goRow}>
+          <PressableScale
+            testID="go-button"
+            accessibilityLabel={t("Go")}
+            onPress={onGo}
+            haptic="heavy"
+            containerStyle={styles.goItem}
+            style={[styles.goBtn, { backgroundColor: colors.info }]}
+          >
+            <Icon name="navigation-variant" size={22} color={colors.onInfo} />
+            <Text style={[styles.goText, { color: colors.onInfo }]}>Go</Text>
+          </PressableScale>
+          <PressableScale
+            testID="more-button"
+            accessibilityLabel={t(more ? "Less" : "More")}
+            accessibilityState={{ expanded: more }}
+            onPress={() => setMoreFor(more ? null : moreKey)}
+            style={[styles.moreBtn, { backgroundColor: colors.surfaceSecondary }]}
+          >
+            <MoreChevron open={more} color={colors.onSurface} />
+            <Text style={[styles.linkText, { color: colors.onSurface }]}>{more ? "Less" : "More"}</Text>
+          </PressableScale>
+        </View>
       )}
 
       {typing && canType ? (
@@ -444,7 +511,7 @@ export function CopilotSheet(props: Props) {
           />
           <PressableScale
             testID="copilot-send-button"
-            accessibilityLabel="Send"
+            accessibilityLabel={t("Send")}
             onPress={send}
             disabled={!draft.trim()}
             style={[styles.roundBtn, { backgroundColor: draft.trim() ? colors.info : colors.surfaceTertiary }]}
@@ -453,7 +520,7 @@ export function CopilotSheet(props: Props) {
           </PressableScale>
           <PressableScale
             testID="copilot-text-close"
-            accessibilityLabel="Done typing"
+            accessibilityLabel={t("Done typing")}
             onPress={() => {
               Keyboard.dismiss();
               setTyping(false);
@@ -474,7 +541,7 @@ export function CopilotSheet(props: Props) {
         <Pressable
           testID="copilot-avatar-button"
           accessibilityRole="button"
-          accessibilityLabel={caption}
+          accessibilityLabel={t(caption)}
           onPress={() => {
             haptic("medium");
             onAvatarPress();
@@ -488,7 +555,7 @@ export function CopilotSheet(props: Props) {
           />
           <View style={styles.captionRow}>
             {!!wakePhrase && (
-              <View testID="wake-indicator" accessibilityLabel="Listening for wake word" style={[styles.wakeDot, { backgroundColor: colors.success }]} />
+              <View testID="wake-indicator" accessibilityLabel={t("Listening for wake word")} style={[styles.wakeDot, { backgroundColor: colors.success }]} />
             )}
             <Text testID="avatar-caption" style={[styles.caption, { color: colors.onSurfaceSecondary }]}>
               {caption}
@@ -514,7 +581,10 @@ export function CopilotSheet(props: Props) {
 const styles = StyleSheet.create({
   wrap: { position: "absolute", left: 0, right: 0, bottom: 0 },
   driveInfo: { alignItems: "center", gap: 2 },
-  goBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, height: 56, borderRadius: 28, marginTop: spacing.sm },
+  goRow: { flexDirection: "row", alignItems: "stretch", gap: spacing.sm, marginTop: spacing.sm },
+  goItem: { flex: 1 },
+  goBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, height: 56, borderRadius: 28 },
+  moreBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, minHeight: 56, paddingHorizontal: spacing.lg, borderRadius: 28 },
   goText: { fontFamily: fonts.bold, fontSize: 18 },
   inputRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.md },
   input: { flex: 1, minWidth: 0, width: 0, minHeight: 56, borderRadius: 28, paddingHorizontal: spacing.lg, fontFamily: fonts.medium, fontSize: 16, ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : {}) },
@@ -532,6 +602,10 @@ const styles = StyleSheet.create({
   header: { minHeight: 36, justifyContent: "center" },
   title: { fontFamily: fonts.bold, fontSize: 22, textAlign: "center" },
   sheetReply: { fontFamily: fonts.medium, fontSize: 17, lineHeight: 24, marginBottom: spacing.sm },
+  // A 40 pt pill plus an 8 pt slop all round: a 56 pt target, like the search bar's arrow.
+  howToWrap: { alignSelf: "center", marginTop: spacing.sm },
+  howTo: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 40, paddingHorizontal: spacing.lg, borderRadius: radius.pill },
+  howToText: { fontFamily: fonts.bold, fontSize: 16, flexShrink: 1 },
   lastReply: { fontFamily: fonts.regular, fontSize: 17, lineHeight: 24, textAlign: "center", marginTop: spacing.xs },
   listenRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.md },
   navInfo: { gap: 2 },

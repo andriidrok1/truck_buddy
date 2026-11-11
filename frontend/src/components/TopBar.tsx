@@ -19,6 +19,10 @@ type Props = {
   /** While set, a focus the box gets was handed to it by Android (a typed request was just sent), not tapped: it is given back. */
   blurGuard?: MutableRefObject<boolean>;
   onTruckPress: () => void;
+  /** "?": the "How to use" screen. */
+  onHelpPress: () => void;
+  /** Blue dot on "?" until that screen has been seen once (src/state/howTo.ts). */
+  helpDot: boolean;
   onHistoryPress: () => void;
   /** Tester login: shows the test-scenarios button. */
   tester: boolean;
@@ -32,7 +36,7 @@ type Props = {
 };
 
 /** Google-Maps-style top: "Where to?" search bar, truck settings on the right, memory below it. */
-export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, blurGuard, onTruckPress, onHistoryPress, tester, simLabel, onTesterPress, isDemo, onLocationPress, onLayout }: Props) {
+export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, blurGuard, onTruckPress, onHelpPress, helpDot, onHistoryPress, tester, simLabel, onTesterPress, isDemo, onLocationPress, onLayout }: Props) {
   const { colors } = useTheme();
   const lang = useLang();
   const card = [shadow(colors), { backgroundColor: colors.surface }];
@@ -70,16 +74,24 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, bl
             returnKeyType="search"
             autoCorrect={false}
             style={[styles.input, { color: colors.onSurface, fontFamily: fontFor(fonts.medium, lang) }]}
-            accessibilityLabel="Where to?"
+            accessibilityLabel={t("Where to?")}
           />
           {!!text.trim() && (
-            <PressableScale testID="search-submit" accessibilityLabel="Search" onPress={submit} hitSlop={8} style={[styles.go, { backgroundColor: colors.brandPrimary }]}>
+            <PressableScale testID="search-submit" accessibilityLabel={t("Search")} onPress={submit} hitSlop={8} style={[styles.go, { backgroundColor: colors.brandPrimary }]}>
               <Icon name="arrow-right" size={20} color={colors.onBrandPrimary} />
             </PressableScale>
           )}
         </View>
 
-        <PressableScale testID="truck-profile-button" accessibilityLabel={`Truck settings: ${truckLabel}`} onPress={onTruckPress} style={[card, styles.circle]}>
+        {/* Between search and truck (Figma 71:2). The search box gives up 56 + 12 dp and keeps a 136 dp field on a
+            360 dp phone: "Where to?" fits up to a 1.6 font scale, "Куда едем?" up to 1.45 (measured from the font
+            files); past that the placeholder is clipped at the field's edge, the row itself never wraps. */}
+        <PressableScale testID="help-button" accessibilityLabel={t("How to use")} onPress={onHelpPress} style={[card, styles.circle]}>
+          <Icon name="help-circle-outline" size={26} color={colors.onSurface} />
+          {helpDot && <View testID="help-dot" style={[styles.dot, { backgroundColor: colors.info, borderColor: colors.surface }]} />}
+        </PressableScale>
+
+        <PressableScale testID="truck-profile-button" accessibilityLabel={t("Truck settings: {what}", { what: t(truckLabel) })} onPress={onTruckPress} style={[card, styles.circle]}>
           <Icon name="truck" size={26} color={colors.onSurface} />
           {hazmat && (
             <View testID="truck-hazmat-badge" style={[styles.hazmat, { backgroundColor: colors.warning, borderColor: colors.surface }]}>
@@ -91,14 +103,14 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, bl
 
       <View style={styles.second} pointerEvents="box-none">
         {simLabel ? (
-          <PressableScale testID="sim-location-tag" accessibilityLabel="Test location" onPress={onTesterPress} style={[card, styles.demo]}>
+          <PressableScale testID="sim-location-tag" accessibilityLabel={t("Test location")} onPress={onTesterPress} style={[card, styles.demo]}>
             <View style={[styles.demoDot, { backgroundColor: colors.warning }]} />
             <Text style={[styles.demoText, { color: colors.onSurfaceSecondary }]} numberOfLines={1}>{simLabel}</Text>
           </PressableScale>
         ) : isDemo ? (
           <PressableScale
             testID="demo-location-tag"
-            accessibilityLabel="Location is off. Turn on location"
+            accessibilityLabel={t("Location is off. Turn on location")}
             onPress={onLocationPress}
             style={[card, styles.demo]}
           >
@@ -111,11 +123,11 @@ export function TopBar({ topInset, truckLabel, hazmat, destination, onSearch, bl
           <View />
         )}
         <View style={styles.side} pointerEvents="box-none">
-          <PressableScale testID="history-button" accessibilityLabel="Conversation memory" onPress={onHistoryPress} style={[card, styles.small]}>
+          <PressableScale testID="history-button" accessibilityLabel={t("Conversation memory")} onPress={onHistoryPress} style={[card, styles.small]}>
             <Icon name="chat-processing-outline" size={22} color={colors.onSurface} />
           </PressableScale>
           {tester && (
-            <PressableScale testID="tester-button" accessibilityLabel="Test scenarios" onPress={onTesterPress} style={[card, styles.small]}>
+            <PressableScale testID="tester-button" accessibilityLabel={t("Test scenarios")} onPress={onTesterPress} style={[card, styles.small]}>
               <Icon name="flask-outline" size={22} color={colors.onSurface} />
             </PressableScale>
           )}
@@ -153,6 +165,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  dot: { position: "absolute", top: 4, right: 4, width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
   second: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingHorizontal: spacing.lg, marginTop: spacing.md, gap: spacing.md },
   side: { gap: spacing.md },
   small: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },

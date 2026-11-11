@@ -17,6 +17,9 @@ import MapLayer from "@/src/components/MapLayer";
 import type { MapLayerHandle } from "@/src/components/mapTypes";
 import { MicPermissionCard } from "@/src/components/MicPermissionCard";
 import { HeightConfirmCard } from "@/src/components/HeightConfirmCard";
+import { HowToSheet } from "@/src/components/HowToSheet";
+import { useHowToFlow } from "@/src/hooks/useHowToFlow";
+import { useEldToken } from "@/src/eld";
 import { confirmHeight, isHeightConfirmed, useHeightConfirmed } from "@/src/truck/heightConfirmed";
 import { NavBanner } from "@/src/components/NavBanner";
 import { dial, ProvidersList } from "@/src/components/ProvidersList";
@@ -65,7 +68,7 @@ import { entrySpot, routeEndsAt } from "@/src/utils/entry";
 import { parkingFollowup, toAudio } from "@/src/utils/parkingFollowup";
 import { routeFailText } from "@/src/utils/routeFail";
 import { searchRequest } from "@/src/utils/searchRequest";
-import { nearbyLine, statusLine } from "@/src/voice/parkingLines";
+import { verdictLine } from "@/src/voice/parkingLines";
 import { recorder } from "@/src/geo/driveRecorder";
 import { tripLog } from "@/src/net/tripEvents";
 import { t } from "@/src/i18n";
@@ -230,8 +233,18 @@ export default function MapScreen() {
   // it in and the route refits above it; the destination pin is never under the bubble (UI review 2026-11-05,
   // M11). Dismissing the bubble gives the room back.
   const previewing = phase === "navigating" && !!active && !driving;
+  // "How to use" (src/state/howTo.ts): opens by itself once after onboarding, or from "?" and the sheet's link. A chip
+  // is a typed request, the same path as the sheet's text field; "Try it now" is a tap on the avatar. Both handlers
+  // are declared further down and only called on a tap, after this render.
+  const busy = phase === "listening" || phase === "thinking";
+  const howTo = useHowToFlow({ focused, micCard: !!micCard, busy, ask: (q) => onSubmitText(q), listen: () => onAvatarPress() });
+  const motiveKey = useEldToken();
   // The height card waits while the mic card asks, and while the copilot listens or thinks (one thing at a time).
-  const showHeightCard = heightConfirmed === false && focused && !micCard && phase !== "listening" && phase !== "thinking";
+  // After onboarding "How to use" goes first and the height card right after it: the card stays until answered
+  // and Go waits for it, so it loses nothing by waiting, while two things on screen at once is what the
+  // one-at-a-time rule is for. Until the how-to flag is read the card waits too, or it would flash for a frame.
+  const showHeightCard =
+    heightConfirmed === false && focused && !micCard && !busy && !howTo.holdsCards;
   const cardUp = (showHeightCard || !!micCard) && cardH > 0;
   // The bubble sits above a card on the map, never under it: under the height card the whole answer was hidden
   // (UI review 2026-11-05, third pass, M2).
@@ -299,7 +312,7 @@ export default function MapScreen() {
       // Spoken right after the answer: the verdict only. The entry and parking tips stay on the card and
       // are said when the truck is within half a mile (approachTips below) or on "how do I get in".
       // The whole set after every answer ran 17 s (QA 2026-10-28, U5).
-      const text = pk.verdict === "unlikely" ? `Heads up: from the satellite, parking there looks tight for a rig.${nearbyLine(pk)}` : statusLine(pk);
+      const text = verdictLine(pk);
       if (!text) return;
       const audio = api.speak(text); // generate while the first answer is still playing
       await replyDone;
@@ -453,7 +466,7 @@ export default function MapScreen() {
     setThinkingText("Checking who's around…");
     const intro = sayReply(res, ctx.isCurrent);
     let done = false;
-    const interimAudio = api.speak(RESEARCH_INTERIM).catch(() => null);
+    const interimAudio = api.speak(t(RESEARCH_INTERIM)).catch(() => null);
     let interimPlayed: Promise<unknown> = Promise.resolve();
     const interim = setTimeout(() => {
       if (done || !ctx.isCurrent()) return;
@@ -515,6 +528,11 @@ export default function MapScreen() {
     turn.tap();
   };
 
+  const openHowTo = () => {
+    Keyboard.dismiss();
+    howTo.open();
+  };
+
   const onAllowMic = async () => {
     // A request that never answers (seen in Expo Go) must not leave the card dead: after 5 s the card
     // offers Settings, but a late "granted" still closes it (src/voice/micAsk.ts).
@@ -573,9 +591,9 @@ export default function MapScreen() {
   /** The End route button. Mid-trip it asks first: one stray tap ended a 2.5-hour trip with no way back
    *  (QA 2026-11-02). Near the end, or before Go, it ends at once. */
   const onEndRoutePress = () => {
-    const name = trip().active?.place.name.split(",")[0] ?? "this route";
+    const name = trip().active?.place.name.split(",")[0];
     if (!trip().driving || guidance.remainingS < END_CONFIRM_ABOVE_S) return onEndRoute();
-    setEndConfirm(t("End the route to {name}?", { name }));
+    setEndConfirm(name ? t("End the route to {name}?", { name }) : t("End the route?"));
   };
 
   const onEndRoute = () => {
@@ -850,6 +868,8 @@ export default function MapScreen() {
         onSearch={(q) => onSubmitText(searchRequest(q))}
         blurGuard={searchBlurGuard}
         onTruckPress={() => router.push("/truck-profile")}
+        onHelpPress={openHowTo}
+        helpDot={howTo.dot}
         onHistoryPress={() => router.push("/history")}
         tester={isTester()}
         simLabel={loc.sim?.label ?? null}
@@ -926,6 +946,7 @@ export default function MapScreen() {
           ) : null
         }
         replyInSheet={caption?.kind === "reply" && replyPlace === "sheet" ? caption.reply : null}
+        onHowTo={openHowTo}
       />
 
       {showHeightCard && (
@@ -969,6 +990,8 @@ export default function MapScreen() {
       )}
 
       <Toast toast={toast} top={topH + spacing.sm} />
+
+      <HowToSheet mode={howTo.mode} name={truck.driver_name} motive={!!motiveKey} onAsk={howTo.ask} onTryNow={howTo.tryNow} onClose={howTo.close} />
 
       <ConfirmSheet
         testID="end-route-confirm"

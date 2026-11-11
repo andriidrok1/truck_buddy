@@ -10,7 +10,8 @@ import { HistoryEmpty } from "@/src/components/HistoryEmpty";
 import { PressableScale } from "@/src/components/PressableScale";
 import { historyRows } from "@/src/utils/historyRows";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
-import { t } from "@/src/i18n";
+import { t, useLang, type Lang } from "@/src/i18n";
+import { clockTime, shortDate } from "@/src/utils/arrivalClock";
 
 const confirm = (msg: string, onYes: () => void) => {
   if (Platform.OS === "web") {
@@ -26,20 +27,21 @@ const confirm = (msg: string, onYes: () => void) => {
 /** Everything the copilot remembers from past conversations, with a "clear" button. */
 
 /** "Today", "Yesterday", else "Oct 28": one separator per day instead of a date under every bubble. */
-function dayLabel(iso: string): string {
+function dayLabel(iso: string, lang: Lang): string {
   const d = new Date(iso);
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
   if (d.toDateString() === today.toDateString()) return "Today";
   if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  return shortDate(d, lang);
 }
 
 export default function HistoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const lang = useLang(); // the bubbles' clock and the day separators follow the app's language
   const [turns, setTurns] = useState<MemoryTurn[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
@@ -90,7 +92,7 @@ export default function HistoryScreen() {
   return (
     <View style={[styles.root, { backgroundColor: colors.surface, paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <PressableScale testID="history-back" accessibilityLabel="Back" onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))} style={[styles.circle, { backgroundColor: colors.surfaceSecondary }]}>
+        <PressableScale testID="history-back" accessibilityLabel={t("Back")} onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))} style={[styles.circle, { backgroundColor: colors.surfaceSecondary }]}>
           <Icon name="arrow-left" size={24} color={colors.onSurface} />
         </PressableScale>
         <Text style={[styles.title, { color: colors.onSurface }]}>Conversation memory</Text>
@@ -116,7 +118,7 @@ export default function HistoryScreen() {
             if (row.kind === "day") {
               return (
                 <Text testID="history-day" style={[styles.day, { color: colors.muted }]}>
-                  {dayLabel(row.at)}
+                  {dayLabel(row.at, lang)}
                 </Text>
               );
             }
@@ -126,7 +128,7 @@ export default function HistoryScreen() {
               <View style={[styles.bubble, me ? styles.mine : styles.theirs, { backgroundColor: me ? colors.brandPrimary : colors.surfaceSecondary }]}>
                 <Text style={[styles.text, { color: me ? colors.onBrandPrimary : colors.onSurface }]}>{item.text}</Text>
                 <Text style={[styles.time, { color: me ? colors.onBrandPrimary : colors.muted }]}>
-                  {new Date(item.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                  {clockTime(new Date(item.at), lang)}
                 </Text>
               </View>
             );
@@ -139,7 +141,7 @@ export default function HistoryScreen() {
           onLayout={(e) => setFooterH(e.nativeEvent.layout.height)}
           style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg, backgroundColor: colors.surface }]}
         >
-          <PressableScale testID="history-clear" accessibilityLabel="Clear memory" onPress={clear} style={[styles.clear, { borderColor: colors.error }]}>
+          <PressableScale testID="history-clear" accessibilityLabel={t("Clear memory")} onPress={clear} style={[styles.clear, { borderColor: colors.error }]}>
             <Icon name="delete-outline" size={20} color={colors.error} />
             <Text style={[styles.clearText, { color: colors.error }]}>Clear memory</Text>
           </PressableScale>

@@ -17,7 +17,7 @@
   },
   {
    "en": ", counting {minutes} minutes at {each}",
-   "ru": ", с учётом {minutes} минут на {each|part}",
+   "ru": ", с учётом {minutes|plural:минуты,минут,минут} на {each|part}",
    "part": true
   },
   {
@@ -185,7 +185,7 @@
   },
   {
    "en": "{name}{off}, about {mi} miles out.",
-   "ru": "{name}{off|part}, примерно в {mi|plural:миле,милях,милях}."
+   "ru": "{name}{off|part}, примерно в {mi|plural:миле,милях,милях,мили}."
   },
   {
    "en": "{name} is about {mi} miles ahead{up}.",
@@ -193,7 +193,7 @@
   },
   {
    "en": "{name}{off}, {mi} miles away.",
-   "ru": "{name}{off|part}, в {mi|plural:миле,милях,милях}."
+   "ru": "{name}{off|part}, в {mi|plural:миле,милях,милях,мили}."
   },
   {
    "en": "{name}{up}, about {mi} miles.",
@@ -213,7 +213,7 @@
   },
   {
    "en": "{name}{off}, about {mi} miles out. Big lot, but overnight is up to the store manager.",
-   "ru": "{name}{off|part}, примерно в {mi|plural:миле,милях,милях}. Парковка большая, но ночёвку разрешает менеджер магазина."
+   "ru": "{name}{off|part}, примерно в {mi|plural:миле,милях,милях,мили}. Парковка большая, но ночёвку разрешает менеджер магазина."
   },
   {
    "en": "{name} is about {mi} miles ahead{up}. Ask inside before you stay the night.",
@@ -221,11 +221,11 @@
   },
   {
    "en": "{name}{off}, {mi} miles away. Check with the store about parking overnight.",
-   "ru": "{name}{off|part}, в {mi|plural:миле,милях,милях}. Про ночную парковку уточни в магазине."
+   "ru": "{name}{off|part}, в {mi|plural:миле,милях,милях,мили}. Про ночную парковку уточни в магазине."
   },
   {
    "en": "CAT scale at {name}{off}, about {mi} miles out.",
-   "ru": "Кэт-скейл на {name}{off|part}, примерно в {mi|plural:миле,милях,милях}."
+   "ru": "Кэт-скейл на {name}{off|part}, примерно в {mi|plural:миле,милях,милях,мили}."
   },
   {
    "en": "Nearest CAT scale is at {name}, about {mi} miles ahead{up}.",
@@ -233,11 +233,11 @@
   },
   {
    "en": "CAT scale at {name}{off}, {mi} miles away.",
-   "ru": "Кэт-скейл на {name}{off|part}, в {mi|plural:миле,милях,милях}."
+   "ru": "Кэт-скейл на {name}{off|part}, в {mi|plural:миле,милях,милях,мили}."
   },
   {
    "en": "{name}{off}, about {mi} miles out. Open or closed, watch the sign.",
-   "ru": "{name}{off|part}, примерно в {mi|plural:миле,милях,милях}. Открыта или нет, смотри по табло."
+   "ru": "{name}{off|part}, примерно в {mi|plural:миле,милях,милях,мили}. Открыта или нет, смотри по табло."
   },
   {
    "en": "{name} is about {mi} miles ahead{up}. I can't see if it's open.",
@@ -245,11 +245,11 @@
   },
   {
    "en": "{name}{off}, {mi} miles away. Check the sign for open or closed.",
-   "ru": "{name}{off|part}, в {mi|plural:миле,милях,милях}. Открыта или закрыта, смотри по табло."
+   "ru": "{name}{off|part}, в {mi|plural:миле,милях,милях,мили}. Открыта или закрыта, смотри по табло."
   },
   {
    "en": "{name}{off}, about {mi} miles out, might be tight for a rig.",
-   "ru": "{name}{off|part}, примерно в {mi|plural:миле,милях,милях}, для фуры может быть тесно."
+   "ru": "{name}{off|part}, примерно в {mi|plural:миле,милях,милях,мили}, для трака может быть тесно."
   },
   {
    "en": "{name}, {d} miles from your delivery, {mi} miles from you.",
@@ -261,7 +261,7 @@
   },
   {
    "en": "Heads up, part of this route might be tight for your rig, so watch the signs.",
-   "ru": "Внимание, часть маршрута может быть тесной для твоей фуры, следи за знаками."
+   "ru": "Внимание, часть маршрута может быть тесной для твоего трака, следи за знаками."
   },
   {
    "en": "Heads up, there's a ferry on this one.",
@@ -269,7 +269,7 @@
   },
   {
    "en": "Heads up, the truck router is down, so this is a backup route with no turn prompts. Follow the line on the map.",
-   "ru": "Внимание, грузовой маршрутизатор не работает, это запасной маршрут без подсказок поворотов. Езжай по линии на карте."
+   "ru": "Внимание, сервис маршрутов для траков сейчас не работает, это запасной маршрут без подсказок поворотов. Езжай по линии на карте."
   },
   {
    "en": "Heads up, check this route for restrictions.",
@@ -281,11 +281,11 @@
   },
   {
    "en": "Heads up, I couldn't find a legal truck route to there. {line} Don't take this one blind: check the signs, or give me another destination.",
-   "ru": "Внимание, законного маршрута для фуры туда я не нашёл. {line|tr} Не езжай вслепую: смотри знаки или дай другой адрес."
+   "ru": "Внимание, законного маршрута для трака туда я не нашёл. {line|tr} Не езжай вслепую: смотри знаки или дай другой адрес."
   },
   {
    "en": "Heads up, I couldn't find a legal truck route to there.",
-   "ru": "Внимание, законного маршрута для фуры туда я не нашёл."
+   "ru": "Внимание, законного маршрута для трака туда я не нашёл."
   },
   {
    "en": "Don't take this one blind: check the signs, or give me another destination.",
@@ -301,7 +301,7 @@
   },
   {
    "en": "This route crosses a {limit} weight limit; your truck is {truck}.",
-   "ru": "На маршруте ограничение по весу {limit}, а твой трак {truck}."
+   "ru": "На маршруте ограничение по весу {limit|tr}, а твой трак {truck|tr}."
   },
   {
    "en": "This route has a {limit} length limit; your truck is {truck}.",
@@ -325,7 +325,7 @@
   },
   {
    "en": "Your truck is over the legal {what} limit in {where} ({limit}); that takes a permit.",
-   "ru": "Твой трак выше законного лимита по {what|dat} в {where} ({limit|tr}), нужен пермит."
+   "ru": "Твой трак больше законного лимита по {what|dat} в {where|and} ({limit|tr}), нужен пермит."
   },
   {
    "en": "{ft} ft {inch} in",
@@ -351,7 +351,7 @@
   },
   {
    "en": "That's the only truck route I've got.",
-   "ru": "Другого маршрута для фуры у меня нет."
+   "ru": "Другого маршрута для трака у меня нет."
   },
   {
    "en": "Set a route first and I'll look for other ways.",
@@ -519,11 +519,11 @@
   },
   {
    "en": "I found {where}, about {mi} miles away. Is that the one?",
-   "ru": "Нашёл {where|tr}, примерно в {mi|plural:миле,милях,милях}. Это то?"
+   "ru": "Нашёл {where|tr}, примерно в {mi|plural:миле,милях,милях,мили}. Это то?"
   },
   {
    "en": "I found {where}, about {mi} miles away.",
-   "ru": "Нашёл {where|tr}, примерно в {mi|plural:миле,милях,милях}."
+   "ru": "Нашёл {where|tr}, примерно в {mi|plural:миле,милях,милях,мили}."
   },
   {
    "en": "Is that the one?",
@@ -666,19 +666,19 @@
   },
   {
    "en": "I couldn't build a truck route there right now. Try again in a minute.",
-   "ru": "Сейчас не получилось построить туда маршрут для фуры. Попробуй через минуту."
+   "ru": "Сейчас не получилось построить туда маршрут для трака. Попробуй через минуту."
   },
   {
    "en": "I couldn't build a truck route there right now.",
-   "ru": "Сейчас не получилось построить туда маршрут для фуры."
+   "ru": "Сейчас не получилось построить туда маршрут для трака."
   },
   {
    "en": "I can't find a truck route there from here. Try another destination, or an address on a main road nearby.",
-   "ru": "Отсюда туда маршрута для фуры нет. Попробуй другое место или адрес на большой дороге рядом."
+   "ru": "Отсюда туда маршрута для трака нет. Попробуй другое место или адрес на большой дороге рядом."
   },
   {
    "en": "I can't find a truck route there from here.",
-   "ru": "Отсюда туда маршрута для фуры нет."
+   "ru": "Отсюда туда маршрута для трака нет."
   },
   {
    "en": "Try another destination, or an address on a main road nearby.",
@@ -762,15 +762,15 @@
   },
   {
    "en": "No truck route around it.",
-   "ru": "Объезда для фуры нет."
+   "ru": "Объезда для трака нет."
   },
   {
    "en": "I don't have another truck route to try.",
-   "ru": "Другого маршрута для фуры у меня нет."
+   "ru": "Другого маршрута для трака у меня нет."
   },
   {
    "en": "No truck route around it; it should clear by {till}.",
-   "ru": "Объезда для фуры нет; должно закончиться к {till|clock}."
+   "ru": "Объезда для трака нет; должно закончиться к {till|clock}."
   },
   {
    "en": "Heads up, a {event} near {area} starts {onset}; at this pace you're through there by {hit}.",
@@ -822,31 +822,31 @@
   },
   {
    "en": "And {n} more chain control along the route.",
-   "ru": "И ещё {n} контроль цепей по маршруту."
+   "ru": "И ещё в одном месте по маршруту нужны цепи."
   },
   {
    "en": "And {n} more chain controls along the route.",
-   "ru": "И ещё {n|plural:контроль,контроля,контролей} цепей по маршруту."
+   "ru": "И ещё в {n|plural:месте,местах,местах} по маршруту нужны цепи."
   },
   {
    "en": "Set a route and I'll check Caltrans chain controls along it.",
-   "ru": "Задай маршрут, и я проверю контроль цепей Caltrans по нему."
+   "ru": "Задай маршрут, и я проверю по Caltrans, где на нём нужны цепи."
   },
   {
    "en": "I only have chain controls for California, and this route doesn't go through it.",
-   "ru": "Контроль цепей у меня только по Калифорнии, а этот маршрут через неё не идёт."
+   "ru": "Где нужны цепи, я знаю только по Калифорнии, а этот маршрут через неё не идёт."
   },
   {
    "en": "No chain controls on your route right now.",
-   "ru": "Сейчас на маршруте контроля цепей нет."
+   "ru": "Сейчас цепи на маршруте нигде не нужны."
   },
   {
    "en": "I can't check chain controls on your route right now. Try again in a minute.",
-   "ru": "Сейчас не могу проверить контроль цепей. Попробуй через минуту."
+   "ru": "Сейчас не могу проверить, нужны ли на маршруте цепи. Попробуй через минуту."
   },
   {
    "en": "I can't check chain controls on your route right now.",
-   "ru": "Сейчас не могу проверить контроль цепей."
+   "ru": "Сейчас не могу проверить, нужны ли на маршруте цепи."
   },
   {
    "en": "Chains required ahead on {route} near {location}. Do you have chains on board?",
@@ -862,19 +862,19 @@
   },
   {
    "en": "Got it, no chains on board. The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?",
-   "ru": "Понял, цепей нет. Последний трак-стоп перед контролем: {name}, через {mi|plural:миля,мили,миль}, добавить?"
+   "ru": "Понял, цепей нет. Последний трак-стоп до участка с цепями: {name}, через {mi|plural:миля,мили,миль}, добавить?"
   },
   {
    "en": "The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?",
-   "ru": "Последний трак-стоп перед контролем: {name}, через {mi|plural:миля,мили,миль}, добавить?"
+   "ru": "Последний трак-стоп до участка с цепями: {name}, через {mi|plural:миля,мили,миль}, добавить?"
   },
   {
    "en": "Got it, no chains on board. I couldn't find a truck stop before the control, keep an eye out for a safe spot.",
-   "ru": "Понял, цепей нет. Трак-стоп перед контролем не нашёл, присматривай безопасное место."
+   "ru": "Понял, цепей нет. Трак-стоп до участка с цепями не нашёл, присматривай безопасное место."
   },
   {
    "en": "I couldn't find a truck stop before the control, keep an eye out for a safe spot.",
-   "ru": "Трак-стоп перед контролем не нашёл, присматривай безопасное место."
+   "ru": "Трак-стоп до участка с цепями не нашёл, присматривай безопасное место."
   },
   {
    "en": "Chains required ahead on {route} near {location}, and you've got no chains on board. The last truck stop before it is {name}, {mi} miles ahead, want me to add it?",
@@ -986,15 +986,15 @@
   },
   {
    "en": "From the satellite, it looks like your rig will fit.",
-   "ru": "По спутнику похоже, что твоя фура поместится."
+   "ru": "По спутнику похоже, что твой трак поместится."
   },
   {
    "en": "Heads up, from the satellite it looks tight for a rig.",
-   "ru": "Внимание, по спутнику там тесно для фуры."
+   "ru": "Внимание, по спутнику там тесно для трака."
   },
   {
    "en": "I can't tell for sure from the satellite if a rig fits.",
-   "ru": "По спутнику не могу точно сказать, поместится ли фура."
+   "ru": "По спутнику не могу точно сказать, поместится ли трак."
   },
   {
    "en": "The truck entrance is {tip}.",
@@ -1267,7 +1267,7 @@
   },
   {
    "en": "The weight has to be between 5,000 and 200,000 pounds.",
-   "ru": "Вес должен быть от 5000 до 200000 фунтов."
+   "ru": "Вес должен быть от 5 000 до 200 000 фунтов."
   },
   {
    "en": "Hazmat is on, I'll keep you on hazmat-legal roads.",
@@ -1295,7 +1295,7 @@
   },
   {
    "en": "You already have eight favorites. Remove one first.",
-   "ru": "У тебя уже восемь любимых. Сначала убери одну."
+   "ru": "У тебя уже восемь любимых трак-стопов. Сначала убери один."
   },
   {
    "en": "Break reminders are off.",
@@ -1367,7 +1367,7 @@
   },
   {
    "en": "I'll remind you to take a break every {n} hour.",
-   "ru": "Буду напоминать о перерыве каждый час."
+   "ru": "Буду напоминать о перерыве каждый {n} час."
   },
   {
    "en": "Done, {items}.",
@@ -1558,7 +1558,7 @@
   },
   {
    "en": "No demo places here. Demo data covers the Bay Area and Sacramento.",
-   "ru": "Здесь демо-мест нет. Демо-данные только по Bay Area и Сакраменто."
+   "ru": "Здесь демо-мест нет. Демо-данные есть только по району Сан-Франциско и Сакраменто."
   },
   {
    "en": "I don't have {what} data loaded yet.",
@@ -1566,15 +1566,15 @@
   },
   {
    "en": "Likely fits a truck (satellite check)",
-   "ru": "Скорее всего, фура встанет (по спутнику)"
+   "ru": "Скорее всего, трак встанет (по спутнику)"
   },
   {
    "en": "Unlikely to fit a truck (satellite check)",
-   "ru": "Скорее всего, фура не встанет (по спутнику)"
+   "ru": "Скорее всего, трак не встанет (по спутнику)"
   },
   {
    "en": "Truck parking unclear",
-   "ru": "Неясно, есть ли парковка для фур"
+   "ru": "Неясно, есть ли парковка для траков"
   },
   {
    "en": "Truck parking listed",
@@ -1603,6 +1603,507 @@
   {
    "en": "Daily satellite checks are used up; I'll check this one tomorrow.",
    "ru": "Проверки по спутнику на сегодня закончились; это место проверю завтра."
+  },
+  {
+   "en": "You're on {street} in {city}, {state}.",
+   "ru": "Ты на {street}, это {city}, {state}."
+  },
+  {
+   "en": "You're in {city}, {state}.",
+   "ru": "Ты в {city}, {state}."
+  },
+  {
+   "en": "I can't tell where we are right now.",
+   "ru": "Сейчас не могу понять, где мы."
+  },
+  {
+   "en": "There's a way {diff} that saves about ${saves}. Want it?",
+   "ru": "Есть путь {diff|tr}, экономия около ${saves}. Поедем по нему?"
+  },
+  {
+   "en": "There's a way {diff} that saves about ${saves}.",
+   "ru": "Есть путь {diff|tr}, экономия около ${saves}."
+  },
+  {
+   "en": "{d} slower",
+   "ru": "на {d|time} дольше",
+   "part": true
+  },
+  {
+   "en": "{d} faster",
+   "ru": "на {d|time} быстрее",
+   "part": true
+  },
+  {
+   "en": "about as fast",
+   "ru": "примерно за то же время",
+   "part": true
+  },
+  {
+   "en": "Want it?",
+   "ru": "Поедем по нему?"
+  },
+  {
+   "en": "Okay, staying on this one.",
+   "ru": "Хорошо, остаёмся на этом."
+  },
+  {
+   "en": "This is already the cheapest way.",
+   "ru": "Это и так самый дешёвый путь."
+  },
+  {
+   "en": "This is already the fastest way.",
+   "ru": "Это и так самый быстрый путь."
+  },
+  {
+   "en": "I can't price the routes right now. Try again in a minute.",
+   "ru": "Сейчас не могу посчитать, сколько стоят маршруты. Попробуй через минуту."
+  },
+  {
+   "en": "I can't price the routes right now.",
+   "ru": "Сейчас не могу посчитать, сколько стоят маршруты."
+  },
+  {
+   "en": ", about ${usd} cheaper in fuel and tolls",
+   "ru": ", примерно на ${usd} дешевле по топливу и платным дорогам",
+   "part": true
+  },
+  {
+   "en": ", about ${usd} more in fuel and tolls",
+   "ru": ", примерно на ${usd} дороже по топливу и платным дорогам",
+   "part": true
+  },
+  {
+   "en": "I don't have a diesel price for {name}.",
+   "ru": "Цены на дизель в {name} у меня нет."
+  },
+  {
+   "en": "I don't see a {chain} nearby.",
+   "ru": "Рядом не вижу {chain}."
+  },
+  {
+   "en": "The truck router is down, so this is a backup route: no turn prompts, follow the line on the map.",
+   "ru": "Сервис маршрутов для траков сейчас не работает, это запасной маршрут: подсказок поворотов не будет, езжай по линии на карте."
+  },
+  {
+   "en": "Tolls couldn't be fully avoided on this route.",
+   "ru": "Все платные дороги на этом маршруте объехать не получилось."
+  },
+  {
+   "en": "Route includes a ferry.",
+   "ru": "На маршруте паром."
+  },
+  {
+   "en": "A tunnel couldn't be avoided on this route.",
+   "ru": "Тоннель на этом маршруте объехать не получилось."
+  },
+  {
+   "en": "Check the route for restrictions.",
+   "ru": "Проверь маршрут на ограничения."
+  },
+  {
+   "en": "Your truck is over the legal {what} limit in this state ({limit}); that takes a permit.",
+   "ru": "Твой трак больше законного лимита по {what|dat} в этом штате ({limit|tr}), нужен пермит."
+  },
+  {
+   "en": "the posted value",
+   "ru": "указано на знаке",
+   "part": true
+  },
+  {
+   "en": "{n} lb",
+   "ru": "{n|plural:фунт,фунта,фунтов}",
+   "part": true
+  },
+  {
+   "en": "{n} lb",
+   "ru": "{n|plural:фунт,фунта,фунтов}"
+  },
+  {
+   "en": "I couldn't find anyone nearby who comes out to you. The closest shop is {name}, about {mi} miles, but you'd need a tow to get there. Tap it to call, or ask me to look for a tow.",
+   "ru": "Рядом не нашёл никого, кто выезжает к тебе. Ближайшая мастерская: {name}, около {mi|plural:мили,миль,миль}, но туда нужен эвакуатор. Нажми, чтобы позвонить, или попроси поискать эвакуатор."
+  },
+  {
+   "en": "I couldn't find anyone nearby who comes out to you.",
+   "ru": "Рядом не нашёл никого, кто выезжает к тебе."
+  },
+  {
+   "en": "The closest shop is {name}, about {mi} miles, but you'd need a tow to get there.",
+   "ru": "Ближайшая мастерская: {name}, около {mi|plural:мили,миль,миль}, но туда нужен эвакуатор."
+  },
+  {
+   "en": "Tap it to call, or ask me to look for a tow.",
+   "ru": "Нажми, чтобы позвонить, или попроси поискать эвакуатор."
+  },
+  {
+   "en": "Nobody nearby says they come out. Closest shop: {name}, {mi} mi, needs a tow.",
+   "ru": "Никто рядом не пишет, что выезжает. Ближайшая мастерская: {name}, {mi|plural:миля,мили,миль}, нужен эвакуатор."
+  },
+  {
+   "en": "The closest is {name}, about {mi} miles.",
+   "ru": "Ближайший: {name}, около {mi|plural:мили,миль,миль}."
+  },
+  {
+   "en": "Okay, here's what I found.",
+   "ru": "Так, вот что я нашёл."
+  },
+  {
+   "en": "Best bet is {name}, about {mi} miles{rest}.",
+   "ru": "Лучший вариант: {name}, около {mi|plural:мили,миль,миль}{rest|tr}."
+  },
+  {
+   "en": " and they come out to you",
+   "ru": ", и они выезжают к тебе",
+   "part": true
+  },
+  {
+   "en": ", {n} stars",
+   "ru": ", {n} из 5",
+   "part": true
+  },
+  {
+   "en": "Tap one to call, or ask me anything about them.",
+   "ru": "Нажми, чтобы позвонить, или спроси меня о них."
+  },
+  {
+   "en": "Nobody posts prices, you'll have to ask. Tap one to call, or ask me anything about them.",
+   "ru": "Цен никто не пишет, придётся спросить. Нажми, чтобы позвонить, или спроси меня о них."
+  },
+  {
+   "en": "Nobody posts prices, you'll have to ask.",
+   "ru": "Цен никто не пишет, придётся спросить."
+  },
+  {
+   "en": "Ask for the road call fee and their ETA.",
+   "ru": "Спроси, сколько стоит выезд и когда приедут."
+  },
+  {
+   "en": "What's your road call fee?",
+   "ru": "Сколько стоит выезд?"
+  },
+  {
+   "en": "What's your ETA to me?",
+   "ru": "Когда сможете ко мне приехать?"
+  },
+  {
+   "en": "Do you take Comchek or EFS?",
+   "ru": "Принимаете Comchek или EFS?"
+  },
+  {
+   "en": "{pos} tire {size}",
+   "ru": "{pos|tire}, {size}"
+  },
+  {
+   "en": "{pos} tire",
+   "ru": "{pos|tire}"
+  },
+  {
+   "en": "{h} tall, {len} ft trailer (~{total} ft total), {w} lb gross",
+   "ru": "высота {h|tr}, трейлер {len|plural:фут,фута,футов} (всего около {total|plural:фута,футов,футов}), полная масса {w|plural:фунт,фунта,фунтов}"
+  },
+  {
+   "en": "{h} tall, {len} ft trailer (~{total} ft total), {w} lb gross, hazmat",
+   "ru": "высота {h|tr}, трейлер {len|plural:фут,фута,футов} (всего около {total|plural:фута,футов,футов}), полная масса {w|plural:фунт,фунта,фунтов}, опасный груз"
+  },
+  {
+   "en": "Road construction",
+   "ru": "Ремонт дороги"
+  },
+  {
+   "en": "Road construction.",
+   "ru": "Ремонт дороги."
+  },
+  {
+   "en": "Major road construction",
+   "ru": "Большой ремонт дороги"
+  },
+  {
+   "en": "Major road construction.",
+   "ru": "Большой ремонт дороги."
+  },
+  {
+   "en": "Road maintenance operations",
+   "ru": "Дорожные работы"
+  },
+  {
+   "en": "Road maintenance operations.",
+   "ru": "Дорожные работы."
+  },
+  {
+   "en": "Construction work",
+   "ru": "Дорожные работы"
+  },
+  {
+   "en": "Construction work.",
+   "ru": "Дорожные работы."
+  },
+  {
+   "en": "Roadworks",
+   "ru": "Дорожные работы"
+  },
+  {
+   "en": "Roadworks.",
+   "ru": "Дорожные работы."
+  },
+  {
+   "en": "Accident",
+   "ru": "Авария"
+  },
+  {
+   "en": "Accident.",
+   "ru": "Авария."
+  },
+  {
+   "en": "Multi-vehicle accident",
+   "ru": "Авария с несколькими машинами"
+  },
+  {
+   "en": "Multi-vehicle accident.",
+   "ru": "Авария с несколькими машинами."
+  },
+  {
+   "en": "Road closed",
+   "ru": "Дорога закрыта"
+  },
+  {
+   "en": "Road closed.",
+   "ru": "Дорога закрыта."
+  },
+  {
+   "en": "Closed",
+   "ru": "Закрыто"
+  },
+  {
+   "en": "Closed.",
+   "ru": "Закрыто."
+  },
+  {
+   "en": "Bridge closed",
+   "ru": "Мост закрыт"
+  },
+  {
+   "en": "Bridge closed.",
+   "ru": "Мост закрыт."
+  },
+  {
+   "en": "Ramp closed",
+   "ru": "Съезд закрыт"
+  },
+  {
+   "en": "Ramp closed.",
+   "ru": "Съезд закрыт."
+  },
+  {
+   "en": "Exit closed",
+   "ru": "Съезд закрыт"
+  },
+  {
+   "en": "Exit closed.",
+   "ru": "Съезд закрыт."
+  },
+  {
+   "en": "Entry ramp closed",
+   "ru": "Въезд закрыт"
+  },
+  {
+   "en": "Entry ramp closed.",
+   "ru": "Въезд закрыт."
+  },
+  {
+   "en": "Exit ramp closed",
+   "ru": "Съезд закрыт"
+  },
+  {
+   "en": "Exit ramp closed.",
+   "ru": "Съезд закрыт."
+  },
+  {
+   "en": "Lane closed",
+   "ru": "Полоса закрыта"
+  },
+  {
+   "en": "Lane closed.",
+   "ru": "Полоса закрыта."
+  },
+  {
+   "en": "Right lane closed",
+   "ru": "Правая полоса закрыта"
+  },
+  {
+   "en": "Right lane closed.",
+   "ru": "Правая полоса закрыта."
+  },
+  {
+   "en": "Left lane closed",
+   "ru": "Левая полоса закрыта"
+  },
+  {
+   "en": "Left lane closed.",
+   "ru": "Левая полоса закрыта."
+  },
+  {
+   "en": "One lane closed",
+   "ru": "Одна полоса закрыта"
+  },
+  {
+   "en": "One lane closed.",
+   "ru": "Одна полоса закрыта."
+  },
+  {
+   "en": "Two lanes closed",
+   "ru": "Две полосы закрыты"
+  },
+  {
+   "en": "Two lanes closed.",
+   "ru": "Две полосы закрыты."
+  },
+  {
+   "en": "Three lanes closed",
+   "ru": "Три полосы закрыты"
+  },
+  {
+   "en": "Three lanes closed.",
+   "ru": "Три полосы закрыты."
+  },
+  {
+   "en": "Shoulder closed",
+   "ru": "Обочина закрыта"
+  },
+  {
+   "en": "Shoulder closed.",
+   "ru": "Обочина закрыта."
+  },
+  {
+   "en": "Hard shoulder closed",
+   "ru": "Обочина закрыта"
+  },
+  {
+   "en": "Hard shoulder closed.",
+   "ru": "Обочина закрыта."
+  },
+  {
+   "en": "Stationary traffic",
+   "ru": "Стоячая пробка"
+  },
+  {
+   "en": "Stationary traffic.",
+   "ru": "Стоячая пробка."
+  },
+  {
+   "en": "Slow traffic",
+   "ru": "Медленное движение"
+  },
+  {
+   "en": "Slow traffic.",
+   "ru": "Медленное движение."
+  },
+  {
+   "en": "Queuing traffic",
+   "ru": "Затор"
+  },
+  {
+   "en": "Queuing traffic.",
+   "ru": "Затор."
+  },
+  {
+   "en": "Heavy traffic",
+   "ru": "Плотное движение"
+  },
+  {
+   "en": "Heavy traffic.",
+   "ru": "Плотное движение."
+  },
+  {
+   "en": "Disabled vehicle",
+   "ru": "Сломанная машина"
+  },
+  {
+   "en": "Disabled vehicle.",
+   "ru": "Сломанная машина."
+  },
+  {
+   "en": "Broken down vehicle",
+   "ru": "Сломанная машина"
+  },
+  {
+   "en": "Broken down vehicle.",
+   "ru": "Сломанная машина."
+  },
+  {
+   "en": "Debris on road",
+   "ru": "Мусор на дороге"
+  },
+  {
+   "en": "Debris on road.",
+   "ru": "Мусор на дороге."
+  },
+  {
+   "en": "Object on roadway",
+   "ru": "Предмет на дороге"
+  },
+  {
+   "en": "Object on roadway.",
+   "ru": "Предмет на дороге."
+  },
+  {
+   "en": "Vehicle fire",
+   "ru": "Горит машина"
+  },
+  {
+   "en": "Vehicle fire.",
+   "ru": "Горит машина."
+  },
+  {
+   "en": "Flooding",
+   "ru": "Подтопление"
+  },
+  {
+   "en": "Flooding.",
+   "ru": "Подтопление."
+  },
+  {
+   "en": "Road closed due to construction",
+   "ru": "Дорога закрыта на ремонт"
+  },
+  {
+   "en": "Road closed due to construction.",
+   "ru": "Дорога закрыта на ремонт."
+  },
+  {
+   "en": "Closed due to accident",
+   "ru": "Закрыто из-за аварии"
+  },
+  {
+   "en": "Closed due to accident.",
+   "ru": "Закрыто из-за аварии."
+  },
+  {
+   "en": "{n} lanes closed",
+   "ru": "Закрыто полос: {n}"
+  },
+  {
+   "en": "{n} lanes closed.",
+   "ru": "Закрыто полос: {n}."
+  },
+  {
+   "en": "No chain controls are in effect at this time.",
+   "ru": "Сейчас цепи нигде не нужны."
+  },
+  {
+   "en": "Chains or snow tires are required.",
+   "ru": "Нужны цепи или зимняя резина."
+  },
+  {
+   "en": "Chains are required on all vehicles except 4-wheel drive vehicles with snow tires on all 4 wheels.",
+   "ru": "Цепи нужны всем, кроме полноприводных машин с зимней резиной на всех колёсах."
+  },
+  {
+   "en": "Chains are required on all vehicles.",
+   "ru": "Цепи нужны всем машинам."
+  },
+  {
+   "en": "Chains are required on all vehicles - no exceptions.",
+   "ru": "Цепи нужны всем, без исключений."
   },
   {
    "en": "Turn left",
@@ -1937,6 +2438,554 @@
    "ru": "Следуй по маршруту"
   },
   {
+   "en": "Keep left on {road}",
+   "ru": "Держись левее на {road}"
+  },
+  {
+   "en": "Keep left on {road} toward {to}",
+   "ru": "Держись левее на {road} в сторону {to}"
+  },
+  {
+   "en": "Take left ramp toward {to}",
+   "ru": "Заезжай на левый съезд в сторону {to}"
+  },
+  {
+   "en": "Take left ramp",
+   "ru": "Заезжай на левый съезд"
+  },
+  {
+   "en": "Take the left exit",
+   "ru": "Уходи на левый съезд"
+  },
+  {
+   "en": "Take the left exit {n}",
+   "ru": "Уходи на левый съезд {n}"
+  },
+  {
+   "en": "Take the left exit {n} toward {to}",
+   "ru": "Уходи на левый съезд {n} в сторону {to}"
+  },
+  {
+   "en": "Take the left exit {n} onto {road}",
+   "ru": "Уходи на левый съезд {n} на {road}"
+  },
+  {
+   "en": "Take the left exit {n} onto {road} toward {to}",
+   "ru": "Уходи на левый съезд {n} на {road} в сторону {to}"
+  },
+  {
+   "en": "Take the left exit {n} toward {to} onto {road}",
+   "ru": "Уходи на левый съезд {n} в сторону {to} на {road}"
+  },
+  {
+   "en": "Take the left exit toward {to} onto {road}",
+   "ru": "Уходи на левый съезд в сторону {to} на {road}"
+  },
+  {
+   "en": "Merge left onto {road}",
+   "ru": "Перестраивайся левее на {road}"
+  },
+  {
+   "en": "Merge left onto {road} toward {to}",
+   "ru": "Перестраивайся левее на {road} в сторону {to}"
+  },
+  {
+   "en": "Keep right on {road}",
+   "ru": "Держись правее на {road}"
+  },
+  {
+   "en": "Keep right on {road} toward {to}",
+   "ru": "Держись правее на {road} в сторону {to}"
+  },
+  {
+   "en": "Take right ramp toward {to}",
+   "ru": "Заезжай на правый съезд в сторону {to}"
+  },
+  {
+   "en": "Take right ramp",
+   "ru": "Заезжай на правый съезд"
+  },
+  {
+   "en": "Take the right exit",
+   "ru": "Уходи на правый съезд"
+  },
+  {
+   "en": "Take the right exit {n}",
+   "ru": "Уходи на правый съезд {n}"
+  },
+  {
+   "en": "Take the right exit {n} toward {to}",
+   "ru": "Уходи на правый съезд {n} в сторону {to}"
+  },
+  {
+   "en": "Take the right exit {n} onto {road}",
+   "ru": "Уходи на правый съезд {n} на {road}"
+  },
+  {
+   "en": "Take the right exit {n} onto {road} toward {to}",
+   "ru": "Уходи на правый съезд {n} на {road} в сторону {to}"
+  },
+  {
+   "en": "Take the right exit {n} toward {to} onto {road}",
+   "ru": "Уходи на правый съезд {n} в сторону {to} на {road}"
+  },
+  {
+   "en": "Take the right exit toward {to} onto {road}",
+   "ru": "Уходи на правый съезд в сторону {to} на {road}"
+  },
+  {
+   "en": "Merge right onto {road}",
+   "ru": "Перестраивайся правее на {road}"
+  },
+  {
+   "en": "Merge right onto {road} toward {to}",
+   "ru": "Перестраивайся правее на {road} в сторону {to}"
+  },
+  {
+   "en": "Keep middle",
+   "ru": "Держись посередине"
+  },
+  {
+   "en": "Keep middle toward {to}",
+   "ru": "Держись посередине в сторону {to}"
+  },
+  {
+   "en": "Keep middle onto {road}",
+   "ru": "Держись посередине на {road}"
+  },
+  {
+   "en": "Keep middle onto {road} toward {to}",
+   "ru": "Держись посередине на {road} в сторону {to}"
+  },
+  {
+   "en": "Take middle ramp onto {road} toward {to}",
+   "ru": "Заезжай на средний съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Take middle ramp onto {road}",
+   "ru": "Заезжай на средний съезд на {road}"
+  },
+  {
+   "en": "Take the middle exit onto {road}",
+   "ru": "Уходи на средний съезд на {road}"
+  },
+  {
+   "en": "Take the middle exit onto {road} toward {to}",
+   "ru": "Уходи на средний съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Take the middle exit toward {to}",
+   "ru": "Уходи на средний съезд в сторону {to}"
+  },
+  {
+   "en": "Keep middle on {road}",
+   "ru": "Держись посередине на {road}"
+  },
+  {
+   "en": "Keep middle on {road} toward {to}",
+   "ru": "Держись посередине на {road} в сторону {to}"
+  },
+  {
+   "en": "Take middle ramp toward {to}",
+   "ru": "Заезжай на средний съезд в сторону {to}"
+  },
+  {
+   "en": "Take middle ramp",
+   "ru": "Заезжай на средний съезд"
+  },
+  {
+   "en": "Take the middle exit",
+   "ru": "Уходи на средний съезд"
+  },
+  {
+   "en": "Take the middle exit {n}",
+   "ru": "Уходи на средний съезд {n}"
+  },
+  {
+   "en": "Take the middle exit {n} toward {to}",
+   "ru": "Уходи на средний съезд {n} в сторону {to}"
+  },
+  {
+   "en": "Take the middle exit {n} onto {road}",
+   "ru": "Уходи на средний съезд {n} на {road}"
+  },
+  {
+   "en": "Take the middle exit {n} onto {road} toward {to}",
+   "ru": "Уходи на средний съезд {n} на {road} в сторону {to}"
+  },
+  {
+   "en": "Take the middle exit {n} toward {to} onto {road}",
+   "ru": "Уходи на средний съезд {n} в сторону {to} на {road}"
+  },
+  {
+   "en": "Take the middle exit toward {to} onto {road}",
+   "ru": "Уходи на средний съезд в сторону {to} на {road}"
+  },
+  {
+   "en": "Merge middle onto {road}",
+   "ru": "Перестраивайся посередине на {road}"
+  },
+  {
+   "en": "Merge middle onto {road} toward {to}",
+   "ru": "Перестраивайся посередине на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn left and take ramp toward {to}",
+   "ru": "Поверни налево и заезжай на съезд в сторону {to}"
+  },
+  {
+   "en": "Turn left and take ramp",
+   "ru": "Поверни налево и заезжай на съезд"
+  },
+  {
+   "en": "Turn left and take {side} ramp onto {road} toward {to}",
+   "ru": "Поверни налево и заезжай на {side|ramp} съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn left and take {side} ramp onto {road}",
+   "ru": "Поверни налево и заезжай на {side|ramp} съезд на {road}"
+  },
+  {
+   "en": "Turn left at {road}",
+   "ru": "Поверни налево на {road}"
+  },
+  {
+   "en": "Make a left turn onto {road}",
+   "ru": "Поверни налево на {road}"
+  },
+  {
+   "en": "Turn right and take ramp toward {to}",
+   "ru": "Поверни направо и заезжай на съезд в сторону {to}"
+  },
+  {
+   "en": "Turn right and take ramp",
+   "ru": "Поверни направо и заезжай на съезд"
+  },
+  {
+   "en": "Turn right and take {side} ramp onto {road} toward {to}",
+   "ru": "Поверни направо и заезжай на {side|ramp} съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn right and take {side} ramp onto {road}",
+   "ru": "Поверни направо и заезжай на {side|ramp} съезд на {road}"
+  },
+  {
+   "en": "Turn right at {road}",
+   "ru": "Поверни направо на {road}"
+  },
+  {
+   "en": "Make a right turn onto {road}",
+   "ru": "Поверни направо на {road}"
+  },
+  {
+   "en": "Turn slightly left and take ramp toward {to}",
+   "ru": "Поверни плавно налево и заезжай на съезд в сторону {to}"
+  },
+  {
+   "en": "Turn slightly left and take ramp",
+   "ru": "Поверни плавно налево и заезжай на съезд"
+  },
+  {
+   "en": "Turn slightly left and take {side} ramp onto {road} toward {to}",
+   "ru": "Поверни плавно налево и заезжай на {side|ramp} съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn slightly left and take {side} ramp onto {road}",
+   "ru": "Поверни плавно налево и заезжай на {side|ramp} съезд на {road}"
+  },
+  {
+   "en": "Turn slightly left at {road}",
+   "ru": "Поверни плавно налево на {road}"
+  },
+  {
+   "en": "Make a slightly left turn onto {road}",
+   "ru": "Поверни плавно налево на {road}"
+  },
+  {
+   "en": "Turn slightly right and take ramp toward {to}",
+   "ru": "Поверни плавно направо и заезжай на съезд в сторону {to}"
+  },
+  {
+   "en": "Turn slightly right and take ramp",
+   "ru": "Поверни плавно направо и заезжай на съезд"
+  },
+  {
+   "en": "Turn slightly right and take {side} ramp onto {road} toward {to}",
+   "ru": "Поверни плавно направо и заезжай на {side|ramp} съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn slightly right and take {side} ramp onto {road}",
+   "ru": "Поверни плавно направо и заезжай на {side|ramp} съезд на {road}"
+  },
+  {
+   "en": "Turn slightly right at {road}",
+   "ru": "Поверни плавно направо на {road}"
+  },
+  {
+   "en": "Make a slightly right turn onto {road}",
+   "ru": "Поверни плавно направо на {road}"
+  },
+  {
+   "en": "Turn sharp left and take ramp toward {to}",
+   "ru": "Поверни резко налево и заезжай на съезд в сторону {to}"
+  },
+  {
+   "en": "Turn sharp left and take ramp",
+   "ru": "Поверни резко налево и заезжай на съезд"
+  },
+  {
+   "en": "Turn sharp left and take {side} ramp onto {road} toward {to}",
+   "ru": "Поверни резко налево и заезжай на {side|ramp} съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn sharp left and take {side} ramp onto {road}",
+   "ru": "Поверни резко налево и заезжай на {side|ramp} съезд на {road}"
+  },
+  {
+   "en": "Turn sharp left at {road}",
+   "ru": "Поверни резко налево на {road}"
+  },
+  {
+   "en": "Make a sharp left turn onto {road}",
+   "ru": "Поверни резко налево на {road}"
+  },
+  {
+   "en": "Turn sharp right and take ramp toward {to}",
+   "ru": "Поверни резко направо и заезжай на съезд в сторону {to}"
+  },
+  {
+   "en": "Turn sharp right and take ramp",
+   "ru": "Поверни резко направо и заезжай на съезд"
+  },
+  {
+   "en": "Turn sharp right and take {side} ramp onto {road} toward {to}",
+   "ru": "Поверни резко направо и заезжай на {side|ramp} съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn sharp right and take {side} ramp onto {road}",
+   "ru": "Поверни резко направо и заезжай на {side|ramp} съезд на {road}"
+  },
+  {
+   "en": "Turn sharp right at {road}",
+   "ru": "Поверни резко направо на {road}"
+  },
+  {
+   "en": "Make a sharp right turn onto {road}",
+   "ru": "Поверни резко направо на {road}"
+  },
+  {
+   "en": "Turn sharply left and take ramp toward {to}",
+   "ru": "Поверни резко налево и заезжай на съезд в сторону {to}"
+  },
+  {
+   "en": "Turn sharply left and take ramp",
+   "ru": "Поверни резко налево и заезжай на съезд"
+  },
+  {
+   "en": "Turn sharply left and take {side} ramp onto {road} toward {to}",
+   "ru": "Поверни резко налево и заезжай на {side|ramp} съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn sharply left and take {side} ramp onto {road}",
+   "ru": "Поверни резко налево и заезжай на {side|ramp} съезд на {road}"
+  },
+  {
+   "en": "Turn sharply left at {road}",
+   "ru": "Поверни резко налево на {road}"
+  },
+  {
+   "en": "Make a sharply left turn onto {road}",
+   "ru": "Поверни резко налево на {road}"
+  },
+  {
+   "en": "Turn sharply right and take ramp toward {to}",
+   "ru": "Поверни резко направо и заезжай на съезд в сторону {to}"
+  },
+  {
+   "en": "Turn sharply right and take ramp",
+   "ru": "Поверни резко направо и заезжай на съезд"
+  },
+  {
+   "en": "Turn sharply right and take {side} ramp onto {road} toward {to}",
+   "ru": "Поверни резко направо и заезжай на {side|ramp} съезд на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn sharply right and take {side} ramp onto {road}",
+   "ru": "Поверни резко направо и заезжай на {side|ramp} съезд на {road}"
+  },
+  {
+   "en": "Turn sharply right at {road}",
+   "ru": "Поверни резко направо на {road}"
+  },
+  {
+   "en": "Make a sharply right turn onto {road}",
+   "ru": "Поверни резко направо на {road}"
+  },
+  {
+   "en": "Turn sharply left",
+   "ru": "Поверни резко налево"
+  },
+  {
+   "en": "Turn sharply left onto {road}",
+   "ru": "Поверни резко налево на {road}"
+  },
+  {
+   "en": "Turn sharply left onto {road} toward {to}",
+   "ru": "Поверни резко налево на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn sharply left toward {to}",
+   "ru": "Поверни резко налево в сторону {to}"
+  },
+  {
+   "en": "Turn sharply right",
+   "ru": "Поверни резко направо"
+  },
+  {
+   "en": "Turn sharply right onto {road}",
+   "ru": "Поверни резко направо на {road}"
+  },
+  {
+   "en": "Turn sharply right onto {road} toward {to}",
+   "ru": "Поверни резко направо на {road} в сторону {to}"
+  },
+  {
+   "en": "Turn sharply right toward {to}",
+   "ru": "Поверни резко направо в сторону {to}"
+  },
+  {
+   "en": "Head toward {to} on {road}",
+   "ru": "Езжай по {road} в сторону {to}"
+  },
+  {
+   "en": "Head {dir} toward {to}",
+   "ru": "Езжай на {dir|to} в сторону {to}"
+  },
+  {
+   "en": "Head {dir} on {road} toward {to}",
+   "ru": "Езжай на {dir|to} по {road} в сторону {to}"
+  },
+  {
+   "en": "Take ramp toward {to}",
+   "ru": "Заезжай на съезд в сторону {to}"
+  },
+  {
+   "en": "Take ramp",
+   "ru": "Заезжай на съезд"
+  },
+  {
+   "en": "Take exit {n}",
+   "ru": "Съезд {n}"
+  },
+  {
+   "en": "Take the exit",
+   "ru": "Уходи на съезд"
+  },
+  {
+   "en": "Take the exit toward {to} onto {road} toward {to2}",
+   "ru": "Уходи на съезд в сторону {to} на {road} в сторону {to2}"
+  },
+  {
+   "en": "Take exit {n} toward {to} onto {road} toward {to2}",
+   "ru": "Съезд {n} в сторону {to} на {road} в сторону {to2}"
+  },
+  {
+   "en": "Merge onto {road}",
+   "ru": "Перестраивайся на {road}"
+  },
+  {
+   "en": "Merge onto {road} toward {to}",
+   "ru": "Перестраивайся на {road} в сторону {to}"
+  },
+  {
+   "en": "Continue",
+   "ru": "Продолжай движение"
+  },
+  {
+   "en": "Continue straight",
+   "ru": "Продолжай прямо"
+  },
+  {
+   "en": "Continue straight on {road}",
+   "ru": "Продолжай прямо по {road}"
+  },
+  {
+   "en": "Go straight",
+   "ru": "Езжай прямо"
+  },
+  {
+   "en": "Go straight on {road}",
+   "ru": "Езжай прямо по {road}"
+  },
+  {
+   "en": "Take the {nth} exit from roundabout toward {to}",
+   "ru": "На круге {nth|ord} съезд в сторону {to}"
+  },
+  {
+   "en": "Take the {nth} exit from roundabout onto {road} and continue toward {to}",
+   "ru": "На круге {nth|ord} съезд на {road}, дальше в сторону {to}"
+  },
+  {
+   "en": "Enter the roundabout",
+   "ru": "Въезжай на круг"
+  },
+  {
+   "en": "Pass {n} roundabouts",
+   "ru": "Проедь {n|plural:круг,круга,кругов}"
+  },
+  {
+   "en": "Pass {n} roundabouts and continue toward {to}",
+   "ru": "Проедь {n|plural:круг,круга,кругов} и продолжай в сторону {to}"
+  },
+  {
+   "en": "Pass the roundabout and continue on {road}",
+   "ru": "Проедь круг и продолжай по {road}"
+  },
+  {
+   "en": "Make a U-turn toward {to}",
+   "ru": "Развернись в сторону {to}"
+  },
+  {
+   "en": "Make a U-turn at {road}",
+   "ru": "Развернись на {road}"
+  },
+  {
+   "en": "Arrive at {place} on the left",
+   "ru": "Прибытие: {place}, слева"
+  },
+  {
+   "en": "Arrive at {place} on the right",
+   "ru": "Прибытие: {place}, справа"
+  },
+  {
+   "en": "Your destination is on the left.",
+   "ru": "Место назначения слева."
+  },
+  {
+   "en": "Your destination is on the right.",
+   "ru": "Место назначения справа."
+  },
+  {
+   "en": "Your destination is straight ahead.",
+   "ru": "Место назначения прямо."
+  },
+  {
+   "en": "Arrive at {place}.",
+   "ru": "Прибытие: {place}."
+  },
+  {
+   "en": "Take the ferry {name}",
+   "ru": "Заезжай на паром {name}"
+  },
+  {
+   "en": "Board the ferry",
+   "ru": "Заезжай на паром"
+  },
+  {
+   "en": "Leave the ferry",
+   "ru": "Съезжай с парома"
+  },
+  {
    "en": "The closest is {name}, {mi} miles.",
    "ru": "Ближайший: {name}, {mi|plural:миля,мили,миль}."
   },
@@ -2091,11 +3140,13 @@
   },
   "left": {
    "side": "слева",
-   "side_cap": "Слева"
+   "side_cap": "Слева",
+   "ramp": "левый"
   },
   "right": {
    "side": "справа",
-   "side_cap": "Справа"
+   "side_cap": "Справа",
+   "ramp": "правый"
   },
   "sunny": "солнечно",
   "mostly sunny": "в основном солнечно",
@@ -2152,6 +3203,51 @@
   "hurricane force wind warning": "предупреждение об ураганном ветре",
   "avalanche warning": "предупреждение о лавинах",
   "dense smoke advisory": "предупреждение о густом дыме",
+  "size": {
+   "dat": "габаритам"
+  },
+  "steer": {
+   "tire": "рулевое колесо"
+  },
+  "drive": {
+   "tire": "ведущее колесо"
+  },
+  "trailer": {
+   "tire": "колесо трейлера"
+  },
+  "accident": "Авария",
+  "congestion": "Пробка",
+  "construction": "Ремонт дороги",
+  "disabledvehicle": "Сломанная машина",
+  "masstransit": "Общественный транспорт",
+  "plannedevent": "Мероприятие",
+  "roadhazard": "Опасность на дороге",
+  "roadclosure": "Дорога закрыта",
+  "weather": "Погода",
+  "lanerestriction": "Сужение дороги",
+  "other": "Происшествие",
+  "frost advisory": "предупреждение о заморозках",
+  "freeze warning": "предупреждение о морозе",
+  "freeze watch": "возможны заморозки",
+  "hard freeze warning": "предупреждение о сильном морозе",
+  "heat advisory": "предупреждение о жаре",
+  "excessive heat warning": "предупреждение о сильной жаре",
+  "extreme heat warning": "предупреждение о сильной жаре",
+  "red flag warning": "пожароопасная погода",
+  "fire weather watch": "возможна пожароопасная погода",
+  "lake effect snow warning": "предупреждение о сильном снегопаде",
+  "wind chill warning": "предупреждение о ледяном ветре",
+  "wind chill advisory": "предупреждение о холодном ветре",
+  "cold weather advisory": "предупреждение о холоде",
+  "extreme cold watch": "возможен сильный мороз",
+  "flood advisory": "предупреждение о подтоплении",
+  "flood watch": "возможно наводнение",
+  "flash flood watch": "возможно внезапное наводнение",
+  "severe thunderstorm watch": "возможна сильная гроза",
+  "tornado watch": "возможен торнадо",
+  "avalanche watch": "возможны лавины",
+  "special weather statement": "особое сообщение о погоде",
+  "air quality alert": "плохое качество воздуха",
   "1st": {
    "ord": "первый"
   },
@@ -2169,6 +3265,21 @@
   },
   "6th": {
    "ord": "шестой"
+  },
+  "7th": {
+   "ord": "седьмой"
+  },
+  "8th": {
+   "ord": "восьмой"
+  },
+  "9th": {
+   "ord": "девятый"
+  },
+  "10th": {
+   "ord": "десятый"
+  },
+  "middle": {
+   "ramp": "средний"
   }
  }
 }

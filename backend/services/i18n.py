@@ -130,9 +130,12 @@ def catalog(code: str) -> tuple[list[Template], dict]:
 
 # ---- Russian forms ---------------------------------------------------------------------------------------------
 
-def plural_ru(n: float, one: str, few: str, many: str) -> str:
+def plural_ru(n: float, one: str, few: str, many: str, frac: Optional[str] = None) -> str:
+    """The noun after n. A fraction takes the genitive singular ("3,2 мили", "около 0,5 мили"): `frac` when the
+    template gives it (a case whose forms don't hold it: "в {mi|plural:миле,милях,милях,мили}"), else `few` of a
+    nominative set (мили, фута) or `one` of a set whose few and many agree (the genitive мили,миль,миль)."""
     if n != int(n):
-        return few  # 2,5 мили
+        return frac or (one if few == many else few)
     n = abs(int(n))
     if n % 10 == 1 and n % 100 != 11:
         return one
@@ -189,23 +192,37 @@ def clock_ru(value: str) -> str:
     return f"{day}в {out}" if day or (value or "").strip().lower().startswith("at ") else out
 
 
+_GROUPED = re.compile(r"(?<![\d.,])\d{1,3}(?:,\d{3})+(?!\d|,\d)")  # 200,000 / $1,234 (not 38.58160, -121.4)
+
+
 def _number(value: str) -> Optional[float]:
-    m = _NUM.search(value or "")
+    v = _GROUPED.sub(lambda m: m.group(0).replace(",", ""), value or "")  # "81,000" is 81000, not 81.0
+    m = _NUM.search(v)
     return float(m.group(0).replace(",", ".")) if m else None
+
+
+_DECIMAL = re.compile(r"(?<![\w.,])(\d+)\.(\d+)(?![\w.]|,\d)")  # 3.2, $3.45, 4.7 (not R22.5, 1.2.3)
+
+
+def group_ru(value: str) -> str:
+    """A number as Russian writes it: '200,000' -> '200 000' (no-break space; a comma there reads as a decimal point)
+    and '3.2' -> '3,2'."""
+    out = _GROUPED.sub(lambda m: m.group(0).replace(",", "\u00a0"), value or "")
+    return _DECIMAL.sub(r"\1,\2", out)
 
 
 # ---- translation -----------------------------------------------------------------------------------------------
 
 def _apply(filt: Optional[str], value: str, code: str, words: dict) -> str:
     if not filt:
-        return value
+        return group_ru(value)
     kind, _, arg = filt.partition(":")
     if kind == "plural":
         forms = arg.split(",")
         n = _number(value)
-        if n is None or len(forms) != 3:
-            return value
-        return f"{value} {plural_ru(n, *forms)}"
+        if n is None or len(forms) not in (3, 4):
+            return group_ru(value)
+        return f"{group_ru(value)} {plural_ru(n, *forms)}"
     if kind == "and":
         return value.replace(" and ", " и ")
     if kind == "time":
@@ -354,8 +371,23 @@ def _miss(sentence: str, code: str, fallback: Optional[Callable[[str, str], Opti
 
 
 FALLBACK_PROMPT = ("Translate this line a truck copilot says aloud into {language}. Keep every number, unit, road "
-                   "name (I-80, CA-99) and place name exactly as written. Plain spoken text, one line, nothing else.")
+                   "name (I-80, CA-99) and place name exactly as written. Plain spoken text, one line, nothing else.{style}")
+# The words the catalog uses, so a model-translated line sits next to a templated one without a change of voice:
+# a parking card said «Используйте юго-западный подъезд» next to «Паркуйся в ряду для грузовиков» (QA 2026-11-09).
+_STYLE = {
+    "ru": (" Talk to the driver as a friend: informal «ты», never «вы» («используй», «паркуйся», «заезжай»). "
+           "A truck, rig or semi is «трак» (never «грузовик» or «фура»), a trailer is «трейлер» (never «полуприцеп»), "
+           "a truck stop is «трак-стоп»."),
+    "uk": (" Talk to the driver as a friend: informal «ти», never «ви». A truck, rig or semi is «трак» "
+           "(never «вантажівка» or «фура»), a trailer is «трейлер» (never «напівпричіп»)."),
+}
+# Part of the model cache key: a new prompt must not serve the translations the old one made.
+FALLBACK_VERSION = 2
 _LANG_NAMES = {"ru": "Russian", "uk": "Ukrainian"}
+
+
+def fallback_prompt(code: str) -> str:
+    return FALLBACK_PROMPT.format(language=_LANG_NAMES.get(code, code), style=_STYLE.get(code, ""))
 
 
 async def localize(text: str, code: Optional[str] = None) -> str:
@@ -373,7 +405,7 @@ async def localize(text: str, code: Optional[str] = None) -> str:
 
     async def one(s: str) -> tuple[str, Optional[str]]:
         try:
-            got = (await llm.complete(FALLBACK_PROMPT.format(language=_LANG_NAMES.get(code, code)), s)).strip()
+            got = (await llm.complete(fallback_prompt(code), s)).strip()
         except Exception as e:  # noqa: BLE001
             logger.warning("i18n fallback failed: %s", e)
             return s, None
@@ -384,13 +416,13 @@ async def localize(text: str, code: Optional[str] = None) -> str:
         return s, None
 
     async def cached(s: str) -> tuple[str, Optional[str]]:
-        key = (code, s.rstrip(" ."))  # "Park along ..." on the card and "Park along ...." in the spoken answer
+        key = (code, FALLBACK_VERSION, s.rstrip(" ."))  # "Park along ..." on the card and "Park along ...." said
         if key in _model_cache:
             _model_cache.move_to_end(key)
             return s, _period_like(s, _model_cache[key])
         task = _inflight.get(key)
         if task is None:  # the card fields and the reply ask for the same tip at once: one call
-            task = asyncio.ensure_future(one(key[1]))
+            task = asyncio.ensure_future(one(key[2]))
             _inflight[key] = task
             task.add_done_callback(lambda _t: _inflight.pop(key, None))
         _src, got = await asyncio.shield(task)
@@ -409,7 +441,7 @@ async def localize(text: str, code: Optional[str] = None) -> str:
 # Model translations by (language, English text): a place's vision tips are the same on every request, so the
 # card and the spoken answer pay the model once per text, not once per request. Bounded, oldest out.
 MODEL_CACHE_MAX = 2000
-_model_cache: "OrderedDict[tuple[str, str], str]" = OrderedDict()
+_model_cache: "OrderedDict[tuple[str, int, str], str]" = OrderedDict()
 _inflight: dict = {}
 
 
@@ -421,21 +453,110 @@ def _period_like(src: str, got: str) -> str:
 
 # ---- whole responses -------------------------------------------------------------------------------------------
 
+def _whole_or_english(text: str) -> str:
+    """The catalog's translation when every sentence of the text has a template, else the English as it is: a
+    half-translated turn ("Take middle ramp onto I-5 N toward Redding" with "Прибытие:" glued in) reads worse than
+    the router's own words."""
+    misses: list[str] = []
+    out = translate(text, fallback=lambda s, c: misses.append(s) or None)
+    return text if misses else out
+
+
 def localize_route(route):
-    """Turn instructions and route notices of a RouteInfo (and its alternatives) in this request's language, by the
-    catalog only. HERE answers in English on purpose: services/approach.py reads the street of the way in from the
-    English instruction ("... onto El Centro Rd"); the words are swapped only on the way out."""
+    """Turn instructions, route notices and what lies ahead (incidents, NWS weather events, chain controls) of a
+    RouteInfo (and its alternatives) in this request's language, by the catalog only. HERE answers in English on
+    purpose: services/approach.py reads the street of the way in from the English instruction ("... onto El Centro
+    Rd"); the words are swapped only on the way out. A line the catalog does not fully cover stays English whole."""
     if route is None or lang() == "en":
         return route
     # A copy: the dialog session keeps this route, and approach reads its English instructions again later.
     route = route.model_copy(deep=True) if hasattr(route, "model_copy") else route
     for m in getattr(route, "maneuvers", None) or []:
-        m.instruction = translate(m.instruction, fallback=None)
+        m.instruction = _whole_or_english(m.instruction)
     if getattr(route, "notices", None):
-        route.notices = [translate(n, fallback=None) for n in route.notices]
+        route.notices = [_whole_or_english(n) for n in route.notices]
+    for inc in getattr(route, "incidents", None) or []:
+        inc.type = _whole_or_english(inc.type)
+        inc.description = _whole_or_english(inc.description)
+    for field in ("weather", "weather_later"):
+        for a in getattr(route, field, None) or []:
+            a.event = _whole_or_english(a.event)
+    for c in getattr(route, "chain_controls", None) or []:
+        if c.description:
+            c.description = _whole_or_english(c.description)
     if getattr(route, "alternatives", None):
         route.alternatives = [localize_route(alt) for alt in route.alternatives]
     return route
+
+
+def localize_call_card(card):
+    """The breakdown "What to tell them" card in this request's language, on a copy: the questions, the tire and
+    the truck line. The problem is the driver's own words; share_text goes to the shop, so it stays English."""
+    if card is None or lang() == "en":
+        return card
+    update = {"questions": [_whole_or_english(q) for q in card.questions], "truck": _whole_or_english(card.truck)}
+    if card.tire:
+        update["tire"] = _whole_or_english(card.tire)
+    return card.model_copy(update=update)
+
+
+# ---- the driver's own spelling of a place ----------------------------------------------------------------------
+# "Маршрут до Рино" came back as "Маршрут до Reno готов" (QA 2026-11-09, bug 8): the geocoder names places in
+# Latin letters. When the driver wrote the name in Cyrillic, the reply uses the driver's spelling. Only a
+# whole run of capitalised Latin words is swapped, and only when it sounds the same as a word the driver wrote, so
+# "Pilot Travel Center" stays as it is unless the driver wrote all of it.
+
+_TRANSLIT = dict(zip("абвгдеёжзийклмнопрстуфхцчшщъыьэюяіїєґ",
+                     ["a", "b", "v", "g", "d", "e", "e", "zh", "z", "i", "i", "k", "l", "m", "n", "o", "p", "r", "s",
+                      "t", "u", "f", "h", "ts", "ch", "sh", "sh", "", "y", "", "e", "iu", "ia", "i", "i", "e", "g"]))
+_CYR_WORD = re.compile(r"[А-Яа-яЁёІіЇїЄєҐґ]+(?:-[А-Яа-яЁёІіЇїЄєҐґ]+)*")
+_LATIN_NAME = re.compile(r"(?<![\w'’-])[A-Z][a-z]+(?:[ -][A-Z][a-z]+)*(?![\w'’-])")
+_CASE_ENDINGS = ("ом", "ою", "ой", "а", "у", "е", "ы")  # "до Далласа" -> "Даллас"
+
+
+def _sound(latin: str) -> str:
+    """A rough sound key shared by an English name and its Russian spelling: Reno/Рино, Sacramento/Сакраменто,
+    Los Angeles/Лос-Анджелес, Stockton/Стоктон."""
+    s = re.sub(r"[^a-z]", "", latin.lower())
+    for a, b in (("sch", "sh"), ("tch", "ch"), ("ck", "k"), ("ph", "f"), ("qu", "kv"), ("x", "ks"), ("w", "v"),
+                 ("j", "dzh")):
+        s = s.replace(a, b)
+    s = re.sub(r"g(?=[eiy])", "dzh", s)
+    s = re.sub(r"c(?=[eiy])", "s", s).replace("c", "k").replace("ts", "s").replace("kh", "h")
+    s = re.sub(r"[eiy]", "i", re.sub(r"[ao]", "a", s))
+    return re.sub(r"(.)\1+", r"\1", s)
+
+
+def _cyr_sound(word: str) -> str:
+    return _sound("".join(_TRANSLIT.get(ch, ch) for ch in word.lower()))
+
+
+def _title(word: str) -> str:
+    return "-".join(p[:1].upper() + p[1:] for p in word.split("-"))
+
+
+def driver_names(text: str, said: Optional[str]) -> str:
+    """`text` with each place name the driver wrote in Cyrillic spelled the driver's way."""
+    if not text or not said or not _CYRILLIC.search(said):
+        return text
+    spelled: dict[str, str] = {}
+    for w in _CYR_WORD.findall(said):
+        forms = [w] + [w[:-len(e)] for e in _CASE_ENDINGS if w.lower().endswith(e) and len(w) - len(e) >= 4]
+        for f in forms:
+            key = _cyr_sound(f)
+            if len(key) >= 3:
+                spelled.setdefault(key, _title(f))
+    if not spelled:
+        return text
+    return _LATIN_NAME.sub(lambda m: spelled.get(_sound(m.group(0)), m.group(0)), text)
+
+
+async def localize_reply(text: str, said: Optional[str] = None, code: Optional[str] = None) -> str:
+    """A reply as the driver sees and hears it: localize() plus the driver's own spelling of the places."""
+    code = norm(code or lang())
+    if code == "en" or not text:
+        return text
+    return driver_names(await localize(text, code), said)
 
 
 async def localize_parking(check):

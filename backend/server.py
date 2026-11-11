@@ -317,17 +317,25 @@ async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = Non
     return await _speak(res, speak)
 
 
+async def _same(text):
+    return text
+
+
 async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
     # The driver's language (services/i18n.py): the reply and the UI message as they will be shown and said.
     if i18n.lang() != "en":
         # A Google Maps grounded answer (what drivers say, services/maps_grounding.py) is said exactly as Google
         # returned it: their terms forbid changing it, so it stays English (the tool answers only in English).
-        if res.reply and not res.maps_sources:
-            res.reply = await i18n.localize(res.reply)
-        if res.message:
-            res.message = await i18n.localize(res.message)
+        # A place the driver wrote in Cyrillic keeps the driver's spelling ("до Рино", not "до Reno").
+        # The breakdown comparison on the screen (services/breakdown.py) goes at the same time as the reply.
+        keep = not res.reply or bool(res.maps_sources)
+        res.reply, res.message, res.summary = await asyncio.gather(
+            _same(res.reply) if keep else i18n.localize_reply(res.reply, res.transcript),
+            i18n.localize_reply(res.message, res.transcript), i18n.localize(res.summary or ""))
+        res.summary = res.summary or None
         res.route = i18n.localize_route(res.route)
         res.parking = await i18n.localize_parking(res.parking)
+        res.call_card = i18n.localize_call_card(res.call_card)
     if speak and res.reply and res.source in FIXED_SOURCES:
         res.reply_parts = [res.reply]
         audio_id = await _fixed_clip(res.reply)
@@ -337,13 +345,19 @@ async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
     if speak and res.reply:
         # The first clip (first clause, or first sentence with TTS_CLAUSE_SPLIT=0) is spoken as soon as it's
         # ready; the rest is generated in parallel and the app plays it right after.
-        first, rest = split_reply(res.reply, clause=flags.on("TTS_CLAUSE_SPLIT"))
+        # Streamed (TTS_STREAM=1, one worker): Gemini when it is on, else OpenAI (voice.synthesize_stream). Without a
+        # stream Gemini makes the first clip whole (1-2.5 s), so then it always ends at the first clause.
+        stream = flags.on("TTS_STREAM", "0") and settings().workers == 1 and (
+            voice.gemini_active() or not voice.eleven_voice())
+        clause = flags.on("TTS_CLAUSE_SPLIT") or (not stream and voice.gemini_active())
+        first, rest = split_reply(res.reply, clause=clause)
         res.reply_parts = [first, rest] if rest else [first]
         if rest:
+            # The rest is made whole, in parallel: it is ready before the first clip has finished playing.
             res.audio_url_2 = f"/api/voice/audio/{voice.synthesize_later(rest, previous_text=first)}"
-        if flags.on("TTS_STREAM", "0") and not voice.eleven_voice() and settings().workers == 1:
+        if stream:
             # (a stream lives in the worker that started it: with several workers the clip is made whole)
-            # Streamed: the id is ready now; the first bytes reach the app in ~300 ms instead of a whole clip.
+            # Streamed: the id is ready now; the first bytes reach the app in ~0.5-1 s instead of a whole clip.
             audio_id = voice.synthesize_stream(first)
             timing.add("tts", 0)
         else:

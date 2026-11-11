@@ -13,7 +13,7 @@ from typing import Callable, Optional
 import httpx
 
 from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, MapsSource, Place, RouteInfo, TruckProfile
-from services import (approach, breakdown, chains, controls, fuel_index, hos, llm, maps_grounding, memory,
+from services import (approach, breakdown, chains, controls, fuel_index, hos, i18n, llm, maps_grounding, memory,
                       profile_learn, reviews, timing, tpims, weather)
 from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode, is_street, where
@@ -136,6 +136,22 @@ def _route_head(place: Place, route: RouteInfo, n: int = 0, driver: Optional[str
     return out + body.format(**vals) + _diesel_sentence(place, regional) + tpims.sentence(place)
 
 
+def _as_shown(req: AgentRequest, res: AgentResponse):
+    """The copilot's line for long-term memory (the history screen) as the driver saw it: server._speak translates
+    the reply only after the turn, so a Russian driver's history showed every answer in English (QA 2026-11-09,
+    bug 1). The translation runs in the save task and shares the model cache with _speak (one call per line).
+    The dialog's own history (sess["history"]) stays English: it is the model's context, and the model reads only
+    the driver's lines from long-term memory."""
+    if i18n.lang() == "en" or res.maps_sources:  # a Google-grounded answer is shown in English as Google wrote it
+        return res.reply[:500]
+
+    english, said_ = res.reply, req.text  # taken now: _speak replaces res.reply with the translation
+
+    async def shown() -> str:
+        return (await i18n.localize_reply(english, said_))[:500]
+    return shown
+
+
 def _verdict(p: Place) -> Optional[str]:
     c = cached_parking(p)
     return c.verdict if c else ("listed" if listed_in_data(p) else None)
@@ -215,7 +231,7 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         if res.status == "chat" and GOODBYE.search(req.text or ""):
             res.end_conversation = True
         if driver and res.status != "not_understood":  # saved in the background: the reply (and TTS) never waits on the DB
-            memory.add_later(driver, [("driver", (req.text or "").strip()[:500]), ("copilot", res.reply[:500])])
+            memory.add_later(driver, [("driver", (req.text or "").strip()[:500]), ("copilot", _as_shown(req, res))])
             sess_now = _session(req.session_id) if req.session_id else None
             if sess_now is not None:
                 sess_now["turns"] = sess_now.get("turns", 0) + 1

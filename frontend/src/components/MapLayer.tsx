@@ -10,6 +10,7 @@ import type { LatLng } from "../types";
 import type { MapLayerHandle, MapLayerProps } from "./mapTypes";
 import { DestinationLabel, ENTRY_SIZE, EntryMarker, Pin, PIN_H, PIN_W, USER_SIZE, UserArrow } from "./Pin";
 import { entrySpot } from "../utils/entry";
+import { t } from "../i18n";
 
 const TILE = 256;
 const DEFAULT_ZOOM = 15;
@@ -189,7 +190,7 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
             <Pressable
               key={p.id}
               testID={`map-pin-${p.id}`}
-              accessibilityLabel={p.name}
+              accessibilityLabel={t(p.name)}
               onPress={() => onPlacePress(p)}
               style={{ position: "absolute", left: s.x - PIN_W / 2, top: s.y - PIN_H }}
             >

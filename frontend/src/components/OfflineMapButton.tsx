@@ -5,6 +5,7 @@ import { Text } from "../i18n/Text";
 import { formatBytes } from "../map/bounds";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import { Icon } from "./Icon";
+import { t } from "../i18n";
 
 // Moved verbatim from CopilotSheet.tsx.
 /** "Download for offline · ~84 MB" / "Downloading · 42%" / "Saved · 84 MB" / "Download failed · try again". */
@@ -28,7 +29,7 @@ export function OfflineMapButton({ state, onPress }: { state: OfflineMapState; o
   return (
     <Pressable
       testID="offline-map-button"
-      accessibilityLabel={offlineMapLabel(state)}
+      accessibilityLabel={t(offlineMapLabel(state))}
       accessibilityState={{ disabled: busy || saved }}
       disabled={busy || saved}
       onPress={onPress}

@@ -1,4 +1,5 @@
 import { absoluteUrl, api } from "../api";
+import { t } from "../i18n";
 import type { Place } from "../types";
 
 type Deps = {
@@ -31,7 +32,7 @@ export async function parkingFollowup(place: Place, spoken: Promise<unknown>, de
     console.warn("[parking] follow-up failed", e);
     await spoken;
     if (!deps.isCurrent()) return;
-    const text = PARKING_FAILED;
+    const text = t(PARKING_FAILED); // spoken and shown in the driver's language (QA 2026-11-09, S4)
     const audio = await api.speak(text).catch(() => null);
     await deps.say(text, audio?.audio_url);
   }

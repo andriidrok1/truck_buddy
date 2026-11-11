@@ -12,6 +12,7 @@ import { ESRI_TILES, type ParkingSatMapProps } from "./mapTypes";
 import { Pin, PIN_H, PIN_W } from "./Pin";
 import { PressableScale } from "./PressableScale";
 import { SpotBadge } from "./SpotBadge";
+import { t } from "../i18n";
 
 const TILE = 256;
 const MAX_Z = 19;
@@ -216,7 +217,7 @@ export default function ParkingSatMap({ center, place, spots, tail }: ParkingSat
           <PressableScale
             key={b.id}
             testID={`parking-sat-zoom-${b.id}`}
-            accessibilityLabel={`Zoom ${b.id}`}
+            accessibilityLabel={t("Zoom {what}", { what: b.id })}
             onPress={() => zoomBy(b.d)}
             style={[styles.zoomBtn, { backgroundColor: colors.surface }]}
           >
