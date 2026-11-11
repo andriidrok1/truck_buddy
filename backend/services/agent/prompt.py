@@ -11,7 +11,7 @@ makes sense for a trucker and act on the corrected meaning, e.g. "I need a few" 
 "these all". Only fix words that clearly don't fit; never invent a destination. If you can't tell, use "unclear".
 
 Classify the driver's LAST utterance and answer with JSON only, no other text:
-{{"intent": "find"|"go"|"pick"|"alternative"|"add_stop"|"clear_stops"|"reviews"|"weather"|"hos"|"memory"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|"walmart"|"cat_scale"|"truck_wash"|"weigh_station"|null, "near": string|null, "query": string|null, "when": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
+{{"intent": "find"|"go"|"pick"|"alternative"|"add_stop"|"clear_stops"|"reviews"|"weather"|"hos"|"memory"|"ledger"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|"walmart"|"cat_scale"|"truck_wash"|"weigh_station"|null, "near": string|null, "query": string|null, "when": string|null, "place_index": integer|null, "actions": array|null, "op": string|null, "amount": number|null, "period": string|null, "reply": string|null}}
 
 - find: the driver needs a place. Pick the category yourself, never ask:
   truck_stop = fuel, diesel, DEF, food, showers, truck stop;
@@ -34,6 +34,13 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
 - clear_stops: drop the stops added on the way ("skip the stops", "forget the stop", "no stops, straight there"). For one stop named ("skip the Pilot", "drop the Love's stop"), query = that stop's name; null for all of them.
 - reviews: what other drivers say about a place ("what do drivers say about it", "is it any good", "reviews for the Pilot", "how are the showers there"). place_index = the place asked about from "Places found earlier", or null for the current route / the last one mentioned.
 - memory: what the copilot remembers about the driver ("what do you know about me", "what have you learned about me") -> query = "show"; or erasing it ("forget that", "forget what you know about me", "stop remembering") -> query = "forget".
+- ledger: the driver's own money on loads (an owner-operator's ledger), never a place or a route. What a load pays
+  ("this load pays 2400", "the rate is twenty four hundred", "they paid me 1850 for this one") -> op = "add",
+  amount = the dollars as a number (2400; null if no amount was said); what the driver made ("how much did I make
+  this week", "what did I gross last month") -> op = "totals", period = "today"|"yesterday"|"this week"|"last week"|
+  "this month"|"last month" ("this week" when none is said); the last load's rate was wrong ("that was wrong, it's
+  2600", "change the last load to 2600") -> op = "fix", amount; remove the last load ("delete the last load") ->
+  op = "delete". Never put a dollar figure in reply.
 - hos: the driver's hours of service ("how many hours do I have", "how much drive time is left", "when do I have to stop", "where's my clock at", "how long till my break"). No other fields.
 - weather: the weather or wind at a place and time ("weather in Reno at 3pm", "how's the wind over Donner tonight", "is it snowing ahead", "what's it like at the destination"). query = the place named (null for here, or for the destination when they say there/ahead), when = the time words as said ("3pm", "tonight", "tomorrow morning", null for now).
 {controls}
@@ -53,7 +60,7 @@ no markdown, at most 2 short sentences, never repeat yourself.
 # (0.1x input price on the cached prefix, faster first token). Everything that varies, the truck, the
 # preferences and the conversation context, travels in the user message, in that order.
 SYSTEM_STATIC = SYSTEM.format(controls=controls.PROMPT, parking=approach.PROMPT, breakdown=breakdown.PROMPT)
-PROMPT_VERSION = 5  # bump when SYSTEM changes, so the cache key and the eval baseline move together
+PROMPT_VERSION = 6  # bump when SYSTEM changes, so the cache key and the eval baseline move together
 PROMPT_CACHE_KEY = f"agent-v{PROMPT_VERSION}"
 
 

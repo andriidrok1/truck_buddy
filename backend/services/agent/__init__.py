@@ -13,8 +13,8 @@ from typing import Callable, Optional
 import httpx
 
 from models import MAX_VIA, AgentRequest, AgentResponse, AppAction, MapsSource, Place, RouteInfo, TruckProfile
-from services import (approach, breakdown, chains, controls, fuel_index, hos, llm, maps_grounding, memory,
-                      profile_learn, reviews, timing, tpims, weather)
+from services import (approach, breakdown, chains, controls, fuel_index, hos, ledger, llm, maps_grounding,
+                      memory, profile_learn, reviews, timing, tpims, weather)
 from services.geo import haversine_km, km_to_mi
 from services.geocode import geocode, is_street, where
 from services.google_places import TRUCK_STOP_NAME, PlacesUnavailable
@@ -38,7 +38,7 @@ from services.agent.phrases import (  # noqa: F401
     STOP_ORDER, THAT_STOP, STOP_KIND, ANOTHER, ROAD_WORDS, LIST_REF, ORDINALS, NOT_A_PLACE, REMEMBER, ROAD_PREFS,
     BYE_PHRASE, numbered, list_reference, _NAME_TOKEN, _name_tokens, named_place, NAME_LIKE, name_like,
     GENERIC_NAME_WORDS, named_in_text, stop_named, stop_to_drop, reject_or_reference_guard, pick_place, ORDER_VERB,
-    WHERE_AM_I, ROUTE_CHEAPEST, ROUTE_FASTEST, PRICE_AT)
+    WHERE_AM_I, ROUTE_CHEAPEST, ROUTE_FASTEST, PRICE_AT, ledger_phrase)
 from services.agent.driver_name import (  # noqa: F401
     NAME_EVERY, NAME_MIN_WORDS, _SENTENCE_START, _INTERJECTION, _address, _a_place, _cut, GREETING, SHORT_LEAD,
     _vocatives, without_name, name_policy)
@@ -61,6 +61,7 @@ from services.agent.common import (  # noqa: F401
     _not_understood, _chain_of, _short_name, CHAIN_SPELLING, NAMED_CHAINS, chain_named)
 from services.agent.context import ContextMixin
 from services.agent.learning import LearningMixin
+from services.agent.loads import LedgerMixin
 from services.agent.stops import StopsMixin
 
 logger = logging.getLogger("truckbuddy.agent")
@@ -182,7 +183,7 @@ async def classify(text: str, context: str, truck: TruckProfile) -> dict:
 _past_tasks: dict[str, asyncio.Task] = {}
 
 
-class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
+class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin, LedgerMixin):
     source = MODEL[1]
 
     async def handle(self, req: AgentRequest, driver: Optional[str] = None) -> AgentResponse:
@@ -344,6 +345,10 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         learned = sess_now.pop("say_learned", None) if sess_now is not None else None
         reply = _with_warnings(first, route, chain_line, weather_line, learned)
         await route_cost.annotate(route, req.lat, req.lng, req.truck_profile)
+        self._remember_cost(req, route)
+        fill = self._ledger_fill(req, place, route)
+        if fill is not None:
+            _background(fill)
         reply += self._offer_cheaper(req, route, text)
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply,
                              place=place, route=route, parking=approach.for_route(place, route),
@@ -932,6 +937,9 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
                     return AgentResponse(status="chat", transcript=text, reply=CONFIRM_NO, source=self.source)
                 # "no, take me to Fresno": the refusal is noted above, the new request is classified below
             # anything else: the driver moved on, classify it as a fresh utterance
+        fast = ledger_phrase(text) if ledger.enabled() else None
+        if fast:  # "this load pays 2400", "how much did I make this week": no model needed, none to mishear
+            return await self._dispatch(req, sess, text, fast)
         try:
             d = await asyncio.wait_for(classify(text, self._context(req, sess), req.truck_profile),
                                        timeout=CLASSIFY_TIMEOUT_S)
@@ -968,6 +976,8 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         ask = None if confirmed else self._confirm_needed(req, d, sess)
         if ask:
             return ask
+        if intent == "ledger":
+            return await self._ledger(req, sess, d, text, confirmed)
         reply = str(d.get("reply") or "").strip()
         # A control phrase dressed up as a destination (or echoed only as a reply): run the control.
         ctl = (control_phrase(str(d.get("query") or "")) if intent == "go" else None) or \

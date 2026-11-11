@@ -5,6 +5,7 @@ import re
 from typing import Optional
 
 from models import Place
+from services import ledger
 from services.geo import haversine_km, km_to_mi
 from services.logs import said
 
@@ -74,8 +75,11 @@ DEST_YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|correct|right|tha
 
 VIA_FAR_YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|add it|go ahead|do it|please do|fine|добавь|добавляй|"
                          r"додай|" + YES_RU_UK + r")\b", re.I)
+# "Save it?" / "Delete the last load?" / "Change it to $2,600?" in the driver's ledger (services/ledger.py)
+LEDGER_YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|correct|right|save it|save|delete it|change it|fix it|"
+                        r"do it|go ahead|please do|fine|сохрани|удали|збережи|" + YES_RU_UK + r")\b", re.I)
 # A pending question names its extra "yes" pattern instead of carrying the regex (the state is stored as JSON).
-YES_PATTERNS = {"via_far_yes": VIA_FAR_YES, "dest_yes": DEST_YES}
+YES_PATTERNS = {"via_far_yes": VIA_FAR_YES, "dest_yes": DEST_YES, "ledger_yes": LEDGER_YES}
 
 YES = re.compile(r"^\s*(?:yes|yeah|yep|yup|correct|right|that's right|that's it|sure|affirmative|" + YES_RU_UK + r")\b",
                  re.I)
@@ -87,6 +91,7 @@ NO = re.compile(r"^\s*(?:no|nope|nah|wrong|that's wrong|not that|negative|" + NO
 ANSWER_FILLER = {"yes", "yeah", "yep", "yup", "sure", "ok", "okay", "right", "correct", "exactly", "affirmative", "no",
                  "nope", "nah", "negative", "not", "wrong", "that", "that's", "thats", "this", "it", "is", "one", "the",
                  "please", "thanks", "thank", "you", "go", "ahead", "do", "take", "me", "there", "add", "and", "let's",
+                 "save", "delete", "change", "fix",
                  "lets", "sounds", "good", "great", "fine", "perfect", "cool", "man", "buddy", "sir", "boss",
                  # Russian / Ukrainian
                  "да", "ага", "угу", "давай", "конечно", "точно", "верно", "правильно", "хорошо", "ок", "окей", "так",
@@ -386,3 +391,31 @@ PRICE_AT = re.compile(
     r"\b(?:price|prices|cost|costs|going for|per gallon|a gallon)\b"
     r"|\bhow much (?:is|are|does|'s|for)\b"
     r"|\bwhat(?:'s| is| are) (?:the )?(?:diesel|fuel|gas)\b[^.?!]*\b(?:there|here|at)\b", re.I)
+
+
+# ---- the owner-operator's ledger (services/ledger.py) ------------------------------------------------------------
+# The phrases drivers say most, answered without the model: a rate with an amount, and "how much did I make".
+# Anything else about loads ("that was wrong, it's 2,600") goes to the classifier (intent ledger).
+LEDGER_RATE = re.compile(r"\b(?:pays|paying|paid me|pay is|rate is|rate's|rate of|the rate|is worth)\b", re.I)
+# what is paid for has to be the load: "the rate is 120 at that hotel" is not one
+LEDGER_LOAD = re.compile(r"\b(?:load|run|haul|trip|paid me|this one)\b", re.I)
+LEDGER_TOTALS = re.compile(
+    r"\bhow much (?:did|have|do) I (?:make|made|earn|earned|gross|grossed|clear|cleared|net|netted)\b|"
+    r"\bwhat (?:did|have) I (?:make|made|earn|earned|gross|grossed|clear|cleared|net|netted)\b|"
+    r"\bmy (?:earnings|ledger|loads)\b", re.I)
+LEDGER_DELETE = re.compile(r"\b(?:delete|remove|erase|scratch|drop)\b.{0,20}\b(?:last|that) load\b", re.I)
+
+
+def ledger_phrase(text: str) -> Optional[dict]:
+    """The ledger intent for a phrase common enough not to need the model, else None. A rate counts only with an
+    amount in it that reads one way ("this load pays twenty four hundred"); totals take the period from the words."""
+    t = text or ""
+    if LEDGER_TOTALS.search(t):
+        return {"intent": "ledger", "op": "totals", "period": ledger.period_of(t)}
+    if LEDGER_DELETE.search(t):
+        return {"intent": "ledger", "op": "delete"}
+    if LEDGER_RATE.search(t) and LEDGER_LOAD.search(t):
+        amount = ledger.parse_amount(t)
+        if amount is not None:
+            return {"intent": "ledger", "op": "add", "amount": amount}
+    return None

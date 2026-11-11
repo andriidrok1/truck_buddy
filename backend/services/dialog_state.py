@@ -5,7 +5,7 @@ Keys written to the session anywhere (services/agent/, services/nudges.py, servi
 all declared below: history, places, city, pending, via, alternatives, rejected, dest_declined, rejected_chains,
 confirmed_once, facts, past, past_loaded, n, turns, driver, nudge_break_done, nudge_parking_done,
 nudge_chains_done, hos_cache, breakdown_pending, breakdown, providers, providers_at, near, say_learned,
-last_offer, replies, name_at, breakdown_asked.
+last_offer, replies, name_at, breakdown_asked, ledger_fill.
 Rules that make it serializable: the former sets (rejected, dest_declined) are lists; the pending question's
 "yes" is a pattern NAME (YES_PATTERNS in services/agent/phrases.py), not a compiled regex; the memory read that used to live on
 as an asyncio.Task (past_task) is gone, past_loaded says whether it has landed; clocks are epoch seconds
@@ -65,6 +65,7 @@ class DialogState(BaseModel):
     last_offer: Optional[dict] = None
     replies: int = 0  # copilot replies in this dialog
     name_at: Optional[int] = None  # the reply (by `replies`) that last used the driver's name
+    ledger_fill: Optional[int] = None  # a load saved with no route yet: the next destination routed fills its miles
     # each key as JSON when the state was loaded or last saved: what this request changed is what differs
     _saved: dict = PrivateAttr(default_factory=dict)
 
