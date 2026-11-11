@@ -337,13 +337,19 @@ async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
     if speak and res.reply:
         # The first clip (first clause, or first sentence with TTS_CLAUSE_SPLIT=0) is spoken as soon as it's
         # ready; the rest is generated in parallel and the app plays it right after.
-        first, rest = split_reply(res.reply, clause=flags.on("TTS_CLAUSE_SPLIT"))
+        # Streamed (TTS_STREAM=1, one worker): Gemini when it is on, else OpenAI (voice.synthesize_stream). Without a
+        # stream Gemini makes the first clip whole (1-2.5 s), so then it always ends at the first clause.
+        stream = flags.on("TTS_STREAM", "0") and settings().workers == 1 and (
+            voice.gemini_active() or not voice.eleven_voice())
+        clause = flags.on("TTS_CLAUSE_SPLIT") or (not stream and voice.gemini_active())
+        first, rest = split_reply(res.reply, clause=clause)
         res.reply_parts = [first, rest] if rest else [first]
         if rest:
+            # The rest is made whole, in parallel: it is ready before the first clip has finished playing.
             res.audio_url_2 = f"/api/voice/audio/{voice.synthesize_later(rest, previous_text=first)}"
-        if flags.on("TTS_STREAM", "0") and not voice.eleven_voice() and settings().workers == 1:
+        if stream:
             # (a stream lives in the worker that started it: with several workers the clip is made whole)
-            # Streamed: the id is ready now; the first bytes reach the app in ~300 ms instead of a whole clip.
+            # Streamed: the id is ready now; the first bytes reach the app in ~0.5-1 s instead of a whole clip.
             audio_id = voice.synthesize_stream(first)
             timing.add("tts", 0)
         else:
