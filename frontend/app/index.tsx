@@ -17,6 +17,9 @@ import MapLayer from "@/src/components/MapLayer";
 import type { MapLayerHandle } from "@/src/components/mapTypes";
 import { MicPermissionCard } from "@/src/components/MicPermissionCard";
 import { HeightConfirmCard } from "@/src/components/HeightConfirmCard";
+import { HowToSheet } from "@/src/components/HowToSheet";
+import { useHowToFlow } from "@/src/hooks/useHowToFlow";
+import { useEldToken } from "@/src/eld";
 import { confirmHeight, isHeightConfirmed, useHeightConfirmed } from "@/src/truck/heightConfirmed";
 import { NavBanner } from "@/src/components/NavBanner";
 import { dial, ProvidersList } from "@/src/components/ProvidersList";
@@ -230,8 +233,18 @@ export default function MapScreen() {
   // it in and the route refits above it; the destination pin is never under the bubble (UI review 2026-11-05,
   // M11). Dismissing the bubble gives the room back.
   const previewing = phase === "navigating" && !!active && !driving;
+  // "How to use" (src/state/howTo.ts): opens by itself once after onboarding, or from "?" and the sheet's link. A chip
+  // is a typed request, the same path as the sheet's text field; "Try it now" is a tap on the avatar. Both handlers
+  // are declared further down and only called on a tap, after this render.
+  const busy = phase === "listening" || phase === "thinking";
+  const howTo = useHowToFlow({ focused, micCard: !!micCard, busy, ask: (q) => onSubmitText(q), listen: () => onAvatarPress() });
+  const motiveKey = useEldToken();
   // The height card waits while the mic card asks, and while the copilot listens or thinks (one thing at a time).
-  const showHeightCard = heightConfirmed === false && focused && !micCard && phase !== "listening" && phase !== "thinking";
+  // After onboarding "How to use" goes first and the height card right after it: the card stays until answered
+  // and Go waits for it, so it loses nothing by waiting, while two things on screen at once is what the
+  // one-at-a-time rule is for. Until the how-to flag is read the card waits too, or it would flash for a frame.
+  const showHeightCard =
+    heightConfirmed === false && focused && !micCard && !busy && !howTo.holdsCards;
   const cardUp = (showHeightCard || !!micCard) && cardH > 0;
   // The bubble sits above a card on the map, never under it: under the height card the whole answer was hidden
   // (UI review 2026-11-05, third pass, M2).
@@ -513,6 +526,11 @@ export default function MapScreen() {
     }
     if (!turn.dialogId()) setCaption(null);
     turn.tap();
+  };
+
+  const openHowTo = () => {
+    Keyboard.dismiss();
+    howTo.open();
   };
 
   const onAllowMic = async () => {
@@ -850,6 +868,8 @@ export default function MapScreen() {
         onSearch={(q) => onSubmitText(searchRequest(q))}
         blurGuard={searchBlurGuard}
         onTruckPress={() => router.push("/truck-profile")}
+        onHelpPress={openHowTo}
+        helpDot={howTo.dot}
         onHistoryPress={() => router.push("/history")}
         tester={isTester()}
         simLabel={loc.sim?.label ?? null}
@@ -926,6 +946,7 @@ export default function MapScreen() {
           ) : null
         }
         replyInSheet={caption?.kind === "reply" && replyPlace === "sheet" ? caption.reply : null}
+        onHowTo={openHowTo}
       />
 
       {showHeightCard && (
@@ -969,6 +990,8 @@ export default function MapScreen() {
       )}
 
       <Toast toast={toast} top={topH + spacing.sm} />
+
+      <HowToSheet mode={howTo.mode} name={truck.driver_name} motive={!!motiveKey} onAsk={howTo.ask} onTryNow={howTo.tryNow} onClose={howTo.close} />
 
       <ConfirmSheet
         testID="end-route-confirm"

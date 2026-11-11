@@ -12,6 +12,7 @@ import { DEFAULT_TRUCK, getTruckProfile, isOnboarded, setOnboarded } from "../ho
 import { loadLang, setLang, useLangStore } from "../i18n";
 import { tripLog } from "../net/tripEvents";
 import { deleteMyData, resetToFirstLaunch, rootScreen } from "../state/firstLaunch";
+import { loadHowTo, markHowToSeen } from "../state/howTo";
 import { saveActiveRoute } from "../state/routeStore";
 import { setSpeedAlerts, useSettings } from "../state/settingsStore";
 import { loadThemePref, setThemePref, useThemePref } from "../theme";
@@ -39,6 +40,7 @@ async function fillTheAppUp() {
   setThemePref("dark");
   await setOnboarded();
   await confirmHeight();
+  await markHowToSeen();
   await saveProfile({ ...DEFAULT_TRUCK, height_in: 168, driver_name: "Mike" });
   setSpeedAlerts(true);
   const place = { id: "p1", name: "Pilot", category: "truck_stop", lat: 38.55, lng: -121.42, tags: [] };
@@ -84,6 +86,7 @@ test("Delete my data: storage holds no app key, every store is back to a fresh i
   expect(theme.result.current).toBe("light");
   expect(isHeightConfirmed()).toBe(false);
   expect(await isOnboarded()).toBe(false);
+  expect(await loadHowTo()).toBeNull(); // the next onboarding shows "How to use" again
   expect(getTruckProfile()).toEqual(DEFAULT_TRUCK);
   expect(useSettings.getState().speedAlerts).toBe(false);
   expect(tripLog.size()).toBe(0);
