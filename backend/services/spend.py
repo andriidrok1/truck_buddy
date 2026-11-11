@@ -1,8 +1,9 @@
 """What the paid APIs cost today, and what the service stops doing when the day's money runs out.
 
 Every paid call records an estimate in USD: OpenAI chat from the usage tokens, speech-to-text from the audio
-seconds (or tokens, or the upload size when the response has neither), TTS from the characters spoken; Gemini
-(Maps grounding) and HERE per call. The prices are the tables below, the one place to edit when a price changes.
+seconds (or tokens, or the upload size when the response has neither), TTS from the characters spoken (Gemini TTS
+from its text and audio tokens); Gemini (Maps grounding) and HERE per call. The prices are the tables below, the
+one place to edit when a price changes.
 
 Counters are per US Pacific day (like services/quota.py) in the `spend_daily` table (migration 0013), so they
 survive a restart and every worker sees the others' spend. A call never waits on the database: it adds to this
@@ -13,7 +14,7 @@ totals; the totals any worker uses are the last read plus what it has not writte
 DAILY_USD_CAP (default 5, dollars, the whole service) sets the stages, by today's spend against the cap:
 
     >= 80%   alert         one alert, nothing changes for drivers
-    >= 100%  cheap_voice   ElevenLabs is skipped (OpenAI TTS only); /speak serves only lines already made and
+    >= 100%  cheap_voice   ElevenLabs and Gemini TTS are skipped (OpenAI TTS only); /speak serves only lines already made and
                            answers 503 for new ones, so the app says them with the phone's own voice. Copilot
                            replies stay spoken: the app has no local voice for them, a silent reply in a moving
                            truck is worse than the cent it costs.
@@ -27,7 +28,8 @@ threshold sends one alert per day (log line always, Telegram when TELEGRAM_BOT_T
 set), de-duplicated across workers through the same table.
 
 Per-provider call caps, so a loop in the code can't burn a quota in an hour whatever the dollars say:
-GEMINI_CALLS_PER_DAY (default 200) and HERE_CALLS_PER_DAY (default 3000). Over the cap the call is refused
+GEMINI_CALLS_PER_DAY (default 200, Maps grounding only: Gemini TTS is counted apart as gemini_tts, with no call
+cap of its own; the cheap_voice stage stops it) and HERE_CALLS_PER_DAY (default 3000). Over the cap the call is refused
 before it leaves (ProviderCapped, a transport error the callers already survive: routing falls back to ORS,
 grounding to the rating), with one alert per day.
 
@@ -64,11 +66,17 @@ TTS_PER_M_CHARS = {"gpt-4o-mini-tts": 17.0, "tts-1": 15.0, "tts-1-hd": 30.0, "el
 # the free monthly allowance ignored.
 PER_CALL = {"here": 0.0025, "gemini": 0.014}
 METERED_HOSTS = (("hereapi.com", "here"), ("generativelanguage.googleapis.com", "gemini"))
+# Gemini TTS per 1M tokens: (text in, audio out). Official for gemini Flash TTS; the Lite TTS model has no published
+# price (2026-11-10), so it is priced the same as an upper bound. Audio is 25 tokens per second of speech.
+GEMINI_TTS_PER_M = (0.50, 10.00)
+GEMINI_TTS_TOKENS_PER_S = 25
+GEMINI_TTS_CHARS_PER_TOKEN = 4  # text tokens from the prompt length when the response has no usageMetadata
 
 # ---- caps and stages -------------------------------------------------------------------------------------------
 
 CAP_DEFAULT = 5.0
 CALLS_DEFAULT = {"gemini": 200, "here": 3000}
+CALLS_SHOWN = ("gemini", "here", "gemini_tts")  # call counters in /health (gemini_tts has no cap)
 STAGES = ("normal", "alert", "cheap_voice", "no_satellite", "no_ai")
 THRESHOLDS = {"alert": 0.8, "cheap_voice": 1.0, "no_satellite": 1.1, "no_ai": 1.2}
 AI_PAUSED = ("I'm taking a break from answering for the rest of today; I'm back at midnight Pacific. "
@@ -151,6 +159,20 @@ def price_tts(model: str, chars: int) -> float:
     return chars * TTS_PER_M_CHARS.get(model, max(TTS_PER_M_CHARS.values())) / 1e6
 
 
+def price_gemini_tts(audio_s: float, usage: Optional[dict] = None, prompt_chars: int = 0) -> float:
+    """From usageMetadata (promptTokenCount text in, candidatesTokenCount audio out) when given; else the audio
+    seconds at GEMINI_TTS_TOKENS_PER_S and the prompt length at GEMINI_TTS_CHARS_PER_TOKEN."""
+    inp, out = GEMINI_TTS_PER_M
+    usage = usage if isinstance(usage, dict) else {}
+    text_in = usage.get("promptTokenCount")
+    audio_out = usage.get("candidatesTokenCount")
+    if not isinstance(text_in, (int, float)):
+        text_in = prompt_chars / GEMINI_TTS_CHARS_PER_TOKEN
+    if not isinstance(audio_out, (int, float)):
+        audio_out = audio_s * GEMINI_TTS_TOKENS_PER_S
+    return (text_in * inp + audio_out * out) / 1e6
+
+
 # ---- recording -------------------------------------------------------------------------------------------------
 
 def record(provider: str, usd: float, calls: int = 0) -> None:
@@ -181,9 +203,19 @@ def record_tts(model: str, chars: int) -> None:
     record("elevenlabs" if model == "elevenlabs" else "openai", price_tts(model, chars))
 
 
+def record_gemini_tts(audio_s: float, usage: Optional[dict] = None, prompt_chars: int = 0) -> None:
+    """The cost of one Gemini TTS clip (its call was already counted by on_request)."""
+    record("gemini_tts", price_gemini_tts(audio_s, usage, prompt_chars))
+
+
 async def on_request(request: httpx.Request) -> None:
     """httpx request hook on the shared client (services/http.py): counts HERE and Gemini calls and refuses one
-    over its daily cap before it is sent."""
+    over its daily cap before it is sent. A Gemini TTS call (extensions {"spend": "gemini_tts"}, services/voice.py)
+    is counted as gemini_tts and never refused here: its cost is recorded from the reply, and the spend stage
+    switches it off."""
+    if request.extensions.get("spend") == "gemini_tts":
+        record("gemini_tts", 0.0, calls=1)
+        return
     host = request.url.host or ""
     provider = next((p for suffix, p in METERED_HOSTS if host == suffix or host.endswith("." + suffix)), None)
     if provider is None:
@@ -252,7 +284,7 @@ def allow_call(provider: str) -> bool:
 
 def health() -> dict:
     return {"spend_today_usd": round(today_usd(), 2), "spend_cap_usd": cap_usd(), "spend_stage": stage(),
-            "calls_today": {p: calls_today(p) for p in CALLS_DEFAULT}}
+            "calls_today": {p: calls_today(p) for p in CALLS_SHOWN}}
 
 
 # ---- alerts ----------------------------------------------------------------------------------------------------

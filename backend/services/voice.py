@@ -1,5 +1,7 @@
-"""Speech in / speech out: Whisper (STT); TTS via ElevenLabs (when enabled) or OpenAI gpt-4o-mini-tts."""
+"""Speech in / speech out: Whisper (STT); TTS via Gemini TTS or ElevenLabs (when enabled), else OpenAI
+gpt-4o-mini-tts."""
 import asyncio
+import base64
 import hashlib
 import io
 import time
@@ -251,11 +253,14 @@ def eleven_voice() -> Optional[str]:
 
 
 def provider() -> str:
-    return "elevenlabs" if eleven_voice() else "openai"
+    return "gemini" if gemini_voice() else "elevenlabs" if eleven_voice() else "openai"
 
 
 def cache_tag(voice: Optional[str] = None, model: Optional[str] = None, eleven_voice_id: Optional[str] = None) -> str:
     """Identifies who speaks a cached line: provider + voice (changes invalidate /speak cache)."""
+    if not voice and not model and not eleven_voice_id and gemini_voice():
+        # The style prompt and the gain are in the tag too: a new style or level re-records the fixed lines.
+        return f"gemini|{gemini_model()}|{gemini_voice()}|g{GEMINI_GAIN_DB}|s{GEMINI_STYLE_TAG}"
     if not voice and not model and eleven_voice():
         return f"elevenlabs|{ELEVEN_MODEL}|{eleven_voice_id or eleven_voice()}"
     # The gain is part of the tag: clips boosted differently must not be served from the old cache.
@@ -317,13 +322,18 @@ INSTRUCTIONS_UK = ("Спокійний, теплий, впевнений шту�
                    "чітко. Англійські назви місць і трас (Love's, Pilot, I-80) вимовляй по-американськи.")
 
 
+def lang_of(text: str) -> str:
+    """The language of a line by its script: "uk" for Ukrainian letters, "ru" for other Cyrillic, else "en"."""
+    if re.search(r"[ІіЇїЄєҐґ]", text or ""):
+        return "uk"
+    if re.search(r"[А-Яа-яЁё]", text or ""):
+        return "ru"
+    return "en"
+
+
 def instructions_for(text: str) -> str:
     """The TTS style for this line, by its script: Ukrainian letters, other Cyrillic, else English."""
-    if re.search(r"[ІіЇїЄєҐґ]", text or ""):
-        return INSTRUCTIONS_UK
-    if re.search(r"[А-Яа-яЁё]", text or ""):
-        return INSTRUCTIONS_RU
-    return INSTRUCTIONS
+    return {"uk": INSTRUCTIONS_UK, "ru": INSTRUCTIONS_RU}.get(lang_of(text), INSTRUCTIONS)
 
 
 # OpenAI TTS is quiet and uneven: gpt-4o-mini-tts/sage measures -31 to -35 LUFS raw depending on the sentence
@@ -356,21 +366,179 @@ async def louder(mp3: bytes) -> bytes:
     return mp3
 
 
+# ---- Gemini TTS (GEMINI_TTS_ENABLED=1) ---------------------------------------------------------------------------
+# The voice the owner picked by ear (2026-11-10): gemini-3.8-flash-lite-tts, "Achird", told to sound like a friend in
+# the passenger seat. Whole clips only (no streaming here): 1.2 s for "Alright, got one.", 1.9-2.6 s for a full
+# sentence or two (live, 2026-11-10), so the first clip is kept short (server._speak).
+# Rate limits on the TTS models are low: a 429 pauses Gemini like any failure and OpenAI speaks.
+
+GEMINI_TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+GEMINI_TTS_DEFAULT_MODEL = "gemini-3.8-flash-lite-tts"
+GEMINI_TTS_DEFAULT_VOICE = "Achird"
+GEMINI_TTS_TIMEOUT_S = 6.0
+GEMINI_TTS_COOLDOWN_S = 60  # after a 429, a timeout or an error, skip Gemini for a while (OpenAI speaks)
+GEMINI_PCM_RATE = 24000  # 16-bit mono 24 kHz: a WAV (3.8 models, RIFF header) or raw PCM s16le (older models)
+_gemini_down_until = 0.0
+_gemini_slots = asyncio.Semaphore(int(os.environ.get("GEMINI_TTS_CONCURRENCY", "2")))
+
+# The style the owner liked, sent as the part's speech_metadata.style. Gemini 3.8 TTS reads the text part as a
+# verbatim transcript: the style glued in front of the line ("style\n\ntext", and a "notes / transcript" layout too)
+# was read aloud before it, in every sample and in two live calls (2026-11-10, whisper.cpp transcripts). The docs
+# (speech-generation, migration guide) put style in speech_metadata for this reason.
+GEMINI_STYLE = ("Say this like a relaxed friend riding along in the passenger seat, talking to a trucker buddy: warm, "
+                "casual, a little smile, natural pauses, never like an announcer or a GPS.")
+GEMINI_STYLE_RU = ("Скажи это как расслабленный друг на пассажирском сиденье, который болтает с приятелем-дальнобойщиком: "
+                   "тепло, по-свойски, с лёгкой улыбкой, с живыми паузами, не как диктор и не как навигатор. "
+                   "Английские названия говори по-американски.")
+GEMINI_STYLE_UK = ("Скажи це як розслаблений друг на пасажирському сидінні, який балакає з приятелем-далекобійником: "
+                   "тепло, по-свійськи, з легкою усмішкою, з живими паузами, не як диктор і не як навігатор. "
+                   "Англійські назви кажи по-американськи.")
+GEMINI_STYLE_TAG = hashlib.sha1("|".join((GEMINI_STYLE, GEMINI_STYLE_RU, GEMINI_STYLE_UK))
+                                .encode()).hexdigest()[:8]
+# Gemini Lite TTS / Achird measures -20.3 to -22.2 LUFS raw (three live clips, en/ru, 2026-11-10), about 10 dB louder
+# than OpenAI sage. Through this chain: +3 dB gave -18.1 to -19.6, +5 dB -16.6 to -18.0, +6 dB -15.9 to -17.3 LUFS
+# (peaks -1.4 to -1.6 dBFS, held by the limiter): +6 sits with the boosted OpenAI clips (-16 to -21) and clears
+# the >= -19 LUFS spec (see OPENAI_GAIN_DB) with margin.
+GEMINI_GAIN_DB = 6
+
+
+def gemini_model() -> str:
+    return os.environ.get("GEMINI_TTS_MODEL") or GEMINI_TTS_DEFAULT_MODEL
+
+
+def gemini_voice() -> Optional[str]:
+    """The Gemini TTS voice when GEMINI_TTS_ENABLED=1 and GEMINI_API_KEY is set, else None. Off by default.
+    Skipped once the day's spend reaches the cap (services/spend.py, stage cheap_voice): OpenAI speaks then."""
+    if os.environ.get("GEMINI_TTS_ENABLED") != "1" or not os.environ.get("GEMINI_API_KEY"):
+        return None
+    if spend.voice_cheap():
+        return None
+    return os.environ.get("GEMINI_TTS_VOICE") or GEMINI_TTS_DEFAULT_VOICE
+
+
+def gemini_active() -> bool:
+    """Gemini would speak the next line now (enabled and not paused after a failure)."""
+    return bool(gemini_voice()) and time.monotonic() >= _gemini_down_until
+
+
+def gemini_style_for(text: str) -> str:
+    return {"uk": GEMINI_STYLE_UK, "ru": GEMINI_STYLE_RU}.get(lang_of(text), GEMINI_STYLE)
+
+
+def gemini_body(text: str, voice_name: str) -> dict:
+    """generateContent request: the line as the transcript, the style beside it (never inside it)."""
+    return {"contents": [{"parts": [{"text": text, "speech_metadata": {"style": gemini_style_for(text)}}]}],
+            "generationConfig": {"responseModalities": ["AUDIO"],
+                                 "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice_name}}}}}
+
+
+def _gemini_failed() -> None:
+    global _gemini_down_until
+    _gemini_down_until = time.monotonic() + GEMINI_TTS_COOLDOWN_S
+
+
+def _gemini_pcm(body: dict) -> Optional[bytes]:
+    """candidates[0].content.parts[*].inlineData.data (base64 WAV or raw PCM) -> bytes, or None."""
+    try:
+        for part in body["candidates"][0]["content"]["parts"]:
+            data = (part.get("inlineData") or part.get("inline_data") or {}).get("data")
+            if data:
+                return base64.b64decode(data)
+    except (KeyError, IndexError, TypeError, AttributeError, ValueError):
+        return None
+    return None
+
+
+def _is_wav(audio: bytes) -> bool:
+    return audio[:4] == b"RIFF" and audio[8:12] == b"WAVE"
+
+
+def audio_seconds(audio: bytes) -> float:
+    """Length of a Gemini clip (WAV or raw PCM, 16-bit mono 24 kHz)."""
+    return max(0, len(audio) - (44 if _is_wav(audio) else 0)) / (2 * GEMINI_PCM_RATE)
+
+
+async def pcm_to_mp3(pcm: bytes, gain_db: float = GEMINI_GAIN_DB) -> Optional[bytes]:
+    """Gemini's audio (WAV, or raw PCM s16le 24 kHz mono) -> a boosted mp3 like the other clips, or None."""
+    fmt = [] if _is_wav(pcm) else ["-f", "s16le", "-ar", str(GEMINI_PCM_RATE), "-ac", "1"]
+    try:
+        p = await asyncio.create_subprocess_exec(
+            _FFMPEG, "-hide_banner", "-loglevel", "error", *fmt, "-i", "pipe:0",
+            "-af", f"volume={gain_db}dB,alimiter=limit=0.84:level=false",
+            "-c:a", "libmp3lame", "-b:a", "64k", "-f", "mp3", "pipe:1",
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try:
+            out, err = await asyncio.wait_for(p.communicate(pcm), timeout=5)
+        except asyncio.TimeoutError:
+            p.kill()
+            raise
+        if p.returncode == 0 and out:
+            return out
+        logger.warning("gemini pcm->mp3 failed: %s", err[:200])
+    except Exception as e:  # noqa: BLE001
+        logger.warning("gemini pcm->mp3 failed: %s", e)
+    return None
+
+
+async def _gemini(text: str, voice_name: str) -> Optional[bytes]:
+    """One clip from Gemini TTS as mp3, or None (paused, 429, timeout, error, no audio: Gemini pauses)."""
+    if time.monotonic() < _gemini_down_until:
+        return None
+    model = gemini_model()
+    body = gemini_body(text, voice_name)
+    try:
+        async with _gemini_slots:
+            # extensions: the shared client's spend hook counts this as gemini_tts, not against the Maps grounding
+            # call cap (services/spend.py)
+            r = await client().post(GEMINI_TTS_URL.format(model=model), json=body,
+                                    headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]},
+                                    timeout=GEMINI_TTS_TIMEOUT_S, extensions={"spend": "gemini_tts"})
+    except Exception as e:  # noqa: BLE001 - timeout or transport error
+        logger.warning("Gemini TTS failed, OpenAI speaks for %ds: %s", GEMINI_TTS_COOLDOWN_S, type(e).__name__)
+        _gemini_failed()
+        return None
+    if r.status_code != 200:
+        logger.warning("Gemini TTS %s, OpenAI speaks for %ds: %s", r.status_code, GEMINI_TTS_COOLDOWN_S, r.text[:200])
+        _gemini_failed()
+        return None
+    try:
+        payload = r.json()
+    except ValueError:
+        payload = {}
+    pcm = _gemini_pcm(payload)
+    if not pcm:
+        logger.warning("Gemini TTS answered without audio, OpenAI speaks for %ds", GEMINI_TTS_COOLDOWN_S)
+        _gemini_failed()
+        return None
+    spend.record_gemini_tts(audio_seconds(pcm), payload.get("usageMetadata"), len(text) + len(gemini_style_for(text)))
+    mp3 = await pcm_to_mp3(pcm)
+    if mp3 is None:
+        _gemini_failed()
+    return mp3
+
+
 async def synthesize(text: str, voice: Optional[str] = None, model: Optional[str] = None,
                      previous_text: Optional[str] = None, next_text: Optional[str] = None,
                      eleven_voice_id: Optional[str] = None, audio_id: Optional[str] = None) -> Optional[str]:
     """Returns an id for GET /api/voice/audio/{id}, or None if TTS failed.
-    ElevenLabs first (when configured and no explicit OpenAI voice/model is asked), then OpenAI. The clip goes to
-    the in-process cache and to TTS_DIR on disk, so any worker (or this one after a restart) can serve the id.
+    Gemini TTS when enabled (and not paused), else ElevenLabs when enabled, then OpenAI; an explicit OpenAI
+    voice/model skips both. When Gemini or ElevenLabs fails, OpenAI speaks and the clip is marked as a fallback.
+    The clip goes to the in-process cache and to TTS_DIR on disk, so any worker (or this one after a restart) can
+    serve the id.
     `audio_id` lets a caller hand out the id before the clip exists (synthesize_later)."""
     text = spoken(text)[:4000]  # everything spoken goes through the text-for-speech layer
     previous_text = spoken(previous_text) if previous_text else None
     next_text = spoken(next_text) if next_text else None
     audio = None
-    eleven = eleven_voice() if not voice and not model else None
+    # An explicit OpenAI voice/model or ElevenLabs voice (voice comparison via /speak) is spoken by that provider.
+    gemini = gemini_voice() if not voice and not model and not eleven_voice_id else None
+    if gemini:
+        audio = await _gemini(text, gemini)
+    # Gemini failed: OpenAI at once (no second slow provider in the way); the clip is marked as a fallback.
+    eleven = eleven_voice() if not voice and not model and not gemini else None
     if eleven:
         audio = await _eleven(text, eleven_voice_id or eleven, previous_text, next_text)
-    fell_back = bool(eleven) and audio is None
+    fell_back = bool(gemini or eleven) and audio is None
     if audio is None:
         model = model or fallback_model()
         try:
