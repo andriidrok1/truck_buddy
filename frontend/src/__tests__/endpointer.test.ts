@@ -85,8 +85,8 @@ test("a 25 s story is not cut; the cap sends at 30 s after one warning", () => {
   expect(endless).toMatchObject({ decision: "send", at: MAX_MS, warned: true });
 });
 
-test("silence is silent after the start timeout; a cough is not speech", () => {
-  expect(run(profile(-55, []))).toMatchObject({ decision: "silent", at: START_TIMEOUT_MS });
+test("silence still goes to the server after the start timeout (never dropped on the phone); a cough is not speech", () => {
+  expect(run(profile(-55, []))).toMatchObject({ decision: "maybe", at: START_TIMEOUT_MS });
   const cough = run(profile(-55, [{ from: 1000, to: 100 + 1000, db: -20 }]));
   expect(cough.decision).toBe("maybe"); // never a sure turn: the server hears it and drops it if there are no words
 });
@@ -95,9 +95,9 @@ test("decisions are final; stats describe the turn", () => {
   const ep = createEndpointer({ startTimeoutMs: 500 });
   let d: Decision = "wait";
   for (let t = 50; t <= 500; t += 50) d = ep.push(-60, t);
-  expect(d).toBe("silent");
-  expect(ep.push(-10, 550)).toBe("silent");
-  expect(ep.stats()).toMatchObject({ spoke: false, reason: "silent", peakDb: -60 });
+  expect(d).toBe("maybe");
+  expect(ep.push(-10, 550)).toBe("maybe");
+  expect(ep.stats()).toMatchObject({ spoke: false, reason: "maybe", peakDb: -60 });
 });
 
 test("a missing meter value is skipped, not treated as silence", () => {
@@ -137,11 +137,11 @@ test("highway with jitter: noise -30 sd 3 dB, voice -22: the phrase is sent on i
 
 test("a meter that starts at -160 (not running yet) or drops out is not the noise floor", () => {
   // Emulator 2026-11-04: -160, then a flat -72; the -160 became the floor and silence counted as speech.
-  expect(run((t) => (t <= 50 ? -160 : -72)).decision).toBe("silent");
+  expect(run((t) => (t <= 50 ? -160 : -72)).decision).toBe("maybe");
   // the same with the settling ramp the emulator showed: -160, -78, -76, then -72
-  expect(run((t) => (t <= 50 ? -160 : t <= 100 ? -78 : t <= 150 ? -76 : -72)).decision).toBe("silent");
+  expect(run((t) => (t <= 50 ? -160 : t <= 100 ? -78 : t <= 150 ? -76 : -72)).decision).toBe("maybe");
   // dropouts inside quiet noise
-  expect(run((t) => (t % 1000 === 0 ? -160 : -60)).decision).toBe("silent");
+  expect(run((t) => (t % 1000 === 0 ? -160 : -60)).decision).toBe("maybe");
   // and a real phrase after a -160 start is still a phrase
   const r = run((t) => (t <= 50 ? -160 : t >= 800 && t < 2600 && (t - 800) % 380 < 300 ? -25 : -55));
   expect(r.decision).toBe("send");
