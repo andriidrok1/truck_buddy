@@ -34,7 +34,11 @@ jest.mock("react-native-reanimated", () => {
 });
 jest.mock("react-native-safe-area-context", () => {
   const { View } = jest.requireActual<typeof import("react-native")>("react-native");
-  return { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }), SafeAreaView: View };
+  return {
+    useSafeAreaInsets: () => ({ top: 47, bottom: 34, left: 0, right: 0 }),
+    SafeAreaView: View,
+    SafeAreaProvider: ({ children }: { children: React.ReactNode }) => <View testID="modal-safe-area">{children}</View>,
+  };
 });
 jest.mock("../components/Icon", () => {
   const { Text } = jest.requireActual<typeof import("react-native")>("react-native");
@@ -56,6 +60,22 @@ afterEach(() => useLangStore.setState({ lang: "en" }));
 
 // RNTL 14: render() and fireEvent.* are async.
 describe("HowToSheet", () => {
+  it("keeps the close button and Try it now clear of the status bar and home indicator (iPhone 2026-11-11)", async () => {
+    await render(<HowToSheet mode="help" motive={false} onAsk={noop} onTryNow={noop} onClose={noop} />);
+    // The insets come from a provider inside the Modal, the modal's own window.
+    expect(screen.getByTestId("modal-safe-area")).toBeTruthy();
+    const st = StyleSheet.flatten(screen.getByTestId("how-to").props.style);
+    expect(st.paddingTop).toBe(47);
+    expect(st.paddingBottom).toBeGreaterThanOrEqual(34);
+  });
+
+  it("pads only the bottom of the first-run sheet", async () => {
+    await render(<HowToSheet mode="first" name={null} motive={false} onAsk={noop} onTryNow={noop} onClose={noop} />);
+    const st = StyleSheet.flatten(screen.getByTestId("how-to").props.style);
+    expect(st.paddingBottom).toBeGreaterThanOrEqual(34);
+    expect(st.paddingTop).toBeLessThan(47);
+  });
+
   test("the full screen: mascot, title, three steps, all six chips, the Motive badge and Try it now", async () => {
     await render(<HowToSheet mode="help" motive={false} onAsk={noop} onTryNow={noop} onClose={noop} />);
     expect(screen.getByTestId("avatar")).toBeTruthy();
