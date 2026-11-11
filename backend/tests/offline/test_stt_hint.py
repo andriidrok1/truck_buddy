@@ -62,3 +62,39 @@ def test_transcribe_endpoint_accepts_the_hint(api_client, monkeypatch):
     r = api_client.post("/api/voice/transcribe", files={"audio": ("a.m4a", b"abc", "audio/m4a")},
                         data={"hint": too_long})
     assert r.status_code == 422
+
+
+def test_a_prompt_echo_is_retried_once_without_the_prompt(monkeypatch):
+    """Prod 2026-11-10: a Russian phrase came back as the STT prompt itself and was dropped ("it doesn't hear me")."""
+    from services import i18n
+
+    calls = []
+
+    class _Stt:
+        async def create(self, **kw):
+            calls.append(kw)
+            if "prompt" in kw:
+                return SimpleNamespace(text=voice.PROMPT_RU + " " + voice.PROMPT, logprobs=None)
+            return SimpleNamespace(text="где припарковаться на ночь", logprobs=None)
+
+    monkeypatch.setattr(voice.llm, "client", lambda: SimpleNamespace(audio=SimpleNamespace(transcriptions=_Stt())))
+    token = i18n._lang.set("ru")
+    try:
+        tr = run(voice.transcribe_full(b"abc", "a.m4a"))
+    finally:
+        i18n._lang.reset(token)
+    assert tr.text == "где припарковаться на ночь"
+    assert len(calls) == 2 and "prompt" not in calls[1]
+
+
+def test_real_silence_after_an_echo_is_still_empty(monkeypatch):
+    calls = []
+
+    class _Stt:
+        async def create(self, **kw):
+            calls.append(kw)
+            return SimpleNamespace(text=voice.PROMPT if "prompt" in kw else "", logprobs=None)
+
+    monkeypatch.setattr(voice.llm, "client", lambda: SimpleNamespace(audio=SimpleNamespace(transcriptions=_Stt())))
+    assert run(voice.transcribe_full(b"abc", "a.m4a")).text == ""
+    assert len(calls) == 2

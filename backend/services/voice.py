@@ -160,8 +160,21 @@ async def transcribe_full(data: bytes, filename: str, hint: Optional[str] = None
                        prompt=prompt, temperature=0.0, include=["logprobs"]),
             STT_TIMEOUT_S)
         spend.record_stt(STT_MODEL, res, len(data))
-        return Transcript(_clean((getattr(res, "text", "") or "").strip()),
-                          confidence_of(getattr(res, "logprobs", None)))
+        text = (getattr(res, "text", "") or "").strip()
+        if PROMPT_ECHO.search(text):
+            # The model gave back its own prompt instead of the words (prod 2026-11-10: a Russian driver's 7 s
+            # phrase came back as the 302-char prompt and was dropped, so the app said it heard nothing). Once more
+            # without the prompt: a quiet or accented phrase is usually there; real silence comes back "".
+            logger.info("stt prompt echo %s, retrying without the prompt", said(text))
+            buf = io.BytesIO(data)
+            buf.name = filename
+            res = await asyncio.wait_for(
+                stt.create(file=buf, model=STT_MODEL, response_format="json", **lang_arg, temperature=0.0,
+                           include=["logprobs"]),
+                STT_TIMEOUT_S)
+            spend.record_stt(STT_MODEL, res, len(data))
+            text = (getattr(res, "text", "") or "").strip()
+        return Transcript(_clean(text), confidence_of(getattr(res, "logprobs", None)))
     except asyncio.TimeoutError:
         raise SttTimeout(f"{STT_MODEL} took longer than {STT_TIMEOUT_S:.0f}s")  # no fallback: it would double the wait
     except Exception as e:  # noqa: BLE001 - fall back to Whisper with its confidence guard
@@ -209,7 +222,11 @@ def _clean(text: str) -> str:
     return text
 
 
-PROMPT_ECHO = re.compile(r"Truck driver talking to a copilot|Sapp Bros, Kwik Trip, Buc-ee", re.I)
+PROMPT_ECHO = re.compile(
+    r"Truck driver talking to a copilot|Sapp Bros, Kwik Trip, Buc-ee|"
+    r"Дальнобойщик говорит со штурманом|Далекобійник говорить зі штурманом",
+    re.I,
+)
 # Lines Whisper is known to invent on road noise / silence (subtitle credits, video outros, URLs).
 HALLUCINATION = re.compile(
     r"for more information,? visit|www\.|\.(?:gov|com|org)\b|thanks? (?:you )?for watching|please subscribe|"

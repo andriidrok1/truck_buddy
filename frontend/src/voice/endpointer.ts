@@ -11,7 +11,9 @@
  *  and with raw samples against a rolling minimum the noise itself counted as speech (30 s recordings of nothing). */
 export const SMOOTH_MS = 150;
 /** Speech = this far above the cab noise (rolling minimum of the smoothed level, which sits a few dB under the
- *  noise's average). A highway voice ~8 dB over the noise average clears it; noise jitter does not. */
+ *  noise's average). A highway voice ~8 dB over the noise average clears it; noise jitter does not (6 dB let road
+ *  jitter of ±3-4 dB count as speech and record to the cap). It only decides when the turn ENDS: a recording with no
+ *  counted speech is never thrown away, it goes to the server as `maybe` (2026-11-10, "it doesn't hear me"). */
 export const SPEECH_OVER_NOISE_DB = 9;
 /** Counted speech shorter than this in total (a cough, a door) is sent as `maybe`: the server keeps it only if it
  *  holds real words. */
@@ -25,9 +27,6 @@ export const END_SILENCE_MS = 1200;
 export const MAX_MS = 30000;
 export const WARN_BEFORE_MAX_MS = 3000;
 export const START_TIMEOUT_MS = 7000;
-/** No counted speech by the timeout, but something this far over the noise for MAYBE_MIN_MS: send it anyway. */
-export const MAYBE_OVER_NOISE_DB = 5;
-export const MAYBE_MIN_MS = 100;
 /** Below this the sample is not cab noise but a meter that is not running yet (the first sample after record() is
  *  -160 on Android) or a dropout. Taken as the noise floor it made plain silence count as speech (emulator,
  *  2026-11-04: an empty tap went to STT and the agent). Such samples are skipped. */
@@ -66,7 +65,6 @@ export function createEndpointer(opts: EndpointerOptions = {}): Endpointer {
   let voiceSum = 0;
   let voiceN = 0;
   let peak = -160;
-  let maybeMs = 0;
   let warned = false;
   let noise = 0;
   let reason: EndReason | null = null;
@@ -109,9 +107,11 @@ export function createEndpointer(opts: EndpointerOptions = {}): Endpointer {
           if (t - quietSince >= endSilenceMs) return loudTotal < SURE_SPEECH_MS ? end("maybe", "maybe") : end("silence", "send");
         }
       }
-      if (!spoke && db > noise + MAYBE_OVER_NOISE_DB) maybeMs += dt;
     }
-    if (!spoke && t >= startTimeoutMs) return maybeMs >= MAYBE_MIN_MS ? end("maybe", "maybe") : end("silent", "silent");
+    // No counted speech by the timeout: the recording still goes to the server as `maybe` (STT returns "" on real
+    // silence, the app then says it heard nothing). Dropping it here on the phone lost quiet voices whole, and the
+    // driver could not tell a quiet voice from a dead mic (2026-11-10). One empty STT call costs ~$0.0003.
+    if (!spoke && t >= startTimeoutMs) return end("maybe", "maybe");
     if (t >= maxMs) return loudTotal < SURE_SPEECH_MS ? end("maybe", "maybe") : end("cap", "send");
     if (!warned && t >= maxMs - WARN_BEFORE_MAX_MS) {
       warned = true;
