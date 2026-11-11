@@ -58,7 +58,7 @@ the Bearer token the app gets by redeeming the access code.
 | `LOG_TRANSCRIPTS` | `1` puts driver transcripts in the log stream (dev, test stand); off by default |
 | `HEALTH_HERE` | `/api/health?deep=1` (tester token) makes one HERE geocode call (cached 30 s); `0` skips it |
 | `OPENAI_TTS_MODEL` | `gpt-4o-mini-tts` (default) or `tts-1` |
-| `GEMINI_TTS_ENABLED` | `1` makes Gemini TTS the copilot voice (off by default); needs `GEMINI_API_KEY`. Order: Gemini, then ElevenLabs if on, then OpenAI. A 429, a timeout (6 s) or a bad reply pauses Gemini for 60 s and OpenAI speaks; from 100% of `DAILY_USD_CAP` OpenAI speaks. Counted as `gemini_tts` in `/api/health` `calls_today`, not against `GEMINI_CALLS_PER_DAY` |
+| `GEMINI_TTS_ENABLED` | `1` makes Gemini TTS the copilot voice (off by default); needs `GEMINI_API_KEY`. Order: Gemini, then ElevenLabs if on, then OpenAI. With `TTS_STREAM=1` (one worker) the first clip streams from Gemini (`streamGenerateContent?alt=sse`, first audio in about 0.5 s); no audio within 6 s, an error or a 429 before it and OpenAI streams instead. A 429, a timeout (6 s) or a bad reply pauses Gemini for 60 s and OpenAI speaks; from 100% of `DAILY_USD_CAP` OpenAI speaks. Counted as `gemini_tts` in `/api/health` `calls_today`, not against `GEMINI_CALLS_PER_DAY` |
 | `GEMINI_TTS_MODEL`, `GEMINI_TTS_VOICE` | Gemini TTS model and prebuilt voice (default `gemini-3.8-flash-lite-tts`, `Achird`) |
 | `GEMINI_TTS_CONCURRENCY` | Gemini TTS requests in flight per worker (default 2; the TTS models have low rate limits) |
 

@@ -1,6 +1,7 @@
 """Gemini TTS as the copilot voice (GEMINI_TTS_ENABLED=1): provider order, the fall back to OpenAI with a pause on a
 429 / timeout / bad reply, the cache tag, the style by language, its own spend line (gemini_tts) apart from the
 Maps grounding call cap, the cheap_voice stage, and the first clip in server._speak."""
+import asyncio
 import base64
 import io
 import json
@@ -244,6 +245,136 @@ def test_health_shows_gemini_tts(api_client, monkeypatch):
     assert body["calls_today"]["gemini_tts"] == 3 and body["providers"]["tts"] == "gemini"
 
 
+# ---- streaming (synthesize_stream: Gemini SSE) -----------------------------------------------------------------
+
+PCM = [b"\x01\x00" * 2400, b"\x02\x00" * 4800, b"\x03\x00" * 2400]  # 0.1 s, 0.2 s, 0.1 s
+
+
+def _sse(chunks, usage=None, delay=0.0, fail_after=None):
+    """A streamGenerateContent?alt=sse body: one `data:` event per PCM chunk, usageMetadata in the last one."""
+    async def body():
+        for i, c in enumerate(chunks):
+            if fail_after is not None and i >= fail_after:
+                raise httpx.ReadError("connection reset")
+            if delay:
+                await asyncio.sleep(delay)
+            event = {"candidates": [{"content": {"parts": [{"inlineData": {
+                "mimeType": "audio/l16; rate=24000; channels=1", "data": base64.b64encode(c).decode()}}]}}]}
+            if usage is not None and i == len(chunks) - 1:
+                event["usageMetadata"] = usage
+            yield f"data: {json.dumps(event)}\r\n\r\n".encode()
+
+    return lambda request: httpx.Response(200, content=body(), headers={"content-type": "text/event-stream"},
+                                          request=request)
+
+
+@pytest.fixture
+def streams(tts, monkeypatch):
+    """Both streams with a pass-through gain pipe (ffmpeg skipped); OpenAI's stream canned."""
+    openai_streamed = []
+
+    async def passthrough(src, out, input_fmt=voice.MP3_IN, gain_db=0):
+        try:
+            async for c in src:
+                await out.put(c)
+        except Exception as e:  # noqa: BLE001 - like the real pipe: the error first, then the end
+            await out.put(e)
+        await out.put(None)
+
+    async def openai_stream(text):
+        openai_streamed.append(text)
+        yield b"ID3openai-stream"
+
+    monkeypatch.setattr(voice, "_gain_pipe", passthrough)
+    monkeypatch.setattr(voice, "_openai_stream", openai_stream)
+    voice._STREAMS.clear()
+    return openai_streamed
+
+
+def _stream(text="Alright, got one."):
+    async def flow():
+        aid = voice.synthesize_stream(text)
+        head = await voice.first_chunk(aid)
+        data = b"".join([c async for c in voice.stream_chunks(aid)])
+        return aid, head, data
+    return run(flow())
+
+
+def test_stream_speaks_gemini_sse(streams, fake_http):
+    fake_http.add(HOST, "/v1beta/models/", fn=_sse(PCM, usage={"promptTokenCount": 60, "candidatesTokenCount": 10}))
+    aid, head, data = _stream()
+    assert head == PCM[0][:1] and data == b"".join(PCM) and streams == []
+    req = fake_http.calls_to(HOST)[0]
+    assert req.url.path == "/v1beta/models/gemini-3.8-flash-lite-tts:streamGenerateContent"
+    assert req.url.params["alt"] == "sse" and req.headers["x-goog-api-key"] == "test-gemini"
+    part = json.loads(req.content)["contents"][0]["parts"][0]
+    assert part == {"text": "Alright, got one.", "speech_metadata": {"style": voice.GEMINI_STYLE}}
+    inp, out = spend.GEMINI_TTS_PER_M
+    assert spend.calls_today("gemini_tts") == 1 and spend.calls_today("gemini") == 0
+    assert spend._value("usd:gemini_tts") == pytest.approx((60 * inp + 10 * out) / 1e6)
+    assert voice.get_audio(aid) == b"".join(PCM) and voice.gemini_active()
+
+
+def test_stream_cost_from_pcm_length_without_usage(streams, fake_http):
+    fake_http.add(HOST, "/v1beta/models/", fn=_sse(PCM))
+    _stream("Hi.")
+    inp, out = spend.GEMINI_TTS_PER_M
+    chars = len("Hi.") + len(voice.GEMINI_STYLE)
+    assert spend._value("usd:gemini_tts") == pytest.approx((chars / 4 * inp + 0.4 * 25 * out) / 1e6)
+
+
+def test_stream_429_pauses_gemini_and_openai_streams(streams, fake_http):
+    fake_http.add(HOST, "/v1beta/models/", status=429, json={"error": {"code": 429}})
+    aid, head, data = _stream()
+    assert data == b"ID3openai-stream" and streams == ["Alright, got one."]
+    assert not voice.gemini_active() and spend.calls_today("gemini_tts") == 1
+    assert spend._value("usd:gemini_tts") == 0
+    _stream("Next line.")  # paused: straight to OpenAI, Gemini not asked
+    assert len(fake_http.calls_to(HOST)) == 1 and streams[-1] == "Next line."
+
+
+def test_stream_too_slow_for_the_first_chunk_falls_back(streams, fake_http, monkeypatch):
+    monkeypatch.setattr(voice, "STREAM_FIRST_CHUNK_S", 0.05)
+    fake_http.add(HOST, "/v1beta/models/", fn=_sse(PCM, delay=0.5))
+    aid, head, data = _stream()
+    assert data == b"ID3openai-stream" and not voice.gemini_active()
+
+
+def test_stream_cut_midway_keeps_what_arrived(streams, fake_http):
+    fake_http.add(HOST, "/v1beta/models/", fn=_sse(PCM, fail_after=1))
+
+    async def flow():
+        aid = voice.synthesize_stream("Alright, got one.")
+        buf = voice._STREAMS[aid]
+        data = b"".join([c async for c in voice.stream_chunks(aid)])
+        return data, buf.error
+
+    data, error = run(flow())
+    assert data == PCM[0] and error == "stream cut off" and streams == []  # no second voice midway
+    assert not voice.gemini_active()
+    assert spend._value("usd:gemini_tts") > 0  # what was made is paid for
+
+
+def test_both_streams_fail_then_one_shot(streams, fake_http, monkeypatch):
+    fake_http.add(HOST, "/v1beta/models/", status=503, text="busy")
+
+    async def broken(text):
+        raise RuntimeError("openai down")
+        yield b""  # pragma: no cover
+
+    monkeypatch.setattr(voice, "_openai_stream", broken)
+    aid, head, data = _stream()
+    assert data == b"ID3openai" and voice.get_audio(aid) == b"ID3openai"  # OpenAI's whole clip, same id
+
+
+def test_stream_through_real_ffmpeg_gives_mp3(tts, fake_http):
+    voice._STREAMS.clear()
+    tone = b"".join(int(8000 * ((i // 20) % 2 * 2 - 1)).to_bytes(2, "little", signed=True) for i in range(12000))
+    fake_http.add(HOST, "/v1beta/models/", fn=_sse([tone[:12000], tone[12000:]]))
+    aid, head, data = _stream()
+    assert data and (data[:3] == b"ID3" or data[0] == 0xFF) and data != tone
+
+
 # ---- the first clip (server._speak) ----------------------------------------------------------------------------
 
 @pytest.fixture
@@ -268,6 +399,9 @@ def speak_calls(monkeypatch):
     monkeypatch.setattr(voice, "synthesize_stream", stream)
     monkeypatch.setenv("TTS_STREAM", "1")
     monkeypatch.setenv("TTS_CLAUSE_SPLIT", "0")
+    monkeypatch.setenv("GEMINI_TTS_ENABLED", "1")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini")
+    monkeypatch.setattr(voice, "_gemini_down_until", 0.0)
     return server, calls
 
 
@@ -275,31 +409,32 @@ def _res(reply):
     return AgentResponse(status="chat", transcript="hi", reply=reply, source="llm")
 
 
-def test_gemini_first_clip_is_whole_and_short(speak_calls, monkeypatch):
+def test_gemini_first_clip_is_streamed_as_the_first_sentence(speak_calls):
     server, calls = speak_calls
-    monkeypatch.setenv("GEMINI_TTS_ENABLED", "1")
-    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini")
-    monkeypatch.setattr(voice, "_gemini_down_until", 0.0)
-    res = run(server._speak(_res("Here's another way via I-80 and CA-89, 4 h 38 min, 204 miles."), True))
-    # no OpenAI stream (one voice for the whole reply); cut at the clause even with TTS_CLAUSE_SPLIT=0
-    assert ("whole", "Here's another way via I-80 and CA-89,") in calls
-    assert ("later", "4 h 38 min, 204 miles.") in calls and not [c for c in calls if c[0] == "stream"]
+    res = run(server._speak(_res("Here's another way via I-80 and CA-89, 4 h 38 min, 204 miles. Want it?"), True))
+    # streamed: no forced cut at the comma, the first sentence goes as it is; the rest is made whole in parallel
+    assert ("stream", "Here's another way via I-80 and CA-89, 4 h 38 min, 204 miles.") in calls
+    assert ("later", "Want it?") in calls and not [c for c in calls if c[0] == "whole"]
     assert res.audio_url and res.audio_url_2
 
 
-def test_short_first_sentence_stays_whole(speak_calls, monkeypatch):
+def test_without_stream_gemini_first_clip_is_whole_and_cut_at_the_clause(speak_calls, monkeypatch):
     server, calls = speak_calls
-    monkeypatch.setenv("GEMINI_TTS_ENABLED", "1")
-    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini")
-    monkeypatch.setattr(voice, "_gemini_down_until", 0.0)
+    monkeypatch.setenv("TTS_STREAM", "0")
+    run(server._speak(_res("Here's another way via I-80 and CA-89, 4 h 38 min, 204 miles."), True))
+    assert ("whole", "Here's another way via I-80 and CA-89,") in calls
+    assert ("later", "4 h 38 min, 204 miles.") in calls and not [c for c in calls if c[0] == "stream"]
+
+
+def test_clause_flag_still_cuts_a_streamed_first_clip(speak_calls, monkeypatch):
+    server, calls = speak_calls
+    monkeypatch.setenv("TTS_CLAUSE_SPLIT", "1")
     run(server._speak(_res("Alright, got one. Roady's Truck Stop, right off West Capitol Ave."), True))
-    assert calls[-1] == ("whole", "Alright, got one.")
+    assert ("stream", "Alright, got one.") in calls
 
 
-def test_paused_gemini_streams_openai_as_before(speak_calls, monkeypatch):
+def test_paused_gemini_still_streams(speak_calls, monkeypatch):
     server, calls = speak_calls
-    monkeypatch.setenv("GEMINI_TTS_ENABLED", "1")
-    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini")
     monkeypatch.setattr(voice, "_gemini_down_until", voice.time.monotonic() + 60)  # paused after a failure
     run(server._speak(_res("Sure thing. The Pilot has showers."), True))
-    assert ("stream", "Sure thing.") in calls
+    assert ("stream", "Sure thing.") in calls  # synthesize_stream picks OpenAI itself
