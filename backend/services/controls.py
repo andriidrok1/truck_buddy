@@ -17,7 +17,7 @@ PROMPT = """- control: the driver wants the app to DO something or CHANGE a sett
   set_height_in value=total inches (13 ft 6 in = 162), set_trailer_ft value=feet, set_weight_lb value=pounds (70k = 70000), set_hazmat value=true|false,
   set_driver_name value=name, avoid_tolls value=true|false, avoid_ferries_tunnels value=true|false,
   add_favorite_chain value=chain name, remove_favorite_chain value=chain name, set_break_hours value=hours or null to turn break reminders off ("stop reminding me about breaks" is this, not set_nudges),
-  set_chains_on_board value=true|false (tire chains carried), set_nudges value=true|false ("stop suggesting" / "quit the suggestions" turns ALL the copilot's own break/parking/chain suggestions off; one kind named = that kind's own control).
+  set_chains_on_board value=true|false (tire chains carried), set_trailer_empty value=true|false ("I'm empty" / "deadheading" / "bobtail" = true, "I'm loaded" / "picked up the load" = false; strong crosswinds matter for an empty trailer), set_nudges value=true|false ("stop suggesting" / "quit the suggestions" turns ALL the copilot's own break/parking/chain suggestions off; one kind named = that kind's own control).
   Several actions are allowed in one turn. Use control (not chat) whenever the driver asks for any of these."""
 
 ROUTE_FIELDS = {"set_height_in", "set_trailer_ft", "set_weight_lb", "set_hazmat", "avoid_tolls", "avoid_ferries_tunnels"}
@@ -152,6 +152,11 @@ def apply_actions(raw: Any, req: AgentRequest) -> Tuple[List[AppAction], str, bo
                 said.append("Chains on board, yes or no?")
             else:
                 ok(kind, b, "Got it, chains on board" if b else "Got it, no chains on board", True)
+        elif kind == "set_trailer_empty":
+            if b is None:
+                said.append("Empty or loaded?")
+            else:
+                ok(kind, b, "Got it, running empty. I'll watch the crosswinds for you" if b else "Got it, you're loaded", True)
         elif kind == "set_nudges":
             if b is None:
                 said.append("Suggestions on or off?")

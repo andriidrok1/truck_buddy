@@ -9,7 +9,9 @@ import { DestinationLabel, EntryMarker, Pin, UserArrow } from "./Pin";
 import { entrySpot } from "../utils/entry";
 import { cameraSettled, fitCamera } from "../map/fitCamera";
 import { NIGHT_MAP_STYLE } from "../map/nightStyle";
-import { nativeMapType, RADAR_OPACITY, WEATHER_MAP_STYLE } from "../map/mapView";
+import { frameClock, nativeMapType, RADAR_OPACITY, WEATHER_MAP_STYLE } from "../map/mapView";
+import { chipMode, zoomOf } from "../weather/routeWeather";
+import { AlertMarkerView, ChainMarkerView, WeatherChipView } from "./WeatherChip";
 
 const toCoord = (p: LatLng) => ({ latitude: p.lat, longitude: p.lng });
 const FOLLOW_ZOOM = 17;
@@ -42,7 +44,9 @@ export function ViewMarker({ children, redraw, ...rest }: React.ComponentProps<t
 }
 
 const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(props, ref) {
-  const { driver, heading, places, active, alternatives, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch, mapView = "map", radar } = props;
+  const { driver, heading, places, active, alternatives, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch, mapView = "map", radar, weatherChips, onWeatherChipPress } = props;
+  const [zoom, setZoom] = useState(10);
+  const weather = mapView === "weather";
   const { colors, scheme } = useTheme();
   const { width: winW, height: winH } = useWindowDimensions();
   const mapRef = useRef<MapView>(null);
@@ -164,7 +168,10 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
         onMapTouch?.();
         if (follow) onUserPan?.();
       }}
-      onRegionChangeComplete={(r) => onCenterChange({ lat: r.latitude, lng: r.longitude })}
+      onRegionChangeComplete={(r) => {
+        onCenterChange({ lat: r.latitude, lng: r.longitude });
+        setZoom(zoomOf(r.longitudeDelta, winW));
+      }}
     >
       {mapView === "weather" && radar && (
         // Remounted per frame (key): a new urlTemplate on the same tile layer kept showing the cached old frame.
@@ -220,6 +227,42 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
               <EntryMarker />
             </ViewMarker>
           )}
+        </>
+      )}
+
+      {weather && active && (
+        <>
+          {(active.route.weather ?? []).map((w) => {
+            const at = active.route.geometry[w.index];
+            return at ? (
+              <ViewMarker key={`wx-alert-${w.id}`} coordinate={{ latitude: at[0], longitude: at[1] }} anchor={{ x: 0.5, y: 0.5 }} zIndex={7}>
+                <AlertMarkerView />
+              </ViewMarker>
+            ) : null;
+          })}
+          {(active.route.chain_controls ?? [])
+            .filter((c) => c.index >= 0 && c.status !== "R-0")
+            .map((c) => (
+              <ViewMarker key={`chain-${c.id}`} coordinate={{ latitude: c.lat, longitude: c.lng }} anchor={{ x: 0.5, y: 0.5 }} zIndex={7}>
+                <ChainMarkerView label={c.status} />
+              </ViewMarker>
+            ))}
+          {(weatherChips ?? []).map((c) => {
+            const mode = chipMode(c, zoom);
+            return (
+              <ViewMarker
+                key={`wx-${c.index}`}
+                redraw={`${mode}-${c.kind}-${c.temp_f}-${c.gust_mph}`}
+                coordinate={{ latitude: c.lat, longitude: c.lng }}
+                // The chip's tail tip sits on the route point; a dot is centred on it.
+                anchor={mode === "chip" ? { x: 0.5, y: 1 } : { x: 0.5, y: 0.5 }}
+                zIndex={mode === "chip" ? (c.warn ? 8 : 6) : 3}
+                onPress={() => onWeatherChipPress?.(c)}
+              >
+                <WeatherChipView chip={c} mode={mode} clock={frameClock(c.eta) ?? ""} />
+              </ViewMarker>
+            );
+          })}
         </>
       )}
 

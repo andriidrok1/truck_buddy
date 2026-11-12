@@ -9,6 +9,7 @@ import { uploadForm } from "./utils/upload";
 import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, Nudge, NudgeRequest, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
 import { BASE } from "./url";
 import type { RadarFrame } from "./map/mapView";
+import type { PointSample, RoutePoint } from "./weather/routeWeather";
 
 // ./url throws at load time when EXPO_PUBLIC_BACKEND_URL is missing, so importing this module still fails loudly.
 export { absoluteUrl, apiUrl } from "./url";
@@ -368,6 +369,14 @@ export const api = {
    * "Anything to say?" while driving (every few minutes): break and parking nudges, spoken as
    * ambient lines. The backend keeps an offer pending for the next turn of the same session.
    */
+  /** Weather at sampled route points at the truck's ETA (services/route_weather.py); NWS, free. */
+  weatherPoints: (points: PointSample[], trailerEmpty: boolean | null | undefined, signal?: AbortSignal) =>
+    request<{ points: RoutePoint[] }>(`/weather/points`, {
+      method: "POST",
+      body: JSON.stringify({ points, trailer_empty: trailerEmpty ?? null }),
+      signal,
+      timeoutMs: 15000,
+    }),
   /** Latest radar frame and the signed tile URL for the weather view (services/radar_api.py). */
   radarFrame: () => request<RadarFrame>(`/radar/frame`),
   nudges: async (body: NudgeRequest, signal?: AbortSignal) =>

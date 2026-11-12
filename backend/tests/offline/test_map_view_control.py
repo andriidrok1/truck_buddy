@@ -70,3 +70,11 @@ def test_model_control_action(agent_sandbox):
     agent_sandbox.llm.on(r"put the satellite on", {"intent": "control", "actions": [{"type": "map_view", "value": "satellite"}]})
     res = run(agent_sandbox.provider().handle(_req("put the satellite on please"), None))
     assert [(a.type, a.value) for a in res.actions] == [("map_view", "satellite")]
+
+
+def test_empty_trailer_control():
+    acts, say, _ = apply_actions([{"type": "set_trailer_empty", "value": True}], _req("I'm empty"))
+    assert [(a.type, a.value) for a in acts] == [("set_trailer_empty", True)]
+    assert say == "Got it, running empty. I'll watch the crosswinds for you."
+    acts, say, _ = apply_actions([{"type": "set_trailer_empty", "value": None}], _req("x"))
+    assert acts == [] and say == "Empty or loaded?"

@@ -24,7 +24,7 @@ from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import PARSE_DEGRADED, RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import account_api, approach, approach_api, auth, radar_api, chains, db, fleet_api, fuel_index, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, route_cost, session_store, spend, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services import account_api, approach, approach_api, auth, radar_api, weather_api, chains, db, fleet_api, fuel_index, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, route_cost, session_store, spend, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
 from services.http import client as http_client  # noqa: E402
 from services.logs import said, transcripts_on  # noqa: E402
 from services.settings import settings  # noqa: E402
@@ -703,6 +703,7 @@ app.include_router(api)
 app.include_router(approach_api.router, dependencies=[Depends(auth.rate_limited)])
 app.include_router(radar_api.router, dependencies=[Depends(auth.rate_limited)])
 app.include_router(radar_api.tiles)
+app.include_router(weather_api.router, dependencies=[Depends(auth.rate_limited)])
 app.include_router(trips_api.router)
 app.include_router(fleet_api.router)
 app.include_router(parking_warm.router)

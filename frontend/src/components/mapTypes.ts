@@ -1,4 +1,5 @@
 import type { RadarOverlay } from "../map/mapView";
+import type { Chip } from "../weather/routeWeather";
 import type { MapView } from "../state/settingsStore";
 import type { ActiveRoute, LatLng, ParkingSpot, Place } from "../types";
 
@@ -64,4 +65,7 @@ export type MapLayerProps = {
   mapView?: MapView;
   /** Radar tiles drawn over the map in the weather view; null hides them. */
   radar?: RadarOverlay | null;
+  /** Forecast chips along the active route, drawn in the weather view (src/weather/routeWeather.ts). */
+  weatherChips?: Chip[];
+  onWeatherChipPress?: (c: Chip) => void;
 };

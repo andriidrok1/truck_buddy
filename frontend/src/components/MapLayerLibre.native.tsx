@@ -5,7 +5,7 @@
 // Offline: once a corridor pack for the route exists (src/map/offline.ts) MapLibre serves the
 // tiles from it by itself; nothing here knows about packs.
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Text } from "../i18n/Text";
 
@@ -16,7 +16,9 @@ import { fonts, useTheme } from "../theme";
 import type { LatLng } from "../types";
 import { entrySpot } from "../utils/entry";
 import type { MapLayerHandle, MapLayerProps } from "./mapTypes";
-import { RADAR_OPACITY } from "../map/mapView";
+import { frameClock, RADAR_OPACITY } from "../map/mapView";
+import { chipMode } from "../weather/routeWeather";
+import { AlertMarkerView, ChainMarkerView, WeatherChipView } from "./WeatherChip";
 import { DestinationLabel, EntryMarker, Pin, UserArrow } from "./Pin";
 
 const lib = loadMapLibre();
@@ -38,6 +40,7 @@ const FIT_PADDING = { top: 48, right: 56, bottom: 48, left: 56 };
 
 const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayerLibre(props, ref) {
   const { driver, heading, places, active, alternatives, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch } = props;
+  const [zoom, setZoom] = useState(10);
   const { colors, scheme } = useTheme();
   const camera = useRef<CameraRef>(null);
   const map = useRef<MapRef>(null);
@@ -100,6 +103,7 @@ const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLaye
   if (!lib) return null;
   const { Map, Camera, GeoJSONSource, RasterSource, Layer, Marker } = lib;
   const showRadar = props.mapView === "weather" && props.radar;
+  const weather = props.mapView === "weather";
   const entry = entrySpot(active?.parking);
 
   return (
@@ -120,7 +124,10 @@ const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLaye
           onMapTouch?.();
           if (follow) onUserPan?.();
         }}
-        onRegionDidChange={(e) => onCenterChange({ lat: e.nativeEvent.center[1], lng: e.nativeEvent.center[0] })}
+        onRegionDidChange={(e) => {
+          onCenterChange({ lat: e.nativeEvent.center[1], lng: e.nativeEvent.center[0] });
+          setZoom(e.nativeEvent.zoom);
+        }}
       >
         <Camera ref={camera} initialViewState={{ center: toLngLat(driver), zoom: DEFAULT_ZOOM }} />
 
@@ -175,6 +182,34 @@ const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLaye
                 <EntryMarker />
               </Marker>
             )}
+          </>
+        )}
+
+        {weather && active && (
+          <>
+            {(active.route.weather ?? []).map((w) => {
+              const at = active.route.geometry[w.index];
+              return at ? (
+                <Marker key={`wx-alert-${w.id}`} id={`wx-alert-${w.id}`} lngLat={[at[1], at[0]]} anchor="center">
+                  <AlertMarkerView />
+                </Marker>
+              ) : null;
+            })}
+            {(active.route.chain_controls ?? [])
+              .filter((c) => c.index >= 0 && c.status !== "R-0")
+              .map((c) => (
+                <Marker key={`chain-${c.id}`} id={`chain-${c.id}`} lngLat={[c.lng, c.lat]} anchor="center">
+                  <ChainMarkerView label={c.status} />
+                </Marker>
+              ))}
+            {(props.weatherChips ?? []).map((c) => {
+              const mode = chipMode(c, zoom);
+              return (
+                <Marker key={`wx-${c.index}-${mode}`} id={`wx-${c.index}`} lngLat={[c.lng, c.lat]} anchor={mode === "chip" ? "bottom" : "center"} onPress={() => props.onWeatherChipPress?.(c)}>
+                  <WeatherChipView chip={c} mode={mode} clock={frameClock(c.eta) ?? ""} />
+                </Marker>
+              );
+            })}
           </>
         )}
 

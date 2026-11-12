@@ -38,6 +38,7 @@ FEED_STALE_MAX_S = 3 * FEED_TTL_S  # past this a stale feed is not served; the r
 ZONE_CONCURRENCY = 8  # zone polygons are small static files; NWS serves them fast
 ZONE_CACHE_MAX = 4000
 POINTS_TTL_S = 24 * 3600
+POINTS_CACHE_MAX = 20000  # 0.1-degree cells: the whole lower 48 is ~80k, a day of routes far fewer
 FORECAST_TTL_S = 1800
 # NWS event names that change how a truck should drive. Advisories included on purpose: a wind
 # advisory is a real problem for an empty 53-footer.
@@ -672,6 +673,8 @@ async def _points(lat: float, lng: float, now: float) -> Optional[dict]:
     props = (r.json() or {}).get("properties") or {}
     if not props.get("forecastHourly"):
         return None
+    if len(_points_cache) > POINTS_CACHE_MAX:  # route points from every driver land here now (weather/points)
+        _points_cache.clear()
     _points_cache[key] = (now, props)
     return props
 

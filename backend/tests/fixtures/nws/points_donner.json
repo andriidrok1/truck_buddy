@@ -1,0 +1,33 @@
+{
+ "properties": {
+  "gridId": "STO",
+  "gridX": 87,
+  "gridY": 93,
+  "forecast": "https://api.weather.gov/gridpoints/STO/87,93/forecast",
+  "forecastHourly": "https://api.weather.gov/gridpoints/STO/87,93/forecast/hourly",
+  "forecastGridData": "https://api.weather.gov/gridpoints/STO/87,93",
+  "relativeLocation": {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -120.1939432,
+     39.3505478
+    ]
+   },
+   "properties": {
+    "city": "Truckee",
+    "state": "CA",
+    "distance": {
+     "unitCode": "wmoUnit:m",
+     "value": 2466.7634770346
+    },
+    "bearing": {
+     "unitCode": "wmoUnit:degree_(angle)",
+     "value": 253
+    }
+   }
+  },
+  "timeZone": "America/Los_Angeles"
+ }
+}
