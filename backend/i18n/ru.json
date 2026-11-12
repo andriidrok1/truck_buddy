@@ -1372,7 +1372,7 @@
   },
   {
    "en": "I'll remind you to take a break every {n} hour.",
-   "ru": "Буду напоминать о перерыве каждый {n} час."
+   "ru": "Буду напоминать о перерыве каждый час."
   },
   {
    "en": "Done, {items}.",
@@ -1465,6 +1465,11 @@
   {
    "en": ", I'll remind you to take a break every {n} hours",
    "ru": ", буду напоминать о перерыве каждые {n|plural:час,часа,часов}",
+   "part": true
+  },
+  {
+   "en": ", I'll remind you to take a break every {n} hour",
+   "ru": ", буду напоминать о перерыве каждый час",
    "part": true
   },
   {

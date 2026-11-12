@@ -171,7 +171,8 @@ t("Added {name} to your favorites.", "Добавил {name} в любимые.")
 t("Removed {name} from your favorites.", "Убрал {name} из любимых.")
 t("{name} isn't in your favorites.", "{name} нет в любимых.")
 t("I'll remind you to take a break every {n} hours.", "Буду напоминать о перерыве каждые {n|plural:час,часа,часов}.")
-t("I'll remind you to take a break every {n} hour.", "Буду напоминать о перерыве каждый {n} час.")
+# One hour is the only n this line is said with (controls.py): "каждый час", not "каждый 1 час".
+t("I'll remind you to take a break every {n} hour.", "Буду напоминать о перерыве каждый час.")
 t("Done, {items}.", "Готово: {items|tr}.")
 t("Done. {rest}", "Готово. {rest|tr}")
 for en, ru in [(", height is now {ft} foot {inch}", ", высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}"),
@@ -185,7 +186,8 @@ for en, ru in [(", height is now {ft} foot {inch}", ", высота теперь
                (", got it, no chains on board", ", цепей нет"), (", break reminders are off", ", напоминания о перерыве выключены"),
                (", got it, I'll call you {name}", ", буду звать тебя {name}"), (", added {name} to your favorites", ", добавил {name} в любимые"),
                (", removed {name} from your favorites", ", убрал {name} из любимых"),
-               (", I'll remind you to take a break every {n} hours", ", буду напоминать о перерыве каждые {n|plural:час,часа,часов}")]:
+               (", I'll remind you to take a break every {n} hours", ", буду напоминать о перерыве каждые {n|plural:час,часа,часов}"),
+               (", I'll remind you to take a break every {n} hour", ", буду напоминать о перерыве каждый час")]:
     t(en, ru, True)
 t("height is now {ft} foot {inch}", "высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}", True)
 t("height is now {ft} feet", "высота теперь {ft|plural:фут,фута,футов}", True)

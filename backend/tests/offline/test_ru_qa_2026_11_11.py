@@ -144,3 +144,20 @@ def test_no_template_puts_a_nominative_after_cherez():
     bad = [t.target for t in tpls if re.search(r"через \{\w+\|plural:(?:миля|минута|фут,|час,)", t.target, re.I)]
     assert not bad, bad
     assert sum(1 for t in tpls if re.search(r"через \{mi\|plural:милю,мили,миль\}", t.target, re.I)) == 15
+
+
+# ---- the break reminder for one hour (item 12) ----------------------------------------------------------------
+
+@pytest.mark.parametrize("en,ru", [
+    ("I'll remind you to take a break every 1 hour.", "Буду напоминать о перерыве каждый час."),
+    ("I'll remind you to take a break every 2 hours.", "Буду напоминать о перерыве каждые 2 часа."),
+    ("I'll remind you to take a break every 5 hours.", "Буду напоминать о перерыве каждые 5 часов."),
+    ("Done, height is now 13 feet, I'll remind you to take a break every 1 hour.",
+     "Готово: высота теперь 13 футов, буду напоминать о перерыве каждый час."),
+    ("Done, height is now 13 feet, I'll remind you to take a break every 3 hours.",
+     "Готово: высота теперь 13 футов, буду напоминать о перерыве каждые 3 часа."),
+])
+def test_break_reminder_hours(en, ru):
+    got, misses = _ru(en)
+    assert not misses and got == ru
+
