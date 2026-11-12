@@ -366,6 +366,26 @@ for en, ru in [("Road construction", "Ремонт дороги"), ("Major road 
     t(en + ".", ru + ".")
 t("{n} lanes closed", "Закрыто полос: {n}")
 t("{n} lanes closed.", "Закрыто полос: {n}.")
+# More of what HERE writes in an incident's description. "Major event" and "Roadway reduced to two lanes" are from
+# the `i18n miss ru` lines of the QA run of 2026-11-11 (routes Sacramento - Reno and to Sac Valley Truck Stop); the
+# rest are the same family. A description outside these lists stays English whole (i18n.localize_route).
+for en, ru in [("Major event", "Крупное мероприятие"), ("Event", "Мероприятие"), ("Incident", "Происшествие"),
+               ("Congestion", "Пробка"), ("Traffic congestion", "Пробка"), ("Construction", "Ремонт дороги"),
+               ("Roadway reduced to one lane", "Дорога сужена до одной полосы"),
+               ("Roadway reduced to two lanes", "Дорога сужена до двух полос"),
+               ("Roadway reduced to three lanes", "Дорога сужена до трёх полос"),
+               ("Roadway reduced to four lanes", "Дорога сужена до четырёх полос"),
+               ("Road blocked", "Дорога перекрыта"), ("Lane blocked", "Полоса перекрыта"),
+               ("Right lane blocked", "Правая полоса перекрыта"), ("Left lane blocked", "Левая полоса перекрыта"),
+               ("Center lane blocked", "Средняя полоса перекрыта"), ("Center lane closed", "Средняя полоса закрыта"),
+               ("One lane blocked", "Одна полоса перекрыта"), ("Two lanes blocked", "Две полосы перекрыты"),
+               ("Right shoulder closed", "Правая обочина закрыта"), ("Left shoulder closed", "Левая обочина закрыта"),
+               ("Earlier accident", "Последствия аварии"), ("Overturned vehicle", "Перевернулась машина"),
+               ("Overturned truck", "Перевернулся трак"), ("Broken down truck", "Сломанный трак"),
+               ("Disabled truck", "Сломанный трак"), ("Object on the road", "Предмет на дороге"),
+               ("Debris on the road", "Мусор на дороге")]:
+    t(en, ru)
+    t(en + ".", ru + ".")
 
 # --- Caltrans chain-control descriptions (S10; the app shows R-1..R-3 and these) ---
 for en, ru in [("No chain controls are in effect at this time.", "Сейчас цепи нигде не нужны."),

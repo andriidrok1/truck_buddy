@@ -2096,6 +2096,222 @@
    "ru": "Закрыто полос: {n}."
   },
   {
+   "en": "Major event",
+   "ru": "Крупное мероприятие"
+  },
+  {
+   "en": "Major event.",
+   "ru": "Крупное мероприятие."
+  },
+  {
+   "en": "Event",
+   "ru": "Мероприятие"
+  },
+  {
+   "en": "Event.",
+   "ru": "Мероприятие."
+  },
+  {
+   "en": "Incident",
+   "ru": "Происшествие"
+  },
+  {
+   "en": "Incident.",
+   "ru": "Происшествие."
+  },
+  {
+   "en": "Congestion",
+   "ru": "Пробка"
+  },
+  {
+   "en": "Congestion.",
+   "ru": "Пробка."
+  },
+  {
+   "en": "Traffic congestion",
+   "ru": "Пробка"
+  },
+  {
+   "en": "Traffic congestion.",
+   "ru": "Пробка."
+  },
+  {
+   "en": "Construction",
+   "ru": "Ремонт дороги"
+  },
+  {
+   "en": "Construction.",
+   "ru": "Ремонт дороги."
+  },
+  {
+   "en": "Roadway reduced to one lane",
+   "ru": "Дорога сужена до одной полосы"
+  },
+  {
+   "en": "Roadway reduced to one lane.",
+   "ru": "Дорога сужена до одной полосы."
+  },
+  {
+   "en": "Roadway reduced to two lanes",
+   "ru": "Дорога сужена до двух полос"
+  },
+  {
+   "en": "Roadway reduced to two lanes.",
+   "ru": "Дорога сужена до двух полос."
+  },
+  {
+   "en": "Roadway reduced to three lanes",
+   "ru": "Дорога сужена до трёх полос"
+  },
+  {
+   "en": "Roadway reduced to three lanes.",
+   "ru": "Дорога сужена до трёх полос."
+  },
+  {
+   "en": "Roadway reduced to four lanes",
+   "ru": "Дорога сужена до четырёх полос"
+  },
+  {
+   "en": "Roadway reduced to four lanes.",
+   "ru": "Дорога сужена до четырёх полос."
+  },
+  {
+   "en": "Road blocked",
+   "ru": "Дорога перекрыта"
+  },
+  {
+   "en": "Road blocked.",
+   "ru": "Дорога перекрыта."
+  },
+  {
+   "en": "Lane blocked",
+   "ru": "Полоса перекрыта"
+  },
+  {
+   "en": "Lane blocked.",
+   "ru": "Полоса перекрыта."
+  },
+  {
+   "en": "Right lane blocked",
+   "ru": "Правая полоса перекрыта"
+  },
+  {
+   "en": "Right lane blocked.",
+   "ru": "Правая полоса перекрыта."
+  },
+  {
+   "en": "Left lane blocked",
+   "ru": "Левая полоса перекрыта"
+  },
+  {
+   "en": "Left lane blocked.",
+   "ru": "Левая полоса перекрыта."
+  },
+  {
+   "en": "Center lane blocked",
+   "ru": "Средняя полоса перекрыта"
+  },
+  {
+   "en": "Center lane blocked.",
+   "ru": "Средняя полоса перекрыта."
+  },
+  {
+   "en": "Center lane closed",
+   "ru": "Средняя полоса закрыта"
+  },
+  {
+   "en": "Center lane closed.",
+   "ru": "Средняя полоса закрыта."
+  },
+  {
+   "en": "One lane blocked",
+   "ru": "Одна полоса перекрыта"
+  },
+  {
+   "en": "One lane blocked.",
+   "ru": "Одна полоса перекрыта."
+  },
+  {
+   "en": "Two lanes blocked",
+   "ru": "Две полосы перекрыты"
+  },
+  {
+   "en": "Two lanes blocked.",
+   "ru": "Две полосы перекрыты."
+  },
+  {
+   "en": "Right shoulder closed",
+   "ru": "Правая обочина закрыта"
+  },
+  {
+   "en": "Right shoulder closed.",
+   "ru": "Правая обочина закрыта."
+  },
+  {
+   "en": "Left shoulder closed",
+   "ru": "Левая обочина закрыта"
+  },
+  {
+   "en": "Left shoulder closed.",
+   "ru": "Левая обочина закрыта."
+  },
+  {
+   "en": "Earlier accident",
+   "ru": "Последствия аварии"
+  },
+  {
+   "en": "Earlier accident.",
+   "ru": "Последствия аварии."
+  },
+  {
+   "en": "Overturned vehicle",
+   "ru": "Перевернулась машина"
+  },
+  {
+   "en": "Overturned vehicle.",
+   "ru": "Перевернулась машина."
+  },
+  {
+   "en": "Overturned truck",
+   "ru": "Перевернулся трак"
+  },
+  {
+   "en": "Overturned truck.",
+   "ru": "Перевернулся трак."
+  },
+  {
+   "en": "Broken down truck",
+   "ru": "Сломанный трак"
+  },
+  {
+   "en": "Broken down truck.",
+   "ru": "Сломанный трак."
+  },
+  {
+   "en": "Disabled truck",
+   "ru": "Сломанный трак"
+  },
+  {
+   "en": "Disabled truck.",
+   "ru": "Сломанный трак."
+  },
+  {
+   "en": "Object on the road",
+   "ru": "Предмет на дороге"
+  },
+  {
+   "en": "Object on the road.",
+   "ru": "Предмет на дороге."
+  },
+  {
+   "en": "Debris on the road",
+   "ru": "Мусор на дороге"
+  },
+  {
+   "en": "Debris on the road.",
+   "ru": "Мусор на дороге."
+  },
+  {
    "en": "No chain controls are in effect at this time.",
    "ru": "Сейчас цепи нигде не нужны."
   },

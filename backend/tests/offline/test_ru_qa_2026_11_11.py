@@ -211,3 +211,40 @@ def test_last_maneuver_of_a_route_is_whole_russian():
         Maneuver(action="turn", direction="left", instruction="Turn left onto 16th St", lat=38.5, lng=-121.5, index=0),
         Maneuver(action="arrive", instruction="Arrive at your destination on the left", lat=38.6, lng=-121.5, index=1)]))
     assert [m.instruction for m in out.maneuvers] == ["Поверни налево на 16th St", "Ты на месте, цель слева"]
+
+
+# ---- HERE incident descriptions (item 6) ----------------------------------------------------------------------
+
+def test_incident_descriptions_from_the_qa_routes_are_translated():
+    """The two descriptions the QA run logged as `i18n miss ru`, as routing._incident stores them (no last period)."""
+    out = _localized(_route(incidents=[
+        Incident(type="other", closed=False, description="Major event", index=1),
+        Incident(type="construction", closed=False, description="Road construction. Roadway reduced to two lanes", index=2),
+        Incident(type="accident", closed=False, description="Accident. Right lane blocked", index=3),
+        Incident(type="construction", closed=False, description="Roadway reduced to one lane", index=4)]))
+    assert [(i.type, i.description) for i in out.incidents] == [
+        ("Происшествие", "Крупное мероприятие"), ("Ремонт дороги", "Ремонт дороги. Дорога сужена до двух полос"),
+        ("Авария", "Авария. Правая полоса перекрыта"), ("Ремонт дороги", "Дорога сужена до одной полосы")]
+
+
+def test_unknown_incident_description_stays_english_whole():
+    out = _localized(_route(incidents=[
+        Incident(type="other", closed=False, description="Road construction. Pilot car operations in the canyon", index=1),
+        Incident(type="construction", closed=False, description="Roadway reduced to two narrow lanes", index=2)]))
+    # one sentence the catalog lacks keeps the whole description English: the app does not say such a description
+    assert [(i.type, i.description) for i in out.incidents] == [
+        ("Происшествие", "Road construction. Pilot car operations in the canyon"),
+        ("Ремонт дороги", "Roadway reduced to two narrow lanes")]
+
+
+def test_recorded_here_incident_descriptions_all_translate():
+    """Every incident description in the recorded HERE responses has a template."""
+    import json
+    from pathlib import Path
+    seen = set()
+    for path in (Path(__file__).resolve().parents[1] / "fixtures" / "here").glob("*.json"):
+        seen.update(re.findall(r'"description":\s*"([^"]+)"', json.dumps(json.loads(path.read_text()), ensure_ascii=False)))
+    assert {"Road construction", "Major road construction"} <= seen
+    for text in seen:
+        _got, misses = _ru(text.rstrip("."))
+        assert not misses, text
