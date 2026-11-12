@@ -24,13 +24,16 @@ export function AccountSection({ driverName }: { driverName?: string | null }) {
   const { colors } = useTheme();
   const account = useAccount();
   const synced = useProfileSynced();
-  const viaAccount = signedInWithAccount() && account !== null;
+  // An account sign-in whose account_v1 is not on the phone yet (written right after the token, or a read that
+  // failed) is still an account: "Your account", never "Access code" (review of #173, L1).
+  const viaAccount = signedInWithAccount();
+  const known = viaAccount ? account : null;
 
   // Apple gives the name on the first sign-in only; after that the name the driver gave the copilot stands in.
-  const name = viaAccount ? account.name || driverName?.trim() || account.email || t("Your account") : t("Access code");
-  const initial = viaAccount ? initialOf(name) : "";
-  const provider = viaAccount ? t(PROVIDER[account.provider]) : t("Signed in with an access code");
-  const sub = viaAccount && account.email ? `${account.email} · ${provider}` : provider;
+  const name = viaAccount ? known?.name || driverName?.trim() || known?.email || t("Your account") : t("Access code");
+  const initial = known ? initialOf(name) : "";
+  const provider = known ? t(PROVIDER[known.provider]) : viaAccount ? "" : t("Signed in with an access code");
+  const sub = known?.email ? `${known.email} · ${provider}` : provider;
 
   return (
     <View testID="account-section" style={[s.box, { backgroundColor: colors.surfaceSecondary }]}>
@@ -47,9 +50,11 @@ export function AccountSection({ driverName }: { driverName?: string | null }) {
         <Text testID="account-name" numberOfLines={1} style={[s.name, { color: colors.onSurface }]}>
           {name}
         </Text>
-        <Text testID="account-sub" numberOfLines={2} style={[s.sub, { color: colors.onSurfaceSecondary }]}>
-          {sub}
-        </Text>
+        {!!sub && (
+          <Text testID="account-sub" numberOfLines={2} style={[s.sub, { color: colors.onSurfaceSecondary }]}>
+            {sub}
+          </Text>
+        )}
       </View>
       {synced && (
         <View testID="account-synced" style={[s.pill, { backgroundColor: colors.surface }]}>

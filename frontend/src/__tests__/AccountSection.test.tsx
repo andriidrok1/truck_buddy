@@ -104,6 +104,18 @@ describe("AccountSection", () => {
     expect(screen.queryByTestId("account-initial")).toBeNull();
   });
 
+  test("an account sign-in whose account_v1 is not there yet: Your account, never Access code (L1)", async () => {
+    await setToken("ACC", "driver", "account", "R1");
+    await render(<AccountSection driverName="Mike" />);
+    await settle();
+    expect(screen.getByTestId("account-name")).toHaveTextContent("Mike");
+    expect(screen.queryByText(/Access code/)).toBeNull();
+    await render(<AccountSection />);
+    await settle();
+    expect(screen.getByTestId("account-name")).toHaveTextContent("Your account");
+    expect(screen.queryByText(/access code/i)).toBeNull();
+  });
+
   test("Synced only when nothing waits for the server: not with a change unsent, not while a restore is pending", async () => {
     await asAccount("google");
     await render(<AccountSection />);
