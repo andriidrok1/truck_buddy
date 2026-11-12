@@ -63,7 +63,8 @@ on the service. With them the backend calls `appleid.apple.com/auth/token` after
 `/auth/revoke` on `DELETE /api/account`. Without any of them sign-in and deletion still work, the log gets one
 warning per Apple sign-in (`apple refresh token not kept ...`), and the deletion answers `apple_revoked: null`.
 Set them before a build with account deletion goes to App Review. An account created while they were missing
-gets its token on the next sign-in. Rotating `CREDENTIALS_KEY` makes the stored tokens unreadable: deletion then
+gets its token on the next sign-in; an account that already holds one is not exchanged again. `apple_revoked: true`
+means Apple accepted the revoke call. Rotating `CREDENTIALS_KEY` makes the stored tokens unreadable: deletion then
 answers `apple_revoked: false` until the driver signs in again.
 
 README.md "Account deletion" lists what a deletion removes and keeps. The log stream is not touched by it: lines
