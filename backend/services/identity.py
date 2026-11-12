@@ -7,6 +7,7 @@ sign-in, Google's a verified email.
 
 Every refusal is an `Invalid` with a short reason for the log; the caller answers one generic 401, and the token
 itself is never logged."""
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -22,7 +23,7 @@ from services import http
 logger = logging.getLogger("truckbuddy.identity")
 
 JWKS_TTL_S = 6 * 3600.0
-REFETCH_MIN_S = 60.0  # a kid the keys do not have: ask the provider again at most this often
+REFETCH_MIN_S = 60.0  # between two fetches from one provider, whatever the reason and however the last one went
 FETCH_TIMEOUT_S = 5.0
 LEEWAY_S = 60  # clock skew between the provider and this box
 
@@ -67,7 +68,9 @@ class Identity:
 class _Jwks:
     keys: dict = field(default_factory=dict)  # kid -> public key
     at: Optional[float] = None  # monotonic time of the last successful fetch
-    missed: Optional[float] = None  # ... of the last fetch made for a kid that was not there afterwards
+    tried: Optional[float] = None  # ... of the last fetch attempt, successful or not
+    failed: bool = False  # the last attempt did not get the keys
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)  # one fetch at a time per provider
 
 
 _jwks: dict[str, _Jwks] = {}  # per provider URL, per process
@@ -93,27 +96,36 @@ async def _fetch(url: str) -> dict:
     return keys
 
 
-async def _key(provider: Provider, kid: str):
-    """The provider's public key with this kid. The keys are fetched when there are none or they are older than
-    JWKS_TTL_S, and once more when the kid is not among them (the provider rotated); a kid that is still unknown
-    after that is not asked about again for REFETCH_MIN_S, so made-up kids cannot make us hammer the provider."""
-    c = _jwks.setdefault(provider.jwks_url, _Jwks())
+def _fetch_due(c: _Jwks, kid: str) -> bool:
+    """Time to ask the provider: there are no keys, they are older than JWKS_TTL_S, or this kid is not among them
+    (the provider rotated), and the last attempt was at least REFETCH_MIN_S ago. The throttle counts failed attempts
+    too, so neither made-up kids nor an outage make every sign-in hold a connection waiting on the provider."""
     now = time.monotonic()
-    stale = c.at is None or now - c.at >= JWKS_TTL_S
-    unknown = kid not in c.keys
-    if stale or (unknown and (c.missed is None or now - c.missed >= REFETCH_MIN_S)):
-        try:
-            c.keys, c.at = await _fetch(provider.jwks_url), now
-        except Exception as e:  # noqa: BLE001 - network, status, bad JSON
-            logger.warning("%s JWKS fetch failed: %s", provider.name, type(e).__name__)
-            if unknown:
-                raise Unavailable(provider.name)
-            # the keys we have are old but the kid is one of them: providers rotate rarely, keep signing people in
-        else:
-            if kid not in c.keys:
-                c.missed = now
+    if c.tried is not None and now - c.tried < REFETCH_MIN_S:
+        return False
+    return c.at is None or now - c.at >= JWKS_TTL_S or kid not in c.keys
+
+
+async def _key(provider: Provider, kid: str):
+    """The provider's public key with this kid, from the cache; fetched first when _fetch_due says so. Sign-ins that
+    arrive while a fetch is running wait for it instead of starting their own."""
+    c = _jwks.setdefault(provider.jwks_url, _Jwks())
+    if _fetch_due(c, kid):
+        async with c.lock:
+            if _fetch_due(c, kid):  # the one that held the lock may have fetched already
+                try:
+                    c.keys, c.failed = await _fetch(provider.jwks_url), False
+                    c.at = time.monotonic()
+                except Exception as e:  # noqa: BLE001 - network, status, bad JSON
+                    logger.warning("%s JWKS fetch failed: %s", provider.name, type(e).__name__)
+                    c.failed = True  # keys we already have stay: providers rotate rarely, keep signing people in
+                # Stamped when the attempt ends, not when it starts: sign-ins that arrive meanwhile must queue on
+                # the lock and use its result, not see a fresh stamp and be turned away with an empty cache.
+                c.tried = time.monotonic()
     key = c.keys.get(kid)
     if key is None:
+        if c.failed or c.at is None:
+            raise Unavailable(provider.name)  # we could not ask: the token was not judged
         raise Invalid("unknown kid")
     return key
 
@@ -155,14 +167,24 @@ async def verify_apple(identity_token: str, raw_nonce: str) -> Identity:
     """The Apple user behind an identity token. `raw_nonce` is what the app generated for this sign-in; the app
     gave Apple its SHA-256, which Apple put in the token, so a token lifted from another sign-in does not pass."""
     claims = await _verify(APPLE, identity_token)
-    want = hashlib.sha256(raw_nonce.encode()).hexdigest()
-    if not hmac.compare_digest(str(claims.get("nonce") or ""), want):
+    got = claims.get("nonce")
+    try:
+        want = hashlib.sha256(raw_nonce.encode()).hexdigest()
+        # bytes on both sides: compare_digest refuses a str with non-ASCII characters
+        same = isinstance(got, str) and hmac.compare_digest(got.encode(), want.encode())
+    except UnicodeError:  # a lone surrogate in either nonce cannot be encoded
+        same = False
+    if not same:
         raise Invalid("nonce mismatch")
     return Identity("apple", claims["sub"], _text(claims.get("email"), 320), None)
 
 
 async def verify_google(id_token: str) -> Identity:
     claims = await _verify(GOOGLE, id_token)
+    # azp is the client the token was issued to. Google sets it when it differs from the audience (Android: aud is
+    # the web client, azp the Android one) and whenever aud is a list; it has to be one of ours as well.
+    if (isinstance(claims.get("aud"), list) or "azp" in claims) and claims.get("azp") not in GOOGLE.audiences():
+        raise Invalid("azp is not one of ours")
     if not _true(claims.get("email_verified")):
         raise Invalid("email not verified")
     return Identity("google", claims["sub"], _text(claims.get("email"), 320), _text(claims.get("name"), 120))
