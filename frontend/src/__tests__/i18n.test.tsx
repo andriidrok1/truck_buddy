@@ -41,7 +41,7 @@ describe("i18n", () => {
     expect(screen.getByTestId("x").props.children).toBe("Tap to talk");
     setLang("ru");
     await render(<Text testID="y">{"You said: “"}{"find parking"}{"”"}</Text>);
-    expect(screen.getByTestId("y").props.children).toBe("Ты сказал: «find parking»");
+    expect(screen.getByTestId("y").props.children).toBe("Твои слова: «find parking»");
   });
 });
 

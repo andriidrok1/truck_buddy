@@ -117,3 +117,39 @@ describe("what lies ahead, spoken (advisoryText)", () => {
     }
   });
 });
+
+describe("wording (src/i18n/ru.ts)", () => {
+  const ru = (en: string) => t(en, undefined, "ru");
+
+  test("miles per gallon is not called fuel consumption", () => {
+    expect(ru("Fuel economy")).toBe("Пробег на галлон");
+    expect(ru("Fuel economy must be 3 to 15 mpg.")).toBe("Пробег должен быть от 3 до 15 миль на галлон.");
+    expect(ru("For the route cost estimate. Leave empty for 6.5.")).toBe("Нужен, чтобы посчитать стоимость маршрута. Если оставить пустым, считаю по 6,5 мили на галлон.");
+  });
+
+  test("no English words left inside Russian sentences of the truck profile", () => {
+    expect(ru("Owner-operator. Off: you drive for a company")).toBe("Свой трак. Выключи, если работаешь на компанию");
+    expect(ru("Height, trailer, weight, hazmat and your name go back to the defaults. Nothing is saved until you tap Save truck.")).toBe(
+      "Высота, трейлер, вес, опасный груз и имя вернутся к значениям по умолчанию. Ничего не сохранится, пока не нажмёшь «Сохранить трак».");
+  });
+
+  test("zoom buttons, the notification without a place name, the CAT Scale tag", () => {
+    expect(ru("Zoom in")).toBe("Приблизить");
+    expect(ru("Zoom out")).toBe("Отдалить");
+    expect(t("Navigating to {name}", { name: ru("your stop") }, "ru")).toBe("Едем в пункт назначения"); // was "Едем в your stop"
+    expect(t("Navigating to {name}", { name: t("your stop", undefined, "en") }, "en")).toBe("Navigating to your stop");
+    expect(ru("CAT Scale")).toBe("Кэт-скейл");
+    expect(ru("CAT Scale · Truck diesel · Showers")).toBe("Кэт-скейл · Дизель для траков · Душ");
+  });
+
+  test("nothing says the driver is a man", () => {
+    expect(ru("You said: “где дизель”")).toBe("Твои слова: «где дизель»");
+    expect(ru("Agree and continue")).toBe("Принять и продолжить");
+    expect(ru("Agree and enter an access code")).toBe("Принять и ввести код доступа");
+  });
+
+  test("the location chip is short enough for its one line", () => {
+    expect(ru("Location off · Sample area")).toBe("Нет геолокации · пример");
+    expect(ru("Location off · Sample area").length).toBeLessThanOrEqual("Location off · Sample area".length);
+  });
+});

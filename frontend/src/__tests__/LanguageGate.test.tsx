@@ -25,7 +25,7 @@ beforeEach(() => useLangStore.setState({ lang: "en", chosen: false, loaded: true
 describe("LanguageGate", () => {
   test("asks in both languages and offers English and Russian, not Ukrainian until it is ready", async () => {
     await render(<LanguageGate />);
-    expect(screen.getByText("Choose your language\nВыберите язык")).toBeTruthy();
+    expect(screen.getByText("Choose your language\nВыбери язык")).toBeTruthy();
     expect(screen.getByTestId("language-en")).toBeTruthy();
     expect(screen.getByTestId("language-ru")).toBeTruthy();
     expect(screen.queryByTestId("language-uk")).toBeNull();
