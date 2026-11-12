@@ -25,6 +25,19 @@ export function layerAt(frame: RadarFrame | null, target: Date, now: Date): stri
   return `hrrr-f${String(minute).padStart(3, "0")}`;
 }
 
+/** The share (0..1) of the route's length before vertex `index`: where the truck already is. */
+export function shareAt(geometry: [number, number][], index: number): number {
+  if (geometry.length < 2) return 0;
+  let before = 0;
+  let total = 0;
+  for (let i = 1; i < geometry.length; i++) {
+    const d = Math.hypot(geometry[i][0] - geometry[i - 1][0], (geometry[i][1] - geometry[i - 1][1]) * Math.cos((geometry[i][0] * Math.PI) / 180));
+    total += d;
+    if (i <= index) before += d;
+  }
+  return total > 0 ? before / total : 0;
+}
+
 /** The point at `fraction` (0..1) of the route's length. */
 export function positionAt(geometry: [number, number][], fraction: number): LatLng | null {
   if (!geometry.length) return null;

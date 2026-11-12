@@ -222,3 +222,14 @@ def test_forecast_tiles_cached_per_run(fake_http):
     radar._hrrr.update(init="2026-11-11T23:00:00Z")  # a new run: the same layer name shows other weather
     run(radar.fetch_tile("hrrr-f060", 4, 2, 6, now=2.0))
     assert len(fake_http.calls_to(HOST, "/cache/tile.py")) == 2
+
+
+def test_tile_fetch_learns_a_new_run_by_itself(fake_http):
+    """Review 2026-11-11: the run only refreshed on /radar/frame; tiles of a new run were cached under the old one."""
+    fake_http.add(HOST, "/cache/tile.py", fn=png)
+    fake_http.add(HOST, "/data/gis/images/4326/hrrr/", json=META, times=1)
+    fake_http.add(HOST, "/data/gis/images/4326/hrrr/", json={**META, "model_init_utc": "2026-11-11T23:00:00Z"})
+    run(radar.fetch_tile("hrrr-f060", 4, 2, 6, now=0.0))
+    run(radar.fetch_tile("hrrr-f060", 4, 2, 6, now=radar.FRAME_TTL_S + 1))  # the meta is re-read: a new run
+    assert radar._hrrr["init"] == "2026-11-11T23:00:00Z"
+    assert len(fake_http.calls_to(HOST, "/cache/tile.py")) == 2

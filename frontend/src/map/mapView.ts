@@ -38,9 +38,12 @@ export function nativeMapType(view: MapView, os: string): "standard" | "satellit
 export function radarOverlay(frame: RadarFrame | null, origin: string, layer?: string | null): RadarOverlay | null {
   const id = layer ?? frame?.live;
   if (!frame?.enabled || !frame.tile_url || !id) return null;
+  // A forecast layer's name is the same for every HRRR run: the run goes into the URL and the key, so neither
+  // the phone's tile cache nor the map's tile layer keeps showing the last run's weather.
+  const run = id.startsWith("hrrr") && frame.forecast_init ? frame.forecast_init : null;
   return {
-    urlTemplate: origin + frame.tile_url.replace("{layer}", encodeURIComponent(id)),
-    key: id,
+    urlTemplate: origin + frame.tile_url.replace("{layer}", encodeURIComponent(id)) + (run ? `&run=${encodeURIComponent(run)}` : ""),
+    key: run ? `${id}@${run}` : id,
     maxNativeZoom: frame.max_zoom ?? 10,
   };
 }

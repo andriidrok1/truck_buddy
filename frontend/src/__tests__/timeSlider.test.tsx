@@ -107,3 +107,20 @@ describe("sliderVisible", () => {
     expect(sliderVisible({ ...base, hasRoute: false })).toBe(false);
   });
 });
+
+describe("review fixes", () => {
+  it("a forecast tile URL and key carry the HRRR run", async () => {
+    const { radarOverlay } = jest.requireActual<typeof import("../map/mapView")>("../map/mapView");
+    const o = radarOverlay(FRAME, "https://x", "hrrr-f255")!;
+    expect(o.urlTemplate).toContain("&run=2026-11-11T22%3A00%3A00Z");
+    expect(o.key).toBe("hrrr-f255@2026-11-11T22:00:00Z");
+    expect(radarOverlay(FRAME, "https://x", null)!.key).toBe("n0q-202611120030"); // live: no run
+  });
+  it("shareAt: where the truck already is on the route", () => {
+    const { shareAt } = jest.requireActual<typeof import("../weather/timeSlider")>("../weather/timeSlider");
+    const line: [number, number][] = [[38, -121], [39, -121], [40, -121]];
+    expect(shareAt(line, 0)).toBe(0);
+    expect(shareAt(line, 1)).toBeCloseTo(0.5, 5);
+    expect(shareAt(line, 2)).toBeCloseTo(1, 5);
+  });
+});

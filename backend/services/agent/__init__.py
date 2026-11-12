@@ -490,14 +490,17 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         when the driver didn't ask about arriving, or the place isn't on the way."""
         if not weather.WHEN_I_GET.search(text):
             return None
-        remaining = (req.active_duration_min or 0) * 60
-        dest = req.active_place
-        if dest and abs(dest.lat - lat) < 1e-4 and abs(dest.lng - lng) < 1e-4:
-            return float(remaining) if remaining else None
         route = (sess.get("alternatives") or {}).get("current")
-        if route is None or not route.geometry:
-            return None
-        return weather.seconds_to(route.geometry, (req.lat, req.lng), (lat, lng), remaining or route.duration_s)
+        if route is not None and route.geometry:
+            # From where the truck is now along the route (the destination too): the planned duration's share.
+            return weather.seconds_to(route.geometry, (req.lat, req.lng), (lat, lng), route.duration_s)
+        dest = req.active_place
+        if dest and abs(dest.lat - lat) < 1e-4 and abs(dest.lng - lng) < 1e-4 and req.active_distance_mi and req.active_duration_min:
+            # No route in this dialog: the app's numbers for the route are the planned ones; scale by the
+            # straight-line share of the trip still ahead (never longer than the whole trip).
+            left = min(1.0, km_to_mi(haversine_km(req.lat, req.lng, dest.lat, dest.lng)) * 1.2 / req.active_distance_mi)
+            return req.active_duration_min * 60 * left
+        return None
 
     async def _hos(self, req: AgentRequest, text: str) -> AgentResponse:
         """"How many hours do I have?" from the driver's Motive account (the driver's own key per request, or the

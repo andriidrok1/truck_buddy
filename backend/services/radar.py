@@ -227,7 +227,8 @@ async def fetch_tile(layer: str, z: int, x: int, y: int, now: Optional[float] = 
     now = time.monotonic() if now is None else now
     forecast = name.startswith("hrrr::")
     # A forecast layer name is the same for every run: the run goes into the cache key so a new run is fetched.
-    run = (_hrrr["init"] or str(int(time.time() // 3600))) if forecast else ""
+    # The run is looked up here too (cached FRAME_TTL_S), not only when someone asks /radar/frame.
+    run = ((await hrrr_init(now)) or str(int(time.time() // 3600))) if forecast else ""
     key = f"{layer}:{run}:{z}/{x}/{y}"
     hit = _tiles.get(key, now)
     if hit is not None:

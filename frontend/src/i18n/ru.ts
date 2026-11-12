@@ -541,4 +541,5 @@ export const RU: Record<string, string> = {
   "Now": "Сейчас",
   "Play": "Пуск",
   "Pause": "Пауза",
+  "No radar forecast this far ahead": "Так далеко прогноза радара нет",
 };

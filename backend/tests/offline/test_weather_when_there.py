@@ -19,6 +19,13 @@ def test_seconds_to_a_point_on_the_way():
     assert weather.seconds_to(LINE, (39.53, -119.81), (38.9, -121.07), 10000) is None  # already behind
 
 
+def test_mid_drive_counts_from_the_truck_not_the_whole_trip():
+    """Review 2026-11-11: 8 h into a 10 h trip, the end is ~2 h away, not 10 h."""
+    mid = weather.seconds_to(LINE, (39.28, -120.7), (39.53, -119.81), 10000)
+    whole = weather.seconds_to(LINE, (38.58, -121.49), (39.53, -119.81), 10000)
+    assert 0 < mid < whole / 2
+
+
 @pytest.mark.parametrize("text,hit", [
     ("weather in Reno when I get there", True), ("what will it be like by the time I get to Donner", True),
     ("погода в Рино, когда доеду", True), ("weather in Reno at 3 pm", False), ("weather here", False),
@@ -42,9 +49,12 @@ def test_destination_uses_the_remaining_time(agent_sandbox, monkeypatch):
     seen = _capture(monkeypatch)
     agent_sandbox.llm.on(r"when I get there", {"intent": "weather", "query": None})
     req = AgentRequest(text="what's the weather when I get there", session_id="w1", lat=38.58, lng=-121.49,
-                       active_place=RENO, active_duration_min=172)
+                       active_place=RENO, active_duration_min=172, active_distance_mi=132)
     run(agent_sandbox.provider().handle(req, None))
-    assert seen["place"] == "Reno" and seen["in_s"] == 172 * 60
+    assert seen["place"] == "Reno" and seen["in_s"] == 172 * 60  # at the start: the whole trip
+    req = req.model_copy(update={"lat": 39.33, "lng": -120.18, "session_id": "w1b"})  # near Truckee, 30 mi left
+    run(agent_sandbox.provider().handle(req, None))
+    assert 0 < seen["in_s"] < 60 * 60
 
 
 def test_a_place_on_the_route_gets_its_share(agent_sandbox, monkeypatch):

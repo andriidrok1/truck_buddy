@@ -487,20 +487,21 @@ def _nearest(geometry: list[list[float]], lat: float, lng: float) -> tuple[int, 
 
 
 def seconds_to(geometry: list[list[float]], driver: tuple[float, float], target: tuple[float, float],
-               remaining_s: float) -> Optional[float]:
-    """Seconds until the truck reaches `target` on this route, as its share of the distance still ahead times
-    the time still ahead; None when the target is off the route or already behind."""
-    if len(geometry) < 2 or remaining_s <= 0:
+               duration_s: float) -> Optional[float]:
+    """Seconds until the truck reaches `target` on this route: the route's whole duration times the share of its
+    whole length between the truck and the target (the eta_at rule; the duration the app sends is the planned
+    one, not the time left, so the share is of the whole route). None when off the route or already behind."""
+    if len(geometry) < 2 or duration_s <= 0:
         return None
     i0, _ = _nearest(geometry, *driver)
     i1, off = _nearest(geometry, *target)
     if off > ON_ROUTE_KM or i1 < i0:
         return None
     steps = _steps_km(geometry)
-    ahead = sum(steps[i0:])
-    if ahead <= 0:
+    total = sum(steps)
+    if total <= 0:
         return None
-    return remaining_s * sum(steps[i0:i1]) / ahead
+    return duration_s * sum(steps[i0:i1]) / total
 
 
 def _alert_tz(alert: WeatherAlert, now: datetime):

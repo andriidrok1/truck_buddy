@@ -34,7 +34,7 @@ const KEY_ROWS = [
 
 /** Under the top bar in the weather view: when the radar frame is from, and a Key button that opens the legend
  *  (Figma V2a/V2b). Nothing when the backend has no frame. */
-export function RadarStatus({ top, frame, forecastAt }: { top: number; frame: RadarFrame | null; forecastAt?: Date | null }) {
+export function RadarStatus({ top, frame, forecastAt, beyondForecast }: { top: number; frame: RadarFrame | null; forecastAt?: Date | null; beyondForecast?: boolean }) {
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
   const clock = frameClock(frame?.time);
@@ -45,7 +45,11 @@ export function RadarStatus({ top, frame, forecastAt }: { top: number; frame: Ra
         {/* A slider moment ahead shows the HRRR model forecast, not radar: said so on the chip (purple dot). */}
         <View style={[styles.dot, { backgroundColor: forecastAt ? FORECAST_DOT : colors.success }]} />
         <Text style={[styles.chipText, { color: colors.onSurface }]}>
-          {forecastAt ? t("Model forecast · {time}", { time: frameClock(forecastAt.toISOString()) ?? "" }) : t("Radar · {time}", { time: clock })}
+          {beyondForecast
+            ? t("No radar forecast this far ahead")
+            : forecastAt
+              ? t("Model forecast · {time}", { time: frameClock(forecastAt.toISOString()) ?? "" })
+              : t("Radar · {time}", { time: clock })}
         </Text>
       </View>
       <PressableScale
