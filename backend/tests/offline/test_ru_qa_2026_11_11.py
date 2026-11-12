@@ -1,0 +1,111 @@
+"""The second Russian QA pass, 2026-11-11 (vault: «TruckBuddy — QA русской версии, второй проход: ответы копилота»),
+server side: a weather watch reads as a noun in every weather line, the accusative after «через», the break reminder
+for one hour, arrival at "your destination" on a side, HERE incident descriptions, Latin words a model translation
+left behind, and "где встать на ночь" as a truck stop."""
+import re
+
+import pytest
+from conftest import run
+
+from models import AgentRequest, Incident, Maneuver, RouteInfo
+from services import i18n
+
+SAC = {"lat": 38.5816, "lng": -121.4944}
+
+
+@pytest.fixture(autouse=True)
+def _real_catalog():
+    i18n.catalog.cache_clear()  # test_i18n swaps in a small catalog of its own
+    yield
+    i18n.catalog.cache_clear()
+
+
+def _ru(text: str) -> tuple[str, list[str]]:
+    misses: list[str] = []
+    return i18n.translate(text, "ru", fallback=lambda s, c: misses.append(s) or None), misses
+
+
+def test_placeholders_of_every_template_exist_in_its_english():
+    """The catalog's own consistency: a Russian template can only use a value its English side captures."""
+    tpls, _words = i18n.catalog("ru")
+    for t in tpls:
+        en = {m.group(1) for m in i18n._PH.finditer(t.en)}
+        ru = {m.group(1) for m in i18n._PH.finditer(t.target)}
+        assert ru <= en, (t.en, t.target)
+
+
+# ---- weather watches (item 2) ---------------------------------------------------------------------------------
+
+WATCHES = {
+    "High Wind Watch": "угроза сильного ветра", "Winter Storm Watch": "угроза зимнего шторма",
+    "Hurricane Watch": "угроза урагана", "Tropical Storm Watch": "угроза тропического шторма",
+    "Freeze Watch": "угроза заморозков", "Fire Weather Watch": "угроза пожароопасной погоды",
+    "Extreme Cold Watch": "угроза сильного мороза", "Flood Watch": "угроза наводнения",
+    "Flash Flood Watch": "угроза внезапного наводнения", "Severe Thunderstorm Watch": "угроза сильной грозы",
+    "Tornado Watch": "угроза торнадо", "Avalanche Watch": "угроза лавин",
+}
+OTHER_EVENTS = {
+    "Winter Storm Warning": "предупреждение о зимнем шторме", "High Wind Warning": "штормовое предупреждение о ветре",
+    "Wind Advisory": "предупреждение о ветре", "Red Flag Warning": "пожароопасная погода",
+    "Dense Fog Advisory": "предупреждение о густом тумане",
+}
+# Every line the code builds around an event (services/weather.py, agent replies), with the Russian it must give.
+EVENT_LINES = [
+    ("Heads up, a {e} near Lassen Volcanic National Park starts Friday 10 am; at this pace you're through there by 11:30 pm.",
+     "Внимание, {r} в районе Lassen Volcanic National Park начнётся в пятницу в 10:00; в таком темпе проедешь там к 23:30."),
+    ("Heads up, there's a {e} in effect there.", "Внимание, там действует {r}."),
+    ("Weather warning: {e} ahead near Donner Pass.", "Погодное предупреждение: впереди {r} в районе Donner Pass."),
+    ("Weather warning: {e} near Donner Pass, you'd hit it around 3:30 pm.",
+     "Погодное предупреждение: {r} в районе Donner Pass, доедешь туда примерно в 15:30."),
+    ("Weather warning: {e} near Donner Pass, you'd hit it around 3:30 pm, in effect till 8:58 pm.",
+     "Погодное предупреждение: {r} в районе Donner Pass, доедешь туда примерно в 15:30, действует до 20:58."),
+    ("{e} near Donner Pass.", "{R} в районе Donner Pass."),
+    ("{e} and 1 more weather alert along the route.", "{R} и ещё 1 погодное предупреждение по маршруту."),
+    ("{e} and 2 more weather alerts along the route.", "{R} и ещё 2 предупреждения по маршруту."),
+    ("{e} near Donner Pass around 3:30 pm and 2 more weather alerts along the route.",
+     "{R} в районе Donner Pass около 15:30 и ещё 2 предупреждения по маршруту."),
+    ("The way via I-80 only runs into a {e}. Say 'take the other way' if you want it.",
+     "На пути через I-80 только {r}. Скажи «давай другим путём», если хочешь."),
+    ("The way via I-80 only runs into a {e}, about 12 min longer. Say 'take the other way' if you want it.",
+     "На пути через I-80 только {r}, примерно на 12 минут дольше. Скажи «давай другим путём», если хочешь."),
+    ("The way via I-80 only runs into a {e} and takes about the same time. Say 'take the other way' if you want it.",
+     "На пути через I-80 только {r} и по времени примерно так же. Скажи «давай другим путём», если хочешь."),
+    ("The way via I-80 misses it and takes about the same time.", "Путь через I-80 это обходит и по времени примерно так же."),
+    ("Here's another way via I-80 and CA-89, 4 h 29 min, 204 miles, about 1 h 40 min longer, and it misses the {e}.",
+     "Вот другой путь через I-80 и CA-89, 4 часа 29 минут, 204 мили, примерно на 1 час 40 минут дольше, и {r} обходит стороной."),
+    ("Here's another way via I-80, 4 h 29 min, 204 miles, about 1 h 40 min longer, but it runs into a {e}.",
+     "Вот другой путь через I-80, 4 часа 29 минут, 204 мили, примерно на 1 час 40 минут дольше, но там {r}."),
+]
+
+
+def test_every_event_template_is_exercised():
+    """A new template with {event} must get a line in EVENT_LINES, so a watch is checked in it too."""
+    tpls, _words = i18n.catalog("ru")
+    with_event = [t for t in tpls if "{event" in t.target]
+    assert len(with_event) == 13, [t.en for t in with_event]
+    for t in with_event:
+        assert "{event|nom}" in t.target, t.target  # the only form the words table holds for an event
+
+
+@pytest.mark.parametrize("event,noun", list(WATCHES.items()) + list(OTHER_EVENTS.items()))
+def test_an_event_is_a_noun_in_every_weather_line(event, noun):
+    for en, ru in EVENT_LINES:
+        got, misses = _ru(en.replace("{e}", event))
+        assert not misses, misses
+        assert got == ru.replace("{r}", noun).replace("{R}", noun[:1].upper() + noun[1:]), en
+        assert "возмож" not in got  # the clause that made two predicates: "возможен зимний шторм ... начнётся"
+
+
+def test_every_watch_in_the_words_table_is_a_noun():
+    _tpls, words = i18n.catalog("ru")
+    watches = {k: v for k, v in words.items() if k.endswith(" watch")}
+    assert set(watches) == {k.lower() for k in WATCHES}
+    assert all(isinstance(v, str) and v.startswith("угроза ") for v in watches.values()), watches
+
+
+def test_the_route_line_from_the_report():
+    got, misses = _ru("Okay. Route to Reno is set, 2 h 49 min, about 132 miles. Heads up, a Winter Storm Watch near Lassen "
+                      "Volcanic National Park starts Friday 10 am; at this pace you're through there by 11:30 pm.")
+    assert not misses
+    assert got == ("Хорошо. Маршрут до Reno готов, 2 часа 49 минут, около 132 миль. Внимание, угроза зимнего шторма в "
+                   "районе Lassen Volcanic National Park начнётся в пятницу в 10:00; в таком темпе проедешь там к 23:30.")

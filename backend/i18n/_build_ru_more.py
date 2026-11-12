@@ -17,8 +17,11 @@ t("{event} near {area} around {hit} and {n} more weather alerts along the route.
 t("The way via {via} misses it{diff}. Say 'take the other way' if you want it.", "Путь через {via|and} это обходит{diff|tr}. Скажи «давай другим путём», если хочешь.")
 t("The way via {via} misses it{diff}.", "Путь через {via|and} это обходит{diff|tr}.")
 t("The other way misses it{diff}. Say 'take the other way' if you want it.", "Другой путь это обходит{diff|tr}. Скажи «давай другим путём», если хочешь.")
-t("The way via {via} only runs into a {event}{diff}. Say 'take the other way' if you want it.", "На пути через {via|and} только {event|nom}{diff|tr}. Скажи «давай другим путём», если хочешь.")
+t("The way via {via} only runs into a {event}{diff}. Say 'take the other way' if you want it.", "На пути через {via|and} только {event|nom}{diff|part}. Скажи «давай другим путём», если хочешь.")
 t("Say 'take the other way' if you want it.", "Скажи «давай другим путём», если хочешь.")
+# {diff|part} above, not {diff|tr}: an open {diff} took the event's own words and the line never matched (the model
+# translated it, or it stayed English). SAME_TIME had no fragment at all.
+t(" and takes about the same time", " и по времени примерно так же", True)
 t("No truck route around it.", "Объезда для трака нет.")
 t("I don't have another truck route to try.", "Другого маршрута для трака у меня нет.")
 t("No truck route around it; it should clear by {till}.", "Объезда для трака нет; должно закончиться к {till|clock}.")
@@ -243,9 +246,9 @@ W = {
     "snow": "снег", "light snow": "небольшой снег", "chance snow": "возможен снег", "snow showers": "снегопад",
     "fog": "туман", "patchy fog": "местами туман", "areas of fog": "местами туман", "windy": "ветрено",
     "breezy": "ветрено", "no details": "без подробностей", "rain and snow": "дождь со снегом",
-    "high wind warning": "штормовое предупреждение о ветре", "high wind watch": "возможен сильный ветер",
+    "high wind warning": "штормовое предупреждение о ветре", "high wind watch": "угроза сильного ветра",
     "wind advisory": "предупреждение о ветре", "extreme wind warning": "предупреждение об экстремальном ветре",
-    "winter storm warning": "предупреждение о зимнем шторме", "winter storm watch": "возможен зимний шторм",
+    "winter storm warning": "предупреждение о зимнем шторме", "winter storm watch": "угроза зимнего шторма",
     "winter weather advisory": "предупреждение о зимней погоде", "blizzard warning": "предупреждение о метели",
     "ice storm warning": "предупреждение о гололёде", "snow squall warning": "предупреждение о снежном шквале",
     "freezing rain advisory": "предупреждение о ледяном дожде", "freezing fog advisory": "предупреждение о ледяном тумане",
@@ -254,8 +257,8 @@ W = {
     "flash flood warning": "предупреждение о внезапном наводнении", "flood warning": "предупреждение о наводнении",
     "extreme cold warning": "предупреждение о сильном морозе", "tornado warning": "предупреждение о торнадо",
     "severe thunderstorm warning": "предупреждение о сильной грозе", "hurricane warning": "предупреждение об урагане",
-    "hurricane watch": "возможен ураган", "tropical storm warning": "предупреждение о тропическом шторме",
-    "tropical storm watch": "возможен тропический шторм", "storm surge warning": "предупреждение о штормовом нагоне",
+    "hurricane watch": "угроза урагана", "tropical storm warning": "предупреждение о тропическом шторме",
+    "tropical storm watch": "угроза тропического шторма", "storm surge warning": "предупреждение о штормовом нагоне",
     "hurricane force wind warning": "предупреждение об ураганном ветре", "avalanche warning": "предупреждение о лавинах",
     "dense smoke advisory": "предупреждение о густом дыме",
 }
@@ -371,15 +374,18 @@ for en, ru in [("No chain controls are in effect at this time.", "Сейчас �
     t(en, ru)
 
 # --- NWS events outside services/weather.EVENTS: a route can carry them (S10) ---
+# A "... Watch" is a noun like the rest ("угроза зимнего шторма"), never a clause ("возможен зимний шторм"): every
+# template puts the event where a noun goes, and the clause gave "Внимание, возможен зимний шторм в районе Lassen
+# начнётся в пятницу" (QA 2026-11-11).
 W.update({
     "winter storm warning": "предупреждение о зимнем шторме", "frost advisory": "предупреждение о заморозках",
-    "freeze warning": "предупреждение о морозе", "freeze watch": "возможны заморозки", "hard freeze warning": "предупреждение о сильном морозе",
+    "freeze warning": "предупреждение о морозе", "freeze watch": "угроза заморозков", "hard freeze warning": "предупреждение о сильном морозе",
     "heat advisory": "предупреждение о жаре", "excessive heat warning": "предупреждение о сильной жаре",
     "extreme heat warning": "предупреждение о сильной жаре", "red flag warning": "пожароопасная погода",
-    "fire weather watch": "возможна пожароопасная погода", "lake effect snow warning": "предупреждение о сильном снегопаде",
+    "fire weather watch": "угроза пожароопасной погоды", "lake effect snow warning": "предупреждение о сильном снегопаде",
     "wind chill warning": "предупреждение о ледяном ветре", "wind chill advisory": "предупреждение о холодном ветре",
-    "cold weather advisory": "предупреждение о холоде", "extreme cold watch": "возможен сильный мороз",
-    "flood advisory": "предупреждение о подтоплении", "flood watch": "возможно наводнение", "flash flood watch": "возможно внезапное наводнение",
-    "severe thunderstorm watch": "возможна сильная гроза", "tornado watch": "возможен торнадо", "avalanche watch": "возможны лавины",
+    "cold weather advisory": "предупреждение о холоде", "extreme cold watch": "угроза сильного мороза",
+    "flood advisory": "предупреждение о подтоплении", "flood watch": "угроза наводнения", "flash flood watch": "угроза внезапного наводнения",
+    "severe thunderstorm watch": "угроза сильной грозы", "tornado watch": "угроза торнадо", "avalanche watch": "угроза лавин",
     "special weather statement": "особое сообщение о погоде", "air quality alert": "плохое качество воздуха",
 })
