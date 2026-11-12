@@ -17,8 +17,10 @@ export interface paths {
          *     true when Apple accepted the call, false when Apple could not be reached or refused, null when there was no
          *     token or no key to revoke with); the deletion goes on either way.
          *
-         *     The data goes first and the account row last, in one transaction with the sessions, so a deletion that failed
-         *     halfway (503) is repeated with the same token; the stored Apple token is still there for the retry.
+         *     Every row goes in one transaction (services/accounts.py erase), the account row last, so a deletion that failed
+         *     (503) left everything as it was and is repeated with the same token; the stored Apple token is still there for
+         *     the retry. Before it only what cannot be in a transaction: waiting for the saves and the Apple exchange in flight,
+         *     the revoke, and stopping this worker's research for the driver.
          *
          *     409 for the only owner of a fleet that still has drivers, other phones or a stored key (nobody could manage it
          *     afterwards). A fleet with nobody else in it goes with its owner.
@@ -231,8 +233,9 @@ export interface paths {
         put?: never;
         /**
          * Auth Renew
-         * @description A fresh access token and refresh token for the device behind the Bearer token (valid, or expired inside the
-         *     grace window). For app builds that never stored a refresh token: they trade the token they have for both.
+         * @description A fresh access token for the one behind the Bearer token (valid, or a device token expired inside the grace
+         *     window). A device token also gets a new refresh token: app builds that never stored one trade the token they have
+         *     for both. An account session keeps its refresh token and the answer carries none (auth.renew says why).
          */
         post: operations["auth_renew_api_auth_renew_post"];
         delete?: never;
@@ -848,6 +851,21 @@ export interface components {
             /** Code */
             code: string;
         };
+        /** AccountDeleteResponse */
+        AccountDeleteResponse: {
+            /** Apple Revoked */
+            apple_revoked: boolean | null;
+            /** Deleted */
+            deleted: number;
+            /** Ok */
+            ok: boolean;
+            /** Profile */
+            profile: boolean;
+            /** Sessions */
+            sessions: number;
+            /** Trip Events */
+            trip_events: number;
+        };
         /** AgentRequest */
         AgentRequest: {
             /** Active Distance Mi */
@@ -1120,6 +1138,13 @@ export interface components {
             /** Platform */
             platform?: ("ios" | "android") | null;
         };
+        /** HistoryClearResponse */
+        HistoryClearResponse: {
+            /** Deleted */
+            deleted: number;
+            /** Facts */
+            facts: boolean;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1143,6 +1168,13 @@ export interface components {
             index: number;
             /** Type */
             type: string;
+        };
+        /** LogoutAllResponse */
+        LogoutAllResponse: {
+            /** Closed */
+            closed: number;
+            /** Ok */
+            ok: boolean;
         };
         /** Maneuver */
         Maneuver: {
@@ -1480,6 +1512,19 @@ export interface components {
         RefreshRequest: {
             /** Refresh Token */
             refresh_token: string;
+        };
+        /**
+         * Refusal
+         * @description A refusal the app tells apart by `code` (and localises); `detail` is the English text older builds show.
+         */
+        Refusal: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "last_owner" | "not_an_account";
+            /** Detail */
+            detail: string;
         };
         /**
          * RerouteRequest
@@ -1823,7 +1868,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AccountDeleteResponse"];
+                };
+            };
+            /** @description the only owner of a fleet with people in it, or no account */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refusal"];
                 };
             };
         };
@@ -2070,7 +2124,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["LogoutAllResponse"];
                 };
             };
         };
@@ -2552,7 +2606,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["HistoryClearResponse"];
                 };
             };
         };
