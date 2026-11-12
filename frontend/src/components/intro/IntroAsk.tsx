@@ -43,14 +43,17 @@ export function IntroAsk() {
         </View>
         <View style={styles.flex}>
           <Text style={[styles.place, { color: colors.onSurface }]}>Roady’s Truck Stop</Text>
-          {/* Two pieces in a row that wraps: when they do not fit (a large system font), the verdict goes to its own
-              line whole instead of breaking in the middle. The green is a dot: as text it is 2:1 on this card. */}
-          <View style={styles.meta}>
+          {/* One row: the distance at its own width, the dot, and the verdict in ALL the room that is left, where
+              it wraps under its own start if it has to (a large system font). The verdict must not be a box of
+              exactly its text's width: a box like that, rounded to the pixel grid, came out a hair too narrow for
+              "с парковкой порядок", the last word went to a second line and the one-line-high box did not show
+              it (second emulator pass on #169). The green is a dot: as text it is 2:1 on this card. */}
+          <View testID="intro-ask-meta" style={styles.meta}>
             <Text style={[styles.metaText, { color: colors.onSurfaceSecondary }]}>4 miles</Text>
-            <View style={styles.verdict}>
-              <View testID="intro-ask-dot" importantForAccessibility="no" style={[styles.dot, { backgroundColor: colors.success }]} />
-              <Text style={[styles.metaText, styles.good, { color: colors.onSurface }]}>parking looks good</Text>
-            </View>
+            <View testID="intro-ask-dot" importantForAccessibility="no" style={[styles.dot, { backgroundColor: colors.success }]} />
+            <Text testID="intro-ask-verdict" style={[styles.metaText, styles.good, { color: colors.onSurface }]}>
+              parking looks good
+            </Text>
           </View>
         </View>
       </View>
@@ -75,10 +78,10 @@ const styles = StyleSheet.create({
   pin: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
   flex: { flex: 1 },
   place: { fontFamily: fonts.bold, fontSize: 20 },
-  meta: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: spacing.md },
+  meta: { flexDirection: "row", alignItems: "flex-start" },
   metaText: { fontFamily: fonts.semibold, fontSize: 16, lineHeight: 22 },
-  verdict: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexShrink: 1 },
-  dot: { width: 10, height: 10, borderRadius: 5 },
-  good: { fontFamily: fonts.bold, flexShrink: 1 },
+  // Centred on the first line of the text next to it (lineHeight 22), also when that text takes two lines.
+  dot: { width: 10, height: 10, borderRadius: 5, marginTop: 6, marginLeft: spacing.md, marginRight: spacing.sm },
+  good: { fontFamily: fonts.bold, flex: 1, minWidth: 0 },
   title: { marginTop: spacing.xl },
 });
