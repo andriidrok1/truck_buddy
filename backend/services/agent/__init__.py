@@ -198,6 +198,13 @@ async def classify(text: str, context: str, truck: TruckProfile) -> dict:
 _past_tasks: dict[str, asyncio.Task] = {}
 
 
+def forget_past(prefix: str) -> None:
+    """Drops the memory reads still in flight for the dialogs whose id starts with `prefix` (a driver's, after
+    their memory was cleared): the next turn must not adopt what was read before the clear."""
+    for sid in [s for s in _past_tasks if s.startswith(prefix)]:
+        _past_tasks.pop(sid).cancel()
+
+
 class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
     source = MODEL[1]
 

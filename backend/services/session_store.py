@@ -37,6 +37,15 @@ SWEEP_EVERY_S = 600
 _current: "contextvars.ContextVar[Optional[tuple[str, DialogState]]]" = contextvars.ContextVar("dialog_state", default=None)
 
 
+LIKE_ESCAPE = "\\"  # goes with like_prefix: ... LIKE ? ESCAPE '\'
+
+
+def like_prefix(prefix: str) -> str:
+    """A LIKE pattern for "starts with `prefix`". LIKE reads `_` and `%` as wildcards, and every driver id has one
+    ("drv_..."): unescaped, one driver's delete could take the dialogs of an id that differs only at that position."""
+    return prefix.replace(LIKE_ESCAPE, LIKE_ESCAPE * 2).replace("%", LIKE_ESCAPE + "%").replace("_", LIKE_ESCAPE + "_") + "%"
+
+
 class SessionStore(Protocol):
     async def load(self, sid: str) -> DialogState: ...
     async def save(self, sid: str, state: DialogState) -> None: ...
@@ -143,14 +152,12 @@ class DbSessionStore:
             logger.info("dialog session sweep skipped: %s", e)
 
     async def drop_prefix(self, prefix: str) -> int:
-        # LIKE reads `_` and `%` in the prefix as wildcards, and every driver id has one ("drv_..."): unescaped, one
-        # driver's delete could take the dialogs of an id that differs only at that position.
-        like = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        like = like_prefix(prefix)
         if db.store() == "sqlite":
             return await db._sq_run(lambda con: con.execute(
-                "DELETE FROM dialog_sessions WHERE session_id LIKE ? ESCAPE '\\'", (like,)).rowcount)
+                f"DELETE FROM dialog_sessions WHERE session_id LIKE ? ESCAPE '{LIKE_ESCAPE}'", (like,)).rowcount)
         pool = await db._db()
-        status = await pool.execute("DELETE FROM dialog_sessions WHERE session_id LIKE $1 ESCAPE '\\'", like)
+        status = await pool.execute(f"DELETE FROM dialog_sessions WHERE session_id LIKE $1 ESCAPE '{LIKE_ESCAPE}'", like)
         return int(status.split()[-1])
 
 
@@ -177,10 +184,15 @@ def dialog_key(driver: str, app_id: Optional[str]) -> str:
     if not sid:
         return f"{driver}:{app_id}"[:KEY_MAX]
     head = f"{driver}:{sid.rsplit('_', 1)[-1][:8]}:"
-    room = max(KEY_MAX - len(head), 16)
-    if len(app_id) > room:
-        app_id = hashlib.sha256(app_id.encode()).hexdigest()[:room]
-    return head + app_id
+    key = head + app_id
+    if len(key) <= KEY_MAX:
+        return key
+    room = KEY_MAX - len(head)
+    if room >= 16:
+        return head + hashlib.sha256(app_id.encode()).hexdigest()[:room]
+    # A sub far longer than the ones this server makes: the bound still holds, and the key is still one per
+    # (sub, session, id).
+    return key[:KEY_MAX - 32] + hashlib.sha256(key.encode()).hexdigest()[:32]
 
 
 def kind() -> str:
@@ -224,11 +236,15 @@ def current_or_memory(sid: Optional[str]) -> DialogState:
     return _memory.get_sync(sid)
 
 
-async def drop_prefix(prefix: str) -> int:
+async def drop_prefix(prefix: str, strict: bool = False) -> int:
+    """Forgets the dialogs whose id starts with `prefix`, in this process and in the store. A store that fails is
+    logged and skipped, or raised with `strict` (deleting an account must not answer "done" over a dialog left)."""
     n = await _memory.drop_prefix(prefix)
     if kind() == "db":
         try:
             n += await asyncio.wait_for(_db_store.drop_prefix(prefix), 5)
         except Exception as e:  # noqa: BLE001
             logger.warning("dialog sessions drop failed: %s", e)
+            if strict:
+                raise
     return n

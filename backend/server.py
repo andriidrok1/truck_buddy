@@ -198,6 +198,7 @@ async def nudges_endpoint(req: NudgeRequest, request: Request, driver: str = Dep
     req.session_id = session_store.dialog_key(driver, req.session_id)
     store = session_store.get_store()
     state = await store.load(req.session_id)
+    state["driver"] = driver  # as a turn does: a dialog a poll started is found by its driver too
     token = session_store.enter(req.session_id, state)
     try:
         out = await nudges.compute(req, state, req.motive_key)

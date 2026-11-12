@@ -386,7 +386,11 @@ async def _run(d: dict, req: AgentRequest, sess: dict, source: str) -> AgentResp
 
 def _persist(rid: str, driver: Optional[str], session_id: Optional[str], sess, task: "asyncio.Task[AgentResponse]") -> None:
     """The finished research into the jobs table (any worker can answer GET /breakdown/{rid}) and the dialog
-    state it changed (providers, places) back into the session store: the turn that started it saved before."""
+    state it changed (providers, places) back into the session store: the turn that started it saved before.
+    Nothing is written for a research that was cancelled (forget: its driver's account is being deleted)."""
+    if task.cancelled():
+        return
+
     async def _go():
         try:
             res = task.result()
@@ -425,6 +429,16 @@ def start_research(d: dict, req: AgentRequest, sess: dict, text: str, source: st
     sess.pop("breakdown_pending", None)
     return AgentResponse(status="researching", transcript=text, reply=START, research_id=rid,
                          breakdown_kind=d["kind"], breakdown_mode=resolve_mode(d), source=source)
+
+
+def forget(driver: str) -> None:
+    """Stops and drops this worker's research jobs of a driver whose account is being deleted: a research that
+    finished later would write its result (shops near the driver) into the jobs table after the deletion."""
+    for rid in [rid for rid, owner in _OWNERS.items() if owner == driver]:
+        _OWNERS.pop(rid, None)
+        task = _JOBS.pop(rid, None)
+        if task is not None:
+            task.cancel()
 
 
 TOO_LONG = "Sorry, the search took too long. Want me to try again?"
