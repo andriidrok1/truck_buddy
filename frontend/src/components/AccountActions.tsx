@@ -53,6 +53,7 @@ const SHEETS: Record<Sheet, { testID: string; title: string; message: string; co
 };
 
 const DELETE_FAILED = "Couldn't delete your account. Nothing was removed. Try again.";
+const DELETE_UNCONFIRMED = "We couldn't confirm. Check your connection and try again.";
 const EVERYWHERE_FAILED = "Couldn't reach the server. You're still signed in everywhere. Try again.";
 
 export function AccountActions({ router }: { router: Nav }) {
@@ -73,7 +74,7 @@ export function AccountActions({ router }: { router: Nav }) {
         if (!(await signOutEverywhere())) setError(EVERYWHERE_FAILED);
       } else {
         const out = await deleteAccount(router);
-        if (!out.ok) setError(out.reason === "refused" ? out.detail : DELETE_FAILED);
+        if (!out.ok) setError(out.reason === "refused" ? out.detail : out.reason === "unconfirmed" ? DELETE_UNCONFIRMED : DELETE_FAILED);
       }
     } finally {
       setBusy(null); // on success the screen is already gone; harmless then

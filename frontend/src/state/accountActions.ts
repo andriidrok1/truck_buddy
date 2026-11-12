@@ -2,7 +2,7 @@
 // out of every phone, delete the account. An access-code sign-in keeps its own "Sign out" and "Delete my data"
 // (src/state/firstLaunch.ts); none of these is offered to it.
 
-import { api, ApiError, logout, type AccountDeleted } from "../api";
+import { accountStillThere, api, ApiError, logout, type AccountDeleted } from "../api";
 import { getToken, signedInWithAccount } from "../auth";
 import { after401 } from "../net/tokenRenewal";
 import { serverThenReset, signedOutReset, type Nav } from "./firstLaunch";
@@ -43,18 +43,42 @@ export type DeleteOutcome =
   | { ok: true; appleRevoked: boolean | null }
   /** 409: the server will not delete this account (the only owner of a fleet that still has drivers). */
   | { ok: false; reason: "refused"; detail: string }
-  /** 503, a timeout, no connection: nothing was removed, and the server takes the same request again. */
-  | { ok: false; reason: "failed" };
+  /** 503, or no answer and the check said the account is still there: nothing was removed, and the server takes
+   *  the same request again. */
+  | { ok: false; reason: "failed" }
+  /** No answer, and the check got none either: nothing on the phone was touched, the server state is unknown. */
+  | { ok: false; reason: "unconfirmed" };
+
+/** No answer to the DELETE: the server may have finished all the same (a timeout, a dead zone, the edge's 502/504).
+ *  A 503 is the backend saying it did not. */
+const noAnswer = (e: unknown) => !(e instanceof ApiError) || e.status === 502 || e.status === 504;
+
+class Unconfirmed extends Error {}
 
 /**
  * "Delete account and data": DELETE /api/account with every other request held (serverThenReset), then the phone
- * back to a fresh install (the language screen). On a 409 or any failure nothing on the phone changes. A 401 (the
+ * back to a fresh install (the language screen). On a 409 or any failure nothing on the phone changes. When the
+ * DELETE gets no answer, GET /api/auth/check with the same token tells a deletion that went through (401 "no longer
+ * registered": the phone resets as on a 200) from one that did not (200) and from no answer at all. A 401 (the
  * access token expired while the screen was open) is renewed outside the hold and the delete is sent once more.
  */
 export async function deleteAccount(router: Nav, call: () => Promise<AccountDeleted> = api.deleteAccount): Promise<DeleteOutcome> {
   for (let attempt = 0; ; attempt++) {
     const sent = getToken();
-    const r = await serverThenReset(router, call);
+    // With no answer, one cheap authenticated call says what happened, still under the hold, so no other request
+    // gets the 401 first and signs the phone out with "You were signed out" instead of the fresh-install reset.
+    // The DELETE's header is read in the same tick as this function is called (serverThenReset relies on it).
+    const checked = async (): Promise<AccountDeleted> => {
+      try {
+        return await call();
+      } catch (e) {
+        if (!sent || !noAnswer(e)) throw e;
+        const state = await accountStillThere(sent);
+        if (state === "gone") return { ok: true, apple_revoked: null }; // what Apple said is not known here
+        throw state === "alive" ? e : new Unconfirmed();
+      }
+    };
+    const r = await serverThenReset(router, checked);
     if (r.ok) {
       const appleRevoked = r.value?.apple_revoked ?? null;
       // Apple's settings keep listing the app until the driver removes it there; nothing to show on a fresh phone.
@@ -62,6 +86,7 @@ export async function deleteAccount(router: Nav, call: () => Promise<AccountDele
       return { ok: true, appleRevoked };
     }
     const e = r.error;
+    if (e instanceof Unconfirmed) return { ok: false, reason: "unconfirmed" };
     if (e instanceof ApiError && e.status === 409) return { ok: false, reason: "refused", detail: e.detail ?? REFUSED };
     // Our 401 carries a detail; a proxy's does not and says nothing about the token.
     if (e instanceof ApiError && e.status === 401 && e.detail !== null && attempt === 0 && sent && (await after401(sent))) continue;

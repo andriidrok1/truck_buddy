@@ -219,6 +219,17 @@ describe("AccountActions, an account", () => {
     await press("delete-account-final-confirm");
     expect(screen.getByTestId("account-error")).toHaveTextContent("Couldn't delete your account. Nothing was removed. Try again.");
   });
+
+  test("no answer and no confirmation: we couldn't confirm", async () => {
+    await open();
+    mocks.del.mockResolvedValue({ ok: false, reason: "unconfirmed" });
+    await press("account-delete");
+    later();
+    await press("delete-account-sheet-confirm");
+    later();
+    await press("delete-account-final-confirm");
+    expect(screen.getByTestId("account-error")).toHaveTextContent("We couldn't confirm. Check your connection and try again.");
+  });
 });
 
 describe("AccountActions, an access code", () => {

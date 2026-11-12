@@ -179,6 +179,64 @@ describe("Delete account and data", () => {
     await stillMike();
   });
 
+  describe("no answer to the DELETE: GET /api/auth/check with the same token says what happened", () => {
+    test("401 no longer registered: the deletion went through, the phone resets as on a 200", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = "offline";
+      answers[key("GET", "/auth/check")] = reply(401, { detail: "This device is no longer registered" });
+      const r = router();
+      expect(await deleteAccount(r)).toEqual({ ok: true, appleRevoked: null });
+      expect(calls).toEqual([
+        { path: "/account", method: "DELETE", auth: "Bearer ACC" },
+        { path: "/auth/check", method: "GET", auth: "Bearer ACC" },
+      ]);
+      expect(r.dismissAll).toHaveBeenCalled();
+      expect(getToken()).toBeNull();
+      expect(useLangStore.getState().chosen).toBe(false);
+      expect(calls.map((c) => c.path)).not.toContain("/auth/refresh"); // no renewal, no "You were signed out"
+    });
+
+    test("200: the account is still there, nothing was removed", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = reply(504, "gateway timeout");
+      answers[key("GET", "/auth/check")] = reply(200, { ok: true });
+      expect(await deleteAccount(router())).toEqual({ ok: false, reason: "failed" });
+      expect(calls.map((c) => c.path)).toEqual(["/account", "/auth/check"]);
+      await stillMike();
+    });
+
+    test("the check gets no answer either: unconfirmed, everything kept", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = "offline";
+      answers[key("GET", "/auth/check")] = "offline";
+      expect(await deleteAccount(router())).toEqual({ ok: false, reason: "unconfirmed" });
+      await stillMike();
+    });
+
+    test("a 503 is the server's own answer: no check", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = reply(503, { detail: "The account could not be deleted right now. Try again." });
+      expect(await deleteAccount(router())).toEqual({ ok: false, reason: "failed" });
+      expect(calls.map((c) => c.path)).toEqual(["/account"]);
+    });
+
+    test("no other request goes out while the check runs", async () => {
+      await signedIn();
+      let answer: (r: Response) => void = () => {};
+      answers[key("DELETE", "/account")] = "offline";
+      answers[key("GET", "/auth/check")] = new Promise<Response>((res) => (answer = res));
+      const deleting = deleteAccount(router());
+      await new Promise((r) => setTimeout(r, 0));
+      const other = api.memory().catch(() => null);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(calls.map((c) => c.path)).toEqual(["/account", "/auth/check"]);
+      answer(reply(401, { detail: "This device is no longer registered" }));
+      expect((await deleting).ok).toBe(true);
+      await other;
+      expect(calls[2]).toEqual({ path: "/memory", method: "GET", auth: undefined });
+    });
+  });
+
   test("while the DELETE is on the wire no other request goes out; on failure they go with the same token", async () => {
     await signedIn();
     let answer: (r: Response) => void = () => {};

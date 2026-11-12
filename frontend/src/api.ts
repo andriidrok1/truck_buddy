@@ -321,6 +321,27 @@ async function deleteAccount(): Promise<AccountDeleted> {
   }
 }
 
+/**
+ * After a DELETE /api/account that got no answer: is `token` still good? GET /api/auth/check with that token, set
+ * by hand because the caller holds every other request (authHeader() leaves the token out meanwhile) and because a
+ * 401 here must not start a renewal. "gone": our 401 "no longer registered" (the deletion went through); "alive": a
+ * 200; "unknown": anything else (offline, a timeout, a 5xx, a 429, a page that is not ours).
+ */
+export async function accountStillThere(token: string): Promise<"alive" | "gone" | "unknown"> {
+  const d = deadline(10000);
+  try {
+    const res = await fetchTracked(`${BASE}/auth/check`, { signal: d.signal, headers: { Authorization: `Bearer ${token}`, "X-Lang": "en" } });
+    if (res.ok) return "alive";
+    if (res.status !== 401) return "unknown";
+    const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
+    return typeof body?.detail === "string" && /no longer registered/i.test(body.detail) ? "gone" : "unknown";
+  } catch {
+    return "unknown";
+  } finally {
+    d.done();
+  }
+}
+
 /** Open sign-up: a device token without a code. Not part of the launch flow since sign-in became required
  *  (src/components/SignInGate.tsx), and a "device" identity is now treated as signed out (firstLaunch.ts
  *  countsAsSignedIn). Kept for the fallback in the plan (an anonymous "Not now"), which would have to lift that rule. */
