@@ -1455,6 +1455,50 @@ def test_an_exchange_that_lands_after_the_deletion_revokes_its_token(client, app
     _no_secrets_in(caplog, form["client_secret"])
 
 
+LATE = "r.apple-refresh-token-stored-late"
+
+
+@pytest.mark.parametrize("before", ["none", "another", "the_same"])
+def test_a_token_stored_between_the_revoke_and_the_deletion_is_revoked_too(client, apple_api, monkeypatch, caplog, before):
+    """apple.settled timed out and the exchange stored its token after the deletion read the account (and revoked
+    what it saw), but before the account row went. The deletion reads the row again under its lock and revokes what
+    is there once it has committed, unless that is the token it already revoked."""
+    who = _person()
+    a = _signed_in_with_token(client, who) if before != "none" else _apple(client, who).json()
+    sub = _claims(a["access_token"])["sub"]
+    late = sec.encrypt(json.dumps({"token": LATE, "client_id": BUNDLE})) if before != "the_same" else None
+    real = accounts.erase_account
+
+    async def exchange_lands_first(s):
+        if late:
+            assert await accounts.apple_refresh_set(s, late)
+        return await real(s)
+    monkeypatch.setattr(accounts, "erase_account", exchange_lands_first)
+    r = client.delete("/api/account", headers=_h(a))
+    assert r.status_code == 200 and r.json()["apple_revoked"] is True, r.text
+    want = {"none": [LATE], "another": [REFRESH, LATE], "the_same": [REFRESH]}[before]
+    assert [f["token"] for f in apple_api.revocations] == want
+    assert all(f["client_id"] == BUNDLE for f in apple_api.revocations)
+    _nothing_left(client, sub)
+    _no_secrets_in(caplog, LATE)
+
+
+def test_a_late_token_whose_revoke_fails_reports_false(client, apple_api, monkeypatch):
+    a = _signed_in_with_token(client, _person())
+    late = sec.encrypt(json.dumps({"token": LATE, "client_id": BUNDLE}))
+    real = accounts.erase_account
+
+    async def exchange_lands_first(s):
+        await accounts.apple_refresh_set(s, late)
+        return await real(s)
+    monkeypatch.setattr(accounts, "erase_account", exchange_lands_first)
+    refused = iter([True, False])
+    apple_api.revoke_reply = lambda request: httpx.Response(200 if next(refused) else 400, request=request, json={"error": "invalid_client"})
+    r = client.delete("/api/account", headers=_h(a))
+    assert r.status_code == 200 and r.json()["apple_revoked"] is False
+    assert len(apple_api.revocations) == 2
+
+
 def test_a_late_token_whose_revoke_fails_is_logged_and_dropped(client, apple_api, caplog):
     release = _held(apple_api, lambda request: httpx.Response(200, request=request, json={"refresh_token": REFRESH}))
     apple_api.revoke_reply = _revoke_refused

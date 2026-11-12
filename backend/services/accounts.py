@@ -180,6 +180,9 @@ def _count(rows: list[tuple]) -> int:
 
 def _erase_script(sub: str):
     yield (ACCOUNT_LOCK, (sub,))
+    # Read under the lock: an Apple token stored after the caller revoked the one it saw is in this row now, and
+    # one stored later finds no row (services/apple.py revokes it then).
+    apple_row = yield ("SELECT apple_refresh_enc FROM accounts WHERE sub = ?", (sub,))
     driver_id, org_id, close_fleet = yield from _device_script(sub)
     sids = [r[0] for r in (yield ("SELECT id FROM account_sessions WHERE sub = ?", (sub,)))]
     # What the answer reports, in the shape of DELETE /api/memory's: turns, trip events, an own stored profile.
@@ -188,23 +191,31 @@ def _erase_script(sub: str):
               "profile": bool(driver_id) and bool((yield ("SELECT 1 FROM drivers WHERE id = ? AND profile IS NOT NULL", (driver_id,))))}
     for step in _erase_steps(sub, driver_id, org_id, close_fleet):
         yield step
-    return driver_id, sids, counts
+    return driver_id, sids, counts, (apple_row[0][0] if apple_row else None)
 
 
 async def erase(sub: str) -> dict:
+    """erase_account without the Apple token."""
+    return (await erase_account(sub))[0]
+
+
+async def erase_account(sub: str) -> tuple[dict, Optional[str]]:
     """Deletes the account and every row keyed on its sub, in one transaction: either all of it is gone or the
     account is still whole and the same token can ask again. The check that the account may go (LastOwner) is made
     inside the same transaction, under the fleet's row lock, so a refusal leaves every row as it was and a fleet
     cannot gain a member between the check and the deletes. Returns {deleted, trip_events, profile, sessions}.
 
     The phones' tokens are refused at once on this worker and within SESSION_TTL_S on the others; signing in again
-    with the same Apple or Google identity finds no account and starts a new one, under a new sub."""
-    driver_id, sids, counts = await db.run_script(_erase_script(sub))
+    with the same Apple or Google identity finds no account and starts a new one, under a new sub.
+
+    Also returns the sealed Apple refresh token the account row held when it was deleted (None when there was none):
+    the caller revoked the one it read before, and a token stored since would otherwise go unrevoked."""
+    driver_id, sids, counts, sealed = await db.run_script(_erase_script(sub))
     for sid in sids:
         _sessions.pop(sid, None)
         _touched.pop(sid, None)
     tenancy.forget(sub, driver_id)
-    return {**counts, "sessions": len(sids)}
+    return {**counts, "sessions": len(sids)}, sealed
 
 
 # ---- sessions ------------------------------------------------------------------------------------------------

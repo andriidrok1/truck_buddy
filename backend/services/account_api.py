@@ -346,7 +346,9 @@ async def account_delete(principal: auth.Principal = Depends(auth.require_driver
     """Deletes the signed-in driver's account and everything stored for it; nothing of the driver is left, and every
     phone of the account is signed out. An Apple account's refresh token is revoked at Apple first (`apple_revoked`:
     true when Apple accepted the call, false when Apple could not be reached or refused, null when there was no
-    token or no key to revoke with); the deletion goes on either way.
+    token or no key to revoke with); the deletion goes on either way. A token an exchange stored after that revoke is
+    read by the deletion under the account's lock and revoked once the deletion has committed (`apple_revoked` is
+    false when either revoke failed).
 
     Every row goes in one transaction (services/accounts.py erase), the account row last, so a deletion that failed
     (503) left everything as it was and is repeated with the same token; the stored Apple token is still there for
@@ -361,17 +363,19 @@ async def account_delete(principal: auth.Principal = Depends(auth.require_driver
     if db.store() == "off":
         raise _unavailable()
     driver = principal.sub
-    revoked = None
+    revoked, revoked_sealed = None, None
     try:
         await apple.settled(driver)  # an exchange still running for this account: its token is revoked too
         await accounts.check_may_delete(driver)  # right before the one step that cannot be taken back
         # Saves still on their way would land after the transaction: they go in first and are deleted with the rest.
         await asyncio.wait_for(asyncio.gather(memory.settled(driver), trip_events.settled(driver)), MEMORY_WAIT_S)
         account = await accounts.by_sub(driver)
-        revoked = await apple.revoke(account[1], driver) if account and account[0] == "apple" else None
+        if account and account[0] == "apple":
+            revoked_sealed = account[1]
+            revoked = await apple.revoke(revoked_sealed, driver)
         breakdown.forget(driver)
         agent.forget_past(f"{driver}:")
-        erased = await asyncio.wait_for(accounts.erase(driver), MEMORY_WAIT_S)
+        erased, sealed = await asyncio.wait_for(accounts.erase_account(driver), MEMORY_WAIT_S)
     except accounts.LastOwner:
         # Somebody joined the fleet after the check. Nothing was deleted; only the Apple token may be revoked, and
         # then it is forgotten, so the next sign-in with Apple exchanges a live one instead of keeping a dead one.
@@ -381,6 +385,12 @@ async def account_delete(principal: auth.Principal = Depends(auth.require_driver
     except Exception as e:  # noqa: BLE001
         logger.warning("account deletion failed for %s: %s", driver, e)
         raise HTTPException(status_code=503, detail="The account could not be deleted right now. Try again.")
+    if sealed and sealed != revoked_sealed:
+        # An exchange that outlived apple.settled stored its token between the revoke above and the deletion: the
+        # deletion read it under the account's lock, and nothing else will ever revoke it.
+        late = await apple.revoke(sealed, driver)
+        if late is not None:
+            revoked = late if revoked is None else (revoked and late)
     await session_store.drop_prefix(f"{driver}:")  # this process's copies; the stored dialogs went in the transaction
     return {"ok": True, **erased, "apple_revoked": revoked}
 
