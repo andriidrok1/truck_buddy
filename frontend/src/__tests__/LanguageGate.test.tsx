@@ -69,6 +69,21 @@ describe("LanguageGate", () => {
     expect(await storage.getItem(LANG_KEY, null)).toBeNull();
   });
 
+  test("a Russian phone, the driver taps English: the button reads Continue, not Продолжить (review of #169)", async () => {
+    useLangStore.setState({ lang: "ru" });
+    await render(<LanguageGate />);
+    expect(screen.getByText("Продолжить")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("language-en"));
+    expect(checked("en")).toBe(true);
+    expect(screen.getByText("Continue")).toBeTruthy();
+    expect(screen.queryByText("Продолжить")).toBeNull();
+    expect(screen.getByTestId("language-continue").props.accessibilityLabel).toBe("Continue");
+    expect(useLangStore.getState()).toMatchObject({ lang: "ru", chosen: false });
+    await fireEvent.press(screen.getByTestId("language-ru"));
+    expect(screen.getByText("Продолжить")).toBeTruthy();
+    expect(screen.getByTestId("language-continue").props.accessibilityLabel).toBe("Продолжить");
+  });
+
   test("Continue saves the language picked and lets the app go on", async () => {
     await render(<LanguageGate />);
     await fireEvent.press(screen.getByTestId("language-ru"));

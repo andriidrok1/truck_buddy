@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Image, ScrollView, StyleSheet, View } from "react-native";
+import { Image, ScrollView, StyleSheet, Text as PlainText, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { LANGS, setLang, t, UK_READY, useLang, type Lang } from "../i18n";
@@ -56,14 +56,16 @@ export function LanguageGate() {
                     <Icon name="check" size={20} color={colors.onBrandPrimary} />
                   </View>
                 ) : (
-                  <View style={[styles.check, { borderColor: colors.borderStrong }]} />
+                  <View style={[styles.check, { borderColor: colors.onSurfaceSecondary }]} />
                 )}
               </PressableScale>
             );
           })}
         </View>
       </ScrollView>
-      {/* In the language picked, not the phone's: the store changes only when this is pressed. */}
+      {/* In the language picked, not the phone's: the store changes only when this is pressed. react-native's own
+          Text, because the i18n one would translate the label a second time, into the store's language: on a
+          Russian phone "Continue" for English came out as "Продолжить" (review of #169). */}
       <PressableScale
         testID="language-continue"
         accessibilityRole="button"
@@ -71,7 +73,7 @@ export function LanguageGate() {
         onPress={() => setLang(picked)}
         style={[styles.button, { backgroundColor: colors.brandPrimary }]}
       >
-        <Text style={[styles.buttonText, { color: colors.onBrandPrimary, fontFamily: fontFor(fonts.bold, picked) }]}>{t("Continue", undefined, picked)}</Text>
+        <PlainText style={[styles.buttonText, { color: colors.onBrandPrimary, fontFamily: fontFor(fonts.bold, picked) }]}>{t("Continue", undefined, picked)}</PlainText>
       </PressableScale>
     </View>
   );
