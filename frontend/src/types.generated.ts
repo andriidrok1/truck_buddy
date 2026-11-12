@@ -15,12 +15,15 @@ export interface paths {
          * @description Deletes the signed-in driver's account and everything stored for it; nothing of the driver is left, and every
          *     phone of the account is signed out. An Apple account's refresh token is revoked at Apple first (`apple_revoked`:
          *     true when Apple accepted the call, false when Apple could not be reached or refused, null when there was no
-         *     token or no key to revoke with); the deletion goes on either way.
+         *     token or no key to revoke with); the deletion goes on either way. A token an exchange stored after that revoke is
+         *     read by the deletion under the account's lock and revoked once the deletion has committed (`apple_revoked` is
+         *     false when either revoke failed).
          *
          *     Every row goes in one transaction (services/accounts.py erase), the account row last, so a deletion that failed
          *     (503) left everything as it was and is repeated with the same token; the stored Apple token is still there for
-         *     the retry. Before it only what cannot be in a transaction: waiting for the saves and the Apple exchange in flight,
-         *     the revoke, and stopping this worker's research for the driver.
+         *     the retry. Before it only what cannot be in a transaction and must come first: waiting for the saves and the Apple
+         *     exchange in flight, and the revoke. Stopping this worker's research and memory reads for the driver comes after
+         *     the commit, so a refusal leaves them running.
          *
          *     409 for the only owner of a fleet that still has drivers, other phones or a stored key (nobody could manage it
          *     afterwards). A fleet with nobody else in it goes with its owner.
@@ -131,6 +134,11 @@ export interface paths {
         /**
          * Auth Fleet Code
          * @description Binds this device to the fleet (and truck) the code was made for; answers with a token carrying the org.
+         *
+         *     A device token gets a new pair, as before. An account session keeps its refresh token, as on /auth/renew: the
+         *     answer has a new access token and no refresh_token, and the phone keeps the one it holds (an answer lost on the
+         *     way would otherwise leave the phone with a refresh token the server counts as spent, and its next refresh would
+         *     close the session as stolen).
          */
         post: operations["auth_fleet_code_api_auth_fleet_code_post"];
         delete?: never;
