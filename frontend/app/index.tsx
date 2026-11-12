@@ -630,6 +630,7 @@ export default function MapScreen() {
   // Hardware Back closes the top layer (src/hooks/useHardwareBack.ts).
   useHardwareBack(
     {
+      focused,
       state: { micCard: !!micCard, routesOpen, reply: isReplyCaption(caption), phase },
       cancel: () => {
         turn.cancel();

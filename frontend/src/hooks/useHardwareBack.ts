@@ -8,6 +8,10 @@ import { backAction } from "../utils/backAction";
 const trip = useTripStore.getState;
 
 export type BackLayers = {
+  /** The map screen is the one on top. Under the truck profile, the history or the tester screen the press is
+   *  theirs: this listener stays registered while they are open, and Back on "Your truck" ended the route in
+   *  preview (and did nothing at all while driving) instead of closing the screen (emulator, 2026-11-11). */
+  focused: boolean;
   state: { micCard: boolean; routesOpen: boolean; reply: boolean; phase: Phase };
   cancel: () => void;
   closeOptions: () => void;
@@ -27,6 +31,7 @@ export function useHardwareBack(
   // driving flag are read from the trip store, so the one listener registered on mount never acts on a
   // stale closure.
   const backRefs = useRef<BackLayers>({
+    focused: true,
     state: { micCard: false, routesOpen: false, reply: false, phase: "ready" as Phase },
     cancel: () => {},
     closeOptions: () => {},
@@ -38,7 +43,8 @@ export function useHardwareBack(
   useEffect(() => {
     if (Platform.OS !== "android") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      const { state, cancel, closeOptions, endRoute } = backRefs.current;
+      const { focused, state, cancel, closeOptions, endRoute } = backRefs.current;
+      if (!focused) return false; // another screen is on top: the navigator closes it
       const t = trip();
       switch (backAction({ ...state, hasRoute: !!t.active, driving: t.driving })) {
         case "closeMicCard":
