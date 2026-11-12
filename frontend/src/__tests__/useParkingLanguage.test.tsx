@@ -58,13 +58,57 @@ describe("useParkingLanguage", () => {
     expect(parking).toHaveBeenCalledTimes(1);
   });
 
-  test("no route, a route with no parking on the card, or a breakdown shop: no request", async () => {
+  test("no route, a failed check on the card, or a breakdown shop: no request", async () => {
     await renderHook(() => useParkingLanguage());
     await setLang("en");
-    start({ parking: null });
+    // A check that failed has nothing to translate, and asking again would start a new satellite check.
+    await act(async () => void start({ parking: { verdict: "unclear", label: "Truck parking unclear", reason: "", source: "none" } }));
     await setLang("ru");
-    start({ place: place("shop", "service") });
+    await act(async () => void start({ place: place("shop", "service") }));
     await setLang("en");
+    expect(parking).not.toHaveBeenCalled();
+  });
+
+  test("a switch while the first check is still out: one refresh when that answer lands, and no more", async () => {
+    await act(async () => void start({ parking: null }));
+    await renderHook(() => useParkingLanguage());
+    await setLang("en");
+    expect(parking).not.toHaveBeenCalled(); // nothing on the card yet
+    // The route's own check lands, in the language it was asked in.
+    await act(async () => {
+      useTripStore.getState().setActiveParking("p1", RU);
+      await flush();
+    });
+    expect(parking).toHaveBeenCalledTimes(1);
+    expect(shown()).toBe(EN.label);
+    // The refresh's own answer, or a later update of the card, does not ask again.
+    await act(async () => {
+      useTripStore.getState().setActiveParking("p1", { ...EN, reason: "again" });
+      await flush();
+    });
+    expect(parking).toHaveBeenCalledTimes(1);
+  });
+
+  test("a switch while the first check is out, then another destination: nothing is asked for the new one", async () => {
+    await act(async () => void start({ parking: null }));
+    await renderHook(() => useParkingLanguage());
+    await setLang("en");
+    await act(async () => void start({ place: place("p2"), parking: null }));
+    await act(async () => {
+      useTripStore.getState().setActiveParking("p2", EN);
+      await flush();
+    });
+    expect(parking).not.toHaveBeenCalled();
+  });
+
+  test("the first check failed (no verdict): the awaited refresh asks nothing", async () => {
+    await act(async () => void start({ parking: null }));
+    await renderHook(() => useParkingLanguage());
+    await setLang("en");
+    await act(async () => {
+      useTripStore.getState().setActiveParking("p1", { verdict: "unclear", label: "Truck parking unclear", reason: "", source: "none" });
+      await flush();
+    });
     expect(parking).not.toHaveBeenCalled();
   });
 });
