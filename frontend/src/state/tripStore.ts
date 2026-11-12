@@ -55,6 +55,9 @@ export type TripActions = {
   claimRoute: () => number;
   /** The claimed request failed and nothing landed: re-plans of the route on screen may land again. */
   releaseRoute: (gen: number) => void;
+  /** The driver called the tapped request off (Close, Back) while it was in flight: its answer is dropped when
+   *  it lands instead of replacing the route they kept, and re-plans of that route may land again. */
+  abandonRoute: (gen: number) => void;
   /** Same destination, a new line (reroute, re-plan, copilot's stop change): only when `gen` is still current
    *  and no tap holds it. A re-plan that began after the tap read the tap's own generation, landed first and
    *  moved it on, and the tapped route was dropped as stale. The last tap wins. */
@@ -125,6 +128,9 @@ export const useTripStore = create<TripState & TripActions>()((set, get) => ({
   },
   releaseRoute: (gen) => {
     if (get().claimedGen === gen) set({ claimedGen: null });
+  },
+  abandonRoute: (gen) => {
+    if (get().claimedGen === gen) set({ claimedGen: null, routeGen: gen + 1 });
   },
   applyRoute: (gen, route, stops, parking) => {
     const cur = get();

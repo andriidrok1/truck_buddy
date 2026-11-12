@@ -76,6 +76,20 @@ describe("tripStore", () => {
     expect(s.applyRoute(next, route("stale"))).toBe(false);
   });
 
+  test("a tapped route the driver called off is stale when it lands, and re-plans land again", () => {
+    const s = useTripStore.getState();
+    s.startRoute(active);
+    const gen = s.claimRoute();
+    s.abandonRoute(gen); // Close or Back while "Setting route…" was up
+    expect(useTripStore.getState().routeGen).not.toBe(gen); // the tap's answer no longer passes its own check
+    expect(useTripStore.getState().active?.place.id).toBe(active.place.id);
+    expect(s.applyRoute(useTripStore.getState().routeGen, route("reroute"))).toBe(true);
+    // calling off an old claim does not touch a newer one
+    const next = s.claimRoute();
+    s.abandonRoute(gen);
+    expect(useTripStore.getState().routeGen).toBe(next);
+  });
+
   test("applyRoute takes the entry tip phrased for the new route, and keeps the old one when none came", () => {
     const s = useTripStore.getState();
     s.startRoute({ ...active, parking: { verdict: "likely", label: "x", reason: "x", source: "satellite", entry_tip: "On your right, off El Centro Rd", relative: true } as never });

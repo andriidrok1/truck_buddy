@@ -160,20 +160,26 @@ describe("atRouteEnd", () => {
   const destination = north(0);
 
   test("around the lot of the destination: no reroute", () => {
-    expect(atRouteEnd(north(0), destination, null)).toBe(true);
-    expect(atRouteEnd(north(120), destination, null)).toBe(true); // the far row of the lot
-    expect(atRouteEnd(north(199), destination, null)).toBe(true);
+    expect(atRouteEnd(north(0), [destination])).toBe(true);
+    expect(atRouteEnd(north(120), [destination])).toBe(true); // the far row of the lot
+    expect(atRouteEnd(north(199), [destination])).toBe(true);
   });
 
   test("the line ends at the entrance, away from the place's own pin", () => {
     const entrance = north(350);
-    expect(atRouteEnd(north(300), destination, entrance)).toBe(true);
-    expect(atRouteEnd(north(300), destination, null)).toBe(false);
+    expect(atRouteEnd(north(300), [destination, entrance])).toBe(true);
+    expect(atRouteEnd(north(300), [destination, null])).toBe(false);
   });
 
   test("a truck that drove past the end still gets its way back", () => {
     // projected onto the line it has 0 m left, but it is half a kilometre down the road
-    expect(atRouteEnd(north(500), destination, north(20))).toBe(false);
-    expect(atRouteEnd(north(201), destination, north(0))).toBe(false);
+    expect(atRouteEnd(north(500), [destination, north(20)])).toBe(false);
+    expect(atRouteEnd(north(201), [destination, north(0)])).toBe(false);
+  });
+
+  test("in the lot of a stop on the way: no reroute either", () => {
+    const fuelStop = north(5000);
+    expect(atRouteEnd(north(5100), [destination, null, fuelStop])).toBe(true);
+    expect(atRouteEnd(north(4000), [destination, null, fuelStop])).toBe(false);
   });
 });

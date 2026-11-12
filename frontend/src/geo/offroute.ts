@@ -143,16 +143,17 @@ export function createRerouteGate(minGapMs = 30000) {
   };
 }
 
-/** Closer than this to the destination or to the end of the line, the trip is over as far as rerouting goes. */
+/** Closer than this to the destination, a stop or the end of the line, the truck has arrived as far as rerouting goes. */
 export const ROUTE_END_M = 200;
 
 /**
- * True when the truck is at the destination or at the end of the route line: no off-route reroute from here.
- * A truck looking for a spot in the truck-stop lot moves faster than "parked" and further than 30 m from where
- * the line ends, and was told "Rerouting." with a new plan every 30 s. Straight-line distances on purpose: the
- * remaining distance along the route is also zero for a truck that drove past the end, and that one still
- * needs the way back. `routeEnd` is the last point of the line (the entrance, when the route was led to it).
+ * True when the truck is at one of `places`: the destination, a stop still to make, the last point of the line
+ * (the entrance, when the route was led to it). No off-route reroute from there. A truck looking for a spot in
+ * the truck-stop lot moves faster than "parked" and further than 30 m from the line, and was told "Rerouting."
+ * with a new plan every 30 s; at a fuel stop on the way it is the same lot and the same noise. Straight-line
+ * distances on purpose: the remaining distance along the route is also zero for a truck that drove past the
+ * end, and that one still needs the way back.
  */
-export function atRouteEnd(fix: LatLng, destination: LatLng, routeEnd: LatLng | null, withinM = ROUTE_END_M): boolean {
-  return haversineM(fix, destination) <= withinM || (routeEnd !== null && haversineM(fix, routeEnd) <= withinM);
+export function atRouteEnd(fix: LatLng, places: readonly (LatLng | null | undefined)[], withinM = ROUTE_END_M): boolean {
+  return places.some((p) => !!p && haversineM(fix, p) <= withinM);
 }

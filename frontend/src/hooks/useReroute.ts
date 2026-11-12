@@ -50,14 +50,14 @@ export function useReroute(
    * (/reroute with the handle, section and metres into it), or plan afresh when that fails.
    * One at a time; the new route only lands if the destination is still the same.
    * Not for a tester parked on a fake spot (no trace = nothing moves), not before "Go", and not at the
-   * destination: a truck circling the lot has arrived, a new plan to where it already is helps nobody.
+   * destination or a stop: a truck circling the lot has arrived, a new plan to where it already is helps nobody.
    */
   const rerouteOffRoute = async (g: Guidance) => {
     const cur = trip().active;
     if (!cur || rerouting.current || !trip().driving) return;
     if (loc.sim && !loc.sim.trace) return;
     const end = cur.route.geometry[cur.route.geometry.length - 1];
-    if (atRouteEnd(loc.coords, cur.place, end ? { lat: end[0], lng: end[1] } : null)) {
+    if (atRouteEnd(loc.coords, [cur.place, end ? { lat: end[0], lng: end[1] } : null, ...(cur.stops ?? [])])) {
       // The tracker's 30 s cooldown is dropped: a truck that leaves the lot off the line is picked up at once.
       g.resetOffRoute();
       return;
