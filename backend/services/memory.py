@@ -81,6 +81,12 @@ def add_later(driver: str, turns: list[tuple[str, "str | Callable[[], Awaitable[
     t.add_done_callback(_done)
 
 
+async def settled(driver: str) -> None:
+    """Waits for this driver's saves in flight."""
+    if _pending.get(driver):
+        await asyncio.gather(*list(_pending[driver]), return_exceptions=True)
+
+
 async def recent(driver: str, limit: int) -> list[dict]:
     """Last `limit` turns, oldest first. Waits for this driver's saves in flight, so a read right after a turn sees it."""
     if _pending.get(driver):

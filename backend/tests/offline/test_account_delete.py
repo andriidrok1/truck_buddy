@@ -262,12 +262,13 @@ def test_a_deletion_that_fails_halfway_can_be_repeated_with_the_same_token(clien
     assert r.status_code == 503 and r.json() == {"detail": "The account could not be deleted right now. Try again."}
     for table, column in (("accounts", "sub"), ("account_sessions", "sub"), ("devices", "sub")):
         assert _rows(client, f"SELECT count(*) FROM {table} WHERE {column} = ?", sub) == [(1,)], table
-    assert _rows(client, "SELECT count(*) FROM jobs WHERE driver = ?", sub) == [(1,)]  # deleted inside the transaction: back
-    assert _rows(client, "SELECT count(*) FROM conversation WHERE driver = ?", sub) == [(0,)]  # the wipe before it had run
+    for table in ("jobs", "conversation", "trip_events", "dialog_sessions"):  # all of it was in the transaction
+        assert _rows(client, f"SELECT count(*) FROM {table} WHERE driver = ?", sub) == [(1 if table != "conversation" else 2,)], table
+    assert client.get("/api/me/profile", headers=_h(a)).json()["height_in"] == 162
     assert client.get("/api/auth/check", headers=_h(a)).status_code == 200  # still signed in, so it can ask again
     monkeypatch.setattr(accounts, "_erase_steps", steps)
     r = client.delete("/api/account", headers=_h(a))
-    assert r.status_code == 200 and r.json()["deleted"] == 0 and r.json()["sessions"] == 1
+    assert r.status_code == 200 and r.json()["deleted"] == 2 and r.json()["sessions"] == 1
     assert _holding(client, needles) == {}
 
 
@@ -277,7 +278,7 @@ def test_a_device_token_has_no_account_to_delete(client):
         client.portal.call(memory.add, sub, [("driver", "hi"), ("copilot", "Hello.")])
         r = client.delete("/api/account", headers=_h(token))
         assert r.status_code == 409
-        assert r.json() == {"detail": "This sign-in has no account. Use DELETE /api/memory to delete its data."}
+        assert r.json() == {"detail": "This sign-in has no account. Use DELETE /api/memory to delete its data.", "code": "not_an_account"}
         assert len(client.get("/api/memory", headers=_h(token)).json()["turns"]) == 2  # nothing was touched
         assert client.delete("/api/memory", headers=_h(token)).json() == {"deleted": 2, "trip_events": 0, "profile": False}
 
@@ -765,7 +766,7 @@ def test_a_deletion_waits_for_a_sign_in_that_holds_the_account(client):
     async def race():
         account = await accounts.find_or_create("google", _person(), auth.new_sub())
         await accounts.session_open(account.sub, uuid.uuid4().hex)
-        signing_in = asyncio.create_task(accounts._in_transaction(slow_sign_in(account.sub)))
+        signing_in = asyncio.create_task(db.run_script(slow_sign_in(account.sub)))
         await asyncio.sleep(0.1)
         await accounts.erase(account.sub)  # ... when the deletion starts
         return account.sub, await signing_in
@@ -868,7 +869,7 @@ def test_the_only_owner_of_a_fleet_with_drivers_cannot_delete_the_account(client
     driver = _join(client, fleet, _google(client, _person()).json())
     needles = _fill(client, owner)
     r = client.delete("/api/account", headers=_h(owner))
-    assert r.status_code == 409 and r.json() == {"detail": account_api_last_owner()}
+    assert r.status_code == 409 and r.json() == {"detail": account_api_last_owner(), "code": "last_owner"}
     # refused before anything was wiped
     assert len(client.get("/api/memory", headers=_h(owner)).json()["turns"]) == 2
     assert _rows(client, "SELECT count(*) FROM dialog_sessions WHERE driver = ?", needles["sub"]) == [(1,)]
@@ -910,17 +911,18 @@ def test_one_of_two_owners_and_a_dispatcher_delete_freely(client):
 
 
 def test_a_deletion_that_became_the_last_owners_inside_the_transaction_is_refused(client, monkeypatch):
-    """The check before the wipe passed; by the transaction somebody joined."""
+    """The check before the transaction passed; by the transaction somebody joined."""
     fleet = _fleet(client)
     owner = _join(client, fleet, _google(client, _person()).json(), "owner")
-    sub = _claims(owner["access_token"])["sub"]
 
     async def passed(sub):
         return None
     monkeypatch.setattr(accounts, "check_may_delete", passed)
     _join(client, fleet, client.post("/api/auth/device").json())
+    needles = _fill(client, owner)
+    before = _holding(client, needles)
     assert client.delete("/api/account", headers=_h(owner)).status_code == 409
-    assert _rows(client, "SELECT count(*) FROM accounts WHERE sub = ?", sub) == [(1,)]
+    assert _holding(client, needles) == before  # the refusal came from the transaction: not a row was touched
     assert client.get("/api/auth/check", headers=_h(owner)).status_code == 200
 
 
@@ -940,19 +942,16 @@ def test_a_dialog_without_a_driver_goes_in_the_transaction(client, monkeypatch, 
     assert _rows(client, "SELECT count(*) FROM dialog_sessions WHERE session_id LIKE ?", f"{sub}%") == [(0,)]
 
 
-def test_a_failing_dialog_drop_fails_the_deletion(client, monkeypatch, db_dialogs):
+def test_the_stored_dialogs_go_with_the_transaction_whatever_the_separate_drop_does(client, monkeypatch, db_dialogs):
+    """The dialogs are deleted inside the deletion's transaction; the drop outside it only clears this process's
+    copies, after the commit. A store failing there cannot leave a stored dialog behind a 200."""
     a = _apple(client, _person()).json()
     sub = _claims(a["access_token"])["sub"]
     _nudge(client, monkeypatch, a, "nudge text")
-    real = session_store.DbSessionStore.drop_prefix
 
     async def boom(self, prefix):
         raise RuntimeError("pool timeout")
     monkeypatch.setattr(session_store.DbSessionStore, "drop_prefix", boom)
-    assert client.delete("/api/account", headers=_h(a)).status_code == 503
-    assert _rows(client, "SELECT count(*) FROM accounts WHERE sub = ?", sub) == [(1,)]
-    assert client.delete("/api/memory", headers=_h(a)).status_code == 200  # "Delete my data" logs it and goes on, as before
-    monkeypatch.setattr(session_store.DbSessionStore, "drop_prefix", real)
     assert client.delete("/api/account", headers=_h(a)).status_code == 200
     _nothing_left(client, sub)
 
@@ -1216,3 +1215,303 @@ def test_a_deletion_that_fails_after_the_revoke_keeps_the_token_for_the_retry(cl
     # Apple answers 200 for a token it already revoked: true means Apple accepted the call
     assert r.status_code == 200 and r.json()["apple_revoked"] is True and len(apple_api.revocations) == 2
     _nothing_left(client, sub)
+
+
+# ---- re-review of #171: fleet binds and the owner's deletion meet on the same rows -----------------------------------
+
+def test_a_fleet_code_from_a_deleted_account_on_a_stale_worker_is_refused_and_stays_good(client):
+    """R2: the worker still holds the session and the device copy; the deletion has committed."""
+    a = _apple(client, _person()).json()
+    sub = _claims(a["access_token"])["sub"]
+    code = _fleet_code(client)
+    assert client.get("/api/auth/check", headers=_h(a)).status_code == 200
+    stale = dict(accounts._sessions), dict(tenancy._devices)
+    assert client.delete("/api/account", headers=_h(a)).status_code == 200
+    accounts._sessions.update(stale[0])
+    tenancy._devices.update(stale[1])
+    r = client.post("/api/auth/fleet-code", json={"code": code}, headers=_h(a))
+    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    assert _rows(client, "SELECT used_by FROM fleet_codes WHERE code = ?", code) == [(None,)]
+    _nothing_left(client, sub)
+    newcomer = _google(client, _person()).json()  # the code still binds the driver it was made for
+    assert client.post("/api/auth/fleet-code", json={"code": code}, headers=_h(newcomer)).status_code == 200
+
+
+def test_a_fleet_code_whose_account_is_deleted_halfway_through_the_bind_is_refused(client, monkeypatch):
+    """R3: the deletion commits after the endpoint looked the device up and before the bind writes."""
+    a = _apple(client, _person()).json()
+    sub = _claims(a["access_token"])["sub"]
+    code = _fleet_code(client)
+    real = db.run_script
+
+    async def deleted_first(script):
+        if getattr(script, "__name__", "") == "_bind_script":
+            await accounts.erase(sub)
+        return await real(script)
+    monkeypatch.setattr(db, "run_script", deleted_first)
+    r = client.post("/api/auth/fleet-code", json={"code": code}, headers=_h(a))
+    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    assert _rows(client, "SELECT used_by FROM fleet_codes WHERE code = ?", code) == [(None,)]
+    _nothing_left(client, sub)
+
+
+def test_a_bind_into_a_fleet_its_owner_just_closed_is_refused(client, monkeypatch):
+    """R4: the owner, alone with a truck and an unused code, deletes the account while a phone redeems that code."""
+    fleet = _fleet(client)
+    owner = _join(client, fleet, _google(client, _person()).json(), "owner")
+    code = client.portal.call(tenancy.create_fleet_code, fleet.org, fleet.truck, "driver")
+    d = client.post("/api/auth/device").json()
+    dsub = _claims(d["access_token"])["sub"]
+    real = db.run_script
+
+    async def owner_first(script):
+        if getattr(script, "__name__", "") == "_bind_script":
+            await accounts.erase(_claims(owner["access_token"])["sub"])
+        return await real(script)
+    monkeypatch.setattr(db, "run_script", owner_first)
+    r = client.post("/api/auth/fleet-code", json={"code": code}, headers=_h(d))
+    assert r.status_code == 401 and r.json() == {"detail": "That fleet code isn't right or has expired"}
+    assert _org_rows(client, fleet.org) == {t: 0 for t in ("orgs", "vehicles", "fleet_codes", "org_credentials", "devices", "drivers")}
+    org, vehicle = _rows(client, "SELECT org_id, vehicle_id FROM devices WHERE sub = ?", dsub)[0]
+    assert vehicle is None and _rows(client, "SELECT solo FROM orgs WHERE id = ?", org) == [(1,)]  # still its own org
+
+
+@pytest.mark.parametrize("gone", ["vehicle_id", "org_id"])
+def test_a_bind_checks_the_fleet_and_the_truck_inside_its_transaction(client, gone):
+    """A code that points at a truck or a fleet no longer there binds nobody. The store would not let such a code be
+    made; the test makes one with the foreign keys switched off for one statement."""
+    fleet = _fleet(client)
+    code = client.portal.call(tenancy.create_fleet_code, fleet.org, fleet.truck, "driver")
+    d = client.post("/api/auth/device").json()
+
+    async def dangle():
+        sql = f"UPDATE fleet_codes SET {gone} = ? WHERE code = ?"
+        if db.store() == "sqlite":
+            def _run(con):
+                con.execute("PRAGMA foreign_keys = OFF")
+                try:
+                    con.execute(sql, ("gone_123", code))
+                finally:
+                    con.execute("PRAGMA foreign_keys = ON")
+            await db._sq_run(_run)
+        else:
+            pool = await db._db()
+            async with pool.acquire() as con, con.transaction():
+                await con.execute("SET LOCAL session_replication_role = replica")  # no foreign key triggers
+                await con.execute(db._numbered(sql), "gone_123", code)
+    client.portal.call(dangle)
+    r = client.post("/api/auth/fleet-code", json={"code": code}, headers=_h(d))
+    assert r.status_code == 401 and r.json() == {"detail": "That fleet code isn't right or has expired"}
+    assert _rows(client, "SELECT used_by FROM fleet_codes WHERE code = ?", code) == [(None,)]
+    assert _rows(client, "SELECT vehicle_id FROM devices WHERE sub = ?", _claims(d["access_token"])["sub"]) == [(None,)]
+    _rows(client, "DELETE FROM fleet_codes WHERE code = ?", code)
+
+
+def test_two_phones_with_one_code_bind_one(client):
+    fleet = _fleet(client)
+    code = client.portal.call(tenancy.create_fleet_code, fleet.org, fleet.truck, "driver")
+    phones = [client.post("/api/auth/device").json() for _ in range(4)]
+
+    async def race():
+        subs = [_claims(p["access_token"])["sub"] for p in phones]
+        out = await asyncio.gather(*(tenancy.bind_fleet_code(s, code) for s in subs), return_exceptions=True)
+        return subs, out
+    subs, out = client.portal.call(race)
+    bound = [s for s, o in zip(subs, out) if isinstance(o, tenancy.Device)]
+    assert len(bound) == 1 and all(isinstance(o, tenancy.BadFleetCode) for o in out if not isinstance(o, tenancy.Device))
+    assert _rows(client, "SELECT used_by FROM fleet_codes WHERE code = ?", code) == [(bound[0],)]
+    assert _rows(client, "SELECT count(*) FROM devices WHERE org_id = ?", fleet.org) == [(1,)]
+
+
+def test_a_refused_deletion_has_wiped_nothing(client, monkeypatch, apple_api, db_dialogs):
+    """R5: the check before the deletion passed and somebody joined the fleet before its transaction. The 409 comes
+    from the transaction, which deleted nothing. The Apple token was already revoked: it is forgotten, so the next
+    sign-in with Apple gets a live one."""
+    fleet = _fleet(client)
+    who = _person()
+    owner = _join(client, fleet, _apple(client, who, authorization_code=CODE).json(), "owner")
+    _settle(client)
+    sub = _claims(owner["access_token"])["sub"]
+    needles = _fill(client, owner)
+    before = _holding(client, needles)
+    real = accounts.check_may_delete
+
+    async def passes_then_somebody_joins(s):
+        await real(s)
+        dev = await tenancy.ensure_solo_org(auth.new_sub())
+        await tenancy.bind_fleet_code(dev.sub, await tenancy.create_fleet_code(fleet.org, fleet.truck))
+    monkeypatch.setattr(accounts, "check_may_delete", passes_then_somebody_joins)
+    r = client.delete("/api/account", headers=_h(owner))
+    assert r.status_code == 409 and r.json()["code"] == "last_owner"
+    after = _holding(client, needles)
+    assert {t: n for t, n in after.items() if t != "accounts"} == {t: n for t, n in before.items() if t != "accounts"}
+    assert len(client.get("/api/memory", headers=_h(owner)).json()["turns"]) == 2
+    assert len(apple_api.revocations) == 1 and _sealed(client, sub) is None
+    monkeypatch.setattr(accounts, "check_may_delete", real)
+    _apple(client, who, authorization_code=CODE)
+    _settle(client)
+    assert len(apple_api.exchanges) == 2 and _sealed(client, sub)
+
+
+def test_a_fleet_join_waits_for_its_owners_deletion(client, monkeypatch):
+    """Postgres: the owner's deletion counted nobody else in the fleet and is about to delete it. A bind into the
+    fleet in that moment waits on the fleet's row and then finds the fleet gone; without the lock it would join, and
+    the deletion would trip over the new member."""
+    if client.store != "pg":
+        pytest.skip("SQLite has one writer at a time")
+    fleet = _fleet(client)
+    owner = _join(client, fleet, _google(client, _person()).json(), "owner")
+    osub = _claims(owner["access_token"])["sub"]
+    real = accounts._device_script
+
+    def counted_then_pause(sub):
+        out = yield from real(sub)
+        yield ("SELECT pg_sleep(0.4)", ())
+        return out
+    monkeypatch.setattr(accounts, "_device_script", counted_then_pause)
+
+    async def race():
+        dev = await tenancy.ensure_solo_org(auth.new_sub())
+        code = await tenancy.create_fleet_code(fleet.org, fleet.truck)
+        erasing = asyncio.create_task(accounts.erase(osub))
+        await asyncio.sleep(0.15)
+        try:
+            await tenancy.bind_fleet_code(dev.sub, code)
+            joined = True
+        except tenancy.BadFleetCode:
+            joined = False
+        return dev.sub, joined, await erasing
+    dsub, joined, erased = client.portal.call(race)
+    assert joined is False and erased["sessions"] == 1
+    assert _org_rows(client, fleet.org)["orgs"] == 0
+    assert _rows(client, "SELECT o.solo FROM devices d JOIN orgs o ON o.id = d.org_id WHERE d.sub = ?", dsub) == [(1,)]
+
+
+def test_an_accounts_bind_and_its_deletion_do_not_interleave(client, monkeypatch):
+    """Postgres: the account binds a code while it is being deleted. The bind holds the account row, so the deletion
+    waits and then takes the bind's result with it (the code's used_by becomes 'deleted'). Without that, the
+    deletion passes the codes before the bind commits and the dead sub stays on the code."""
+    if client.store != "pg":
+        pytest.skip("SQLite has one writer at a time")
+    a = _apple(client, _person()).json()
+    sub = _claims(a["access_token"])["sub"]
+    code = _fleet_code(client)
+    real = tenancy._bind_script
+
+    def device_locked_then_pause(sub, code, account, now, at):
+        script = real(sub, code, account, now, at)
+        rows = None
+        while True:
+            try:
+                sql, args = script.send(rows)
+            except StopIteration as done:
+                return done.value
+            rows = yield (sql, args)
+            if sql.startswith("SELECT driver_id, org_id FROM devices"):
+                yield ("SELECT pg_sleep(0.4)", ())
+    monkeypatch.setattr(tenancy, "_bind_script", device_locked_then_pause)
+
+    async def race():
+        binding = asyncio.create_task(tenancy.bind_fleet_code(sub, code, create=False))
+        await asyncio.sleep(0.15)
+        erased = await accounts.erase(sub)
+        try:
+            await binding
+        except tenancy.Unregistered:  # bound, then deleted before the device was read back
+            pass
+        return erased
+    client.portal.call(race)
+    assert _rows(client, "SELECT used_by FROM fleet_codes WHERE code = ?", code) == [(accounts.CODE_USER_GONE,)]
+    _nothing_left(client, sub)
+
+
+def test_sqlite_refuses_a_reference_to_a_row_that_is_not_there(client):
+    if client.store != "sqlite":
+        pytest.skip("Postgres always does")
+    with pytest.raises(Exception, match="FOREIGN KEY"):
+        _rows(client, "INSERT INTO vehicles (id, org_id, label, created_at) VALUES ('veh_x', 'org_nowhere', 'T', '2026-11-12')")
+
+
+# ---- an Apple token that arrives after the account is gone ---------------------------------------------------------
+
+def test_an_exchange_that_lands_after_the_deletion_revokes_its_token(client, apple_api, monkeypatch, caplog):
+    """R9: the deletion waits for the account's exchange only so long (here every slot is taken)."""
+    monkeypatch.setattr(apple, "TIMEOUT_S", 0.2)
+    release = _held(apple_api, lambda request: httpx.Response(200, request=request, json={"refresh_token": REFRESH}))
+    for _ in range(apple.MAX_EXCHANGES):
+        _apple(client, _person(), authorization_code=CODE)
+    a = _apple(client, _person(), authorization_code=CODE).json()
+    sub = _claims(a["access_token"])["sub"]
+    r = client.delete("/api/account", headers=_h(a))
+    assert r.status_code == 200 and r.json()["apple_revoked"] is None and apple_api.revocations == []
+    client.portal.call(release.set)
+    _settle(client)
+    assert len(apple_api.exchanges) == apple.MAX_EXCHANGES + 1
+    assert [f["token"] for f in apple_api.revocations] == [REFRESH]  # the late token, revoked as it arrived
+    form = apple_api.revocations[0]
+    assert form["client_id"] == BUNDLE and form["token_type_hint"] == "refresh_token" and _secret_claims(form["client_secret"])["sub"] == BUNDLE
+    assert f"apple refresh token arrived after account {sub} was deleted: revoked=True" in caplog.text
+    _nothing_left(client, sub)
+    _no_secrets_in(caplog, form["client_secret"])
+
+
+def test_a_late_token_whose_revoke_fails_is_logged_and_dropped(client, apple_api, caplog):
+    release = _held(apple_api, lambda request: httpx.Response(200, request=request, json={"refresh_token": REFRESH}))
+    apple_api.revoke_reply = _revoke_refused
+    a = _apple(client, _person(), authorization_code=CODE).json()
+    sub = _claims(a["access_token"])["sub"]
+    client.portal.call(accounts.erase, sub)  # gone before Apple answered, without waiting
+    client.portal.call(release.set)
+    _settle(client)
+    assert len(apple_api.revocations) == 1
+    assert "apple revoke refused" in caplog.text and f"account {sub} was deleted: revoked=False" in caplog.text
+    _nothing_left(client, sub)
+    _no_secrets_in(caplog)
+
+
+# ---- the answers the app reads ------------------------------------------------------------------------------------
+
+def test_a_deletion_waits_for_the_saves_in_flight(client):
+    """A turn's memory save still on its way when the account goes would land after the transaction."""
+    a = _google(client, _person()).json()
+    sub = _claims(a["access_token"])["sub"]
+    gate = asyncio.Event()
+
+    async def start():
+        async def slow_text():
+            await gate.wait()
+            return "the copilot's line, translated late"
+        memory.add_later(sub, [("driver", "a line still being saved"), ("copilot", slow_text)])
+    client.portal.call(start)
+    t, out = _in_thread(lambda: client.delete("/api/account", headers=_h(a)))
+    t.join(0.4)
+    assert t.is_alive()
+    client.portal.call(gate.set)
+    t.join(10)
+    assert out["r"].status_code == 200 and out["r"].json()["deleted"] == 2
+    client.portal.call(asyncio.sleep, 0.05)
+    _nothing_left(client, sub)
+
+
+def test_the_account_endpoints_publish_their_answers_in_the_schema(client):
+    spec = client.get("/api/openapi.json").json()
+    schemas = spec["components"]["schemas"]
+
+    def ok_schema(path, method):
+        ref = spec["paths"][path][method]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+        return schemas[ref.rsplit("/", 1)[-1]]
+    delete = ok_schema("/api/account", "delete")
+    assert set(delete["properties"]) == {"ok", "deleted", "trip_events", "profile", "sessions", "apple_revoked"}
+    assert set(ok_schema("/api/memory/history", "delete")["properties"]) == {"deleted", "facts"}
+    assert set(ok_schema("/api/auth/logout-all", "post")["properties"]) == {"ok", "closed"}
+    refusal = spec["paths"]["/api/account"]["delete"]["responses"]["409"]["content"]["application/json"]["schema"]["$ref"]
+    refusal = schemas[refusal.rsplit("/", 1)[-1]]
+    assert set(refusal["properties"]) == {"detail", "code"}
+    assert set(refusal["properties"]["code"]["enum"]) == {"last_owner", "not_an_account"}
+
+
+def test_logout_all_answers_its_model(client):
+    a = _apple(client, _person()).json()
+    assert client.post("/api/auth/logout-all", headers=_h(a)).json() == {"ok": True, "closed": 1}
+    d = client.post("/api/auth/device").json()
+    assert client.post("/api/auth/logout-all", headers=_h(d)).json() == {"ok": True, "closed": 0}

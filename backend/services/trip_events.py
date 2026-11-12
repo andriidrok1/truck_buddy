@@ -282,7 +282,8 @@ def add_later(driver: Optional[str], trip_id: Optional[str], kind: str, data: Op
     t.add_done_callback(_done)
 
 
-async def _settled(driver: str) -> None:
+async def settled(driver: str) -> None:
+    """Waits for this driver's events still being written."""
     if _pending.get(driver):
         await asyncio.gather(*list(_pending[driver]), return_exceptions=True)
 
@@ -304,7 +305,7 @@ _COLS = "id, driver, trip_id, at, kind, source, data"
 
 async def for_trip(driver: str, trip_id: str, limit: int = 1000) -> list[dict]:
     """The driver's events of one trip, oldest first; waits for this driver's saves in flight."""
-    await _settled(driver)
+    await settled(driver)
     kind = memory.store()
     if kind == "off":
         raise RuntimeError("memory store is off")
@@ -321,7 +322,7 @@ async def for_trip(driver: str, trip_id: str, limit: int = 1000) -> list[dict]:
 
 async def trips(driver: str, limit: int = 20) -> list[dict]:
     """The driver's trips, newest first: {trip_id, first_at, last_at, n, kinds: {kind: n}}."""
-    await _settled(driver)
+    await settled(driver)
     kind = memory.store()
     if kind == "off":
         raise RuntimeError("memory store is off")
@@ -433,7 +434,7 @@ async def org_latest(org_id: str) -> dict[str, dict]:
 
 
 async def clear(driver: str) -> int:
-    await _settled(driver)
+    await settled(driver)
     kind = memory.store()
     if kind == "off":
         raise RuntimeError("memory store is off")

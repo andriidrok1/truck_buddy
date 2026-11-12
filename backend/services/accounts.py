@@ -79,49 +79,10 @@ async def apple_refresh_set(sub: str, sealed: Optional[str]) -> bool:
 
 # ---- transactions on either engine ---------------------------------------------------------------------------
 
-def _numbered(sql: str) -> str:
-    """`?` placeholders as Postgres's $1, $2, ..."""
-    parts = sql.split("?")
-    return "".join(f"{part}${i}" for i, part in enumerate(parts[:-1], 1)) + parts[-1]
-
-
-async def _in_transaction(script):
-    """Runs a script of statements in one transaction, on SQLite or Postgres, so signing in and deleting are written
-    once. `script` is a generator: it yields (sql with `?` placeholders, args), is handed the rows back (tuples;
-    none for a write) and returns the result. An exception it raises rolls everything back.
-
-    `FOR UPDATE` in a statement is the row lock two scripts meet on in Postgres. SQLite has one writer at a time
-    (BEGIN IMMEDIATE), which is the same guarantee, and does not know the clause."""
-    if db.store() == "sqlite":
-        def _run(con):
-            con.execute("BEGIN IMMEDIATE")
-            try:
-                rows = None
-                while True:
-                    try:
-                        sql, args = script.send(rows)
-                    except StopIteration as done:
-                        con.execute("COMMIT")
-                        return done.value
-                    rows = con.execute(sql.replace(" FOR UPDATE", ""), args).fetchall()
-            except BaseException:
-                con.execute("ROLLBACK")
-                raise
-        return await db._sq_run(_run)
-    pool = await db._db()
-    async with pool.acquire() as con, con.transaction():
-        rows = None
-        while True:
-            try:
-                sql, args = script.send(rows)
-            except StopIteration as done:
-                return done.value
-            rows = [tuple(r) for r in await con.fetch(_numbered(sql), *args)]
-
-
-# Signing in and deleting both start here. Whichever comes second waits for the first and then sees what it did: a
-# sign-in finds the account gone and starts over, a deletion takes the session the sign-in just opened with it.
-ACCOUNT_LOCK = "SELECT 1 FROM accounts WHERE sub = ? FOR UPDATE"
+# Signing in, deleting and an account's fleet bind start here. Whichever comes second waits for the first and then
+# sees what it did: a sign-in finds the account gone and starts over, a deletion takes the session the sign-in just
+# opened with it. A deletion that may close a fleet then takes the fleet's row, which every bind into it takes too.
+ACCOUNT_LOCK, ORG_LOCK = tenancy.ACCOUNT_LOCK, tenancy.ORG_LOCK
 
 
 def _stamp(at: datetime):
@@ -171,14 +132,17 @@ def _device_script(sub: str):
     if not rows:
         return None, None, False
     driver_id, org_id, role = rows[0]
+    if role == "owner":
+        yield (ORG_LOCK, (org_id,))  # nobody joins the fleet between this count and the deletes after it
     facts = yield (ORG_FACTS, (sub, sub, driver_id, org_id))
     return driver_id, org_id, _closes_fleet(role, facts)
 
 
 async def check_may_delete(sub: str) -> None:
-    """LastOwner when deleting this account would be refused (see _closes_fleet). Asked before anything is wiped;
-    the deletion itself asks again inside its transaction."""
-    await _in_transaction(_device_script(sub))
+    """LastOwner when deleting this account would be refused (see _closes_fleet). Asked before the Apple token is
+    revoked, the only step of a deletion outside its transaction; the transaction asks again, and that answer is
+    the one that holds."""
+    await db.run_script(_device_script(sub))
 
 
 def _erase_steps(sub: str, driver_id: Optional[str], org_id: Optional[str], close_fleet: bool = False) -> list[tuple[str, tuple]]:
@@ -208,26 +172,37 @@ def _erase_steps(sub: str, driver_id: Optional[str], org_id: Optional[str], clos
     return steps
 
 
+def _count(rows: list[tuple]) -> int:
+    return int(rows[0][0] or 0) if rows else 0
+
+
 def _erase_script(sub: str):
     yield (ACCOUNT_LOCK, (sub,))
     driver_id, org_id, close_fleet = yield from _device_script(sub)
     sids = [r[0] for r in (yield ("SELECT id FROM account_sessions WHERE sub = ?", (sub,)))]
+    # What the answer reports, in the shape of DELETE /api/memory's: turns, trip events, an own stored profile.
+    counts = {"deleted": _count((yield ("SELECT count(*) FROM conversation WHERE driver = ?", (sub,)))),
+              "trip_events": _count((yield ("SELECT count(*) FROM trip_events WHERE driver = ?", (sub,)))),
+              "profile": bool(driver_id) and bool((yield ("SELECT 1 FROM drivers WHERE id = ? AND profile IS NOT NULL", (driver_id,))))}
     for step in _erase_steps(sub, driver_id, org_id, close_fleet):
         yield step
-    return driver_id, sids
+    return driver_id, sids, counts
 
 
-async def erase(sub: str) -> int:
+async def erase(sub: str) -> dict:
     """Deletes the account and every row keyed on its sub, in one transaction: either all of it is gone or the
-    account is still whole and the same token can ask again. Returns how many phones were signed in. Their tokens
-    are refused at once on this worker and within SESSION_TTL_S on the others; signing in again with the same
-    Apple or Google identity finds no account and starts a new one, under a new sub. LastOwner: nothing changed."""
-    driver_id, sids = await _in_transaction(_erase_script(sub))
+    account is still whole and the same token can ask again. The check that the account may go (LastOwner) is made
+    inside the same transaction, under the fleet's row lock, so a refusal leaves every row as it was and a fleet
+    cannot gain a member between the check and the deletes. Returns {deleted, trip_events, profile, sessions}.
+
+    The phones' tokens are refused at once on this worker and within SESSION_TTL_S on the others; signing in again
+    with the same Apple or Google identity finds no account and starts a new one, under a new sub."""
+    driver_id, sids, counts = await db.run_script(_erase_script(sub))
     for sid in sids:
         _sessions.pop(sid, None)
         _touched.pop(sid, None)
     tenancy.forget(sub, driver_id)
-    return len(sids)
+    return {**counts, "sessions": len(sids)}
 
 
 # ---- sessions ------------------------------------------------------------------------------------------------
@@ -287,7 +262,7 @@ async def session_open(sub: str, refresh_hash: str, platform: Optional[str] = No
     account is gone. This is the only place an account's sub gets its tenancy rows, so nothing can make them for
     an account that was deleted."""
     sid = new_id("ses")
-    first = await _in_transaction(_sign_in_script(sub, sid, refresh_hash, platform, _stamp(_now())))
+    first = await db.run_script(_sign_in_script(sub, sid, refresh_hash, platform, _stamp(_now())))
     return None if first is None else (sid, first)
 
 
@@ -353,6 +328,15 @@ async def session_alive(sid: str, sub: str) -> bool:
             _sessions.clear()
         hit = _sessions[sid] = (owner, time.monotonic())
     return hit[0] == sub
+
+
+async def session_exists(sid: str, sub: str) -> bool:
+    """session_alive without the cache: what the store says now."""
+    sql = "SELECT 1 FROM account_sessions WHERE id = {p1} AND sub = {p2}"
+    if db.store() == "sqlite":
+        return bool(await db._sq_run(lambda con: con.execute(sql.format(p1="?", p2="?"), (sid, sub)).fetchone()))
+    pool = await db._db()
+    return bool(await pool.fetchval(sql.format(p1="$1", p2="$2"), sid, sub))
 
 
 async def session_touch(sid: str) -> None:

@@ -223,48 +223,62 @@ class BadFleetCode(ValueError):
     pass
 
 
+# Row locks that transactions touching an account or a fleet take first, in this order, so two of them never wait for
+# each other in a circle (Postgres; SQLite has one writer at a time and drops FOR UPDATE, services/db.py run_script).
+ACCOUNT_LOCK = "SELECT 1 FROM accounts WHERE sub = ? FOR UPDATE"  # sign-in, account deletion, an account's bind
+ORG_LOCK = "SELECT id FROM orgs WHERE id = ? FOR UPDATE"  # a fleet's last owner leaving, anybody joining it
+
+
+def _bind_script(sub: str, code: str, account: bool, now: datetime, at):
+    """Binds in one transaction. Everything is read again inside it, under the locks a deletion takes too: the
+    account (for an account's sub), the code (still unused, not expired), the fleet and the truck (not closed by
+    their owner meanwhile) and the device. A step that finds its row gone rolls the whole bind back, so a code is
+    never spent by a phone that is not bound by it."""
+    if account and not (yield (ACCOUNT_LOCK, (sub,))):
+        raise Unregistered(sub)  # deleted while this request was on its way
+    rows = yield ("SELECT org_id, vehicle_id, role, expires_at, used_by FROM fleet_codes WHERE code = ?", (code,))
+    if not rows or rows[0][4] or _at(rows[0][3]) < now:
+        raise BadFleetCode("code unknown, used or expired")
+    org_id, vehicle_id, role = rows[0][:3]
+    if not (yield (ORG_LOCK, (org_id,))):
+        raise BadFleetCode("the fleet is gone")
+    if vehicle_id and not (yield ("SELECT 1 FROM vehicles WHERE id = ? AND org_id = ?", (vehicle_id, org_id))):
+        raise BadFleetCode("the truck is gone")
+    dev = yield ("SELECT driver_id, org_id FROM devices WHERE sub = ? FOR UPDATE", (sub,))
+    if not dev:
+        raise Unregistered(sub)
+    driver_id, old_org = dev[0]
+    yield ("UPDATE drivers SET org_id = ? WHERE id = ?", (org_id, driver_id))
+    moved = yield ("UPDATE devices SET org_id = ?, vehicle_id = ?, role = ?, bound_at = ? WHERE sub = ? RETURNING sub",
+                   (org_id, vehicle_id, role, at, sub))
+    if len(moved) != 1:
+        raise Unregistered(sub)
+    if not (yield ("UPDATE fleet_codes SET used_by = ?, used_at = ? WHERE code = ? AND used_by IS NULL RETURNING code",
+                   (sub, at, code))):
+        raise BadFleetCode("code used meanwhile")  # two phones with one code: the first one has it
+    yield (DROP_EMPTY_SOLO_ORG.format(p="?"), (old_org,))  # the org of one the driver came from
+
+
 async def bind_fleet_code(sub: str, code: str, create: bool = True) -> Device:
     """Binds the device (and its driver row) to the code's org and vehicle; the code is spent. The driver row is
     moved into the fleet, so the driver's memory and trips come along. `create=False` for an account's sub: its
-    rows are not made here (see ensure_solo_org), Unregistered when they are gone."""
+    rows are not made here (see ensure_solo_org), and the bind holds the account row against a deletion.
+    BadFleetCode for a code that is unknown, spent or expired, or whose fleet or truck is gone; Unregistered when
+    the sub has no device row (an account deleted meanwhile)."""
     code = code.strip().upper()
     k = db.store()
     if k == "off":
         raise RuntimeError("store is off")
+    if create:
+        await ensure_solo_org(sub)  # a device token's first contact; the bind itself checks the row again
     now = _now()
-    if k == "sqlite":
-        row = await db._sq_run(lambda con: con.execute(
-            "SELECT org_id, vehicle_id, role, expires_at, used_by FROM fleet_codes WHERE code = ?", (code,)).fetchone())
-    else:
-        pool = await db._db()
-        r = await pool.fetchrow("SELECT org_id, vehicle_id, role, expires_at, used_by FROM fleet_codes WHERE code = $1", code)
-        row = tuple(r) if r else None
-    if not row or row[4] or _at(row[3]) < now:
-        raise BadFleetCode("code unknown, used or expired")
-    org_id, vehicle_id, role = row[0], row[1], row[2]
-    dev = await (ensure_solo_org(sub, role) if create else device_of(sub))
-    if dev is None:
-        raise Unregistered(sub)
-    if k == "sqlite":
-        def _bind(con):
-            con.execute("UPDATE drivers SET org_id = ? WHERE id = ?", (org_id, dev.driver_id))
-            con.execute("UPDATE devices SET org_id = ?, vehicle_id = ?, role = ?, bound_at = ? WHERE sub = ?",
-                        (org_id, vehicle_id, role, _iso(now), sub))
-            con.execute("UPDATE fleet_codes SET used_by = ?, used_at = ? WHERE code = ?", (sub, _iso(now), code))
-            con.execute(DROP_EMPTY_SOLO_ORG.format(p="?"), (dev.org_id,))  # the org of one the driver came from
-        await db._sq_run(_bind)
-    else:
-        pool = await db._db()
-        async with pool.acquire() as con:
-            async with con.transaction():
-                await con.execute("UPDATE drivers SET org_id = $1 WHERE id = $2", org_id, dev.driver_id)
-                await con.execute("UPDATE devices SET org_id = $1, vehicle_id = $2, role = $3, bound_at = $4 WHERE sub = $5",
-                                  org_id, vehicle_id, role, now, sub)
-                await con.execute("UPDATE fleet_codes SET used_by = $1, used_at = $2 WHERE code = $3", sub, now, code)
-                await con.execute(DROP_EMPTY_SOLO_ORG.format(p="$1"), dev.org_id)  # the org of one the driver came from
+    await db.run_script(_bind_script(sub, code, not create, now, _iso(now) if k == "sqlite" else now))
     _devices.pop(sub, None)
     _profiles.pop(sub, None)
-    return await device_of(sub)
+    dev = await device_of(sub)
+    if dev is None:  # deleted right after the bind committed
+        raise Unregistered(sub)
+    return dev
 
 
 async def org_members(org_id: str) -> list[str]:
