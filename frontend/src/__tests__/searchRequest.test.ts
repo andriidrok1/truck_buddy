@@ -14,39 +14,27 @@ describe("searchRequest", () => {
     expect(searchRequest("найди дизель", "en")).toBe("Take me to найди дизель");
   });
 
-  test("Russian: a bare place becomes a Russian route request", () => {
-    expect(searchRequest("Рино", "ru")).toBe("Маршрут до Рино");
-    expect(searchRequest("Reno", "ru")).toBe("Маршрут до Reno");
-    expect(searchRequest("Сакраменто, 1200 Main St", "ru")).toBe("Маршрут до Сакраменто, 1200 Main St");
-    // A place that only starts like a short keyword is still a place.
-    expect(searchRequest("Какабека", "ru")).toBe("Маршрут до Какабека");
+  // Still a place, although it starts like a keyword (QA review 2026-11-11).
+  test.each([
+    "Рино", "Reno", "Pilot Reno", "Love's", "1200 Main St, Sacramento", "Сакраменто, 1200 Main St",
+    "Парковая улица", "Весёлое", "Гдов", "Парк Сити", "Якутск", "Каково", "Какабека", "Душанбе", "Естественная улица",
+  ])("Russian: the bare place %p becomes a route request", (q) => {
+    expect(searchRequest(q, "ru")).toBe(`Маршрут до ${q}`);
   });
 
-  test("Russian: a full request goes as typed, whatever the case or the word's position", () => {
-    for (const q of [
-      "найди дизель",
-      "Найди дизель",
-      "НАЙДИ ДИЗЕЛЬ",
-      "мне нужна заправка",
-      "нужен мотель",
-      "где встать на ночь",
-      "покажи стоянки рядом",
-      "хочу в отель",
-      "отвези в Рино",
-      "маршрут до Рино",
-      "поехали в Рино",
-      "Дизель",
-      "топливо",
-      "парковка для трака",
-      "весы",
-      "мойка траков",
-      "погода в Рино",
-      "у меня поломка",
-      "трак-стоп",
-      "find diesel",
-    ]) {
-      expect(searchRequest(q, "ru")).toBe(q);
-    }
+  test.each([
+    // what the plan listed
+    "найди дизель", "Найди дизель", "НАЙДИ ДИЗЕЛЬ", "мне нужна заправка", "нужен мотель", "где встать на ночь", "покажи стоянки рядом",
+    "хочу в отель", "отвези в Рино", "маршрут до Рино", "поехали в Рино", "Дизель", "топливо", "парковка для трака", "весы", "мойка траков",
+    "погода в Рино", "у меня поломка", "трак-стоп",
+    // everyday requests that were wrapped as a destination
+    "душ", "кофе", "туалет", "еда", "поесть", "я устал", "когда приеду", "что впереди", "есть ли пробки", "отмени", "едем в Рино", "домой",
+    "трак стоп", "тракстоп", "автозаправка", "АЗС", "автостоянка", "спать", "переночевать", "ночлег", "мне надо поспать", "нужно в душ",
+    "какая погода", "сколько ехать", "останови маршрут", "как проехать",
+    // English typed in Russian mode, and a name that is a request by its first word
+    "find diesel", "Мотель 6",
+  ])("Russian: the request %p goes as typed", (q) => {
+    expect(searchRequest(q, "ru")).toBe(q);
   });
 
   test("the language comes from the app when it is not passed; a Ukrainian phone stays on the English path", () => {
