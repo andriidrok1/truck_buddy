@@ -12,7 +12,7 @@ import { resetRenewalForTests } from "../net/tokenRenewal";
 import { queryClient } from "../query-client";
 import { getAccount, saveAccount, setSignInNotice, signInNotice } from "../state/account";
 import { clearConversations, deleteAccount, LOGOUT_WAIT_MS, signOut, signOutEverywhere } from "../state/accountActions";
-import { deleteMyData, wipeRunning } from "../state/firstLaunch";
+import { deleteMyData, signedOutReset, wipeRunning } from "../state/firstLaunch";
 import { markIntroSeen } from "../state/intro";
 import { storage } from "../utils/storage";
 import { __resetWipeGate } from "../utils/storage/pendingWipe";
@@ -478,6 +478,24 @@ describe("one wipe at a time (review of #173, M1)", () => {
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["DELETE /memory"]);
     answer(reply(200, { deleted: 1 }));
     expect(await data).toBe("done");
+  });
+
+  test("Sign out while Delete my data is on the wire: the hold stays until the DELETE settles (re-review, L-2)", async () => {
+    await signedIn("code");
+    let answer: (r: Response) => void = () => {};
+    answers[key("DELETE", "/memory")] = new Promise<Response>((res) => (answer = res));
+    const data = deleteMyData(router());
+    await new Promise((r) => setTimeout(r, 0));
+    await signedOutReset();
+    expect(tokenHold()).not.toBeNull(); // forgetIdentity did not take down a hold it did not put up
+    const other = api.memory().catch(() => null);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["DELETE /memory"]);
+    answer(reply(200, { deleted: 1 }));
+    await data;
+    await other;
+    expect(tokenHold()).toBeNull();
+    expect(calls.slice(1).every((c) => c.auth === undefined)).toBe(true);
   });
 
   test("holdToken: a second caller cannot take down a hold it did not put up", async () => {

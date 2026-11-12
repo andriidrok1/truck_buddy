@@ -9,7 +9,7 @@ import { requestCode, signedInWithAccount, signedInWithCode } from "../auth";
 import { t } from "../i18n";
 import { Text } from "../i18n/Text";
 import { deleteAccount, signOut, signOutEverywhere } from "../state/accountActions";
-import { deleteMyData, signedOutReset, type Nav } from "../state/firstLaunch";
+import { deleteMyData, signedOutReset, useWipeRunning, type Nav } from "../state/firstLaunch";
 import { spacing, useTheme } from "../theme";
 import { ConfirmSheet } from "./ConfirmSheet";
 import { Icon } from "./Icon";
@@ -67,6 +67,7 @@ export function AccountActions({ router }: { router: Nav }) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [busy, setBusy] = useState<"signout" | "everywhere" | "delete" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const wipeElsewhere = useWipeRunning(); // a second truck screen's delete keeps these closed too
 
   if (!signedInWithAccount()) return <CodeActions router={router} />;
 
@@ -97,7 +98,7 @@ export function AccountActions({ router }: { router: Nav }) {
   };
 
   const cfg = sheet ? SHEETS[sheet] : null;
-  const idle = busy === null;
+  const idle = busy === null && !wipeElsewhere;
 
   return (
     <View>
@@ -161,11 +162,31 @@ export function AccountActions({ router }: { router: Nav }) {
 /** An access-code sign-in: no account to delete, the device's data goes with DELETE /api/memory. */
 function CodeActions({ router }: { router: Nav }) {
   const { colors } = useTheme();
+  // As in AccountActions (re-review of #173, L-2): one action at a time, so "Sign out" cannot run under "Delete my
+  // data" and the other way round.
+  const [busy, setBusy] = useState<"signout" | "delete" | null>(null);
+  const wipeElsewhere = useWipeRunning();
+  const idle = busy === null && !wipeElsewhere;
   const onDelete = async () => {
-    const out = await deleteMyData(router);
-    if (out === "failed") Alert.alert(t("Couldn't reach the server"), t("Your data is still there. Check your connection and try again."));
-    else if (out === "unconfirmed") Alert.alert(t("Delete my data"), t(DELETE_UNCONFIRMED)); // the server may have wiped
-    else if (out === "busy") Alert.alert(t("Delete my data"), t(DELETE_BUSY));
+    setBusy("delete");
+    try {
+      const out = await deleteMyData(router);
+      if (out === "failed") Alert.alert(t("Couldn't reach the server"), t("Your data is still there. Check your connection and try again."));
+      else if (out === "unconfirmed") Alert.alert(t("Delete my data"), t(DELETE_UNCONFIRMED)); // the server may have wiped
+      else if (out === "busy") Alert.alert(t("Delete my data"), t(DELETE_BUSY));
+    } finally {
+      setBusy(null); // on success the screen is already gone; harmless then
+    }
+  };
+  const onSignOut = async () => {
+    setBusy("signout");
+    try {
+      // Nothing of this tester stays for whoever signs in next (the truck, the trip, the Motive key).
+      await signedOutReset();
+      requestCode(); // the sign-in screen opens on the code screen, in the builds that have one
+    } finally {
+      setBusy(null);
+    }
   };
   return (
     <View>
@@ -173,14 +194,11 @@ function CodeActions({ router }: { router: Nav }) {
         <PressableScale
           testID="sign-out"
           accessibilityLabel={t("Sign out")}
-          onPress={async () => {
-            // Nothing of this tester stays for whoever signs in next (the truck, the trip, the Motive key).
-            await signedOutReset();
-            requestCode(); // the sign-in screen opens on the code screen, in the builds that have one
-          }}
+          disabled={!idle}
+          onPress={onSignOut}
           style={[styles.signOut, { borderColor: colors.border }]}
         >
-          <Icon name="logout" size={20} color={colors.onSurface} />
+          {busy === "signout" ? <ActivityIndicator color={colors.onSurface} /> : <Icon name="logout" size={20} color={colors.onSurface} />}
           <Text style={[styles.signOutText, { color: colors.onSurface }]}>Sign out</Text>
         </PressableScale>
       )}
@@ -189,10 +207,11 @@ function CodeActions({ router }: { router: Nav }) {
       <PressableScale
         testID="delete-my-data"
         accessibilityLabel={t("Delete my data")}
+        disabled={!idle}
         onPress={() => confirmDestructive("Delete my data?", DELETE_MSG, "Delete", onDelete)}
         style={[styles.signOut, { borderColor: colors.error, marginTop: spacing.md }]}
       >
-        <Icon name="delete-outline" size={20} color={colors.error} />
+        {busy === "delete" ? <ActivityIndicator color={colors.error} /> : <Icon name="delete-outline" size={20} color={colors.error} />}
         <Text style={[styles.signOutText, { color: colors.error }]}>Delete my data</Text>
       </PressableScale>
       <Text style={[styles.deleteNote, { color: colors.muted }]}>

@@ -3,6 +3,7 @@
 // accountActions.test.ts; here it is stubbed.
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
+import { Alert } from "react-native";
 
 import { setToken } from "../auth";
 import { AccountActions } from "../components/AccountActions";
@@ -267,3 +268,33 @@ describe("AccountActions, an access code", () => {
     expect(mocks.signOut).not.toHaveBeenCalled();
   });
 });
+
+describe("AccountActions, an access code, one action at a time (re-review of #173, L-2)", () => {
+  const router = { canDismiss: () => true, dismissAll: jest.fn() };
+  const yes = () =>
+    jest.spyOn(Alert, "alert").mockImplementation((_t, _m, buttons) => {
+      buttons?.find((b) => b.style === "destructive")?.onPress?.();
+    });
+
+  test("while Delete my data runs, Sign out and Delete do nothing; a result that can't be confirmed says so", async () => {
+    await setToken("CODE", "tester", "code", null);
+    let finish: (v: string) => void = () => {};
+    mocks.delMyData.mockImplementationOnce(() => new Promise((r) => (finish = r)));
+    const alert = yes();
+    await render(<AccountActions router={router} />);
+    await settle();
+    await press("delete-my-data");
+    expect(mocks.delMyData).toHaveBeenCalledTimes(1);
+    await press("sign-out");
+    await press("delete-my-data");
+    expect(mocks.reset).not.toHaveBeenCalled();
+    expect(mocks.delMyData).toHaveBeenCalledTimes(1);
+    alert.mockClear();
+    await act(async () => finish("unconfirmed"));
+    await settle();
+    expect(alert).toHaveBeenCalledWith("Delete my data", "We couldn't confirm. Check your connection and try again.");
+    await press("sign-out");
+    expect(mocks.reset).toHaveBeenCalledTimes(1);
+  });
+});
+
