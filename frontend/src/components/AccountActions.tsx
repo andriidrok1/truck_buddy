@@ -81,7 +81,8 @@ export function AccountActions({ router }: { router: Nav }) {
         if (out !== "done") setError(out === "failed" ? EVERYWHERE_FAILED : EVERYWHERE_UNCONFIRMED);
       } else {
         const out = await deleteAccount(router);
-        if (!out.ok) setError(out.reason === "refused" ? out.message : DELETE_ERROR[out.reason]);
+        // signed_out: the root layout is on the sign-in screen with its own notice; nothing to show here.
+        if (!out.ok && out.reason !== "signed_out") setError(out.reason === "refused" ? out.message : DELETE_ERROR[out.reason]);
       }
     } finally {
       setBusy(null); // on success the screen is already gone; harmless then

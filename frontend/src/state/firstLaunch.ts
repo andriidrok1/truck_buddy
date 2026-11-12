@@ -190,6 +190,10 @@ export type WipeKind = "data" | "account";
 export type WipeResult<T> = { ok: true; value: T } | { ok: false; error: unknown };
 /** Another kind of server wipe is under way: nothing was sent for this one. */
 export class WipeBusy extends Error {}
+/** The server turned this phone's sign-in down for good during a wipe (the renewal was rejected, or the 401 said the
+ *  session is closed): the phone was signed out as after any rejected token, with "You were signed out", and
+ *  nothing claims that anything was deleted (re-review of #173, M-1). */
+export class SignedOutByServer extends Error {}
 let wiping: { kind: WipeKind; result: Promise<WipeResult<unknown>> } | null = null;
 const wipeListeners = new Set<() => void>();
 const wipeChanged = () => wipeListeners.forEach((l) => l());
@@ -255,12 +259,17 @@ async function wipeOnce<T>(router: Nav, clearServer: () => Promise<T>): Promise<
       // only retry of a wipe: "Delete account" relies on it and has none of its own.
       if (!(e instanceof ApiError) || e.status !== 401) throw e;
       release();
-      if ((await renewToken(true)) !== "renewed") throw e;
+      const renewed = await renewToken(true);
+      // "rejected": the server says the token is dead; the phone signs out as after401 does (M-1). "unavailable":
+      // nothing settled, the phone stays as it is and the caller says it could not confirm.
+      if (renewed === "rejected") throw new SignedOutByServer();
+      if (renewed !== "renewed") throw e;
       await underHold();
     }
   } catch (error) {
     release();
     tripLog.resume();
+    if (error instanceof SignedOutByServer) await signedOutReset({ notice: true }).catch(() => undefined);
     return { ok: false, error };
   }
   try {
@@ -275,12 +284,15 @@ async function wipeOnce<T>(router: Nav, clearServer: () => Promise<T>): Promise<
 }
 
 /** How "Delete my data" ended. "done": the phone is a fresh install. "failed": the server could not be reached or
- *  answered with an error; nothing on the phone was touched. "busy": "Delete account" is under way. */
-export type DataOutcome = "done" | "failed" | "busy";
+ *  answered with an error; nothing on the phone was touched. "busy": "Delete account" is under way. "signed_out":
+ *  the server turned the sign-in down, and the phone is on the sign-in screen with "You were signed out". */
+export type DataOutcome = "done" | "failed" | "busy" | "signed_out";
 
 /** "Delete my data" for an access-code sign-in (DELETE /api/memory). */
 export async function deleteMyData(router: Nav, clearServer: () => Promise<unknown> = wipeServerData): Promise<DataOutcome> {
   const r = await serverThenReset(router, clearServer, "data");
   if (r.ok) return "done";
-  return r.error instanceof WipeBusy ? "busy" : "failed";
+  if (r.error instanceof WipeBusy) return "busy";
+  if (r.error instanceof SignedOutByServer) return "signed_out";
+  return "failed";
 }

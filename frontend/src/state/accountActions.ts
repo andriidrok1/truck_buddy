@@ -4,7 +4,7 @@
 
 import { api, ApiError, isNoAnswer, isNoLongerRegistered, logout, tokenState, type AccountDeleted, type RefusalCode } from "../api";
 import { getToken, signedInWithAccount } from "../auth";
-import { serverThenReset, signedOutReset, WipeBusy, type Nav } from "./firstLaunch";
+import { serverThenReset, SignedOutByServer, signedOutReset, WipeBusy, type Nav } from "./firstLaunch";
 
 /** How long "Sign out" waits for the server to close this phone's session before signing out anyway. */
 export const LOGOUT_WAIT_MS = 3000;
@@ -67,6 +67,9 @@ export type DeleteOutcome =
   /** No answer to the DELETE, and the check could not settle it (the account still answers, which may only mean the
    *  deletion is still running, or the check got no answer either). Nothing on the phone was touched. */
   | { ok: false; reason: "unconfirmed" }
+  /** The server turned the sign-in down (the renewal was rejected, or the session is closed): the phone is on the
+   *  sign-in screen with "You were signed out". Nothing says the account was deleted. */
+  | { ok: false; reason: "signed_out" }
   /** "Delete my data" is under way on this phone: nothing was sent for this one. */
   | { ok: false; reason: "busy" };
 
@@ -114,6 +117,7 @@ export async function deleteAccount(router: Nav, call: () => Promise<AccountDele
   }
   const e = r.error;
   if (e instanceof WipeBusy) return { ok: false, reason: "busy" };
+  if (e instanceof SignedOutByServer) return { ok: false, reason: "signed_out" };
   if (e instanceof Unconfirmed) return { ok: false, reason: "unconfirmed" };
   if (!(e instanceof ApiError)) return { ok: false, reason: "unconfirmed" }; // no answer and no token to check with
   if (e.status === 409) {
@@ -121,7 +125,7 @@ export async function deleteAccount(router: Nav, call: () => Promise<AccountDele
     return { ok: false, reason: "refused", code, message: code === "last_owner" ? LAST_OWNER : REFUSED };
   }
   if (e.status === 503 && e.detail !== null) return { ok: false, reason: "not_removed" };
-  // A 401 the renewal could not fix: the session may have been closed, or the account deleted elsewhere. Not known.
+  // A 401 the renewal could not settle (no answer to it, or the retry got a 401 again): not known.
   if (e.status === 401) return { ok: false, reason: "unconfirmed" };
   return { ok: false, reason: "failed" };
 }

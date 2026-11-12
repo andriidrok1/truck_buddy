@@ -10,7 +10,7 @@ import { DEFAULT_TRUCK, getTruckProfile } from "../hooks/useTruckProfile";
 import { loadLang, setLang, useLangStore } from "../i18n";
 import { resetRenewalForTests } from "../net/tokenRenewal";
 import { queryClient } from "../query-client";
-import { getAccount, saveAccount, signInNotice } from "../state/account";
+import { getAccount, saveAccount, setSignInNotice, signInNotice } from "../state/account";
 import { clearConversations, deleteAccount, LOGOUT_WAIT_MS, signOut, signOutEverywhere } from "../state/accountActions";
 import { deleteMyData, wipeRunning } from "../state/firstLaunch";
 import { markIntroSeen } from "../state/intro";
@@ -57,6 +57,7 @@ async function signedIn(via: "account" | "code" = "account") {
   mockSecure.clear();
   __resetWipeGate();
   resetRenewalForTests();
+  setSignInNotice(null);
   await loadLang();
   await loadToken();
   setLang("ru");
@@ -272,6 +273,30 @@ describe("Delete account and data", () => {
       expect(calls.filter((c) => c.path === "/auth/refresh")).toHaveLength(1);
       expect(getToken()).toBe("ACC2"); // still signed in: nothing on the phone was touched
       expect(getTruckProfile().height_in).toBe(168);
+    });
+
+    test("an expired token and a refused renewal: the phone signs out with the notice, never \"deleted\" (re-review, M-1)", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = reply(401, { detail: "Invalid or expired token" });
+      answers[key("POST", "/auth/renew")] = reply(401, { detail: "Invalid or expired token" });
+      answers[key("POST", "/auth/refresh")] = reply(401, { detail: "Invalid or expired refresh token" });
+      const r = router();
+      expect(await deleteAccount(r)).toEqual({ ok: false, reason: "signed_out" });
+      expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1);
+      expect(r.dismissAll).not.toHaveBeenCalled();
+      expect(getToken()).toBeNull();
+      expect(signInNotice()).toBe("signed_out");
+      expect(useLangStore.getState().chosen).toBe(true); // a sign-out, not a fresh install
+    });
+
+    test("an expired token and a renewal with no answer: unconfirmed, still signed in", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = reply(401, { detail: "Invalid or expired token" });
+      answers[key("POST", "/auth/renew")] = "offline";
+      answers[key("POST", "/auth/refresh")] = "offline";
+      expect(await deleteAccount(router())).toEqual({ ok: false, reason: "unconfirmed" });
+      await stillMike();
+      expect(signInNotice()).toBeNull();
     });
 
     test("an expired token, and the retry hears no longer registered: the phone resets", async () => {

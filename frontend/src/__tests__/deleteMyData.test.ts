@@ -12,7 +12,7 @@ import { DEFAULT_TRUCK, getTruckProfile, isOnboarded, setOnboarded } from "../ho
 import { loadLang, setLang, useLangStore } from "../i18n";
 import { tripLog } from "../net/tripEvents";
 import { deleteMyData, resetToFirstLaunch, rootScreen } from "../state/firstLaunch";
-import { getAccount, saveAccount } from "../state/account";
+import { getAccount, saveAccount, setSignInNotice, signInNotice } from "../state/account";
 import { loadHowTo, markHowToSeen } from "../state/howTo";
 import { loadIntro, markIntroSeen } from "../state/intro";
 import { saveActiveRoute } from "../state/routeStore";
@@ -284,7 +284,7 @@ describe("Delete my data with an expired access token (re-review of #172)", () =
     expect(await AsyncStorage.getItem("lang_v1")).toBeNull();
   });
 
-  test("the renewal is refused: nothing is wiped, the delete settles with false, the next requests are not held", async () => {
+  test("the renewal is refused: the server says the token is dead, so the phone signs out with the notice; nothing claims a deletion (review of #173, M-1)", async () => {
     await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
     await setToken(EXPIRED, "driver", "code", "R1");
     server("refused");
@@ -293,11 +293,34 @@ describe("Delete my data with an expired access token (re-review of #172)", () =
     await act(async () => {
       ok = await within(deleteMyData(router));
     });
-    expect(ok).toBe("failed");
+    expect(ok).toBe("signed_out");
     expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1); // one retry only after a renewal that worked
     expect(router.dismissAll).not.toHaveBeenCalled();
-    expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru"));
+    expect(getToken()).toBeNull();
+    expect(signInNotice()).toBe("signed_out");
+    expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru")); // a sign-out, not a fresh install
     await within(api.memory().catch(() => undefined)); // the hold is down: this does not wait forever
+  });
+
+  test("the renewal gets no answer: nothing is wiped, the phone stays signed in, the delete settles as failed", async () => {
+    await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
+    await setToken(EXPIRED, "driver", "code", "R1");
+    setSignInNotice(null);
+    server("ok");
+    const inner = global.fetch as jest.Mock;
+    global.fetch = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).endsWith("/auth/refresh")) throw new TypeError("Network request failed");
+      return inner(url, init);
+    }) as typeof fetch;
+    const router = { canDismiss: () => true, dismissAll: jest.fn() };
+    let ok = "";
+    await act(async () => {
+      ok = await within(deleteMyData(router));
+    });
+    expect(ok).toBe("failed");
+    expect(getToken()).toBe(EXPIRED);
+    expect(signInNotice()).toBeNull();
+    expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru"));
   });
 });
 
