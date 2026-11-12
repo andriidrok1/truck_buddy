@@ -19,6 +19,7 @@ export type Account = { name: string | null; email: string | null; provider: Pro
 let account: Account | null | undefined; // undefined = not read yet
 let reading: Promise<Account | null> | null = null;
 let welcome = false;
+let bypassed = false; // "Open the map anyway": the driver is let in while the profile is still on its way
 let notice: "signed_out" | null = null;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
@@ -65,6 +66,7 @@ export async function forgetAccount(): Promise<void> {
   account = null;
   reading = null;
   welcome = false;
+  bypassed = false;
   emit();
   await storage.removeItem(ACCOUNT_KEY).catch(() => false);
 }
@@ -83,10 +85,20 @@ export function withAccountName<T extends { driver_name?: string | null }>(profi
 
 export const welcomeBackDue = () => welcome;
 export function setWelcomeBack(on: boolean) {
+  if (on) bypassed = false;
   if (welcome === on) return;
   welcome = on;
   emit();
 }
+
+/** "Open the map anyway" on Welcome back, after the profile pull failed: the map opens while the restore stays
+ *  pending (nothing is pushed, src/data/profile.ts). In memory only: after a restart Welcome back tries again. */
+export function bypassRestore() {
+  bypassed = true;
+  welcome = false;
+  emit();
+}
+export const restoreBypassed = () => bypassed;
 
 export const signInNotice = () => notice;
 export function setSignInNotice(next: "signed_out" | null) {
@@ -111,12 +123,14 @@ function useStore<T>(read: () => T): T {
 export const useAccount = (): Account | null => useStore(getAccount);
 export const useWelcomeBack = (): boolean => useStore(welcomeBackDue);
 export const useSignInNotice = (): "signed_out" | null => useStore(signInNotice);
+export const useRestoreBypassed = (): boolean => useStore(restoreBypassed);
 
 /** Tests only. */
 export function resetAccountForTests() {
   account = undefined;
   reading = null;
   welcome = false;
+  bypassed = false;
   notice = null;
   listeners.clear();
 }

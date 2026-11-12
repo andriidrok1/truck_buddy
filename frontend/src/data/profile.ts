@@ -4,6 +4,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { AppState } from "react-native";
+
+import { useNetStore } from "../state/netStore";
 
 import { api, ApiError } from "../api";
 import { DEFAULT_TRUCK, ensureTruckProfile, getTruckProfile, saveTruckProfile, type TruckProfile } from "../hooks/useTruckProfile";
@@ -189,6 +192,24 @@ export async function fetchProfile(): Promise<TruckProfile> {
 export function useProfileSync(signedIn: boolean) {
   useEffect(() => {
     if (signedIn) queryClient.prefetchQuery({ queryKey: PROFILE_KEY, queryFn: fetchProfile });
+  }, [signedIn]);
+  // A returning driver's truck that has not landed yet (no signal at sign-in, the driver went to the map anyway):
+  // asked again on every return to the foreground and whenever the connection comes back, until it lands.
+  useEffect(() => {
+    if (!signedIn) return;
+    const retry = () => {
+      if (restorePending()) queryClient.prefetchQuery({ queryKey: PROFILE_KEY, queryFn: fetchProfile, staleTime: 0 });
+    };
+    const app = AppState.addEventListener("change", (s) => {
+      if (s === "active") retry();
+    });
+    const net = useNetStore.subscribe((now, before) => {
+      if (now.net === true && before.net !== true) retry();
+    });
+    return () => {
+      app?.remove();
+      net();
+    };
   }, [signedIn]);
 }
 

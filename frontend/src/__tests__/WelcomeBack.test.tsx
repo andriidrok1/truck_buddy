@@ -4,13 +4,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react-native";
 
 import { ApiError, api } from "../api";
-import { beginRestore, resetProfile } from "../data/profile";
+import { beginRestore, resetProfile, restorePending, saveProfile } from "../data/profile";
 import { queryClient } from "../query-client";
 import "../state/afterSignIn"; // registers what happens when the profile lands
 import { prefsSummary, WelcomeBack } from "../components/WelcomeBack";
 import { DEFAULT_TRUCK, forgetTruckProfile, isOnboarded } from "../hooks/useTruckProfile";
-import { useLangStore } from "../i18n";
-import { resetAccountForTests, saveAccount, setWelcomeBack, useWelcomeBack, welcomeBackDue } from "../state/account";
+import { t, useLangStore } from "../i18n";
+import { resetAccountForTests, restoreBypassed, saveAccount, setWelcomeBack, useWelcomeBack, welcomeBackDue } from "../state/account";
 import { rootScreen } from "../state/firstLaunch";
 
 jest.mock("react-native-reanimated", () => {
@@ -140,6 +140,36 @@ test("the truck could not be fetched: the screen says so and offers Try again in
   expect(screen.queryByTestId("welcome-back-error")).toBeNull();
 });
 
+test("the pull keeps failing: after the first failure the driver can go to the map anyway; the restore stays pending and nothing is pushed", async () => {
+  A.profile.mockRejectedValue(new ApiError(503, "/me/profile"));
+  await returning();
+  await show(false);
+  await screen.findByTestId("welcome-back-skip");
+  expect(screen.getByText("Open the map anyway")).toBeTruthy();
+  expect(screen.getByTestId("welcome-back-retry")).toBeTruthy(); // still the primary action
+  await fireEvent.press(screen.getByTestId("welcome-back-skip"));
+  expect(welcomeBackDue()).toBe(false);
+  expect(restoreBypassed()).toBe(true);
+  expect(restorePending()).toBe(true); // the map opens, the truck is still awaited
+  // What the root layout shows: Welcome back held while restoring, unless bypassed.
+  expect(welcomeBackDue() || (restorePending() && !restoreBypassed())).toBe(false);
+  const push = (api as unknown as { saveProfile: jest.Mock }).saveProfile;
+  push.mockReset();
+  await saveProfile({ ...DEFAULT_TRUCK, avoid_tolls: true }); // a setting on the truck screen
+  expect(push).not.toHaveBeenCalled();
+  expect(await isOnboarded()).toBe(false);
+  // A later sign-in brings Welcome back again.
+  setWelcomeBack(true);
+  expect(restoreBypassed()).toBe(false);
+});
+
+test("while it is still loading there is no way around it (the first attempt has not failed yet)", async () => {
+  A.profile.mockReturnValue(new Promise(() => {}));
+  await returning();
+  await show(false);
+  expect(screen.queryByTestId("welcome-back-skip")).toBeNull();
+});
+
 test("the server has no profile for this 'returning' account (404): no Welcome back, the root moves on and onboarding is ahead", async () => {
   A.profile.mockRejectedValue(new ApiError(404, "/me/profile"));
   await returning();
@@ -180,4 +210,5 @@ test("in Russian", async () => {
   expect(screen.getByText("Предпочтения")).toBeTruthy();
   expect(screen.getByText("Объезжать платные дороги")).toBeTruthy();
   expect(screen.getByTestId("welcome-back-open-map").props.accessibilityLabel).toBe("Открыть карту");
+  expect(t("Open the map anyway", undefined, "ru")).toBe("Всё равно открыть карту");
 });

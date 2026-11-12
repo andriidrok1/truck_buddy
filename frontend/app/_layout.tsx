@@ -30,7 +30,7 @@ import { useIntroSeen } from "@/src/state/intro";
 import { IntroGate } from "@/src/components/intro/IntroGate";
 import { loadEldToken } from "@/src/eld";
 import { useProfileSync, useRestorePending } from "@/src/data/profile";
-import { useWelcomeBack } from "@/src/state/account";
+import { useRestoreBypassed, useWelcomeBack } from "@/src/state/account";
 import { queryClient } from "@/src/query-client";
 import { setContractWarningSink } from "@/src/api/schemas";
 
@@ -109,7 +109,8 @@ function RootLayout() {
   // A returning driver who just signed in sees "Welcome back" once, after consent; it stays up (also across a
   // restart) until the server's profile has landed, so nothing is saved over it from the map.
   const restoring = useRestorePending();
-  const welcomeBack = useWelcomeBack() || restoring === true;
+  const bypassed = useRestoreBypassed(); // "Open the map anyway" after a failed pull
+  const welcomeBack = useWelcomeBack() || (restoring === true && !bypassed);
   // GPS from the moment the driver is signed in and consent is in (the consent screen starts it too): the first
   // fix is ready before the map screen mounts instead of 7-9 s after it. Not on the sign-in screen after a sign-out.
   useEffect(() => {

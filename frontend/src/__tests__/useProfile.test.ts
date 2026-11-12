@@ -1,9 +1,12 @@
 import { act, renderHook } from "@testing-library/react-native";
+import { AppState, type AppStateStatus } from "react-native";
+
+import { useNetStore } from "../state/netStore";
 
 import { ApiError, api } from "../api";
-import { fetchProfile, isMissing, PROFILE_KEY, resetProfile, saveProfile, setMidTripCheck, UNSYNCED_KEY, useProfileSync } from "../data/profile";
+import { beginRestore, fetchProfile, isMissing, PROFILE_KEY, restorePending, resetProfile, saveProfile, setMidTripCheck, UNSYNCED_KEY, useProfileSync } from "../data/profile";
 import { queryClient } from "../query-client";
-import { forgetHeight, isHeightConfirmed } from "../truck/heightConfirmed";
+import { forgetHeight, heightCardAllowed, isHeightConfirmed } from "../truck/heightConfirmed";
 import { DEFAULT_TRUCK, getTruckProfile, saveTruckProfile } from "../hooks/useTruckProfile";
 import { storage } from "../utils/storage";
 
@@ -177,3 +180,54 @@ describe("when the server's profile is pulled (root layout)", () => {
   });
 });
 
+describe("a returning driver's truck that has not landed (went to the map anyway)", () => {
+  const tick = async () => {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  };
+  afterEach(async () => {
+    queryClient.clear();
+    await resetProfile();
+  });
+
+  test("asked again on every return to the foreground and when the connection comes back, and no more once it landed", async () => {
+    let onChange: (s: AppStateStatus) => void = () => {};
+    const original = AppState.addEventListener;
+    AppState.addEventListener = ((_t: string, h: (s: AppStateStatus) => void) => {
+      onChange = h;
+      return { remove: () => {} };
+    }) as typeof AppState.addEventListener;
+    useNetStore.setState({ net: false, hinted: false });
+    await beginRestore();
+    A.profile.mockRejectedValue(new ApiError(503, "/me/profile"));
+    await renderHook(() => useProfileSync(true));
+    await tick();
+    expect(A.profile).toHaveBeenCalledTimes(1);
+    expect(restorePending()).toBe(true);
+
+    await act(async () => onChange("active"));
+    await tick();
+    expect(A.profile).toHaveBeenCalledTimes(2);
+
+    A.profile.mockResolvedValue({ profile: { ...DEFAULT_TRUCK, height_in: 158 }, source: "driver" });
+    await act(async () => useNetStore.setState({ net: true }));
+    await tick();
+    expect(A.profile).toHaveBeenCalledTimes(3);
+    expect(restorePending()).toBe(false);
+    expect(getTruckProfile().height_in).toBe(158);
+
+    await act(async () => onChange("active"));
+    await tick();
+    expect(A.profile).toHaveBeenCalledTimes(3); // landed: the usual start-up pull only, not one per foreground
+    AppState.addEventListener = original;
+  });
+});
+
+test("the height card stays away while a returning driver's truck is on its way, and while either flag is unread", () => {
+  expect(heightCardAllowed(false, false)).toBe(true);
+  expect(heightCardAllowed(false, true)).toBe(false); // the map opened "anyway": no default-height answer can be saved
+  expect(heightCardAllowed(false, undefined)).toBe(false);
+  expect(heightCardAllowed(null, false)).toBe(false);
+  expect(heightCardAllowed(true, false)).toBe(false);
+});

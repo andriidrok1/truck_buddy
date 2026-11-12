@@ -531,4 +531,5 @@ export const RU: Record<string, string> = {
   "Welcome back": "С возвращением",
   "Here is what I brought over.": "Вот что уже на месте.",
   "Open the map": "Открыть карту",
+  "Open the map anyway": "Всё равно открыть карту",
 };

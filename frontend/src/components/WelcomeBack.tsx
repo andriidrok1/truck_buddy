@@ -6,7 +6,7 @@ import { fetchProfile, PROFILE_KEY, serverProfile, useRestorePending } from "../
 import { truckLabel, type TruckProfile } from "../hooks/useTruckProfile";
 import { t } from "../i18n";
 import { Text } from "../i18n/Text";
-import { givenName, setWelcomeBack, useAccount } from "../state/account";
+import { bypassRestore, givenName, setWelcomeBack, useAccount } from "../state/account";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import { PressableScale } from "./PressableScale";
 
@@ -90,7 +90,21 @@ export function WelcomeBack() {
         >
           <Text style={[styles.buttonText, { color: colors.onBrandPrimary }]}>Try again</Text>
         </PressableScale>
-      ) : (
+      ) : null}
+      {failed && (
+        // No signal can last: the driver is not kept here. On the map nothing is sent over the server's truck
+        // and the height card stays away until the truck lands; the app keeps asking for it in the background.
+        <PressableScale
+          testID="welcome-back-skip"
+          accessibilityRole="button"
+          accessibilityLabel={t("Open the map anyway")}
+          onPress={bypassRestore}
+          style={[styles.secondary, { borderColor: colors.border }]}
+        >
+          <Text style={[styles.secondaryText, { color: colors.onSurface }]}>Open the map anyway</Text>
+        </PressableScale>
+      )}
+      {!failed && (
         <PressableScale
           testID="welcome-back-open-map"
           accessibilityRole="button"
@@ -121,4 +135,6 @@ const styles = StyleSheet.create({
   value: { fontFamily: fonts.semibold, fontSize: 17, lineHeight: 23 },
   button: { height: 56, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
   buttonText: { fontFamily: fonts.bold, fontSize: 17 },
+  secondary: { height: 56, borderRadius: radius.pill, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  secondaryText: { fontFamily: fonts.semibold, fontSize: 17 },
 });
