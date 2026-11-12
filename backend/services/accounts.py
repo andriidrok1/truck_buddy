@@ -323,10 +323,35 @@ async def session_by_refresh(refresh_hash: str) -> Optional[Session]:
     return Session(row[0], row[1], row[2] == refresh_hash, _at(row[3]), _at(row[4]) if row[4] is not None else None, _at(row[5]))
 
 
-async def session_alive(sid: str, sub: str) -> bool:
-    """Whether this session still exists for this sub. Cached, so a token costs one small read per worker per
-    SESSION_TTL_S. A session idle past ACCOUNT_SESSION_IDLE_DAYS, or older than ACCOUNT_SESSION_MAX_DAYS, is deleted
-    here and counts as gone."""
+ALIVE, CLOSED, ACCOUNT_GONE = "alive", "session_closed", "account_gone"
+
+
+async def account_exists(sub: str) -> bool:
+    sql = "SELECT 1 FROM accounts WHERE sub = {p}"
+    if db.store() == "sqlite":
+        return bool(await db._sq_run(lambda con: con.execute(sql.format(p="?"), (sub,)).fetchone()))
+    pool = await db._db()
+    return bool(await pool.fetchval(sql.format(p="$1"), sub))
+
+
+async def gone_why(sub: str) -> str:
+    """For a session that is gone: ACCOUNT_GONE when the account behind it is gone too, else CLOSED (signed out on
+    this phone or on all of them, closed as stolen, idle, past its end). CLOSED when the store cannot say: the app
+    must not tell a driver whose account is there that it was deleted."""
+    try:
+        return CLOSED if await account_exists(sub) else ACCOUNT_GONE
+    except Exception as e:  # noqa: BLE001
+        logger.warning("account lookup failed for %s: %s", sub, type(e).__name__)
+        return CLOSED
+
+
+async def session_state(sid: str, sub: str) -> str:
+    """ALIVE while this session exists for this sub; else CLOSED or ACCOUNT_GONE (gone_why). Cached, so a token
+    costs one small read per worker per SESSION_TTL_S (two when the session is gone). A session idle past
+    ACCOUNT_SESSION_IDLE_DAYS, or older than ACCOUNT_SESSION_MAX_DAYS, is deleted here and counts as CLOSED.
+
+    The cached answer is what the store said when it was read: another worker's deletion is seen within
+    SESSION_TTL_S, and a session already known closed whose account goes later keeps saying CLOSED until then."""
     hit = _sessions.get(sid)
     if hit is None or time.monotonic() - hit[1] >= SESSION_TTL_S:
         if db.store() == "sqlite":
@@ -336,14 +361,23 @@ async def session_alive(sid: str, sub: str) -> bool:
             pool = await db._db()
             r = await pool.fetchrow("SELECT sub, seen_at, created_at FROM account_sessions WHERE id = $1", sid)
             row = tuple(r) if r else None
-        owner = row[0] if row else None
+        owner, why = (row[0], ALIVE) if row else (None, None)
         if owner is not None and (idle(_at(row[1])) or ended(_at(row[2]))):
             await session_close(sid)
-            owner = None
+            owner, why = None, CLOSED
+        if owner is None and why is None:
+            why = await gone_why(sub)
         if len(_sessions) > 50_000:
             _sessions.clear()
-        hit = _sessions[sid] = (owner, time.monotonic())
-    return hit[0] == sub
+        hit = _sessions[sid] = (owner, time.monotonic(), why)
+    if hit[0] == sub:
+        return ALIVE
+    return hit[2] if hit[0] is None else CLOSED  # a session of another sub: this token's is not it
+
+
+async def session_alive(sid: str, sub: str) -> bool:
+    """Whether this session still exists for this sub (session_state)."""
+    return await session_state(sid, sub) == ALIVE
 
 
 async def session_started(sid: str, sub: str) -> Optional[datetime]:

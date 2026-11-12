@@ -27,7 +27,7 @@ from models import AgentRequest, AgentResponse, TruckProfile
 from services import accounts, agent, apple, auth, breakdown, db, kv, memory, secrets as sec, session_store, tenancy, trip_events
 from services.dialog_state import DialogState
 import test_accounts
-from test_accounts import APPLE_HOST, BUNDLE, GONE, PROFILE, _apple, _claims, _fleet_code, _google, _h, _person, _rows
+from test_accounts import ACCOUNT_GONE, APPLE_HOST, BUNDLE, PROFILE, _apple, _claims, _fleet_code, _google, _h, _person, _rows
 
 # The fixtures of test_accounts.py, under the same names (pytest finds a fixture by the module attribute).
 client, jwks, store = test_accounts.client, test_accounts.jwks, test_accounts.store
@@ -177,7 +177,7 @@ def test_deleting_a_solo_account_leaves_nothing_of_the_driver(client, db_dialogs
     # both phones are out, and their refresh tokens are worth nothing
     for phone in (a, b):
         r = client.get("/api/auth/check", headers=_h(phone))
-        assert r.status_code == 401 and r.json() == {"detail": GONE}
+        assert r.status_code == 401 and r.json() == ACCOUNT_GONE
         assert client.post("/api/auth/refresh", json={"refresh_token": phone["refresh_token"]}).status_code == 401
     assert client.delete("/api/account", headers=_h(a)).status_code == 401
     assert _holding(client, needles) == {}  # being refused put nothing back
@@ -242,10 +242,10 @@ def test_a_phone_on_another_worker_is_refused_within_the_cache_minute(client, mo
     clock["now"] += accounts.SESSION_TTL_S - 2
     assert client.get("/api/auth/check", headers=_h(b)).status_code == 200
     r = client.post("/api/auth/renew", headers=_h(b))  # but nothing new is issued for a session that is gone
-    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    assert r.status_code == 401 and r.json() == ACCOUNT_GONE
     clock["now"] += 3
     r = client.get("/api/auth/check", headers=_h(b))
-    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    assert r.status_code == 401 and r.json() == ACCOUNT_GONE
     for table, column in (("devices", "sub"), ("account_sessions", "sub"), ("accounts", "sub")):
         assert _rows(client, f"SELECT count(*) FROM {table} WHERE {column} = ?", sub) == [(0,)]  # the stale minute made no rows
 
@@ -714,7 +714,7 @@ def test_a_refresh_racing_the_deletion_is_refused_and_leaves_nothing(client, mon
         return session
     monkeypatch.setattr(accounts, "session_by_refresh", then_deleted)
     r = client.post("/api/auth/refresh", json={"refresh_token": b["refresh_token"]})
-    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    assert r.status_code == 401 and r.json() == ACCOUNT_GONE
     _nothing_left(client, sub)
 
 
@@ -731,11 +731,11 @@ def test_a_renew_racing_the_deletion_is_refused_and_leaves_nothing(client, stale
     if stale_device:
         tenancy._devices.update(stale[1])
     r = client.post("/api/auth/renew", headers=_h(a))
-    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    assert r.status_code == 401 and r.json() == ACCOUNT_GONE
     # a token without the org claims takes the other way through the principal: no rows from there either
     bare = {"access_token": auth._token("driver", sub, {"sid": sid})}
     tenancy.forget(sub)
-    assert client.get("/api/auth/check", headers=_h(bare)).json() == {"detail": GONE}
+    assert client.get("/api/auth/check", headers=_h(bare)).json() == ACCOUNT_GONE
     _nothing_left(client, sub)
 
 
@@ -800,7 +800,7 @@ def test_a_profile_save_that_lands_after_the_deletion_writes_nothing(client, mon
         return await real(sub, profile, create)
     monkeypatch.setattr(tenancy, "profile_put", after_the_copy_ran_out)
     r = client.put("/api/me/profile", json={**PROFILE, "driver_name": "Late Sam"}, headers=_h(a))
-    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    assert r.status_code == 401 and r.json() == ACCOUNT_GONE
     # and on a worker whose device copy is still there, the write finds no row to change
     monkeypatch.setattr(tenancy, "profile_put", real)
     accounts._sessions.update(stale[0])
@@ -826,7 +826,7 @@ def test_a_fleet_code_that_lands_after_the_deletion_binds_nothing(client, monkey
         return await real(sub, code, create)
     monkeypatch.setattr(tenancy, "bind_fleet_code", after_the_copy_ran_out)
     r = client.post("/api/auth/fleet-code", json={"code": code}, headers=_h(a))
-    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    assert r.status_code == 401 and r.json() == ACCOUNT_GONE
     _nothing_left(client, sub)
     assert _rows(client, "SELECT used_by FROM fleet_codes WHERE code = ?", code) == [(None,)]  # still good for its driver
 
@@ -1230,7 +1230,7 @@ def test_a_fleet_code_from_a_deleted_account_on_a_stale_worker_is_refused_and_st
     accounts._sessions.update(stale[0])
     tenancy._devices.update(stale[1])
     r = client.post("/api/auth/fleet-code", json={"code": code}, headers=_h(a))
-    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    assert r.status_code == 401 and r.json() == ACCOUNT_GONE
     assert _rows(client, "SELECT used_by FROM fleet_codes WHERE code = ?", code) == [(None,)]
     _nothing_left(client, sub)
     newcomer = _google(client, _person()).json()  # the code still binds the driver it was made for
@@ -1250,7 +1250,7 @@ def test_a_fleet_code_whose_account_is_deleted_halfway_through_the_bind_is_refus
         return await real(script)
     monkeypatch.setattr(db, "run_script", deleted_first)
     r = client.post("/api/auth/fleet-code", json={"code": code}, headers=_h(a))
-    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    assert r.status_code == 401 and r.json() == ACCOUNT_GONE
     assert _rows(client, "SELECT used_by FROM fleet_codes WHERE code = ?", code) == [(None,)]
     _nothing_left(client, sub)
 

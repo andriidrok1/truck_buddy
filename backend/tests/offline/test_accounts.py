@@ -30,6 +30,8 @@ GOOGLE_IOS, GOOGLE_WEB = "ios-123.apps.googleusercontent.com", "web-456.apps.goo
 NONCE = "raw-nonce-from-the-phone"
 PROFILE = {"height_in": 162, "weight_lbs": 80000, "length_ft": 70, "trailer_ft": 53, "axles": 5, "hazmat": False}
 GONE = "This device is no longer registered"
+CLOSED = {"detail": GONE, "code": "session_closed"}  # the account is there, this session is not
+ACCOUNT_GONE = {"detail": GONE, "code": "account_gone"}  # the account was deleted
 
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)  # the provider's signing key
 ROTATED = rsa.generate_private_key(public_exponent=65537, key_size=2048)  # the one it rotates to
@@ -616,7 +618,7 @@ def test_logout_ends_only_its_own_session(client):
     a, b = _apple(client, who).json(), _apple(client, who).json()
     assert client.post("/api/auth/logout", headers=_h(a)).json() == {"ok": True}
     r = client.get("/api/auth/check", headers=_h(a))
-    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    assert r.status_code == 401 and r.json() == CLOSED
     assert _refresh(client, a).status_code == 401  # its refresh token went with the session
     assert client.post("/api/auth/renew", headers=_h(a)).status_code == 401
     assert client.post("/api/auth/logout", headers=_h(a)).json() == {"ok": True}  # again: nothing left to do
@@ -642,14 +644,63 @@ def test_a_session_closed_by_another_worker_is_refused_within_the_cache_minute(c
     _rows(client, "DELETE FROM account_sessions WHERE id = ?", _claims(a["access_token"])["sid"])  # not through this worker
     assert client.get("/api/auth/check", headers=_h(a)).status_code == 200  # this worker's copy, up to a minute old
     r = client.post("/api/auth/renew", headers=_h(a))  # but no new token is minted for a session that is gone
-    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    assert r.status_code == 401 and r.json() == CLOSED
     clock = {"now": time.monotonic()}
     monkeypatch.setattr(accounts, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
     clock["now"] += accounts.SESSION_TTL_S - 2
     assert client.get("/api/auth/check", headers=_h(a)).status_code == 200
     clock["now"] += 3  # the minute passed: the row is read again
     r = client.get("/api/auth/check", headers=_h(a))
-    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    assert r.status_code == 401 and r.json() == CLOSED
+
+
+def test_a_closed_session_and_a_deleted_account_answer_different_codes(client, monkeypatch):
+    """The app shows "account deleted" only on account_gone. A phone signed out from another one, with the account
+    still there, gets session_closed, also from DELETE /api/account (review of #173)."""
+    who = _person()
+    a, b = _apple(client, who).json(), _apple(client, who).json()
+    assert client.post("/api/auth/logout-all", headers=_h(b)).status_code == 200
+    for call in (lambda: client.delete("/api/account", headers=_h(a)), lambda: client.get("/api/auth/check", headers=_h(a)),
+                 lambda: client.post("/api/auth/renew", headers=_h(a))):
+        r = call()
+        assert r.status_code == 401 and r.json() == CLOSED
+        assert r.headers["content-type"].startswith("application/json")
+    assert _apple(client, who).json()["new_account"] is False  # the account is indeed there
+
+    # deleted on this worker: account_gone at once
+    c = _apple(client, who).json()
+    d = _apple(client, who).json()
+    assert client.delete("/api/account", headers=_h(c)).status_code == 200
+    for body in (c, d):
+        assert client.get("/api/auth/check", headers=_h(body)).json() == ACCOUNT_GONE
+        assert client.post("/api/auth/renew", headers=_h(body)).json() == ACCOUNT_GONE
+
+
+def test_the_cached_answer_says_closed_when_in_doubt(client, monkeypatch):
+    """Another worker's copy: a session it already knows closed stays session_closed until the copy is a minute old,
+    even when the account goes meanwhile; then the store is read again and says account_gone. A store that cannot
+    say whether the account is there answers session_closed."""
+    a = _apple(client, _person()).json()
+    sub = _claims(a["access_token"])["sub"]
+    _rows(client, "DELETE FROM account_sessions WHERE id = ?", _claims(a["access_token"])["sid"])  # closed elsewhere
+    accounts.reset_caches()
+    assert client.get("/api/auth/check", headers=_h(a)).json() == CLOSED  # read now: the account is there
+    clock = {"now": time.monotonic()}
+    monkeypatch.setattr(accounts, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
+    client.portal.call(accounts.erase, sub)  # as another worker deletes the account
+    accounts._sessions[_claims(a["access_token"])["sid"]] = (None, clock["now"], accounts.CLOSED)  # this worker's copy
+    assert client.get("/api/auth/check", headers=_h(a)).json() == CLOSED
+    clock["now"] += accounts.SESSION_TTL_S + 1
+    assert client.get("/api/auth/check", headers=_h(a)).json() == ACCOUNT_GONE
+    # the account lookup fails: closed, not gone
+    c = _apple(client, _person()).json()
+    _rows(client, "DELETE FROM account_sessions WHERE id = ?", _claims(c["access_token"])["sid"])
+    accounts.reset_caches()
+
+    async def down(sub):
+        raise RuntimeError("store is down")
+    monkeypatch.setattr(accounts, "account_exists", down)
+    assert client.get("/api/auth/check", headers=_h(c)).json() == CLOSED
 
 
 def test_a_store_error_in_the_session_check_lets_the_request_through(client, monkeypatch):
@@ -661,7 +712,7 @@ def test_a_store_error_in_the_session_check_lets_the_request_through(client, mon
 
     async def down(sid, sub):
         raise RuntimeError("store is down")
-    monkeypatch.setattr(accounts, "session_alive", down)
+    monkeypatch.setattr(accounts, "session_state", down)
     assert client.get("/api/auth/check", headers=_h(a)).status_code == 200
 
 
@@ -714,7 +765,7 @@ def test_a_spent_refresh_token_used_later_closes_the_session(client, caplog):
     assert _session_row(client, victim) == [] and "spent refresh token reused" in caplog.text
     assert victim["refresh_token"] not in caplog.text and thief["refresh_token"] not in caplog.text
     assert _refresh(client, thief).status_code == 401  # the thief's pair died with the session
-    assert client.get("/api/auth/check", headers=_h(thief)).json() == {"detail": GONE}
+    assert client.get("/api/auth/check", headers=_h(thief)).json() == CLOSED
     assert _refresh(client, other_phone).status_code == 200  # the account's other phone is not touched
     assert _apple(client, who).json()["new_account"] is False  # and the victim signs in again
 
@@ -816,7 +867,7 @@ def test_renew_refuses_a_session_another_worker_closed(client):
     assert client.get("/api/auth/check", headers=_h(a)).status_code == 200
     _rows(client, "DELETE FROM account_sessions WHERE id = ?", _claims(a["access_token"])["sid"])
     r = client.post("/api/auth/renew", headers=_h(a))
-    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    assert r.status_code == 401 and r.json() == CLOSED
 
 
 def test_an_idle_session_is_refused_and_deleted(client, monkeypatch):
@@ -829,7 +880,7 @@ def test_an_idle_session_is_refused_and_deleted(client, monkeypatch):
     assert _refresh(client, a).status_code == 401 and _session_row(client, a) == []
     # on the session check
     r = client.get("/api/auth/check", headers=_h(b))
-    assert r.status_code == 401 and r.json() == {"detail": GONE} and _session_row(client, b) == []
+    assert r.status_code == 401 and r.json() == CLOSED and _session_row(client, b) == []
     # one day short of the limit is fine, and using it moves seen_at
     assert client.get("/api/auth/check", headers=_h(c)).status_code == 200 and _refresh(client, c).status_code == 200
     # ACCOUNT_SESSION_IDLE_DAYS sets the limit; 0 turns the expiry off
@@ -914,7 +965,7 @@ def test_logout_all_signs_every_phone_out(client):
     r = client.post("/api/auth/logout-all", headers=_h(a))
     assert r.status_code == 200 and r.json() == {"ok": True, "closed": 3}
     for body in (a, b, c):
-        assert client.get("/api/auth/check", headers=_h(body)).json() == {"detail": GONE}
+        assert client.get("/api/auth/check", headers=_h(body)).json() == CLOSED
         assert _refresh(client, body).status_code == 401
     assert client.post("/api/auth/logout-all", headers=_h(a)).status_code == 401  # it needs a live session
     assert client.post("/api/auth/logout-all").status_code == 401
@@ -936,7 +987,7 @@ def test_logout_works_with_any_token_this_server_signed(client):
         assert client.get("/api/auth/check", headers=_h(old)).status_code in (401, 403)
         assert client.post("/api/auth/logout", headers=_h(old)).json() == {"ok": True}
         assert _session_row(client, a) == []
-        assert client.get("/api/auth/check", headers=_h(a)).json() == {"detail": GONE}
+        assert client.get("/api/auth/check", headers=_h(a)).json() == CLOSED
     forged = jwt.encode({"sub": "x", "sid": "ses_x", "exp": int(time.time()) + 60}, "another-secret-another-secret-123", algorithm="HS256")
     assert client.post("/api/auth/logout", headers={"Authorization": f"Bearer {forged}"}).status_code == 401
 

@@ -132,9 +132,33 @@ def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+UNREGISTERED = "This device is no longer registered"
+
+
+class SignedOut(HTTPException):
+    """401 for a token whose account or session is gone. The body carries `code` next to `detail` (server.py's
+    handler): "account_gone" when the sub has no account or device any more (deleted), "session_closed" when the
+    account is there but this phone's session is not (signed out here or from another phone, closed as stolen,
+    idle, past its end). `detail` is the text older builds match on, the same for both."""
+
+    def __init__(self, code: str):
+        super().__init__(status_code=401, detail=UNREGISTERED)
+        self.code = code
+
+
 def _unregistered() -> HTTPException:
-    # The app drops its token on this 401 and signs in again.
-    return HTTPException(status_code=401, detail="This device is no longer registered")
+    """The sub's account or device is gone. The app drops its token on this 401 and signs in again."""
+    return SignedOut(accounts.ACCOUNT_GONE)
+
+
+def _session_closed() -> HTTPException:
+    """The account is there, this phone's session is not."""
+    return SignedOut(accounts.CLOSED)
+
+
+async def _session_gone(sub: str) -> HTTPException:
+    """The 401 for a session the store does not have: which one depends on whether the account is still there."""
+    return SignedOut(await accounts.gone_why(sub))
 
 
 def _bad_refresh() -> HTTPException:
@@ -186,7 +210,7 @@ async def issue(sub: str, role: str, sid: Optional[str] = None, spent: Optional[
     if not sid:
         await tenancy.set_refresh(sub, _hash(refresh))
     elif not await accounts.session_rotate(sid, _hash(refresh), spent):
-        raise _bad_refresh() if spent else _unregistered()
+        raise _bad_refresh() if spent else await _session_gone(sub)
     return {**out, "refresh_token": refresh, "expires_in": _expires_in(until)}
 
 
@@ -209,12 +233,14 @@ async def renew(sub: str, role: str, sid: Optional[str] = None) -> dict:
     if db.store() == "off":
         return {**_access(sub, role, None, sid), "expires_in": JWT_DAYS * 86400}
     dev = await tenancy.device_of(sub)
-    started = await accounts.session_started(sid, sub) if dev is not None else None
-    if dev is None or started is None:
+    if dev is None:
         raise _unregistered()
+    started = await accounts.session_started(sid, sub)
+    if started is None:  # the device may be this worker's copy of a row a deletion took a moment ago
+        raise await _session_gone(sub)
     if accounts.ended(started):
         await accounts.session_close(sid)
-        raise _unregistered()
+        raise _session_closed()
     until = accounts.session_end(started)
     return {**_access(sub, role, dev, sid, until), "expires_in": _expires_in(until)}
 
@@ -421,17 +447,18 @@ async def _grace(claims: dict) -> None:
 
 async def _session(claims: dict) -> Optional[str]:
     """The account session a token belongs to (its `sid`), None for a device token. 401 once the session is gone:
-    the driver signed out on this phone, or deleted the account from another one."""
+    "session_closed" when the driver signed out on this phone or from another one, "account_gone" when the account
+    was deleted (SignedOut)."""
     sid = claims.get("sid")
     if not sid or db.store() == "off":
         return sid or None
     try:
-        alive = await accounts.session_alive(sid, claims["sub"])
+        state = await accounts.session_state(sid, claims["sub"])
     except Exception as e:  # noqa: BLE001 - a store hiccup must not lock every driver out
         logging.getLogger("truckbuddy.auth").warning("session lookup failed for %s: %s", claims["sub"], e)
         return sid
-    if not alive:
-        raise _unregistered()
+    if state != accounts.ALIVE:
+        raise SignedOut(state)
     try:
         await accounts.session_touch(sid)
     except Exception as e:  # noqa: BLE001 - seen_at is bookkeeping

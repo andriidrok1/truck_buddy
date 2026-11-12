@@ -757,6 +757,12 @@ async def _memory_down():
     await memory.close()
 
 
+@app.exception_handler(auth.SignedOut)
+async def signed_out(_request, exc: auth.SignedOut):
+    """401 with {"detail", "code"}: the app tells a deleted account from a closed session (services/auth.py)."""
+    return JSONResponse(status_code=401, content={"detail": exc.detail, "code": exc.code}, headers=exc.headers)
+
+
 @app.exception_handler(PlacesUnavailable)
 async def places_unavailable(_request, _exc):
     return JSONResponse(status_code=502, content={"detail": "Places unavailable right now"})
