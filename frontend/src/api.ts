@@ -280,6 +280,10 @@ export async function logout(): Promise<boolean> {
   }
 }
 
+/** How long the app waits for DELETE /api/memory: the server waits for the trip saves still in flight and wipes four
+ *  stores in one request, which on a slow cell connection takes longer than an ordinary call (review of #173, L-4). */
+export const WIPE_DATA_TIMEOUT_MS = 60000;
+
 /**
  * "Delete my data" on the server (DELETE /api/memory). Not through request(): the caller holds every other request
  * until this one settles (firstLaunch.ts deleteMyData), and request()'s renewal on a 401 waits on that very hold, so
@@ -287,7 +291,7 @@ export async function logout(): Promise<boolean> {
  * up. A 401 comes back as an ApiError: the caller renews outside the hold and tries once more.
  */
 export async function wipeServerData(): Promise<{ deleted: number }> {
-  const d = deadline(DEFAULT_TIMEOUT_MS);
+  const d = deadline(WIPE_DATA_TIMEOUT_MS);
   try {
     const res = await fetchTracked(`${BASE}/memory`, { method: "DELETE", signal: d.signal, headers: { "Content-Type": "application/json", ...authHeader() } });
     await check(res, "/memory", null, false);

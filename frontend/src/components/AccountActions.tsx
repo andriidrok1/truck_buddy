@@ -164,6 +164,7 @@ function CodeActions({ router }: { router: Nav }) {
   const onDelete = async () => {
     const out = await deleteMyData(router);
     if (out === "failed") Alert.alert(t("Couldn't reach the server"), t("Your data is still there. Check your connection and try again."));
+    else if (out === "unconfirmed") Alert.alert(t("Delete my data"), t(DELETE_UNCONFIRMED)); // the server may have wiped
     else if (out === "busy") Alert.alert(t("Delete my data"), t(DELETE_BUSY));
   };
   return (

@@ -2,7 +2,7 @@
 // per identity. The server is a fetch stand-in that answers like backend services/account_api.py.
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { ACCOUNT_DELETE_TIMEOUT_MS, api } from "../api";
+import { ACCOUNT_DELETE_TIMEOUT_MS, api, WIPE_DATA_TIMEOUT_MS } from "../api";
 import { getToken, holdToken, loadToken, setToken, tokenHold } from "../auth";
 import { CONSENT_KEY, giveConsent } from "../consent";
 import { saveProfile } from "../data/profile";
@@ -488,6 +488,55 @@ describe("one wipe at a time (review of #173, M1)", () => {
     expect(tokenHold()).not.toBeNull();
     release();
     expect(tokenHold()).toBeNull();
+  });
+});
+
+describe("Delete my data with no answer (review of #173, L-4)", () => {
+  test("waits 60 s before it counts as no answer", () => {
+    expect(WIPE_DATA_TIMEOUT_MS).toBe(60000);
+  });
+
+  test.each([
+    ["session_closed", { detail: "This device is no longer registered", code: "session_closed" }],
+    ["account_gone", { detail: "This device is no longer registered", code: "account_gone" }],
+  ])("the check says %s: signed out with the notice, never \"deleted\"", async (_, body) => {
+    await signedIn("code");
+    answers[key("DELETE", "/memory")] = "offline";
+    answers[key("GET", "/auth/check")] = reply(401, body);
+    expect(await deleteMyData(router())).toBe("signed_out");
+    expect(getToken()).toBeNull();
+    expect(signInNotice()).toBe("signed_out");
+    expect(useLangStore.getState().chosen).toBe(true);
+  });
+
+  test("the check says the token expired: renewed, and the DELETE goes once more with the new token", async () => {
+    await signedIn("code");
+    let n = 0;
+    const call = jest.fn(async () => {
+      if (++n === 1) throw new TypeError("Network request failed");
+      return { deleted: 1 };
+    });
+    answers[key("GET", "/auth/check")] = reply(401, { detail: "Invalid or expired token" });
+    answers[key("POST", "/auth/refresh")] = reply(200, { access_token: "ACC2", refresh_token: "REF2" });
+    expect(await deleteMyData(router(), call)).toBe("done");
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(getToken()).toBeNull();
+  });
+
+  test("the check gets no answer either: unconfirmed, everything kept", async () => {
+    await signedIn("code");
+    answers[key("DELETE", "/memory")] = reply(504, "gateway timeout");
+    answers[key("GET", "/auth/check")] = "offline";
+    expect(await deleteMyData(router())).toBe("unconfirmed");
+    expect(getToken()).toBe("ACC");
+    expect(getTruckProfile().height_in).toBe(168);
+  });
+
+  test("an answer with an error is failed, with no check", async () => {
+    await signedIn("code");
+    answers[key("DELETE", "/memory")] = reply(500, { detail: "Internal Server Error" });
+    expect(await deleteMyData(router())).toBe("failed");
+    expect(calls.map((c) => c.path)).toEqual(["/memory"]);
   });
 });
 

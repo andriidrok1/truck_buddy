@@ -8,7 +8,7 @@
 
 import { useSyncExternalStore } from "react";
 
-import { ApiError, wipeServerData } from "../api";
+import { ApiError, isNoAnswer, tokenState, wipeServerData } from "../api";
 import { forgetIdentity, getToken, holdToken, identitySub, signedInVia, signedInViaKnown, type SignedInVia } from "../auth";
 import { forgetConsent } from "../consent";
 import { resetProfile } from "../data/profile";
@@ -283,16 +283,40 @@ async function wipeOnce<T>(router: Nav, clearServer: () => Promise<T>): Promise<
   return { ok: true, value };
 }
 
-/** How "Delete my data" ended. "done": the phone is a fresh install. "failed": the server could not be reached or
- *  answered with an error; nothing on the phone was touched. "busy": "Delete account" is under way. "signed_out":
- *  the server turned the sign-in down, and the phone is on the sign-in screen with "You were signed out". */
-export type DataOutcome = "done" | "failed" | "busy" | "signed_out";
+/** How "Delete my data" ended. "done": the phone is a fresh install. "failed": the server answered with an error;
+ *  nothing on the phone was touched. "unconfirmed": no answer, and the check could not say whether the server wiped
+ *  (it may have); nothing on the phone was touched. "busy": "Delete account" is under way. "signed_out": the server
+ *  turned the sign-in down, and the phone is on the sign-in screen with "You were signed out". */
+export type DataOutcome = "done" | "failed" | "unconfirmed" | "busy" | "signed_out";
 
-/** "Delete my data" for an access-code sign-in (DELETE /api/memory). */
+class DataUnconfirmed extends Error {}
+
+/**
+ * "Delete my data" for an access-code sign-in (DELETE /api/memory).
+ *
+ * No answer (review of #173, L-4): the server may have wiped all the same, so the driver is never told the data is
+ * still there. GET /api/auth/check with the same token, still under the hold: a 401 that says the sign-in is over
+ * signs the phone out; any other 401 (an expired token) goes through the renewal and one more DELETE (the wipe is
+ * safe to repeat); a 200 settles nothing, because the wipe leaves the token alive, so it is "unconfirmed", as is no
+ * answer to the check.
+ */
 export async function deleteMyData(router: Nav, clearServer: () => Promise<unknown> = wipeServerData): Promise<DataOutcome> {
-  const r = await serverThenReset(router, clearServer, "data");
+  const checked = async (): Promise<unknown> => {
+    const sent = getToken(); // per attempt: the retry after a renewal carries the new token
+    try {
+      return await clearServer(); // reads its header in this same tick (serverThenReset relies on it)
+    } catch (e) {
+      if (!sent || !isNoAnswer(e)) throw e;
+      const state = await tokenState(sent);
+      if (state === "refused") throw new ApiError(401, "/auth/check", "refused");
+      if (state === "session_closed" || state === "account_gone" || state === "unregistered") throw new SignedOutByServer();
+      throw new DataUnconfirmed();
+    }
+  };
+  const r = await serverThenReset(router, checked, "data");
   if (r.ok) return "done";
   if (r.error instanceof WipeBusy) return "busy";
   if (r.error instanceof SignedOutByServer) return "signed_out";
+  if (r.error instanceof DataUnconfirmed) return "unconfirmed";
   return "failed";
 }

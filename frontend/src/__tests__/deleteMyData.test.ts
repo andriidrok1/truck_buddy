@@ -201,7 +201,7 @@ describe("the delete and the old token (review of #129)", () => {
     expect(afterStart.filter((c) => c.auth?.includes("old-device-token"))).toEqual([]);
   });
 
-  test("the server can't be reached: the token and the trip log come back, nothing local is wiped", async () => {
+  test("the server can't be reached: checked, then the token and the trip log come back, nothing local is wiped, and it is unconfirmed (review of #173, L-4)", async () => {
     await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
     const router = { canDismiss: () => true, dismissAll: jest.fn() };
     let done: Promise<string> = Promise.resolve("");
@@ -214,12 +214,14 @@ describe("the delete and the old token (review of #129)", () => {
       await flush();
       expect(calls.map((c) => c.method)).toEqual(["DELETE"]);
       finishDelete(false);
-      expect(await done).toBe("failed");
+      // The server may have wiped: never "your data is still there". The check answers 200, which settles nothing.
+      expect(await done).toBe("unconfirmed");
       await queued;
     });
+    expect(calls[1]).toEqual({ method: "GET", path: "/auth/check", auth: "Bearer old-device-token" });
     // Same identity: the waiting request went with the old token, nothing signed the phone in anew.
-    expect(calls[1]).toEqual({ method: "GET", path: "/memory", auth: "Bearer old-device-token" });
-    expect(calls.some((c) => c.path.startsWith("/auth/"))).toBe(false);
+    expect(calls[2]).toEqual({ method: "GET", path: "/memory", auth: "Bearer old-device-token" });
+    expect(calls.some((c) => c.path === "/auth/refresh" || c.path === "/auth/renew")).toBe(false);
     expect(router.dismissAll).not.toHaveBeenCalled();
     expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru"));
     expect(getToken()).toBe("old-device-token");
