@@ -1,5 +1,5 @@
-"""Device tokens, sign-in with Apple and Google, the driver's stored truck profile and "delete my data": /api/auth/*,
-/api/me/profile and /api/memory.
+"""Device tokens, sign-in with Apple and Google, the driver's stored truck profile, "delete my data" and deleting the
+account: /api/auth/*, /api/me/profile, /api/memory and /api/account.
 
 Mounted by server.py ahead of its own routers, so the routes keep their order. `public` needs no token; `api` needs a
 valid one and counts against the driver's request budget (services/auth.py), like server.api.
@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from models import TruckProfile
-from services import accounts, auth, db, identity, memory, session_store, tenancy, trip_events
+from services import accounts, apple, auth, db, identity, memory, session_store, tenancy, trip_events
 
 logger = logging.getLogger("truckbuddy")
 
@@ -36,7 +36,7 @@ class FleetCodeRequest(BaseModel):
 class AppleSignInRequest(BaseModel):
     identity_token: str = Field(min_length=20, max_length=4096)
     nonce: str = Field(min_length=8, max_length=128)  # the raw nonce; Apple's token carries its SHA-256
-    authorization_code: Optional[str] = Field(None, max_length=2048)  # for revoking on account deletion; not used yet
+    authorization_code: Optional[str] = Field(None, max_length=2048)  # traded for Apple's refresh token (services/apple.py)
     name: Optional[str] = Field(None, max_length=120)  # Apple gives the name to the app only, on the first authorization
     platform: Optional[Literal["ios", "android"]] = None
 
@@ -89,10 +89,12 @@ def _not_configured(provider: identity.Provider) -> HTTPException:
     return HTTPException(status_code=503, detail="Sign-in is not configured")
 
 
-async def _sign_in(provider: identity.Provider, request: Request, verify, name: Optional[str], platform: Optional[str]) -> dict:
+async def _sign_in(provider: identity.Provider, request: Request, verify, name: Optional[str], platform: Optional[str],
+                   apple_code: Optional[str] = None) -> dict:
     """Checks the provider's token (`verify` returns the identity), finds or creates the account and opens a session
     for this phone. The account's sub is the key its data lives under, so the token handed back sees everything the
-    driver stored from any other phone."""
+    driver stored from any other phone. `apple_code` is Apple's authorization code, traded for a refresh token in
+    the background once the sign-in has succeeded."""
     if not provider.audiences():
         raise _not_configured(provider)
     if db.store() == "off":
@@ -117,6 +119,7 @@ async def _sign_in(provider: identity.Provider, request: Request, verify, name: 
     except Exception as e:  # noqa: BLE001
         logger.warning("%s sign-in failed in the store: %s", provider.name, e)
         raise _unavailable()
+    apple.remember_later(account.sub, apple_code, who.audience)
     return {**out, "new_account": new, "has_profile": has_profile, "name": account.name, "email": account.email}
 
 
@@ -124,7 +127,8 @@ async def _sign_in(provider: identity.Provider, request: Request, verify, name: 
 async def auth_apple(req: AppleSignInRequest, request: Request):
     """Sign in with Apple: the identity token from the phone, plus the raw nonce the app made for it."""
     name = (req.name or "").strip() or None
-    return await _sign_in(identity.APPLE, request, lambda: identity.verify_apple(req.identity_token, req.nonce), name, req.platform)
+    return await _sign_in(identity.APPLE, request, lambda: identity.verify_apple(req.identity_token, req.nonce), name, req.platform,
+                          req.authorization_code)
 
 
 @public.post("/auth/google", response_model=SignInResponse)
@@ -239,25 +243,69 @@ async def memory_list(driver: str = Depends(auth.require_driver), limit: int = Q
         raise HTTPException(status_code=503, detail="Memory is unavailable right now")
 
 
+async def _wipe(driver: str) -> dict:
+    """What "Delete my data" removes: the trip events, the remembered turns, facts and visits (after the saves still
+    in flight land) and the driver's own stored truck profile and name."""
+    await tenancy.revoke_grace(driver)  # old tokens die at their exp; a stolen one cannot ride the grace
+    events = await trip_events.clear(driver)
+    turns = await memory.clear(driver)
+    return {"deleted": turns, "trip_events": events, "profile": await tenancy.profile_clear(driver)}
+
+
 @api.delete("/memory")
 async def memory_clear(driver: str = Depends(auth.require_driver)):
     """"Delete my data": the dialogs, the remembered turns and facts, the trip events (after the saves still in
     flight land) and the driver's own stored truck profile (a fleet truck's profile belongs to the fleet).
     `deleted` counts turns, as before."""
     await agent_sessions_drop(driver)
-
-    async def wipe() -> dict:
-        await tenancy.revoke_grace(driver)  # old tokens die at their exp; a stolen one cannot ride the grace
-        events = await trip_events.clear(driver)
-        turns = await memory.clear(driver)
-        return {"deleted": turns, "trip_events": events, "profile": await tenancy.profile_clear(driver)}
     try:
-        return await asyncio.wait_for(wipe(), MEMORY_WAIT_S)
+        return await asyncio.wait_for(_wipe(driver), MEMORY_WAIT_S)
     except Exception as e:  # noqa: BLE001
         logger.warning("memory clear failed: %s", e)
         raise HTTPException(status_code=503, detail="Memory is unavailable right now")
 
 
+@api.delete("/memory/history")
+async def memory_history_clear(driver: str = Depends(auth.require_driver)):
+    """"Clear memory" on the history screen: what was said, what the copilot learned from it, and the dialogs, so the
+    copilot does not carry the thread on. The truck profile, the trip events and the visit counts stay.
+    `deleted` counts turns, `facts` is whether there were learned facts."""
+    await agent_sessions_drop(driver)
+    try:
+        turns, facts = await asyncio.wait_for(memory.clear_history(driver), MEMORY_WAIT_S)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("history clear failed: %s", e)
+        raise HTTPException(status_code=503, detail="Memory is unavailable right now")
+    return {"deleted": turns, "facts": facts > 0}
+
+
+@api.delete("/account")
+async def account_delete(principal: auth.Principal = Depends(auth.require_driver)):
+    """Deletes the signed-in driver's account and everything stored for it; nothing of the driver is left, and every
+    phone of the account is signed out. An Apple account's refresh token is revoked at Apple first (`apple_revoked`:
+    true, false when Apple could not be reached or refused, null when there was no token or no key to revoke with);
+    the deletion goes on either way.
+
+    The data goes first and the account row last, in one transaction with the sessions, so a deletion that failed
+    halfway (503) is repeated with the same token."""
+    if not principal.sid:
+        # A device or access-code token has no account behind it; its data goes with DELETE /api/memory.
+        raise HTTPException(status_code=409, detail="This sign-in has no account. Use DELETE /api/memory to delete its data.")
+    if db.store() == "off":
+        raise _unavailable()
+    driver = principal.sub
+    try:
+        account = await accounts.by_sub(driver)
+        revoked = await apple.revoke(account[1], driver) if account and account[0] == "apple" else None
+        await agent_sessions_drop(driver)
+        wiped = await asyncio.wait_for(_wipe(driver), MEMORY_WAIT_S)
+        sessions = await asyncio.wait_for(accounts.erase(driver), MEMORY_WAIT_S)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("account deletion failed for %s: %s", driver, e)
+        raise HTTPException(status_code=503, detail="The account could not be deleted right now. Try again.")
+    return {"ok": True, **wiped, "sessions": sessions, "apple_revoked": revoked}
+
+
 async def agent_sessions_drop(driver: str) -> None:
     """Forget the dialogs of this driver too (its id prefixes the session ids), wherever they are stored."""
-    await session_store.drop_prefix(driver)
+    await session_store.drop_prefix(f"{driver}:")

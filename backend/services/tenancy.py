@@ -71,6 +71,12 @@ async def device_of(sub: str) -> Optional[Device]:
     return d
 
 
+# Deletes a solo org that nothing points at any more (`{p}` = its id): its driver left for a fleet or deleted the
+# account. Never a fleet (solo = 0).
+DROP_EMPTY_SOLO_ORG = "DELETE FROM orgs WHERE id = {p} AND solo = 1 AND " + " AND ".join(
+    f"NOT EXISTS (SELECT 1 FROM {t} WHERE org_id = orgs.id)"
+    for t in ("devices", "drivers", "vehicles", "fleet_codes", "org_credentials", "users"))
+
 _created: dict[str, Optional[datetime]] = {}  # sub -> its driver row's created_at (never changes), per process
 
 
@@ -113,13 +119,20 @@ async def ensure_solo_org(sub: str, role: str = "driver") -> Optional[Device]:
     if k == "off":
         return None
     org_id, driver_id, now = new_id("org"), new_id("drv"), _now()
+    # Two first requests for one sub (a phone waking two screens, two sign-ins at once) both get here; one device
+    # row wins. The loser takes its org and driver rows back: nothing points at them, and no sub is on them to find
+    # them by when the driver deletes the account.
+    lost_driver, lost_org = "DELETE FROM drivers WHERE id = {p}", "DELETE FROM orgs WHERE id = {p}"
     if k == "sqlite":
         def _mk(con):
             con.execute("INSERT INTO orgs (id, name, solo, created_at) VALUES (?, ?, 1, ?)", (org_id, "Solo", _iso(now)))
             con.execute("INSERT INTO drivers (id, org_id, display_name, profile, created_at) VALUES (?, ?, NULL, NULL, ?)",
                         (driver_id, org_id, _iso(now)))
-            con.execute("INSERT OR IGNORE INTO devices (sub, driver_id, org_id, vehicle_id, role, bound_at, seen_at) "
-                        "VALUES (?, ?, ?, NULL, ?, ?, ?)", (sub, driver_id, org_id, role, _iso(now), _iso(now)))
+            n = con.execute("INSERT OR IGNORE INTO devices (sub, driver_id, org_id, vehicle_id, role, bound_at, seen_at) "
+                            "VALUES (?, ?, ?, NULL, ?, ?, ?)", (sub, driver_id, org_id, role, _iso(now), _iso(now))).rowcount
+            if not n:
+                con.execute(lost_driver.format(p="?"), (driver_id,))
+                con.execute(lost_org.format(p="?"), (org_id,))
         await db._sq_run(_mk)
     else:
         pool = await db._db()
@@ -127,8 +140,12 @@ async def ensure_solo_org(sub: str, role: str = "driver") -> Optional[Device]:
             async with con.transaction():
                 await con.execute("INSERT INTO orgs (id, name, solo, created_at) VALUES ($1, 'Solo', 1, $2)", org_id, now)
                 await con.execute("INSERT INTO drivers (id, org_id, created_at) VALUES ($1, $2, $3)", driver_id, org_id, now)
-                await con.execute("INSERT INTO devices (sub, driver_id, org_id, role, bound_at, seen_at) VALUES ($1, $2, $3, $4, $5, $5) "
-                                  "ON CONFLICT (sub) DO NOTHING", sub, driver_id, org_id, role, now)
+                status = await con.execute(
+                    "INSERT INTO devices (sub, driver_id, org_id, role, bound_at, seen_at) VALUES ($1, $2, $3, $4, $5, $5) "
+                    "ON CONFLICT (sub) DO NOTHING", sub, driver_id, org_id, role, now)
+                if status.split()[-1] == "0":
+                    await con.execute(lost_driver.format(p="$1"), driver_id)
+                    await con.execute(lost_org.format(p="$1"), org_id)
     _devices.pop(sub, None)
     return await device_of(sub)
 
@@ -210,6 +227,7 @@ async def bind_fleet_code(sub: str, code: str) -> Device:
             con.execute("UPDATE devices SET org_id = ?, vehicle_id = ?, role = ?, bound_at = ? WHERE sub = ?",
                         (org_id, vehicle_id, role, _iso(now), sub))
             con.execute("UPDATE fleet_codes SET used_by = ?, used_at = ? WHERE code = ?", (sub, _iso(now), code))
+            con.execute(DROP_EMPTY_SOLO_ORG.format(p="?"), (dev.org_id,))  # the org of one the driver came from
         await db._sq_run(_bind)
     else:
         pool = await db._db()
@@ -219,6 +237,7 @@ async def bind_fleet_code(sub: str, code: str) -> Device:
                 await con.execute("UPDATE devices SET org_id = $1, vehicle_id = $2, role = $3, bound_at = $4 WHERE sub = $5",
                                   org_id, vehicle_id, role, now, sub)
                 await con.execute("UPDATE fleet_codes SET used_by = $1, used_at = $2 WHERE code = $3", sub, now, code)
+                await con.execute(DROP_EMPTY_SOLO_ORG.format(p="$1"), dev.org_id)  # the org of one the driver came from
     _devices.pop(sub, None)
     _profiles.pop(sub, None)
     return await device_of(sub)
@@ -667,6 +686,14 @@ async def credential_get(org_id: Optional[str], provider: str) -> Optional[str]:
             logger.warning("org credential %s/%s unreadable: %s", org_id, provider, e)
     _credentials[(org_id, provider)] = (secret, time.monotonic())
     return secret
+
+
+def forget(sub: str, driver_id: Optional[str] = None) -> None:
+    """This worker's copies of a sub that was deleted (the other workers' run out within a minute)."""
+    for cache in (_devices, _profiles, _grace, _created, _touched):
+        cache.pop(sub, None)
+    if driver_id:
+        _motive_users.pop(driver_id, None)
 
 
 def reset_caches() -> None:

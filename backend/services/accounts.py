@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
 
-from services import db
+from services import db, tenancy
 from services.db import iso as _iso, parse_at as _at, utcnow as _now
 from services.tenancy import new_id
 
@@ -54,6 +54,96 @@ async def find_or_create(provider: str, provider_sub: str, new_sub: str, email: 
             await con.execute(update.format(e="$1", n="$2", p="$3", s="$4"), email, name, provider, provider_sub)
             row = tuple(await con.fetchrow(select.format(p="$1", s="$2"), provider, provider_sub))
     return Account(*row)
+
+
+async def by_sub(sub: str) -> Optional[tuple[str, Optional[str]]]:
+    """(provider, the sealed Apple refresh token or None) of the account behind this sub; None when there is none."""
+    sql = "SELECT provider, apple_refresh_enc FROM accounts WHERE sub = {p}"
+    if db.store() == "sqlite":
+        return await db._sq_run(lambda con: con.execute(sql.format(p="?"), (sub,)).fetchone())
+    pool = await db._db()
+    r = await pool.fetchrow(sql.format(p="$1"), sub)
+    return tuple(r) if r else None
+
+
+async def apple_refresh_set(sub: str, sealed: str) -> None:
+    """Keeps Apple's refresh token for the account (encrypted by the caller, services/apple.py)."""
+    if db.store() == "sqlite":
+        await db._sq_run(lambda con: con.execute("UPDATE accounts SET apple_refresh_enc = ? WHERE sub = ?", (sealed, sub)))
+    else:
+        pool = await db._db()
+        await pool.execute("UPDATE accounts SET apple_refresh_enc = $1 WHERE sub = $2", sealed, sub)
+
+
+# ---- deleting an account -------------------------------------------------------------------------------------
+
+# Every table with a column that holds a driver's sub. A migration that adds another one adds it here:
+# tests/offline/test_account_delete.py reads every table of the store after a deletion and fails on a leftover.
+SUB_COLUMNS = (("conversation", "driver"), ("driver_facts", "driver"), ("driver_visits", "driver"),
+               ("driver_visit_trips", "driver"), ("trip_events", "driver"), ("jobs", "driver"),
+               ("dialog_sessions", "driver"))
+CODE_USER_GONE = "deleted"  # fleet_codes.used_by once the driver who used the code deleted the account
+
+
+def _erase_steps(sub: str, driver_id: Optional[str], org_id: Optional[str]) -> list[tuple[str, tuple]]:
+    """The deletes, in the order the foreign keys allow (device, then its driver row, then the org), the account
+    row last. `?` placeholders."""
+    steps = [(f"DELETE FROM {table} WHERE {column} = ?", (sub,)) for table, column in SUB_COLUMNS]
+    # A used code must stay used (used_by empty would let it bind another phone to the fleet), without the sub.
+    steps.append(("UPDATE fleet_codes SET used_by = ? WHERE used_by = ?", (CODE_USER_GONE, sub)))
+    steps.append(("DELETE FROM devices WHERE sub = ?", (sub,)))
+    if driver_id:
+        # In a fleet too: the row is the driver's name, profile and Motive mapping. The fleet keeps its org, its
+        # trucks and their profiles.
+        steps.append(("DELETE FROM drivers WHERE id = ? AND NOT EXISTS (SELECT 1 FROM devices WHERE driver_id = drivers.id)",
+                      (driver_id,)))
+    if org_id:
+        steps.append((tenancy.DROP_EMPTY_SOLO_ORG.format(p="?"), (org_id,)))  # the org of one made for this sub
+    steps.append(("DELETE FROM account_sessions WHERE sub = ?", (sub,)))
+    steps.append(("DELETE FROM accounts WHERE sub = ?", (sub,)))
+    return steps
+
+
+def _numbered(sql: str) -> str:
+    """`?` placeholders as Postgres's $1, $2, ..."""
+    parts = sql.split("?")
+    return "".join(f"{part}${i}" for i, part in enumerate(parts[:-1], 1)) + parts[-1]
+
+
+async def erase(sub: str) -> int:
+    """Deletes the account and every row keyed on its sub, in one transaction: either all of it is gone or the
+    account is still whole and the same token can ask again. Returns how many phones were signed in. Their tokens
+    are refused at once on this worker and within SESSION_TTL_S on the others; signing in again with the same
+    Apple or Google identity finds no account and starts a new one, under a new sub."""
+    device = "SELECT driver_id, org_id FROM devices WHERE sub = ?"
+    sessions = "SELECT id FROM account_sessions WHERE sub = ?"
+    if db.store() == "sqlite":
+        def _erase(con):
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                dev = con.execute(device, (sub,)).fetchone() or (None, None)
+                sids = [r[0] for r in con.execute(sessions, (sub,)).fetchall()]
+                for sql, args in _erase_steps(sub, *dev):
+                    con.execute(sql, args)
+                con.execute("COMMIT")
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+            return dev, sids
+        dev, sids = await db._sq_run(_erase)
+    else:
+        pool = await db._db()
+        async with pool.acquire() as con, con.transaction():
+            row = await con.fetchrow(_numbered(device), sub)
+            dev = tuple(row) if row else (None, None)
+            sids = [r["id"] for r in await con.fetch(_numbered(sessions), sub)]
+            for sql, args in _erase_steps(sub, *dev):
+                await con.execute(_numbered(sql), *args)
+    for sid in sids:
+        _sessions.pop(sid, None)
+        _touched.pop(sid, None)
+    tenancy.forget(sub, dev[0])
+    return len(sids)
 
 
 # ---- sessions ------------------------------------------------------------------------------------------------

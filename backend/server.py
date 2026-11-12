@@ -24,7 +24,7 @@ from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import PARSE_DEGRADED, RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import account_api, approach, approach_api, auth, chains, db, fleet_api, fuel_index, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, route_cost, session_store, spend, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services import account_api, apple, approach, approach_api, auth, chains, db, fleet_api, fuel_index, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, route_cost, session_store, spend, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
 from services.http import client as http_client  # noqa: E402
 from services.logs import said, transcripts_on  # noqa: E402
 from services.settings import settings  # noqa: E402
@@ -728,7 +728,7 @@ async def _memory_up():
 
 def _draining() -> list:
     return [t for t in (*_BG, *memory._tasks, *trip_events._tasks, *approach._tasks, *breakdown._tasks,
-                        *parking_store.pending(), *voice._PENDING.values(), *spend.pending_tasks()) if not t.done()]
+                        *parking_store.pending(), *voice._PENDING.values(), *spend.pending_tasks(), *apple._tasks) if not t.done()]
 
 
 async def drain(timeout: float = DRAIN_S) -> int:

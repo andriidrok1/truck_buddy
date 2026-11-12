@@ -62,6 +62,7 @@ class Identity:
     sub: str  # the provider's stable id for this person
     email: Optional[str]
     name: Optional[str]
+    audience: Optional[str] = None  # the client the token was issued to (Apple: the bundle id)
 
 
 @dataclass
@@ -176,7 +177,8 @@ async def verify_apple(identity_token: str, raw_nonce: str) -> Identity:
         same = False
     if not same:
         raise Invalid("nonce mismatch")
-    return Identity("apple", claims["sub"], _text(claims.get("email"), 320), None)
+    aud = claims.get("aud")
+    return Identity("apple", claims["sub"], _text(claims.get("email"), 320), None, aud if isinstance(aud, str) else None)
 
 
 async def verify_google(id_token: str) -> Identity:

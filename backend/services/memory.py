@@ -248,6 +248,25 @@ async def visits(driver: str) -> list[dict]:
     return [{**dict(r), "count": int(r["count"])} for r in rows]
 
 
+async def clear_history(driver: str) -> tuple[int, int]:
+    """"Clear memory" on the history screen: what was said and what the copilot learned from it (the facts). The
+    visits are counted from arrivals, not from talk, and stay, like the trip events. Returns (turns, facts rows)."""
+    if _pending.get(driver):
+        await asyncio.gather(*list(_pending[driver]), return_exceptions=True)
+    kind = store()
+    if kind == "off":
+        _off()
+    if kind == "sqlite":
+        def _forget(con):
+            n = con.execute("DELETE FROM conversation WHERE driver = ?", (driver,)).rowcount
+            return n, con.execute("DELETE FROM driver_facts WHERE driver = ?", (driver,)).rowcount
+        return await _sq_run(_forget)
+    pool = await _db()
+    turns = await pool.execute("DELETE FROM conversation WHERE driver = $1", driver)
+    facts = await pool.execute("DELETE FROM driver_facts WHERE driver = $1", driver)
+    return int(turns.split()[-1]), int(facts.split()[-1])
+
+
 async def clear(driver: str) -> int:
     """Everything about the driver: the turns, the learned facts, the visits and the trip events (the count is turns)."""
     if _pending.get(driver):
