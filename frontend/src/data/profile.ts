@@ -3,6 +3,7 @@
 // whenever the network is away, the local copy in hooks/useTruckProfile.ts is what the app runs on.
 
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 import { api, ApiError } from "../api";
 import { DEFAULT_TRUCK, ensureTruckProfile, getTruckProfile, saveTruckProfile, type TruckProfile } from "../hooks/useTruckProfile";
@@ -62,6 +63,11 @@ export async function fetchProfile(): Promise<TruckProfile> {
     // A fleet's truck: mid-trip the phone's sizes are the trip's (a swapped trailer) and the truck's stored sizes
     // must not undo them; between trips the truck's come back (decision 2026-11-02, bug 2).
     if (source === "vehicle") confirmHeight(); // the fleet set this truck's sizes
+    // The driver's own stored height that is not the silent default is an answer they gave once (the truck step,
+    // the truck screen, by voice), on this phone or on the one they had before: a new phone does not ask again.
+    // The default stays unconfirmed, because a driver who skipped the truck step has it stored too, and the map
+    // must still ask them (src/truck/heightConfirmed.ts).
+    else if (typeof remote.height_in === "number" && remote.height_in !== DEFAULT_TRUCK.height_in) confirmHeight();
     if (source === "vehicle" && midTrip()) return getTruckProfile();
     const cur = getTruckProfile();
     const merged = { ...cur, ...remote };
@@ -71,6 +77,15 @@ export async function fetchProfile(): Promise<TruckProfile> {
     if (isMissing(e)) return getTruckProfile();
     throw e;
   }
+}
+
+/** Pulls the server's profile whenever the phone becomes signed in: on a cold start with a token, and right after a
+ *  sign-in (a returning driver's truck is on the server, not on this phone). Not before: without a token the
+ *  request is a 401 on every cold start. Signed out and in again, it runs again for the new identity. */
+export function useProfileSync(signedIn: boolean) {
+  useEffect(() => {
+    if (signedIn) queryClient.prefetchQuery({ queryKey: PROFILE_KEY, queryFn: fetchProfile });
+  }, [signedIn]);
 }
 
 /** Every save of the truck: locally at once (the next request sees the new truck), then the server in the
