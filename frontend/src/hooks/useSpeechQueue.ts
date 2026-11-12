@@ -84,8 +84,8 @@ export function useSpeechQueue(
         holdPlayback(true);
         playing.current = item;
         const maxMs = Math.min(15000, 1500 + item.text.length * 65);
-        let cloud: string | null = null;
-        if (isOnline()) {
+        let cloud: string | null = (isOnline() && item.audioUrl) || null;
+        if (!cloud && isOnline()) {
           try {
             const deadline = item.kind === "maneuver" ? MANEUVER_SPEAK_DEADLINE_MS : SPEAK_DEADLINE_MS;
             cloud = absoluteUrl((await api.speak(item.text, deadline)).audio_url);

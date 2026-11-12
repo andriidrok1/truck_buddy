@@ -317,10 +317,12 @@ export default function MapScreen() {
       const audio = api.speak(text); // generate while the first answer is still playing
       await replyDone;
       if (!isCurrent() || trip().active?.place.id !== place.id) return;
-      showLine(text);
-      const r = await audio;
+      // Through the speech queue, never straight to the player: play() cuts whatever is on air, and a turn
+      // call cut mid-sentence still counted as said. The queue shows the caption when the line starts; if the
+      // clip failed it asks /speak itself or uses the phone's voice.
+      const audioUrl = await audio.then((r) => absoluteUrl(r.audio_url), () => undefined);
       if (isCurrent() && trip().active?.place.id === place.id) {
-        await voice.playAndWait(absoluteUrl(r.audio_url), Math.min(15000, 1500 + text.length * 65));
+        say(text, { priority: PRIORITY.MANEUVER, kind: "system", key: "parking-verdict", ttlMs: 30000, audioUrl });
       }
     } catch {
       // parking stays "unclear"; the route still works
@@ -748,10 +750,13 @@ export default function MapScreen() {
         return parkingFollowup(fPlace, spoken, {
           isCurrent: ctx.isCurrent,
           busy: () => phaseRef.current === "listening" || phaseRef.current === "thinking",
+          // Queued like everything else the copilot says on its own: played directly, the answer cut a turn
+          // call on air. The queue shows the caption when the line starts; an answer that came without a clip
+          // is only shown, as before.
           say: async (text, url) => {
-            showLine(text);
-            const a = toAudio(url);
-            if (a) await voice.playAndWait(a, 6000);
+            const audioUrl = toAudio(url);
+            if (audioUrl) say(text, { priority: PRIORITY.MANEUVER, kind: "system", key: "parking-answer", ttlMs: 30000, audioUrl });
+            else showLine(text);
           },
         });
       },

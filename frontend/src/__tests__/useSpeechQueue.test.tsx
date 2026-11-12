@@ -33,7 +33,9 @@ async function setup() {
   const done: string[] = [];
   const drops: [string, DropReason][] = [];
   const voice = {
-    playAndWait: jest.fn(async (url: string | object) => void played.push(String(url))),
+    playAndWait: jest.fn(async (url: string | object): Promise<void> => {
+      played.push(String(url));
+    }),
     stopSpeaking: jest.fn(),
     isSpeaking: () => state.speaking,
     isRecording: () => state.recording,
@@ -139,4 +141,25 @@ test("a turn call held back by a turn in progress expires instead of playing lat
   await act(async () => void jest.advanceTimersByTime(500));
   expect(q.voice.playAndWait).not.toHaveBeenCalled();
   expect(q.drops).toEqual([["Turn right.", "expired"]]);
+});
+
+test("a parking line with the server's clip waits for the turn call on air and plays that clip", async () => {
+  const q = await setup();
+  let endTurnCall: () => void = () => {};
+  q.voice.playAndWait.mockImplementationOnce((url: string | object) => {
+    q.played.push(String(url));
+    return new Promise<void>((r) => (endTurnCall = r));
+  });
+  q.say("In half a mile, turn right.", { priority: PRIORITY.MANEUVER, ttlMs: 30000, key: "m-1", kind: "maneuver" });
+  await settle();
+  q.say("Parking looks good there.", { priority: PRIORITY.MANEUVER, kind: "system", key: "parking-verdict", ttlMs: 30000, audioUrl: "https://ci.invalid/audio/verdict.mp3" });
+  await settle();
+  expect(q.voice.stopSpeaking).not.toHaveBeenCalled(); // the turn call is not cut
+  expect(q.shown).toEqual(["In half a mile, turn right."]);
+  endTurnCall();
+  await settle();
+  expect(q.done).toEqual(["In half a mile, turn right.", "Parking looks good there."]);
+  expect(q.played).toEqual(["https://ci.invalid/audio/a.mp3", "https://ci.invalid/audio/verdict.mp3"]);
+  expect(speak).toHaveBeenCalledTimes(1); // the verdict's clip was already made
+  expect(q.shown).toEqual(["In half a mile, turn right.", "Parking looks good there."]);
 });

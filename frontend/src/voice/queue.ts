@@ -27,6 +27,8 @@ export type SpeechItem = {
   /** Not spoken once this old (a maneuver call after the turn is noise). */
   ttlMs?: number;
   kind: SpeechKind;
+  /** The clip the server already made for this line (a parking answer): played as is, no /speak call. */
+  audioUrl?: string;
 };
 
 export type QueuedSpeech = SpeechItem & {
