@@ -7,7 +7,7 @@
 // map packs (tiles, nothing about the driver).
 
 import { api } from "../api";
-import { forgetIdentity, getToken, holdToken, identitySub, signedInVia, type SignedInVia } from "../auth";
+import { forgetIdentity, getToken, holdToken, identitySub, signedInVia, signedInViaKnown, type SignedInVia } from "../auth";
 import { forgetConsent } from "../consent";
 import { resetProfile } from "../data/profile";
 import { setEldToken } from "../eld";
@@ -126,16 +126,19 @@ setIdentityRejectedHandler(() => signedOutReset({ notice: true, keepTripFor: ide
  * what the phone kept under it are cleared like any other sign-out. An access-code sign-in (testers, the stand,
  * App Review) stays as it is.
  */
-export const countsAsSignedIn = (via: SignedInVia): boolean => via !== "device";
+export const countsAsSignedIn = (via: SignedInVia, known = true): boolean => via !== "device" || !known;
 
-/** What the root layout feeds rootScreen: a device token is "out". */
-export function effectiveAuth(auth: "loading" | "in" | "out", via: SignedInVia): "loading" | "in" | "out" {
-  return auth === "in" && !countsAsSignedIn(via) ? "out" : auth;
+/** What the root layout feeds rootScreen: a device token is "out". `known` false (the Keychain could not say how
+ *  the phone signed in): the phone stays in, nothing is decided on a guess. */
+export function effectiveAuth(auth: "loading" | "in" | "out", via: SignedInVia, known = true): "loading" | "in" | "out" {
+  return auth === "in" && !countsAsSignedIn(via, known) ? "out" : auth;
 }
 
-/** Once the stored token is read (root layout): clears a build-1.0 device identity. True when it did. */
+/** Once the stored token is read (root layout), and again after a failed read of `auth_via` is retried: clears a
+ *  build-1.0 device identity. Only when `auth_via` was read and says "device", or is absent and the token is a
+ *  device token (no `sid`). An unreadable `auth_via` never wipes a phone. True when it did. */
 export async function retireDeviceIdentity(): Promise<boolean> {
-  if (!getToken() || countsAsSignedIn(signedInVia())) return false;
+  if (!getToken() || !signedInViaKnown() || countsAsSignedIn(signedInVia())) return false;
   await signedOutReset();
   return true;
 }

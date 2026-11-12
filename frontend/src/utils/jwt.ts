@@ -39,6 +39,12 @@ export function tokenExpiry(t: string | null): number | null {
   return typeof exp === "number" && Number.isFinite(exp) ? exp * 1000 : null;
 }
 
+/** Whether a JWT carries a `sid` claim: the server puts one in every account token, never in a device token. */
+export const tokenHasSid = (t: string | null | undefined): boolean => {
+  const sid = claims(t)?.sid;
+  return typeof sid === "string" && !!sid;
+};
+
 /** The `sub` of a JWT: the id the driver's data is kept under on the server (the same on every phone of an
  *  account). null when the token is not one we can read. */
 export function tokenSub(t: string | null | undefined): string | null {

@@ -84,6 +84,17 @@ export class Storage extends StorageBase {
     return this.setItem(key, value);
   }
 
+  async secureRead<T extends StorageItemValue>(key: string): Promise<{ ok: true; value: T | null } | { ok: false }> {
+    try {
+      const gate = pending();
+      if (gate) await gate;
+      return { ok: true, value: this.retrieve<T | null>(await AsyncStorage.getItem(key), null) };
+    } catch (e) {
+      this.warn("secureRead", key, e);
+      return { ok: false };
+    }
+  }
+
   async secureRemove(key: string): Promise<boolean> {
     return this.removeItem(key);
   }

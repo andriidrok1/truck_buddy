@@ -233,6 +233,78 @@ describe("a phone that still holds the anonymous device token of build 1.0", () 
     expect(await storage.getItem("ai_consent_v2", null)).toBe(true);
   });
 
+  describe("when the Keychain cannot say how the phone signed in", () => {
+    const b64url = (v: string) => Buffer.from(v).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const jwt = (claims: Record<string, unknown>) => `${b64url('{"alg":"HS256"}')}.${b64url(JSON.stringify(claims))}.sig`;
+    const ACCOUNT_TOKEN = jwt({ sub: "acct-1", sid: "s1", exp: 9e9 });
+    const DEVICE_TOKEN = jwt({ sub: "drv-1", exp: 9e9 });
+    /** A cold start with `auth_via` unreadable (before the first unlock after a reboot), or as stored. */
+    async function coldStart(viaReadable: boolean) {
+      jest.resetModules();
+      const SecureStore = require("expo-secure-store") as { getItemAsync: (k: string) => Promise<string | null> }; // eslint-disable-line @typescript-eslint/no-require-imports
+      const real = SecureStore.getItemAsync;
+      const spy = jest.spyOn(SecureStore, "getItemAsync").mockImplementation(async (k: string) => {
+        if (k === "auth_via" && !viaReadable) throw new Error("User interaction is not allowed (errSecInteractionNotAllowed)");
+        return real(k);
+      });
+      /* eslint-disable @typescript-eslint/no-require-imports -- fresh module copies, as after a cold start */
+      const auth = require("../auth") as typeof import("../auth");
+      const first = require("../state/firstLaunch") as typeof import("../state/firstLaunch");
+      /* eslint-enable @typescript-eslint/no-require-imports */
+      await auth.loadToken();
+      return { auth, first, spy };
+    }
+
+    test("an account phone whose auth_via cannot be read is not wiped, stays signed in, and is decided on the next read", async () => {
+      await setToken(ACCOUNT_TOKEN, "driver", "account", "r");
+      await setOnboarded();
+      const { auth, first, spy } = await coldStart(false);
+      expect(auth.signedInViaKnown()).toBe(false);
+      expect(first.effectiveAuth("in", auth.signedInVia(), auth.signedInViaKnown())).toBe("in");
+      expect(await first.retireDeviceIdentity()).toBe(false);
+      expect(auth.getToken()).toBe(ACCOUNT_TOKEN);
+      expect(mockSecure.has("auth_token")).toBe(true);
+      expect(await isOnboarded()).toBe(true);
+      // The next foreground: the Keychain answers now.
+      spy.mockRestore();
+      expect(await auth.rereadVia()).toBe(true);
+      expect(auth.signedInVia()).toBe("account");
+      expect(await first.retireDeviceIdentity()).toBe(false);
+    });
+
+    test("even a device token is not retired on an unreadable auth_via; it is once the read works", async () => {
+      await setToken(DEVICE_TOKEN, "driver", "device", "r");
+      const { auth, first, spy } = await coldStart(false);
+      expect(await first.retireDeviceIdentity()).toBe(false);
+      expect(auth.getToken()).toBe(DEVICE_TOKEN);
+      spy.mockRestore();
+      await auth.rereadVia();
+      expect(auth.signedInVia()).toBe("device");
+      await act(async () => {
+        expect(await first.retireDeviceIdentity()).toBe(true);
+      });
+      expect(auth.getToken()).toBeNull();
+    });
+
+    test("auth_via absent: the token decides. Without a sid it is a 1.0 device and is retired; with one it is an account", async () => {
+      await setToken(DEVICE_TOKEN, "driver", "device", "r");
+      mockSecure.delete("auth_via");
+      let started = await coldStart(true);
+      expect(started.auth.signedInViaKnown()).toBe(true);
+      expect(started.auth.signedInVia()).toBe("device");
+      await act(async () => {
+        expect(await started.first.retireDeviceIdentity()).toBe(true);
+      });
+
+      await setToken(ACCOUNT_TOKEN, "driver", "account", "r");
+      mockSecure.delete("auth_via");
+      started = await coldStart(true);
+      expect(started.auth.signedInVia()).toBe("account");
+      expect(await started.first.retireDeviceIdentity()).toBe(false);
+      expect(started.auth.getToken()).toBe(ACCOUNT_TOKEN);
+    });
+  });
+
   test("an access-code sign-in and an account are left alone", async () => {
     await setToken("tester-token", "tester", "code", "r");
     expect(await retireDeviceIdentity()).toBe(false);

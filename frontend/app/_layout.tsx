@@ -10,7 +10,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ReducedMotionConfig, ReduceMotion } from "react-native-reanimated";
 import { KeyboardProvider } from "@/src/keyboard";
 
-import { signedInVia, useAuthState } from "@/src/auth";
+import { rereadVia, signedInVia, signedInViaKnown, useAuthState } from "@/src/auth";
 import { renewOnStart } from "@/src/net/tokenRenewal";
 import { loadThemePref, useTheme } from "@/src/theme";
 import { ConsentGate } from "@/src/components/ConsentGate";
@@ -70,9 +70,16 @@ function RootLayout() {
   const stored = useAuthState();
   // Sign-in is required: the anonymous device token of build 1.0 does not count (src/state/firstLaunch.ts). The
   // root goes to the sign-in screen at once, and the token and what the phone kept under it are cleared.
-  const auth = effectiveAuth(stored, signedInVia());
+  const auth = effectiveAuth(stored, signedInVia(), signedInViaKnown());
   useEffect(() => {
-    if (stored === "in") retireDeviceIdentity().catch(() => {});
+    if (stored !== "in") return;
+    retireDeviceIdentity().catch(() => {});
+    // The Keychain could not be read at start (before the first unlock after a reboot): ask again on the next
+    // foreground, and decide only then.
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active" && !signedInViaKnown()) rereadVia().then((known) => known && retireDeviceIdentity()).catch(() => {});
+    });
+    return () => sub.remove();
   }, [stored]);
   // Keep the token alive (30-day access token): on start and on every return to the foreground, renew when it
   // is close to expiry or no refresh token is stored yet. Offline it just tries again next time.

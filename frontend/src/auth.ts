@@ -1,7 +1,7 @@
 import { getLang } from "./i18n";
 import { useEffect, useState } from "react";
 
-import { tokenSub } from "./utils/jwt";
+import { tokenHasSid, tokenSub } from "./utils/jwt";
 import { settleWipe, storage } from "./utils/storage";
 
 const KEY = "auth_token";
@@ -24,6 +24,9 @@ let refreshSent: string | null = null;
 let sub: string | null = null;
 let role: "driver" | "tester" = "driver";
 let via: SignedInVia = "device";
+// False when the Keychain could not be read for `auth_via` (before the first unlock after a reboot): how this
+// phone signed in is then a guess from the token, and nothing may be decided on it (firstLaunch.ts).
+let viaKnown = true;
 let loaded = false;
 // "Delete my data": while the server DELETE is on the wire, every other authenticated request waits for it to settle
 // (api.ts awaits `tokenHold()`), so nothing reaches the server with the old token after the delete started and no 401
@@ -67,6 +70,28 @@ export async function clearRefreshSent(): Promise<void> {
 }
 export const isTester = () => role === "tester";
 export const signedInVia = () => via;
+export const signedInViaKnown = () => viaKnown;
+
+/** What `auth_via` says, or a guess from the token when the key is absent (an account token carries `sid`). */
+async function readVia(): Promise<void> {
+  const r = await storage.secureRead<string>(VIA_KEY);
+  if (r.ok && (r.value === "code" || r.value === "account" || r.value === "device")) {
+    via = r.value;
+    viaKnown = true;
+    return;
+  }
+  via = tokenHasSid(token) ? "account" : "device";
+  viaKnown = r.ok; // absent: the token decides; unreadable: a guess only
+}
+
+/** The next foreground after a failed read: try again. True when the answer changed. */
+export async function rereadVia(): Promise<boolean> {
+  if (viaKnown || !token) return false;
+  const before = via;
+  await readVia();
+  if (viaKnown || via !== before) emit();
+  return viaKnown;
+}
 /** True when the driver typed an access code. */
 export const signedInWithCode = () => via === "code";
 /** True when the driver signed in with Apple or Google: the data belongs to an account, not to this phone. */
@@ -76,8 +101,7 @@ export async function loadToken(): Promise<string | null> {
   if (!loaded) {
     token = await storage.secureGet(KEY, null);
     role = (await storage.secureGet(ROLE_KEY, null)) === "tester" ? "tester" : "driver";
-    const v = await storage.secureGet(VIA_KEY, null);
-    via = v === "code" || v === "account" ? v : "device";
+    await readVia();
     refresh = token ? await storage.secureGet(REFRESH_KEY, null) : null;
     refreshSent = refresh ? await storage.secureGet(REFRESH_SENT_KEY, null) : null;
     sub = tokenSub(token);
@@ -98,6 +122,7 @@ export async function setToken(
   token = t;
   role = t ? r : "driver";
   via = t ? v : "device";
+  viaKnown = true;
   refresh = t ? rt : null;
   sub = tokenSub(t);
   const staleMark = refreshSent !== null && refreshSent !== refresh;
