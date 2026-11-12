@@ -6,7 +6,7 @@
 // Not removed: the storage schema stamp (a fresh install writes it on its first start too) and downloaded offline
 // map packs (tiles, nothing about the driver).
 
-import { api } from "../api";
+import { ApiError, wipeServerData } from "../api";
 import { forgetIdentity, getToken, holdToken, identitySub, signedInVia, signedInViaKnown, type SignedInVia } from "../auth";
 import { forgetConsent } from "../consent";
 import { resetProfile } from "../data/profile";
@@ -14,7 +14,7 @@ import { setEldToken } from "../eld";
 import { forgetArrived } from "../geo/arrival";
 import { forgetTruckProfile } from "../hooks/useTruckProfile";
 import { forgetLang } from "../i18n";
-import { setIdentityRejectedHandler } from "../net/tokenRenewal";
+import { renewToken, setIdentityRejectedHandler } from "../net/tokenRenewal";
 import { tripLog } from "../net/tripEvents";
 import { queryClient } from "../query-client";
 import { setSim } from "../sim";
@@ -172,7 +172,7 @@ type Nav = { canDismiss: () => boolean; dismissAll: () => void };
  * so the stack that comes back after the gates starts on the map (which sends a driver who is not onboarded to
  * onboarding), then the fresh-install state. False when the server could not be reached: nothing is touched then.
  */
-export async function deleteMyData(router: Nav, clearServer: () => Promise<unknown> = api.clearMemory): Promise<boolean> {
+export async function deleteMyData(router: Nav, clearServer: () => Promise<unknown> = wipeServerData): Promise<boolean> {
   // Nothing may reach the server with the old token once the delete is under way: an event posted after it would
   // bring trip rows back for the driver just wiped (review of #129). The trip log stops sending (a batch already on
   // the wire lands first, before the DELETE), the DELETE takes the token with it, and every other request waits for
@@ -180,10 +180,22 @@ export async function deleteMyData(router: Nav, clearServer: () => Promise<unkno
   // one. None goes out tokenless meanwhile, so no 401 can sign the phone out behind the dialog (re-review of #129).
   await tripLog.pause();
   let release: () => void = () => {};
-  try {
-    const call = clearServer(); // request() reads authHeader() synchronously, before its first await
+  const underHold = async () => {
+    const call = clearServer(); // reads authHeader() synchronously, before its first await
     release = holdToken();
     await call;
+  };
+  try {
+    try {
+      await underHold();
+    } catch (e) {
+      // The access token expired (or was refused): the renewal cannot run under the hold, which it would wait on.
+      // So the hold goes, the token is renewed once, and the delete is sent once more with the new one.
+      if (!(e instanceof ApiError) || e.status !== 401) throw e;
+      release();
+      if ((await renewToken(true)) !== "renewed") throw e;
+      await underHold();
+    }
   } catch {
     release();
     tripLog.resume();

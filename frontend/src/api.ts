@@ -276,6 +276,23 @@ export async function logout(): Promise<boolean> {
   }
 }
 
+/**
+ * "Delete my data" on the server (DELETE /api/memory). Not through request(): the caller holds every other request
+ * until this one settles (firstLaunch.ts deleteMyData), and request()'s renewal on a 401 waits on that very hold, so
+ * an expired token hung the delete for good. The header is read in the same tick as the call, before the hold goes
+ * up. A 401 comes back as an ApiError: the caller renews outside the hold and tries once more.
+ */
+export async function wipeServerData(): Promise<{ deleted: number }> {
+  const d = deadline(DEFAULT_TIMEOUT_MS);
+  try {
+    const res = await fetchTracked(`${BASE}/memory`, { method: "DELETE", signal: d.signal, headers: { "Content-Type": "application/json", ...authHeader() } });
+    await check(res, "/memory", null, false);
+    return await json<{ deleted: number }>(res, "/memory");
+  } finally {
+    d.done();
+  }
+}
+
 /** Open sign-up: a device token without a code. Not part of the launch flow since sign-in became required
  *  (src/components/SignInGate.tsx), and a "device" identity is now treated as signed out (firstLaunch.ts
  *  countsAsSignedIn). Kept for the fallback in the plan (an anonymous "Not now"), which would have to lift that rule. */
