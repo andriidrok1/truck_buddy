@@ -161,9 +161,11 @@ export async function forgetIdentity() {
 }
 
 // Every authenticated request also says the driver's language (backend services/i18n.LangMiddleware).
-/** Holds every authenticated request from now on; the returned function lets them go (idempotent). */
+/** Holds every authenticated request from now on; the returned function lets them go (idempotent). With a hold
+ *  already up, the caller gets a function that does nothing: only whoever put the hold up can take it down
+ *  (review of #173, M1). */
 export function holdToken(): () => void {
-  if (hold) return hold.release;
+  if (hold) return () => {};
   let resolve: () => void = () => {};
   const promise = new Promise<void>((r) => {
     resolve = r;

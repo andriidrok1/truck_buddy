@@ -6,6 +6,8 @@
 // Not removed: the storage schema stamp (a fresh install writes it on its first start too) and downloaded offline
 // map packs (tiles, nothing about the driver).
 
+import { useSyncExternalStore } from "react";
+
 import { ApiError, wipeServerData } from "../api";
 import { forgetIdentity, getToken, holdToken, identitySub, signedInVia, signedInViaKnown, type SignedInVia } from "../auth";
 import { forgetConsent } from "../consent";
@@ -167,14 +169,49 @@ export function rootScreen(
 
 export type Nav = { canDismiss: () => boolean; dismissAll: () => void };
 
+// One server wipe at a time for the whole app, whichever screen or button started it (review of #173, M1): a second
+// truck screen, or "Delete my data" pressed while "Delete account" runs, gets the wipe already under way.
+let wiping: Promise<{ ok: true; value: unknown } | { ok: false; error: unknown }> | null = null;
+const wipeListeners = new Set<() => void>();
+const wipeChanged = () => wipeListeners.forEach((l) => l());
+
+/** True while a server wipe (serverThenReset) is under way. */
+export const wipeRunning = (): boolean => wiping !== null;
+
+/** The same, for a screen: the truck screen keeps its Back closed meanwhile. */
+export function useWipeRunning(): boolean {
+  return useSyncExternalStore(
+    (l) => {
+      wipeListeners.add(l);
+      return () => wipeListeners.delete(l);
+    },
+    wipeRunning,
+    wipeRunning,
+  );
+}
+
 /**
  * A server wipe, then the phone back to a fresh install: "Delete my data" (an access-code sign-in) and "Delete
  * account and data" (src/state/accountActions.ts). The server records first, while the token is still valid, then
  * off the truck screen, so the stack that comes back after the gates starts on the map (which sends a driver who is
  * not onboarded to onboarding), then the fresh-install state. When the server call fails nothing is touched and the
  * error comes back to the caller.
+ *
+ * Single-flight: a call made while another wipe runs does not send anything and gets that wipe's result (its
+ * `value` is what the first caller's `clearServer` returned).
  */
-export async function serverThenReset<T>(router: Nav, clearServer: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
+export function serverThenReset<T>(router: Nav, clearServer: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
+  if (!wiping) {
+    wiping = wipeOnce(router, clearServer).finally(() => {
+      wiping = null;
+      wipeChanged();
+    });
+    wipeChanged();
+  }
+  return wiping as Promise<{ ok: true; value: T } | { ok: false; error: unknown }>;
+}
+
+async function wipeOnce<T>(router: Nav, clearServer: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
   // Nothing may reach the server with the old token once the delete is under way: an event posted after it would
   // bring trip rows back for the driver just wiped (review of #129). The trip log stops sending (a batch already on
   // the wire lands first, before the DELETE), the DELETE takes the token with it, and every other request waits for
@@ -193,7 +230,8 @@ export async function serverThenReset<T>(router: Nav, clearServer: () => Promise
       await underHold();
     } catch (e) {
       // The access token expired (or was refused): the renewal cannot run under the hold, which it would wait on.
-      // So the hold goes, the token is renewed once, and the delete is sent once more with the new one.
+      // So the hold goes, the token is renewed once, and the delete is sent once more with the new one. This is the
+      // only retry of a wipe: "Delete account" relies on it and has none of its own.
       if (!(e instanceof ApiError) || e.status !== 401) throw e;
       release();
       if ((await renewToken(true)) !== "renewed") throw e;

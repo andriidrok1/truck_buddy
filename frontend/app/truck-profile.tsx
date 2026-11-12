@@ -1,6 +1,6 @@
-import { useRouter } from "expo-router";
-import { useState } from "react";
-import { TextInput, View } from "react-native";
+import { Stack, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
+import { BackHandler, TextInput, View } from "react-native";
 import { Text } from "@/src/i18n/Text";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,6 +17,7 @@ import { styles } from "@/src/components/truckProfileStyles";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { saveProfile } from "@/src/data/profile";
 import { DEFAULT_TRUCK, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
+import { useWipeRunning, wipeRunning } from "@/src/state/firstLaunch";
 import { requestTruckReroute, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts } from "@/src/state/settingsStore";
 import { Chip, PrefsForm, ToggleRow, type Prefs } from "@/src/components/PrefsForm";
 import { parseMpg, truckErrors, truckFromInputs } from "@/src/truck/validate";
@@ -82,7 +83,19 @@ export default function TruckProfileScreen() {
     setPrefs(pickPrefs(truck));
   }
 
-  const close = () => (router.canGoBack() ? router.back() : router.replace("/"));
+  // While "Delete account" or "Delete my data" runs, the screen stays: leaving it would leave the driver on the map
+  // with a wipe still going on behind it (review of #173, M1). Back, the hardware Back and the iOS swipe are closed.
+  const wiping = useWipeRunning();
+  useEffect(() => {
+    if (!wiping) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => true);
+    return () => sub.remove();
+  }, [wiping]);
+  const close = () => {
+    if (wipeRunning()) return;
+    if (router.canGoBack()) router.back();
+    else router.replace("/");
+  };
 
   // The server's limits, one message per field (src/truck/validate.ts, shared with onboarding).
   const errors = truckErrors({ feet, inches, trailer, weight });
@@ -119,8 +132,9 @@ export default function TruckProfileScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: colors.surface }]} testID="truck-profile-screen">
+      <Stack.Screen options={{ gestureEnabled: !wiping }} />
       <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-        <PressableScale testID="truck-profile-back-button" accessibilityLabel={t("Back")} onPress={close} style={[styles.back, { backgroundColor: colors.surfaceSecondary }]}>
+        <PressableScale testID="truck-profile-back-button" accessibilityLabel={t("Back")} disabled={wiping} onPress={close} style={[styles.back, { backgroundColor: colors.surfaceSecondary }]}>
           <Icon name="arrow-left" size={24} color={colors.onSurface} />
         </PressableScale>
         <Text style={[styles.title, { color: colors.onSurface }]}>Your truck</Text>

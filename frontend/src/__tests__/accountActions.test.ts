@@ -3,7 +3,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { api } from "../api";
-import { getToken, loadToken, setToken } from "../auth";
+import { getToken, holdToken, loadToken, setToken, tokenHold } from "../auth";
 import { CONSENT_KEY, giveConsent } from "../consent";
 import { saveProfile } from "../data/profile";
 import { DEFAULT_TRUCK, getTruckProfile } from "../hooks/useTruckProfile";
@@ -12,6 +12,7 @@ import { resetRenewalForTests } from "../net/tokenRenewal";
 import { queryClient } from "../query-client";
 import { getAccount, saveAccount } from "../state/account";
 import { clearConversations, deleteAccount, LOGOUT_WAIT_MS, signOut, signOutEverywhere } from "../state/accountActions";
+import { deleteMyData, wipeRunning } from "../state/firstLaunch";
 import { markIntroSeen } from "../state/intro";
 import { storage } from "../utils/storage";
 import { __resetWipeGate } from "../utils/storage/pendingWipe";
@@ -285,6 +286,40 @@ describe("Delete account and data", () => {
     expect(await deleteAccount(router(), call)).toEqual({ ok: true, appleRevoked: null });
     expect(call).toHaveBeenCalledTimes(2);
     expect(calls.map((c) => c.path)).toContain("/auth/refresh");
+  });
+});
+
+describe("one wipe at a time (review of #173, M1)", () => {
+  test("two deletes at once (a second truck screen): one DELETE, both get its result, nothing else goes out meanwhile", async () => {
+    await signedIn();
+    let answer: (r: Response) => void = () => {};
+    answers[key("DELETE", "/account")] = new Promise<Response>((res) => (answer = res));
+    const first = deleteAccount(router());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(wipeRunning()).toBe(true);
+    const second = deleteAccount(router());
+    const third = deleteMyData(router());
+    const other = api.memory().catch(() => null);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toEqual([{ path: "/account", method: "DELETE", auth: "Bearer ACC" }]);
+    answer(reply(200, { ok: true, apple_revoked: null }));
+    expect(await first).toEqual({ ok: true, appleRevoked: null });
+    expect(await second).toEqual({ ok: true, appleRevoked: null });
+    expect(await third).toBe(true);
+    await other;
+    expect(wipeRunning()).toBe(false);
+    expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1);
+    expect(calls.map((c) => c.path)).not.toContain("/memory/history");
+  });
+
+  test("holdToken: a second caller cannot take down a hold it did not put up", async () => {
+    await signedIn();
+    const release = holdToken();
+    const other = holdToken();
+    other();
+    expect(tokenHold()).not.toBeNull();
+    release();
+    expect(tokenHold()).toBeNull();
   });
 });
 
