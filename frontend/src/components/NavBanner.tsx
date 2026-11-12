@@ -76,11 +76,10 @@ function SpeedShield({ limitMph, speedMph }: { limitMph: number; speedMph: numbe
 }
 
 /**
- * An instruction longer than this takes the smaller step of the type scale and a fourth line. Three lines of 16 hold
- * about 45 letters next to the arrow, the shield and the mute button on a 360 dp phone, and "Съезд 522 в сторону
- * San Francisco на I-80…" lost its tail (QA 2026-11-11). A fixed step, not adjustsFontSizeToFit: in this React
- * Native the fit code of both platforms ignores minimumFontScale (only the 4 pt floor applies), so a long line
- * could shrink below what a driver can read.
+ * An instruction longer than this may take a fourth line, at the same size as any other. Three lines hold about 45
+ * letters next to the arrow, the shield and the mute button on a 360 dp phone, and "Съезд 522 в сторону San
+ * Francisco на I-80…" lost its tail (QA 2026-11-11). The font is not shrunk: the next turn has to stay large, and
+ * in this React Native adjustsFontSizeToFit has no usable floor (the fit code ignores minimumFontScale).
  */
 export const LONG_INSTRUCTION = 40;
 
@@ -103,7 +102,7 @@ export function NavBanner({ topInset, next, toNextM, voiceOn, onToggleVoice, onL
           <Text testID="nav-distance" style={[styles.dist, { color: colors.onNavBanner }]}>
             {formatDistance(toNextM)}
           </Text>
-          <Text testID="nav-instruction" numberOfLines={long ? 4 : 3} style={[styles.instr, long && styles.instrLong, { color: colors.onNavBanner }]}>
+          <Text testID="nav-instruction" numberOfLines={long ? 4 : 3} style={[styles.instr, { color: colors.onNavBanner }]}>
             {instruction}
           </Text>
         </Animated.View>
@@ -137,7 +136,6 @@ const styles = StyleSheet.create({
   text: { flex: 1, minWidth: 0 },
   dist: { fontFamily: fonts.extrabold, fontSize: 26, letterSpacing: -0.3 },
   instr: { fontFamily: fonts.semibold, fontSize: 16 },
-  instrLong: { fontSize: 14 },
   voice: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
   shieldWrap: { alignItems: "center", gap: 2 },
   shield: { width: 44, paddingVertical: 3, borderRadius: 6, borderWidth: 2, borderColor: "#000000", backgroundColor: "#FFFFFF", alignItems: "center" },

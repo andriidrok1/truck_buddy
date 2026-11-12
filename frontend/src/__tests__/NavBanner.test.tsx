@@ -39,19 +39,22 @@ const fontSize = () => StyleSheet.flatten(instr().props.style).fontSize;
 afterEach(() => useLangStore.setState({ lang: "en" }));
 
 describe("NavBanner", () => {
-  test("a usual instruction: three lines of the normal size", async () => {
-    await render(banner(turn("Поверни налево на J St")));
-    expect(instr().props.numberOfLines).toBe(3);
-    expect(fontSize()).toBe(16);
+  test("a usual instruction, English or Russian: three lines of the normal size, as before", async () => {
+    for (const text of ["Поверни налево на J St", "Turn left onto J St", "Take exit 7 for Stockton Blvd", "x".repeat(LONG_INSTRUCTION)]) {
+      const { unmount } = await render(banner(turn(text)));
+      expect(instr().props.numberOfLines).toBe(3);
+      expect(fontSize()).toBe(16);
+      await unmount();
+    }
   });
 
-  test("a long instruction takes the smaller step and a fourth line instead of losing its tail", async () => {
+  test("a long instruction may take a fourth line instead of losing its tail; the font stays as large", async () => {
     const long = "Съезд 522 в сторону San Francisco на I-80 W / US-50 W";
     expect(long.length).toBeGreaterThan(LONG_INSTRUCTION);
     await render(banner(turn(long)));
     expect(instr().props.children).toBe(long);
     expect(instr().props.numberOfLines).toBe(4);
-    expect(fontSize()).toBe(14);
+    expect(fontSize()).toBe(16);
   });
 
   test("no maneuver yet, in Russian; whole miles on the banner read as a number of miles", async () => {
