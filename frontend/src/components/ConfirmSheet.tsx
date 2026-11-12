@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "../i18n/Text";
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import { PressableScale } from "./PressableScale";
-import { t } from "../i18n";
 
 type Props = {
   /** Null hides the sheet. */
@@ -41,9 +40,18 @@ export function ConfirmSheet({ title, confirmLabel, cancelLabel, onConfirm, onCa
   };
   return (
     <Modal visible={!!title} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
-      <Pressable testID={`${testID}-backdrop`} accessibilityLabel={t(cancelLabel)} onPress={onCancel} style={[styles.backdrop, { backgroundColor: colors.scrim }]} />
+      {/* Hidden from the screen reader (review of #173, L5): it was the first thing VoiceOver and TalkBack read,
+          before the question. The Cancel button does the same for them. */}
+      <Pressable
+        testID={`${testID}-backdrop`}
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
+        onPress={onCancel}
+        style={[styles.backdrop, { backgroundColor: colors.scrim }]}
+      />
       <View testID={testID} style={[styles.sheet, shadow(colors, 2), { backgroundColor: colors.surface, paddingBottom: insets.bottom + spacing.lg }]}>
-        <Text style={[styles.title, { color: colors.onSurface }]}>{title ?? ""}</Text>
+        <Text accessibilityRole="header" style={[styles.title, { color: colors.onSurface }]}>{title ?? ""}</Text>
         {!!message && <Text testID={`${testID}-message`} style={[styles.message, { color: colors.onSurfaceSecondary }]}>{message}</Text>}
         <PressableScale testID={`${testID}-cancel`} accessibilityRole="button" onPress={onCancel} style={[styles.btn, { backgroundColor: colors.surfaceSecondary }]}>
           <Text style={[styles.btnText, { color: colors.onSurface }]}>{cancelLabel}</Text>
