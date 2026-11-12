@@ -434,17 +434,19 @@ export default function MapScreen() {
   // ---- Nudges: the backend's offers every few minutes while driving (src/hooks/useNudges.ts). ----
   useNudges(driving, !!active, say, turn, guidanceRef, coordsRef);
 
-  const onGo = () => {
+  /** Starts driving; false when it was refused (the toast says why). */
+  const onGo = (): boolean => {
     if (!isHeightConfirmed()) {
       // Bridges on the route were checked for the default 13'6"; a taller truck must not drive it blind.
       showToast("Tell me your truck height first: it decides which bridges are safe.", "info");
-      return;
+      return false;
     }
     turn.pause();
     voice.stopSpeaking();
     setCaption(null);
     setRoutesOpen(false);
     setDriving(true);
+    return true;
   };
 
   /** Typed request: same pipeline and session as voice, without recording or reopening the mic.
@@ -980,8 +982,10 @@ export default function MapScreen() {
           note={offlineMap.state?.kind === "saved" ? "Map saved" : null}
           top={topH + spacing.sm}
           onResume={() => {
+            // Go refused (the truck height is not confirmed yet): the banner stays, so Resume is still there
+            // once the height is in. It used to go away with nothing started.
+            if (!onGo()) return;
             trip().dismissRestored();
-            onGo();
             replanOnFix.current = true;
             replanIfFar();
           }}
