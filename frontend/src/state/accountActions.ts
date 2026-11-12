@@ -2,7 +2,7 @@
 // out of every phone, delete the account. An access-code sign-in keeps its own "Sign out" and "Delete my data"
 // (src/state/firstLaunch.ts); none of these is offered to it.
 
-import { api, ApiError, isNoLongerRegistered, logout, tokenState, type AccountDeleted } from "../api";
+import { api, ApiError, isNoLongerRegistered, logout, tokenState, type AccountDeleted, type RefusalCode } from "../api";
 import { getToken, signedInWithAccount } from "../auth";
 import { serverThenReset, signedOutReset, type Nav } from "./firstLaunch";
 
@@ -59,8 +59,9 @@ export async function signOutEverywhere(call: () => Promise<unknown> = api.logou
 
 export type DeleteOutcome =
   | { ok: true; appleRevoked: boolean | null }
-  /** 409: the server will not delete this account (the only owner of a fleet that still has drivers). */
-  | { ok: false; reason: "refused"; detail: string }
+  /** 409: the server will not delete this account. `message` is the English text to show (translated by <Text>),
+   *  picked by the 409's `code`, never by reading its `detail`. */
+  | { ok: false; reason: "refused"; code: RefusalCode | null; message: string }
   /** 503 with our JSON `detail`: the backend says it removed nothing, and takes the same request again. The only
    *  outcome that may tell the driver "Nothing was removed". */
   | { ok: false; reason: "not_removed" }
@@ -79,7 +80,7 @@ class Unconfirmed extends Error {}
  * from another phone. Either way there is no account behind the token any more, so nothing on this phone or in
  * the copy ever says "your account was deleted" (review of #173, M3): the driver just sees the first launch again.
  */
-const GONE: AccountDeleted = { ok: true, apple_revoked: null }; // what Apple said is not known here
+const GONE: AccountDeleted = { ok: true, apple_revoked: null, deleted: 0, trip_events: 0, profile: false, sessions: 0 }; // counts and Apple's answer are not known here
 
 /**
  * "Delete account and data": DELETE /api/account with every other request held (serverThenReset), then the phone
@@ -116,7 +117,10 @@ export async function deleteAccount(router: Nav, call: () => Promise<AccountDele
   const e = r.error;
   if (e instanceof Unconfirmed) return { ok: false, reason: "unconfirmed" };
   if (!(e instanceof ApiError)) return { ok: false, reason: "unconfirmed" }; // no answer and no token to check with
-  if (e.status === 409) return { ok: false, reason: "refused", detail: e.detail ?? REFUSED };
+  if (e.status === 409) {
+    const code = e.code === "last_owner" || e.code === "not_an_account" ? e.code : null;
+    return { ok: false, reason: "refused", code, message: code === "last_owner" ? LAST_OWNER : REFUSED };
+  }
   if (e.status === 503 && e.detail !== null) return { ok: false, reason: "not_removed" };
   // A 401 the renewal could not fix: the session may have been closed, or the account deleted elsewhere. Not known.
   if (e.status === 401) return { ok: false, reason: "unconfirmed" };
@@ -129,3 +133,7 @@ export async function deleteAccount(router: Nav, call: () => Promise<AccountDele
 export const clearConversations = (): Promise<unknown> => (signedInWithAccount() ? api.clearHistory() : api.clearMemory());
 
 const REFUSED = "This account can't be deleted from the app. Write to support@truckbuddy.io.";
+/** The 409 `last_owner` (backend services/account_api.py LAST_OWNER): the same words, translated in ru.ts. After it
+ *  nothing was deleted. */
+const LAST_OWNER =
+  "This account is the only owner of a fleet that still has drivers or a stored key. Write to support@truckbuddy.io to close the fleet or hand it over.";

@@ -216,7 +216,8 @@ describe("AccountActions, an account", () => {
     mocks.del.mockResolvedValue({
       ok: false,
       reason: "refused",
-      detail: "This account is the only owner of a fleet that still has drivers or a stored key. Write to support@truckbuddy.io to close the fleet or hand it over.",
+      code: "last_owner",
+      message: "This account is the only owner of a fleet that still has drivers or a stored key. Write to support@truckbuddy.io to close the fleet or hand it over.",
     });
     await press("account-delete");
     later();

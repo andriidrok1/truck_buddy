@@ -53,6 +53,8 @@ export class ApiError extends Error {
     public readonly status: number,
     path: string,
     public readonly detail: string | null = null,
+    /** The machine-readable reason some answers carry next to `detail` (a 409 Refusal of DELETE /api/account). */
+    public readonly code: string | null = null,
   ) {
     super(`${path} failed: ${status}${detail ? ` (${detail})` : ""}`);
     this.name = "ApiError";
@@ -72,13 +74,15 @@ async function check(res: Response, path: string, sent: string | null, renew = t
   if (renew && sent !== null && sent === getToken() && (await isOur401(res))) await after401(sent);
   if (res.ok) return;
   let detail: string | null = null;
+  let code: string | null = null;
   try {
-    const body = (await res.json()) as { detail?: unknown };
+    const body = (await res.json()) as { detail?: unknown; code?: unknown };
     if (typeof body?.detail === "string") detail = body.detail;
+    if (typeof body?.code === "string") code = body.code;
   } catch {
     // not JSON: the status is all we know
   }
-  throw new ApiError(res.status, path, detail);
+  throw new ApiError(res.status, path, detail, code);
 }
 
 /**
@@ -293,16 +297,12 @@ export async function wipeServerData(): Promise<{ deleted: number }> {
   }
 }
 
-/** What DELETE /api/account answers (backend services/account_api.py account_delete; no response model there). */
-export type AccountDeleted = {
-  ok: boolean;
-  deleted?: number;
-  trip_events?: number;
-  profile?: boolean;
-  sessions?: number;
-  /** true: Apple took the revocation; false: Apple could not be reached or refused; null: nothing to revoke. */
-  apple_revoked?: boolean | null;
-};
+/** What DELETE /api/account answers (backend services/account_api.py AccountDeleteResponse). `apple_revoked`: true
+ *  when Apple took the revocation, false when Apple could not be reached or refused, null when there was nothing to
+ *  revoke. */
+export type AccountDeleted = components["schemas"]["AccountDeleteResponse"];
+/** Why DELETE /api/account answered 409 (backend Refusal.code). */
+export type RefusalCode = components["schemas"]["Refusal"]["code"];
 
 /** How long the app waits for DELETE /api/account. The server revokes the Apple token and wipes every table in one
  *  request; on a slow cell connection that takes longer than an ordinary call (review of #173, H2). */
@@ -402,9 +402,9 @@ export const api = {
   clearMemory: () => request<{ deleted: number }>(`/memory`, { method: "DELETE" }),
   /** "Clear memory" for an account: the conversations and what the copilot learned from them. The truck profile,
    *  the trip events and the visit counts stay. */
-  clearHistory: () => request<{ deleted: number; facts: boolean }>(`/memory/history`, { method: "DELETE" }),
+  clearHistory: () => request<components["schemas"]["HistoryClearResponse"]>(`/memory/history`, { method: "DELETE" }),
   /** Signs every phone of the account out, this one included. */
-  logoutAll: () => request<{ ok: boolean; closed: number }>(`/auth/logout-all`, { method: "POST", timeoutMs: 15000 }),
+  logoutAll: () => request<components["schemas"]["LogoutAllResponse"]>(`/auth/logout-all`, { method: "POST", timeoutMs: 15000 }),
   deleteAccount,
   places: (category: Category, at: LatLng) =>
     request<PlacesResponse>(`/places?category=${category}&lat=${at.lat}&lng=${at.lng}`),

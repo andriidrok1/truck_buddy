@@ -49,6 +49,7 @@ afterAll(() => {
 
 const router = () => ({ canDismiss: jest.fn(() => true), dismissAll: jest.fn() });
 const TRUCK = { ...DEFAULT_TRUCK, height_in: 168, driver_name: "Mike" };
+const DELETED = { ok: true, deleted: 3, trip_events: 2, profile: true, sessions: 1, apple_revoked: null as boolean | null };
 
 /** A driver signed in with Google, onboarded, on a Russian phone. */
 async function signedIn(via: "account" | "code" = "account") {
@@ -188,14 +189,22 @@ describe("Delete account and data", () => {
     expect(getToken()).toBeNull();
   });
 
-  test("409 (the last owner of a fleet): the server's reason comes back and nothing is cleared", async () => {
+  test.each([
+    ["last_owner", "This account is the only owner of a fleet that still has drivers or a stored key. Write to support@truckbuddy.io to close the fleet or hand it over."],
+    ["not_an_account", "This account can't be deleted from the app. Write to support@truckbuddy.io."],
+  ])("409 %s: the message is picked by code, whatever the detail says, and nothing is cleared", async (code, message) => {
     await signedIn();
-    const detail = "This account is the only owner of a fleet that still has drivers or a stored key. Write to support@truckbuddy.io to close the fleet or hand it over.";
-    answers[key("DELETE", "/account")] = reply(409, { detail });
+    answers[key("DELETE", "/account")] = reply(409, { detail: "some text the app does not read", code });
     const r = router();
-    expect(await deleteAccount(r)).toEqual({ ok: false, reason: "refused", detail });
+    expect(await deleteAccount(r)).toEqual({ ok: false, reason: "refused", code, message });
     expect(r.dismissAll).not.toHaveBeenCalled();
     await stillMike();
+  });
+
+  test("409 without a code (an older server): the general refusal", async () => {
+    await signedIn();
+    answers[key("DELETE", "/account")] = reply(409, { detail: "This account is the only owner of a fleet." });
+    expect(await deleteAccount(router())).toEqual({ ok: false, reason: "refused", code: null, message: "This account can't be deleted from the app. Write to support@truckbuddy.io." });
   });
 
   test("503 with our detail: nothing was removed, nothing cleared, no check", async () => {
@@ -310,7 +319,7 @@ describe("Delete account and data", () => {
       let n = 0;
       const call = jest.fn(async () => {
         if (++n === 1) return api.deleteAccount();
-        return { ok: true, apple_revoked: true };
+        return { ...DELETED, apple_revoked: true };
       });
       expect(await deleteAccount(router(), call)).toEqual({ ok: true, appleRevoked: true });
       expect(call).toHaveBeenCalledTimes(2);
@@ -377,7 +386,7 @@ describe("Delete account and data", () => {
     const call = jest.fn(async () => {
       n++;
       if (n === 1) return api.deleteAccount(); // answered 401 below
-      return { ok: true, apple_revoked: null };
+      return { ...DELETED, apple_revoked: null };
     });
     answers[key("DELETE", "/account")] = reply(401, { detail: "Token expired" });
     answers[key("POST", "/auth/renew")] = reply(401, { detail: "Token expired" });
