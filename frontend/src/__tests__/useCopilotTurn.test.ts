@@ -189,3 +189,41 @@ test("a doubtful recording with words is an ordinary turn", async () => {
   await flush();
   expect(f.agent.mock.calls[0][0]).toBe("take me to Reno");
 });
+
+test("a tap while the words are still being transcribed drops that request and its filler", async () => {
+  const f = fakeDeps();
+  const plan = { picked: "hang-on", done: Promise.resolve(), cancel: jest.fn(() => true), startedAt: () => null, elapsed: () => 0 };
+  f.deps.fillers.schedule = () => plan;
+  let sttSignal: AbortSignal | undefined;
+  f.transcribe.mockImplementation((_uri: string, signal?: AbortSignal) => {
+    sttSignal = signal;
+    return new Promise((_, reject) => signal?.addEventListener("abort", () => reject(new Error("aborted"))));
+  });
+  const { result } = harness(f.deps);
+  act(() => result.current.tap());
+  await flush();
+  expect(f.transcribe).toHaveBeenCalledTimes(1);
+  expect(result.current.state.mode).toBe("listening"); // the machine's view while STT runs
+  expect(plan.cancel).not.toHaveBeenCalled();
+
+  act(() => result.current.tap());
+  expect(plan.cancel).toHaveBeenCalledTimes(1); // no "Still looking." over the new recording
+  expect(sttSignal?.aborted).toBe(true);
+  expect(f.calls).toContain("stopSpeaking"); // a "Hang on." already on air is cut
+  expect(f.listen).toHaveBeenCalledTimes(2);
+  expect(result.current.state.mode).toBe("listening");
+  await flush();
+  expect(f.agent).not.toHaveBeenCalled(); // the first turn never reaches the agent
+  expect(f.calls.filter((c) => c.startsWith("error:"))).toEqual([]);
+  expect(result.current.dialogId()).toBe("dlg-1"); // same session
+});
+
+test("a tap while the mic is recording does not cancel anything here (the screen finishes the recording)", () => {
+  const f = fakeDeps();
+  f.listenResult = () => new Promise<string>(() => undefined);
+  const { result } = harness(f.deps);
+  act(() => result.current.tap());
+  expect(f.calls).not.toContain("stopSpeaking");
+  act(() => result.current.tap());
+  expect(f.calls).not.toContain("stopSpeaking"); // no "cancel" was dispatched, as before
+});

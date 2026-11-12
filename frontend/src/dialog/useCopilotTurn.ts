@@ -332,8 +332,10 @@ export function createCopilotTurn(initialDeps: TurnDeps): CopilotTurnController 
         deps.onIdle();
         return;
       }
-      // Barge-in: a tap while the copilot is still working drops that turn (same session).
-      if (state.mode === "thinking") dispatch({ type: "cancel" });
+      // Barge-in: a tap while the copilot is still working drops that turn (same session). While the words are
+      // being transcribed the machine is still "listening", but the STT request and its "Hang on." plan are
+      // already under way (`prepared`): left alone, "Still looking." played over the new recording.
+      if (state.mode === "thinking" || prepared) dispatch({ type: "cancel" });
       dispatch({ type: "tap" });
     },
     text: (t) => {
