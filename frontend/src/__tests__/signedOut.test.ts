@@ -435,8 +435,10 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
       expect(useTripStore.getState()).toMatchObject({ active: null, driving: false });
       expect(await AsyncStorage.getItem("trip_v2")).toBeNull(); // nobody who is not Alice can load it
       expect(JSON.parse((await AsyncStorage.getItem(HELD_TRIP_KEY)) ?? "null")).toMatchObject({ sub: "acct-alice" });
-      expect(tripLog.size()).toBeGreaterThan(0);
-      expect(await tripLog.flush()).toBe("busy"); // nobody to send them as
+      // The events are on disk only: memory is empty, so the next mount reads them back once (not twice).
+      expect(tripLog.size()).toBe(0);
+      expect(JSON.parse((await AsyncStorage.getItem("trip_events_pending")) ?? "[]").map((e: { data: { text?: string } }) => e.data.text)).toContain("Alice missed exit 12");
+      expect(await tripLog.flush()).not.toBe("sent"); // nobody to send them as
     });
 
     test("the same account signs in again: the route is back for the map to resume, and the events go out under its token", async () => {
@@ -446,6 +448,7 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
       await act(async () => {
         await signInGoogle("google-token-of-alice", prepareSignedIn);
       });
+      await tripLog.restore(); // the map mounting again (startTripLog): must not double what came back
       const saved = await loadActiveRoute();
       expect(saved?.active.place.name).toBe("Alice's yard");
       expect(saved?.driving).toBe(true);
@@ -455,6 +458,8 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
       expect(sent).toHaveLength(1);
       expect(sent[0].auth).toBe(`Bearer ${ACC.A}`);
       expect(sent[0].body).toMatch(/Alice missed exit 12/);
+      const texts = JSON.parse(sent[0].body).map((e: { data: { text?: string } }) => e.data.text).filter(Boolean);
+      expect(texts.filter((x: string) => x === "Alice missed exit 12")).toHaveLength(1); // once, not twice
       expect(sent[0].body).not.toMatch(/_who/); // the stamp stays on the phone
     });
 

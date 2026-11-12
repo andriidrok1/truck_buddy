@@ -40,6 +40,7 @@ export async function settleHeldTrip(sub: string | null): Promise<"restored" | "
   if (sub !== null && held.sub === sub) {
     await storage.setItem(ACTIVE_ROUTE_KEY, held.route);
     await storage.removeItem(HELD_TRIP_KEY);
+    await tripLog.restore(); // the stashed events back in the queue (once, however often the map mounts)
     return "restored";
   }
   // The copy first: a kill after this line leaves nothing of the previous driver's route for anyone.

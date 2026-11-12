@@ -67,6 +67,10 @@ export type TripLog = {
   restore(): Promise<void>;
   /** Drops every pending event, in memory and on disk ("Delete my data"). */
   clear(): Promise<void>;
+  /** The driver was signed out with their trip set aside (src/state/heldTrip.ts): the events go to disk, which is
+   *  from now on the only copy, and memory is emptied. Nothing is written to disk again until `restore` (the same
+   *  account is back) or `clear` (someone else). */
+  stash(): Promise<void>;
   /** No sends until `resume`; resolves once a send already on the wire has finished ("Delete my data" holds the
    *  log so no event reaches the server after the delete with the old token). */
   pause(): Promise<void>;
@@ -88,7 +92,26 @@ export function newTripId(now = Date.now(), rand = Math.random): string {
   return `trip-${now.toString(36)}-${tail}`;
 }
 
-type Stamped = TripEvent & { _who?: string };
+/** `_who`: the account the event was logged for. `_id`: the event's own id, made on the phone when it is logged,
+ *  so the same event read back from disk twice (a restore after a stash, a second mount) is still one event. Both
+ *  stay on the phone; the server never sees them. */
+type Stamped = TripEvent & { _who?: string; _id?: string };
+
+let seq = 0;
+const newEventId = (now: number) => `${now.toString(36)}-${(seq++).toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+/** One copy of every event, the first one kept; an event without an id (written before ids existed) gets one. */
+function unique(events: Stamped[], now: number): Stamped[] {
+  const seen = new Set<string>();
+  const out: Stamped[] = [];
+  for (const e of events) {
+    const ev = e._id ? e : { ...e, _id: newEventId(now) };
+    if (seen.has(ev._id as string)) continue;
+    seen.add(ev._id as string);
+    out.push(ev);
+  }
+  return out;
+}
 
 export function createTripLog(deps: TripLogDeps): TripLog {
   const setTimer = deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
@@ -110,15 +133,17 @@ export function createTripLog(deps: TripLogDeps): TripLog {
   let inflight: Promise<unknown> | null = null;
   let lastFlush: number | null = null;
   let persistTimer: unknown = null;
+  let stashed = false; // the disk holds a set-aside trip: memory must not overwrite it
   const listeners = new Set<() => void>();
   const eventListeners = new Set<(event: TripEvent) => void>();
   const notify = () => listeners.forEach((l) => l());
 
   const persist = () => {
     if (persistTimer) clearTimer(persistTimer);
+    if (stashed) return;
     persistTimer = setTimer(() => {
       persistTimer = null;
-      deps.save(pending).catch(() => {});
+      if (!stashed) deps.save(pending).catch(() => {});
     }, PERSIST_DEBOUNCE_MS);
   };
 
@@ -128,7 +153,9 @@ export function createTripLog(deps: TripLogDeps): TripLog {
       if (at) data = { ...data, lat: Math.round(at.lat * 1e5) / 1e5, lng: Math.round(at.lng * 1e5) / 1e5 };
       const ev: TripEvent = { t: new Date(deps.now()).toISOString(), kind, data };
       if (tripId) ev.trip_id = tripId;
-      pending.push(deps.identity ? { ...ev, _who: deps.identity() ?? "-" } : ev); // "-": logged while signed out, nobody's
+      const stamped: Stamped = { ...ev, _id: newEventId(deps.now()) };
+      if (deps.identity) stamped._who = deps.identity() ?? "-"; // "-": logged while signed out, nobody's
+      pending.push(stamped);
       if (pending.length > MAX_PENDING) pending = pending.slice(pending.length - MAX_PENDING);
       persist();
       notify();
@@ -140,13 +167,15 @@ export function createTripLog(deps: TripLogDeps): TripLog {
         persist();
         notify();
       }
+      if (stashed) return pending.length ? "busy" : "empty";
+      pending = unique(pending, deps.now());
       if (!pending.length) return "empty";
       if (!deps.online()) return "offline";
       if (flushing || paused) return "busy";
       flushing = true;
       const batch = pending.slice(0, MAX_BATCH);
       try {
-        inflight = deps.post(batch.map(({ _who, ...ev }) => ev));
+        inflight = deps.post(batch.map(({ _who, _id, ...ev }) => ev));
         await inflight;
         pending = pending.slice(batch.length);
         failures = 0;
@@ -180,11 +209,27 @@ export function createTripLog(deps: TripLogDeps): TripLog {
       }
     },
     async restore() {
-      const saved = await deps.load();
-      if (saved.length) {
-        pending = [...saved, ...pending].slice(-MAX_PENDING);
+      const saved = (await deps.load()) as Stamped[];
+      const wasStashed = stashed;
+      stashed = false;
+      // Idempotent: what is already in memory and comes back from disk again counts once.
+      const merged = unique([...saved, ...pending], deps.now()).slice(-MAX_PENDING);
+      const changed = merged.length !== pending.length || wasStashed;
+      pending = merged;
+      if (changed) {
+        persist();
         notify();
       }
+    },
+    async stash() {
+      if (persistTimer) clearTimer(persistTimer);
+      persistTimer = null;
+      const kept = pending;
+      stashed = true;
+      pending = [];
+      notify();
+      // The last debounced write may not have run yet: the full queue goes to disk now.
+      await deps.save(kept).catch(() => {});
     },
     async pause() {
       paused = true;
@@ -196,6 +241,7 @@ export function createTripLog(deps: TripLogDeps): TripLog {
     async clear() {
       if (persistTimer) clearTimer(persistTimer);
       persistTimer = null;
+      stashed = false;
       pending = [];
       failures = 0;
       notify();

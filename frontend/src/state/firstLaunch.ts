@@ -99,6 +99,8 @@ export function signedOutReset(opts: { notice?: boolean; keepTripFor?: string | 
       // the very request whose 401 started this sign-out, and it finishes only after this function does.
       void tripLog.pause();
       try {
+        // The disk copy is the only one from here: memory would come back from disk once more on the next mount.
+        if (held) await step(() => tripLog.stash());
         await clearDriverData(held);
         setSignInNotice(opts.notice ? "signed_out" : null);
         await step(forgetIdentity); // the app's screens unmount here: nothing of theirs logs or saves after this
