@@ -161,3 +161,53 @@ def test_break_reminder_hours(en, ru):
     got, misses = _ru(en)
     assert not misses and got == ru
 
+
+
+# ---- arrival at "your destination" on a side (item 5) ---------------------------------------------------------
+
+@pytest.mark.parametrize("en,ru", [
+    ("Arrive at your destination on the left", "Ты на месте, цель слева"),
+    ("Arrive at your destination on the right", "Ты на месте, цель справа"),
+    ("Arrive at your destination, on the left", "Ты на месте, цель слева"),  # the comma HERE sends now and then
+    ("Arrive at your destination, on the right", "Ты на месте, цель справа"),
+    ("Arrive at your destination on the left.", "Ты на месте, цель слева."),
+    ("Arrive at your destination", "Ты на месте"),
+    ("Arrive at your destination.", "Ты на месте."),
+    # a named place still goes through the generic template, with one comma either way
+    ("Arrive at Pilot Travel Center on the left", "Прибытие: Pilot Travel Center, слева"),
+    ("Arrive at Pilot Travel Center, on the right", "Прибытие: Pilot Travel Center, справа"),
+    ("Arrive at Pilot Travel Center on the right.", "Прибытие: Pilot Travel Center, справа."),
+    ("Arrive at 16th St", "Прибытие: 16th St"),
+])
+def test_arrival(en, ru):
+    got, misses = _ru(en)
+    assert not misses and got == ru
+    assert "your destination" not in got and ",," not in got
+
+
+def test_exact_arrival_template_is_tried_before_the_generic_one():
+    tpls, _words = i18n.catalog("ru")
+    order = [t.en for t in tpls]
+    for side in ("left", "right"):
+        assert order.index(f"Arrive at your destination on the {side}") < order.index(f"Arrive at {{place}} on the {side}")
+        assert order.index(f"Arrive at your destination, on the {side}") < order.index(f"Arrive at {{place}}, on the {side}")
+        assert order.index(f"Arrive at {{place}}, on the {side}") < order.index(f"Arrive at {{place}} on the {side}")
+
+
+def _localized(route: RouteInfo) -> RouteInfo:
+    async def go():
+        i18n.set_lang("ru")
+        return i18n.localize_route(route)
+    return run(go())
+
+
+def _route(**kw) -> RouteInfo:
+    return RouteInfo(geometry=[[38.58, -121.49], [39.53, -119.81]], distance_m=210000, duration_s=9000, distance_mi=131,
+                     duration_min=150, summary="2 h 30 min · 131 mi", source="here", **kw)
+
+
+def test_last_maneuver_of_a_route_is_whole_russian():
+    out = _localized(_route(maneuvers=[
+        Maneuver(action="turn", direction="left", instruction="Turn left onto 16th St", lat=38.5, lng=-121.5, index=0),
+        Maneuver(action="arrive", instruction="Arrive at your destination on the left", lat=38.6, lng=-121.5, index=1)]))
+    assert [m.instruction for m in out.maneuvers] == ["Поверни налево на 16th St", "Ты на месте, цель слева"]

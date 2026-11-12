@@ -2984,6 +2984,66 @@
    "ru": "Прибытие: {place}."
   },
   {
+   "en": "Arrive at your destination.",
+   "ru": "Ты на месте."
+  },
+  {
+   "en": "Arrive at your destination on the left",
+   "ru": "Ты на месте, цель слева"
+  },
+  {
+   "en": "Arrive at your destination, on the left",
+   "ru": "Ты на месте, цель слева"
+  },
+  {
+   "en": "Arrive at {place}, on the left",
+   "ru": "Прибытие: {place}, слева"
+  },
+  {
+   "en": "Arrive at your destination on the left.",
+   "ru": "Ты на месте, цель слева."
+  },
+  {
+   "en": "Arrive at your destination, on the left.",
+   "ru": "Ты на месте, цель слева."
+  },
+  {
+   "en": "Arrive at {place}, on the left.",
+   "ru": "Прибытие: {place}, слева."
+  },
+  {
+   "en": "Arrive at {place} on the left.",
+   "ru": "Прибытие: {place}, слева."
+  },
+  {
+   "en": "Arrive at your destination on the right",
+   "ru": "Ты на месте, цель справа"
+  },
+  {
+   "en": "Arrive at your destination, on the right",
+   "ru": "Ты на месте, цель справа"
+  },
+  {
+   "en": "Arrive at {place}, on the right",
+   "ru": "Прибытие: {place}, справа"
+  },
+  {
+   "en": "Arrive at your destination on the right.",
+   "ru": "Ты на месте, цель справа."
+  },
+  {
+   "en": "Arrive at your destination, on the right.",
+   "ru": "Ты на месте, цель справа."
+  },
+  {
+   "en": "Arrive at {place}, on the right.",
+   "ru": "Прибытие: {place}, справа."
+  },
+  {
+   "en": "Arrive at {place} on the right.",
+   "ru": "Прибытие: {place}, справа."
+  },
+  {
    "en": "Take the ferry {name}",
    "ru": "Заезжай на паром {name}"
   },

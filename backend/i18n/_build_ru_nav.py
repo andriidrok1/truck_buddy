@@ -130,6 +130,16 @@ t("Your destination is on the left.", "Место назначения слев�
 t("Your destination is on the right.", "Место назначения справа.")
 t("Your destination is straight ahead.", "Место назначения прямо.")
 t("Arrive at {place}.", "Прибытие: {place}.")
+# The last turn of nearly every route to a place on a side of the road: HERE says "Arrive at your destination on the
+# left" (also with a comma), and the generic "Arrive at {place} on the left" took "your destination" for the place:
+# "Прибытие: your destination, слева" (QA 2026-11-11). These have more literal text, so they are tried first.
+t("Arrive at your destination.", "Ты на месте.")
+for side, ru in (("left", "слева"), ("right", "справа")):
+    for dot in ("", "."):
+        t(f"Arrive at your destination on the {side}{dot}", f"Ты на месте, цель {ru}{dot}")
+        t(f"Arrive at your destination, on the {side}{dot}", f"Ты на месте, цель {ru}{dot}")
+        t(f"Arrive at {{place}}, on the {side}{dot}", f"Прибытие: {{place}}, {ru}{dot}")
+    t(f"Arrive at {{place}} on the {side}.", f"Прибытие: {{place}}, {ru}.")
 t("Take the ferry {name}", "Заезжай на паром {name}")
 t("Board the ferry", "Заезжай на паром")
 t("Leave the ferry", "Съезжай с парома")
