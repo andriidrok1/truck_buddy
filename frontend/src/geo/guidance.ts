@@ -1,6 +1,7 @@
 // Pure turn-by-turn maths, extracted from hooks/useGuidance.ts so it can be unit-tested
 // (and so off-route detection can build on the same route match). No React in here.
 
+import { getLang, t, type Lang } from "../i18n";
 import type { LatLng, Maneuver, RouteInfo } from "../types";
 
 const R = 6371000;
@@ -165,11 +166,70 @@ export function spokenDistance(m: number) {
   return `In ${n} miles`;
 }
 
+/** Has a Cyrillic letter: the server translated the instruction (a line its catalog misses stays English whole). */
+const CYRILLIC = /[а-яё]/i;
+
+/**
+ * The router's action and direction as a short phrase ("turn left", "take the exit on the right"), for when its own
+ * sentence can't be used. English here; src/i18n/ru.ts has the Russian side of every phrase this can return.
+ */
+export function maneuverWords(action: string, direction?: string | null): string {
+  const side = direction === "left" || direction === "right" ? direction : null;
+  switch (action) {
+    case "turn":
+      return side ? `turn ${side}` : "follow the route";
+    case "keep":
+    case "continueHighway":
+      return side ? `keep ${side}` : direction === "middle" ? "keep to the middle" : "continue straight";
+    case "exit":
+      return side ? `take the exit on the ${side}` : "take the exit";
+    case "ramp":
+    case "enterHighway":
+      return side ? `take the ramp on the ${side}` : "take the ramp";
+    case "uTurn":
+      return "make a U-turn";
+    case "roundaboutEnter":
+    case "roundaboutPass":
+    case "roundaboutExit":
+      return "go through the roundabout";
+    case "ferry":
+      return "take the ferry";
+    case "continue":
+      return "continue straight";
+    default:
+      return side ? `turn ${side}` : "follow the route";
+  }
+}
+
+/**
+ * The Russian sentence for the two cases where gluing "In 500 feet, " to the instruction goes wrong, or null when
+ * the usual path is right. Decided by the maneuver's action, never by its words (QA 2026-11-11):
+ * - an arrival: the server sends "Ты на месте" or "Прибытие: Pilot", and a mile out that read "Через полмили ты
+ *   на месте." Before the end it is one whole sentence; at the end the server's own line.
+ * - an instruction the server's catalog left in English: "Через 500 футов turn left onto Main St." was read by
+ *   the Russian voice. The action and direction are said in Russian instead, without the road name.
+ */
+function announcementRu(next: Pick<Maneuver, "action" | "instruction" | "direction">, stage: StageKey, toNextM: number): string | null {
+  const translated = CYRILLIC.test(next.instruction);
+  const lead = () => t(spokenDistance(toNextM), undefined, "ru");
+  if (next.action === "arrive") {
+    if (stage !== "now") return t("{lead}, you'll arrive.", { lead: lead() }, "ru");
+    return translated ? null : t("You have arrived.", undefined, "ru");
+  }
+  if (translated) return null;
+  const what = t(maneuverWords(next.action, next.direction), undefined, "ru");
+  return stage === "now" ? `${what.charAt(0).toUpperCase()}${what.slice(1)}.` : `${lead()} ${what}.`;
+}
+
 /**
  * The sentence to say for a stage: "now" is the raw instruction; the far and near calls get a lead-in, and an
  * arrival becomes "In half a mile, you'll arrive at…" (the raw "Arrive at X" a mile out sounded like the end).
+ * The English frame around a Russian instruction is translated where it is spoken (useSpeechQueue runs it through
+ * t()); the Russian cases that frame can't carry are whole sentences from announcementRu.
  */
-export function announcement(next: Pick<Maneuver, "action" | "instruction">, stage: StageKey, toNextM: number) {
+export function announcement(next: Pick<Maneuver, "action" | "instruction" | "direction">, stage: StageKey, toNextM: number, lang: Lang = getLang()) {
+  const ru = lang === "ru" ? announcementRu(next, stage, toNextM) : null;
+  if (ru) return ru;
   if (stage === "now") return `${next.instruction}.`;
   const body =
     next.action === "arrive" && /^arrive\b/i.test(next.instruction)

@@ -15,7 +15,8 @@ describe("i18n", () => {
 
   test("patterns move values over and put nouns in their form", () => {
     expect(t("In 500 feet, поверни налево на El Centro Rd.", undefined, "ru")).toBe("Через 500 футов поверни налево на El Centro Rd.");
-    expect(t("In 1.2 miles, keep right.", undefined, "ru")).toBe("Через 1,2 мили keep right.");
+    // The slot's value moves over as it is; guidance.ts no longer builds such a line in Russian (QA 2026-11-11).
+    expect(t("In 1.2 miles, keep right onto I-80.", undefined, "ru")).toBe("Через 1,2 мили keep right onto I-80.");
     expect(t("In 1 miles", undefined, "ru")).toBe("Через 1 милю");
     expect(t("Navigating to Reno, NV", undefined, "ru")).toBe("Едем в Reno, NV");
     expect(t("End the route to {name}?", { name: "Reno" }, "ru")).toBe("Завершить маршрут до Reno?");
