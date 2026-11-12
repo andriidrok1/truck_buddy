@@ -32,6 +32,7 @@ export function settingsFromV1(flags: { handsFree?: unknown; nudges?: unknown; s
     nudges: pick(flags.nudges, DEFAULT_SETTINGS.nudges),
     speedAlerts: pick(flags.speedAlerts, DEFAULT_SETTINGS.speedAlerts),
     voiceGuidance: pick(flags.voiceGuidance, DEFAULT_SETTINGS.voiceGuidance),
+    mapView: DEFAULT_SETTINGS.mapView,
   };
 }
 

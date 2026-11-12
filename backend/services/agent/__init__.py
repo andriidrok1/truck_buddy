@@ -988,6 +988,10 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         # A control phrase dressed up as a destination (or echoed only as a reply): run the control.
         ctl = (control_phrase(str(d.get("query") or "")) if intent == "go" else None) or \
             (control_phrase(reply) or control_phrase(text) if intent == "chat" else None)
+        if not ctl and intent == "weather":
+            # "Show the weather" / "radar map" is the map's weather view, not a spoken forecast.
+            m = control_phrase(text)
+            ctl = m if m and m.get("type") == "map_view" else None
         if ctl:
             logger.info("agent control phrase %r -> %s", d.get("query") or reply, ctl)
             intent, d = "control", {**d, "intent": "control", "actions": [ctl]}

@@ -1,6 +1,6 @@
 import { forwardRef, Fragment, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
-import { StyleSheet, useWindowDimensions } from "react-native";
-import MapView, { Marker, Polyline } from "react-native-maps";
+import { Platform, StyleSheet, useWindowDimensions } from "react-native";
+import MapView, { Marker, Polyline, UrlTile } from "react-native-maps";
 
 import { useTheme } from "../theme";
 import type { LatLng } from "../types";
@@ -9,6 +9,7 @@ import { DestinationLabel, EntryMarker, Pin, UserArrow } from "./Pin";
 import { entrySpot } from "../utils/entry";
 import { cameraSettled, fitCamera } from "../map/fitCamera";
 import { NIGHT_MAP_STYLE } from "../map/nightStyle";
+import { nativeMapType, RADAR_OPACITY, WEATHER_MAP_STYLE } from "../map/mapView";
 
 const toCoord = (p: LatLng) => ({ latitude: p.lat, longitude: p.lng });
 const FOLLOW_ZOOM = 17;
@@ -41,7 +42,7 @@ export function ViewMarker({ children, redraw, ...rest }: React.ComponentProps<t
 }
 
 const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(props, ref) {
-  const { driver, heading, places, active, alternatives, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch } = props;
+  const { driver, heading, places, active, alternatives, topInset, bottomInset, fitKey, fitPoints, onCenterChange, onPlacePress, follow, onUserPan, onMapTouch, mapView = "map", radar } = props;
   const { colors, scheme } = useTheme();
   const { width: winW, height: winH } = useWindowDimensions();
   const mapRef = useRef<MapView>(null);
@@ -147,7 +148,10 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
           fit();
         }
       }}
-      customMapStyle={scheme === "dark" ? NIGHT_MAP_STYLE : undefined}
+      mapType={nativeMapType(mapView, Platform.OS)}
+      // Google styles apply to the drawn map only: none on satellite; the weather view mutes it on Android
+      // (iOS gets the same from mapType "mutedStandard").
+      customMapStyle={mapView === "satellite" ? undefined : scheme === "dark" ? NIGHT_MAP_STYLE : mapView === "weather" ? WEATHER_MAP_STYLE : undefined}
       userInterfaceStyle={scheme}
       mapPadding={padding}
       showsUserLocation={false}
@@ -162,6 +166,17 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
       }}
       onRegionChangeComplete={(r) => onCenterChange({ lat: r.latitude, lng: r.longitude })}
     >
+      {mapView === "weather" && radar && (
+        // Remounted per frame (key): a new urlTemplate on the same tile layer kept showing the cached old frame.
+        <UrlTile
+          key={radar.key}
+          urlTemplate={radar.urlTemplate}
+          maximumNativeZ={radar.maxNativeZoom}
+          tileSize={256}
+          opacity={scheme === "dark" ? RADAR_OPACITY.dark : RADAR_OPACITY.light}
+          zIndex={0}
+        />
+      )}
       {(alternatives ?? []).map((g, i) => (
         <Fragment key={`alt-${i}`}>
           <Polyline coordinates={g.map(([lat, lng]) => ({ latitude: lat, longitude: lng }))} strokeColor={colors.routeCasing} strokeWidth={9} />

@@ -4,6 +4,7 @@
 // push is a `startRoute` effect). Only `research` is awaited; everything else runs in this tick.
 
 import type { Effect } from "./agentReducer";
+import { setMapView } from "./settingsStore";
 import type { TruckProfile } from "../hooks/useTruckProfile";
 import type { AgentResponse, Approach, Place } from "../types";
 
@@ -104,6 +105,9 @@ export async function applyEffects(effects: readonly Effect[], res: AgentRespons
         break;
       case "setNudges":
         h.setNudges(e.on);
+        break;
+      case "setMapView":
+        setMapView(e.view); // a stored setting, like the map view sheet's pick
         break;
       case "saveProfile":
         h.saveProfile(e.patch);

@@ -20,6 +20,13 @@ _CONTROL_PHRASES: list[tuple[re.Pattern, dict]] = [
     (re.compile(r"\bturn\s+(?:the\s+)?directions\s+on\b|\bturn\s+on\s+(?:the\s+)?directions\b", re.I),
      {"type": "voice_guidance", "value": True}),
     (re.compile(r"\bre-?center\b", re.I), {"type": "recenter"}),
+    # The map's look (Figma "Weather v2"). "What's the weather" stays the weather intent: these need a show/map word.
+    (re.compile(r"\b(?:hide|turn\s+off|close)\s+(?:the\s+)?(?:weather|radar)\b|\b(?:normal|regular|plain|standard|usual)\s+map\b|"
+                r"\bобычн\w*\s+карт\w*|\bубери\s+(?:погоду|радар)", re.I), {"type": "map_view", "value": "map"}),
+    (re.compile(r"\b(?:show|open|put\s+up|turn\s+on|switch\s+to)\s+(?:me\s+)?(?:the\s+)?(?:weather|radar)(?:\s+(?:map|view|layer|radar))?\b|"
+                r"\b(?:weather|radar)\s+(?:map|view|layer)\b|\bпокажи\s+(?:мне\s+)?(?:погоду|радар)\b", re.I),
+     {"type": "map_view", "value": "weather"}),
+    (re.compile(r"\bsatellite(?:\s+(?:view|map|mode))?\b|\bспутник\w*", re.I), {"type": "map_view", "value": "satellite"}),
 ]
 
 

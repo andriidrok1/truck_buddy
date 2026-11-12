@@ -243,3 +243,14 @@ describe("every action the backend can emit is handled", () => {
     expect(effects).toEqual([{ type: "unknownAction", action: "teleport" }]);
   });
 });
+
+describe("map view by voice", () => {
+  const ctx = { activePlaceId: null, optionsCount: 0, favoriteChains: [] as string[] };
+  test("map_view switches the map's look", () => {
+    expect(reduceActions([{ type: "map_view", value: "weather" } as AppAction], ctx)).toEqual([{ type: "setMapView", view: "weather" }]);
+    expect(reduceActions([{ type: "map_view", value: "satellite" } as AppAction], ctx)).toEqual([{ type: "setMapView", view: "satellite" }]);
+  });
+  test("an unknown look is ignored", () => {
+    expect(reduceActions([{ type: "map_view", value: "hybrid" } as AppAction], ctx)).toEqual([]);
+  });
+});

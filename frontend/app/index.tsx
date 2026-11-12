@@ -8,11 +8,15 @@ import { useCopilotTurn, type AnswerContext } from "@/src/dialog/useCopilotTurn"
 import { turnContext } from "@/src/dialog/turnContext";
 import { useFillers } from "@/src/dialog/useFillers";
 import { bubbleRoom, expireLine, hasExpiringLine, isReplyCaption, LINE_HOLD_MS, lineCaption, replyCaption, replyPlacement, type Caption } from "@/src/dialog/caption";
-import { floatingBottom } from "@/src/state/floating";
+import { FLOATING_SIZE, floatingBottom } from "@/src/state/floating";
 import { routeFitPoints } from "@/src/map/bounds";
 import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
 import { FollowButton } from "@/src/components/FollowButton";
+import { MapViewSheet } from "@/src/components/MapViewSheet";
+import { MapViewButton, RadarStatus } from "@/src/components/RadarControls";
+import { useRadar } from "@/src/hooks/useRadar";
+import { MAP_PROVIDER } from "@/src/map/provider";
 import MapLayer from "@/src/components/MapLayer";
 import type { MapLayerHandle } from "@/src/components/mapTypes";
 import { MicPermissionCard } from "@/src/components/MicPermissionCard";
@@ -57,7 +61,7 @@ import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { askWithDeadline } from "@/src/voice/micAsk";
 import { spacing, useTheme } from "@/src/theme";
 import { providerPlace, selectPlaces, useTripStore } from "@/src/state/tripStore";
-import { setHandsFree, setNudgesEnabled, setVoiceGuidance, takeTruckReroute, useHandsFree, useVoiceGuidance } from "@/src/state/settingsStore";
+import { setHandsFree, setMapView, setNudgesEnabled, setVoiceGuidance, takeTruckReroute, useHandsFree, useMapView, useVoiceGuidance } from "@/src/state/settingsStore";
 import { reduceAgentResponse } from "@/src/state/agentReducer";
 import { applyEffects } from "@/src/state/applyEffects";
 import { offlineTurn } from "@/src/state/offlineTurn";
@@ -96,6 +100,12 @@ export default function MapScreen() {
   const center = useRef<LatLng>(loc.coords);
 
   const [topH, setTopH] = useState(140);
+  // Map / Satellite / Weather (Figma "Weather v2"). The MapLibre build has no imagery: there satellite falls back to the map.
+  const satelliteOk = MAP_PROVIDER !== "maplibre";
+  const storedView = useMapView();
+  const mapView = storedView === "satellite" && !satelliteOk ? "map" : storedView;
+  const [mapViewOpen, setMapViewOpen] = useState(false);
+  const radar = useRadar(mapView === "weather");
   const [sheetH, setSheetH] = useState(260);
   const { height: windowH } = useWindowDimensions();
   // The sheet's peek height while the driver has pulled it down; the map keeps sheetH as its inset
@@ -261,6 +271,8 @@ export default function MapScreen() {
   );
   // Follow truck sits above the sheet (or above a card), and only where it clears the top bar's buttons.
   const followBottom = floatingBottom({ windowH, topH, bottom: cardUp ? cardBottom + cardH + spacing.sm : chromeBottom });
+  // The map view button sits above Follow truck, and only when it too clears the top bar.
+  const viewBottom = followBottom === null ? null : floatingBottom({ windowH, topH, bottom: followBottom + FLOATING_SIZE + spacing.md });
   const mapBottom = sheetH + (previewing && bubbleUp && bubbleH > 0 ? bubbleH + 2 * spacing.lg : 0);
   const previewFit = previewing && active ? `preview-${active.place.id}-${mapBottom}` : null;
   const [previewFitSeen, setPreviewFitSeen] = useState(previewFit);
@@ -843,6 +855,8 @@ export default function MapScreen() {
           if (driving) setOverview(true); // look around; following resumes after 15 s
         }}
         onMapTouch={Keyboard.dismiss}
+        mapView={mapView}
+        radar={radar.overlay}
       />
 
       {driving && active ? (
@@ -882,6 +896,18 @@ export default function MapScreen() {
 
       {/* Hidden when the map window has no room for it under the top bar: it sat on the history button
           (UI review 2026-11-05, third pass, M3). */}
+      {mapView === "weather" && !(driving && active) && <RadarStatus top={topH + spacing.sm} frame={radar.frame} />}
+      {viewBottom !== null && <MapViewButton bottom={viewBottom} active={mapView !== "map"} onPress={() => setMapViewOpen(true)} />}
+      <MapViewSheet
+        visible={mapViewOpen}
+        value={mapView}
+        satellite={satelliteOk}
+        onPick={(v) => {
+          setMapView(v);
+          setMapViewOpen(false);
+        }}
+        onClose={() => setMapViewOpen(false)}
+      />
       {followBottom !== null && (
         <FollowButton
           following={following}

@@ -16,6 +16,7 @@ import { fonts, useTheme } from "../theme";
 import type { LatLng } from "../types";
 import { entrySpot } from "../utils/entry";
 import type { MapLayerHandle, MapLayerProps } from "./mapTypes";
+import { RADAR_OPACITY } from "../map/mapView";
 import { DestinationLabel, EntryMarker, Pin, UserArrow } from "./Pin";
 
 const lib = loadMapLibre();
@@ -97,7 +98,8 @@ const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLaye
   );
 
   if (!lib) return null;
-  const { Map, Camera, GeoJSONSource, Layer, Marker } = lib;
+  const { Map, Camera, GeoJSONSource, RasterSource, Layer, Marker } = lib;
+  const showRadar = props.mapView === "weather" && props.radar;
   const entry = entrySpot(active?.parking);
 
   return (
@@ -122,6 +124,12 @@ const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLaye
       >
         <Camera ref={camera} initialViewState={{ center: toLngLat(driver), zoom: DEFAULT_ZOOM }} />
 
+        {showRadar && props.radar && (
+          // A new source id per frame: changing the tiles of a mounted raster source was not reliable.
+          <RasterSource key={props.radar.key} id={`radar-${props.radar.key}`} tiles={[props.radar.urlTemplate]} tileSize={256} maxzoom={props.radar.maxNativeZoom}>
+            <Layer id={`radar-layer-${props.radar.key}`} type="raster" source={`radar-${props.radar.key}`} paint={{ "raster-opacity": scheme === "dark" ? RADAR_OPACITY.dark : RADAR_OPACITY.light }} />
+          </RasterSource>
+        )}
         {altData && (
           <GeoJSONSource id="alternatives" data={altData}>
             <Layer id="alt-casing" type="line" source="alternatives" layout={{ "line-cap": "round", "line-join": "round" }} paint={{ "line-color": colors.routeCasing, "line-width": 9 }} />

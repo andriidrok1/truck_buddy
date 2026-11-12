@@ -1,3 +1,5 @@
+import type { RadarOverlay } from "../map/mapView";
+import type { MapView } from "../state/settingsStore";
 import type { ActiveRoute, LatLng, ParkingSpot, Place } from "../types";
 
 /** Same Esri World Imagery the satellite parking check is made on. */
@@ -58,4 +60,8 @@ export type MapLayerProps = {
   onUserPan?: () => void;
   /** Any touch on the map (tap or drag); the screen uses it to put the keyboard away. */
   onMapTouch?: () => void;
+  /** Map, satellite or weather (Figma "Weather v2"); "map" when absent. */
+  mapView?: MapView;
+  /** Radar tiles drawn over the map in the weather view; null hides them. */
+  radar?: RadarOverlay | null;
 };

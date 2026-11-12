@@ -496,4 +496,16 @@ export const RU: Record<string, string> = {
   "Needs Motive": "Нужен Motive",
   "{phrase} (needs Motive)": "{phrase} (нужен Motive)",
   "Try it now": "Попробуй сейчас",
+  // ---- map view and radar (src/components/MapViewSheet.tsx, RadarControls.tsx) ----
+  "Map view": "Вид карты",
+  "Map": "Карта",
+  "Satellite": "Спутник",
+  "Or just say “show the weather”": "Или просто скажи «покажи погоду»",
+  "Radar · {time}": "Радар · {time}",
+  "Key": "Легенда",
+  "Rain": "Дождь",
+  "Mix": "Смесь",
+  "Snow": "Снег",
+  "light": "слабый",
+  "heavy": "сильный",
 };
