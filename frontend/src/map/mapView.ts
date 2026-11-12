@@ -11,7 +11,10 @@ export type RadarFrame = {
   time?: string;
   /** Our id of the live layer, e.g. "n0q-202611120010"; null while the backend has no frame yet. */
   live?: string | null;
-  forecast?: { minutes: number; layer: string }[];
+  /** When the HRRR run behind the forecast layers started; layer "hrrr-f{minute}" shows this + minute. */
+  forecast_init?: string | null;
+  forecast_step_min?: number;
+  forecast_max_min?: number;
   max_zoom?: number;
   /** "/api/radar/tiles/{layer}/{z}/{x}/{y}.png?k=..." with {layer} still to fill. */
   tile_url?: string | null;

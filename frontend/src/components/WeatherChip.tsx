@@ -49,6 +49,21 @@ export function ChainMarkerView({ label }: { label: string }) {
   );
 }
 
+/** The truck at the time slider's time (Figma V4): a blue truck with the clock above it. */
+export function GhostTruckView({ label }: { label: string }) {
+  const { colors } = useTheme();
+  return (
+    <View testID="ghost-truck" style={styles.wrap}>
+      <View style={[styles.ghostLabel, { backgroundColor: colors.surfaceInverse }]}>
+        <Text style={[styles.ghostText, { color: colors.onSurfaceInverse }]}>{label}</Text>
+      </View>
+      <View style={[styles.ghost, shadow(colors), { backgroundColor: colors.info, borderColor: colors.surface }]}>
+        <Icon name="truck" size={24} color={colors.onInfo} />
+      </View>
+    </View>
+  );
+}
+
 /** Where an NWS alert starts on the route. */
 export function AlertMarkerView() {
   const { colors } = useTheme();
@@ -68,5 +83,8 @@ const styles = StyleSheet.create({
   dot: { width: 16, height: 16, borderRadius: 8, borderWidth: 3 },
   chain: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, height: 32, borderRadius: 16, borderWidth: 2.5 },
   chainText: { fontFamily: fonts.extrabold, fontSize: 14 },
+  ghostLabel: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, marginBottom: 4 },
+  ghostText: { fontFamily: fonts.extrabold, fontSize: 15 },
+  ghost: { width: 44, height: 44, borderRadius: 22, borderWidth: 3, alignItems: "center", justifyContent: "center" },
   alert: { width: 40, height: 40, borderRadius: 20, borderWidth: 3, alignItems: "center", justifyContent: "center" },
 });

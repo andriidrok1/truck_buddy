@@ -31,7 +31,9 @@ FRAME_TTL_S = 120
 LIVE_TTL_S = 300  # a frame's tiles never change, but "latest" moves on every 5 min
 FORECAST_TTL_S = 1800  # HRRR runs hourly
 MAX_Z = 10  # radar is ~1 km; past z10 the map stretches these tiles (UrlTile maximumNativeZ)
-FORECAST_MIN = (60, 120, 180)  # HRRR steps the app's time slider uses
+FORECAST_STEP_MIN = 15  # IEM serves HRRR reflectivity every 15 min of the run ...
+FORECAST_MAX_MIN = 1080  # ... out to 18 h
+HRRR_META = IEM + "/data/gis/images/4326/hrrr/refd_0000.json"  # {"model_init_utc": ...} of the run the "-0" layers show
 CACHE_MAX_BYTES = 48 * 1024 * 1024
 
 # Our short layer ids -> IEM layer names. Only these are proxied.
@@ -59,7 +61,7 @@ def iem_layer(layer: str, now: Optional[datetime] = None) -> Optional[str]:
     if m:
         return f"ridge::USCOMP-N0Q-{m.group(1)}" if _live_ok(m.group(1), now) else None
     m = _FCST.match(layer)
-    if m and int(m.group(1)) in FORECAST_MIN:
+    if m and int(m.group(1)) % FORECAST_STEP_MIN == 0 and int(m.group(1)) <= FORECAST_MAX_MIN:
         return f"hrrr::REFD-F{int(m.group(1)):04d}-0"
     return None
 
@@ -137,6 +139,26 @@ async def latest_frame(now: Optional[float] = None) -> Optional[str]:
     return _frame["ts"]
 
 
+_hrrr: dict = {"at": 0.0, "init": None}
+
+
+async def hrrr_init(now: Optional[float] = None) -> Optional[str]:
+    """When the HRRR run behind the forecast layers started (ISO, UTC); its steps count from here, not from now
+    (a run reaches IEM about 2 h late). Cached FRAME_TTL_S; the last known one on failure."""
+    now = time.monotonic() if now is None else now
+    if _hrrr["init"] and now - _hrrr["at"] < FRAME_TTL_S:
+        return _hrrr["init"]
+    try:
+        r = await client().get(HRRR_META, timeout=TIMEOUT_S)
+        r.raise_for_status()
+        init = (r.json() or {}).get("model_init_utc")
+        if isinstance(init, str) and re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", init):
+            _hrrr.update(at=now, init=init)
+    except Exception as e:
+        logger.warning("hrrr run lookup failed: %s", e)
+    return _hrrr["init"]
+
+
 def frame_time(ts: str) -> datetime:
     return datetime.strptime(ts, "%Y%m%d%H%M").replace(tzinfo=timezone.utc)
 
@@ -204,8 +226,9 @@ async def fetch_tile(layer: str, z: int, x: int, y: int, now: Optional[float] = 
         raise ValueError("no such radar tile")
     now = time.monotonic() if now is None else now
     forecast = name.startswith("hrrr::")
-    # A forecast layer name is the same for every run: the hour goes into the cache key so a new run is fetched.
-    key = f"{layer}:{int(time.time() // 3600) if forecast else ''}:{z}/{x}/{y}"
+    # A forecast layer name is the same for every run: the run goes into the cache key so a new run is fetched.
+    run = (_hrrr["init"] or str(int(time.time() // 3600))) if forecast else ""
+    key = f"{layer}:{run}:{z}/{x}/{y}"
     hit = _tiles.get(key, now)
     if hit is not None:
         return hit
@@ -244,3 +267,4 @@ def reset_for_tests() -> None:
     _frame.update(at=0.0, ts=None)
     _failed.clear()
     _upstream.update(tokens=float(UPSTREAM_PER_MIN), at=0.0)
+    _hrrr.update(at=0.0, init=None)

@@ -533,4 +533,12 @@ export const RU: Record<string, string> = {
   "that point": "той точки",
   "{n} degrees": "{n|plural:градус,градуса,градусов}",
   "Around {when} near {where}: {what}.": "Около {when} у {where}: {what}.",
+  // ---- weather time slider (src/components/TimeSlider.tsx) ----
+  "Weather now": "Погода сейчас",
+  "Weather in {h} h {m} min": "Погода через {h} ч {m} мин",
+  "Model forecast · {time}": "Прогноз модели · {time}",
+  "Weather time": "Время прогноза",
+  "Now": "Сейчас",
+  "Play": "Пуск",
+  "Pause": "Пауза",
 };
