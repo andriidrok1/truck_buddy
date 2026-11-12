@@ -18,7 +18,7 @@ import { clearOnboarded, setOnboarded } from "../hooks/useTruckProfile";
 import { tokenSub } from "../utils/jwt";
 import { saveAccount, setSignInNotice, setWelcomeBack, type Provider } from "./account";
 import { settleHeldTrip } from "./heldTrip";
-import { forgetHowTo, markHowToSeen } from "./howTo";
+import { markHowToSeen } from "./howTo";
 
 export type SignedIn = { access_token?: string; new_account: boolean; has_profile: boolean; name?: string | null; email?: string | null };
 
@@ -60,6 +60,6 @@ setRestoreSettledHandler(async (found) => {
   } else {
     setWelcomeBack(false);
     await clearOnboarded();
-    await forgetHowTo();
+    // The how-to flag is the phone's (KEPT_ON_SIGN_OUT): whoever saw the screen on it does not get it again.
   }
 });

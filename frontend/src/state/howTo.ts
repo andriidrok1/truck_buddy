@@ -7,7 +7,9 @@
 //   null   — nothing stored. A driver who finished onboarding before this version lands here: the screen does not
 //            open by itself for them (they already know the app), but the dot on "?" is lit until they look.
 // Onboarding writes "due" (markHowToDue); a fresh install has no key until then, and the map is not shown before
-// onboarding anyway. "Delete my data" removes the key, so the second onboarding makes it "due" again.
+// onboarding anyway. The key is the phone's, like the intro flag: a sign-out keeps it, so a driver who signs in
+// again (an access code is a new sub each time) is not shown the screen a second time. "Delete my data" removes the
+// key, so the onboarding after it makes it "due" again.
 
 import { useEffect, useState } from "react";
 

@@ -17,7 +17,7 @@ import { queryClient } from "../query-client";
 import { getAccount, saveAccount, setWelcomeBack, signInNotice, welcomeBackDue } from "../state/account";
 import { finishSignedIn, prepareSignedIn } from "../state/afterSignIn";
 import { countsAsSignedIn, effectiveAuth, resetToFirstLaunch, retireDeviceIdentity, rootScreen, signedOutReset } from "../state/firstLaunch";
-import { loadHowTo, markHowToSeen } from "../state/howTo";
+import { loadHowTo, markHowToDue, markHowToSeen, shouldAutoShowHowTo } from "../state/howTo";
 import { loadIntro, markIntroSeen } from "../state/intro";
 import { loadActiveRoute, saveActiveRoute } from "../state/routeStore";
 import { DEFAULT_SETTINGS, setSpeedAlerts, useSettings } from "../state/settingsStore";
@@ -90,7 +90,7 @@ describe("signedOutReset", () => {
     await new Promise((r) => setTimeout(r, 2100)); // the trip log's debounced mirror on disk
   }
 
-  test("the driver's data goes, in memory and on disk; the language, consent, the intro flag and the theme stay; the root shows sign-in", async () => {
+  test("the driver's data goes, in memory and on disk; the language, consent, the intro and how-to flags and the theme stay; the root shows sign-in", async () => {
     await phoneInUse();
     expect(await AsyncStorage.getItem(UNSYNCED_KEY)).not.toBeNull(); // a truck change the server never took
     expect(await AsyncStorage.getItem("trip_events_pending")).not.toBeNull();
@@ -115,6 +115,7 @@ describe("signedOutReset", () => {
     expect(await loadIntro()).toBe(true);
     const theme = await renderHook(() => useThemePref());
     expect(theme.result.current).toBe("dark");
+    expect(await loadHowTo()).toBe("seen"); // "How to use" does not come up again for the next sign-in on this phone
     await consent.rerender({});
     expect(consent.result.current).toBe("yes");
 
@@ -127,7 +128,6 @@ describe("signedOutReset", () => {
     expect(getTruckProfile()).toEqual(DEFAULT_TRUCK);
     expect(await isOnboarded()).toBe(false);
     expect(isHeightConfirmed()).toBe(false);
-    expect(await loadHowTo()).toBeNull();
     expect(eldHeader()).toEqual({});
     expect(useSettings.getState()).toMatchObject(DEFAULT_SETTINGS);
     expect(useTripStore.getState()).toMatchObject({ active: null, providers: null, options: [], agentPlaces: [], startPins: [], driving: false });
@@ -140,14 +140,18 @@ describe("signedOutReset", () => {
     await auth.rerender({});
     expect(auth.result.current).toBe("out");
     expect(rootScreen(useLangStore.getState().chosen, await loadIntro(), consent.result.current, auth.result.current)).toBe("signin");
+
+    // Emulator QA of #173: an access code signs in as a new sub, so onboarding runs again; "How to use" does not.
+    await markHowToDue();
+    expect(shouldAutoShowHowTo(await loadHowTo(), { focused: true, micCard: false, busy: false, open: false })).toBe(false);
   });
 
   test("the lists agree: what stays plus what goes is every key the app writes", () => {
     const all = [...APP_KEYS, ...SECURE_KEYS];
     // The trip set aside for a driver the server signed out is neither: the sign-out pass leaves it, its own code removes it.
     expect([...IDENTITY_KEYS, ...KEPT_ON_SIGN_OUT, HELD_TRIP_KEY].sort()).toEqual([...all].sort());
-    expect([...KEPT_ON_SIGN_OUT].sort()).toEqual(["ai_consent_v2", "intro_seen_v1", "lang_v1", "theme_pref_v1"]);
-    for (const k of ["auth_token", "auth_refresh", "auth_refresh_sent", "auth_role", "auth_via", "account_v1", "profile_restore_v1", "apple_name_pending_v1", "eld_token_v1", "truck_profile_v1", "profile_unsynced_v1", "trip_events_pending", "trip_v2", "settings_v2", "onboarded_v1", "height_confirmed_v1", "how_to_seen_v1"]) {
+    expect([...KEPT_ON_SIGN_OUT].sort()).toEqual(["ai_consent_v2", "how_to_seen_v1", "intro_seen_v1", "lang_v1", "theme_pref_v1"]);
+    for (const k of ["auth_token", "auth_refresh", "auth_refresh_sent", "auth_role", "auth_via", "account_v1", "profile_restore_v1", "apple_name_pending_v1", "eld_token_v1", "truck_profile_v1", "profile_unsynced_v1", "trip_events_pending", "trip_v2", "settings_v2", "onboarded_v1", "height_confirmed_v1"]) {
       expect(IDENTITY_KEYS).toContain(k);
     }
   });
@@ -434,7 +438,7 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
     expect(getTruckProfile()).toEqual(DEFAULT_TRUCK);
     expect(await isOnboarded()).toBe(false); // B gets onboarding
     expect(isHeightConfirmed()).toBe(false);
-    expect(await loadHowTo()).toBeNull();
+    expect(await loadHowTo()).toBe("seen"); // the phone's flag: after B's onboarding "How to use" stays seen (markHowToDue)
     expect(welcomeBackDue()).toBe(false);
     expect(useSettings.getState().speedAlerts).toBe(false);
     expect(useTripStore.getState()).toMatchObject({ active: null, providers: null });

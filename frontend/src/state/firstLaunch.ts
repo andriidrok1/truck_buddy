@@ -42,14 +42,14 @@ const step = async (f: () => unknown) => {
 
 /** Everything on the phone that is about the signed-in driver, in memory and on disk: the trip and its lists, the
  *  truck and the change still waiting for the server, what was fetched for them, the trip log, the settings, the
- *  Motive key, the height and how-to flags, the account. Every step runs even if one before it failed. */
+ *  Motive key, the height flag, the account. Not the how-to flag: it is about the phone (KEPT_ON_SIGN_OUT). Every step runs even if one before it failed. */
 async function clearDriverData(keepTripLog = false): Promise<void> {
   await step(resetTripStore);
   await step(() => setSim(null));
   await step(resetProfile); // the default truck in memory and in the query cache, no pending server sync or restore
   await step(() => queryClient.clear()); // conversation memory, the server profile: fetched again for the new identity
   await Promise.all(
-    [forgetTruckProfile, forgetHeight, forgetHowTo, forgetSettings, clearSavedRoute, forgetArrived, () => (keepTripLog ? undefined : tripLog.clear()), () => setEldToken(null), forgetAccount].map(step),
+    [forgetTruckProfile, forgetHeight, forgetSettings, clearSavedRoute, forgetArrived, () => (keepTripLog ? undefined : tripLog.clear()), () => setEldToken(null), forgetAccount].map(step),
   );
 }
 
@@ -65,6 +65,7 @@ export async function resetToFirstLaunch(): Promise<string[]> {
   // token removal below does to the rest.
   await step(forgetLang);
   await step(forgetIntro);
+  await step(forgetHowTo);
   await step(forgetConsent);
   await step(forgetIdentity);
   return removeAllAppKeys();
@@ -79,7 +80,7 @@ const TRIP_LOG_KEY = "trip_events_pending";
 /**
  * The phone stops being this driver's without becoming a fresh install: "Sign out", and a token the server turned
  * down (the account was deleted from another phone, the session was closed). Everything resetToFirstLaunch clears
- * goes, except the language, the consent, the intro flag and the theme, which are choices about the phone. The
+ * goes, except the language, the consent, the intro and how-to flags and the theme, which are about the phone. The
  * root layout then shows the sign-in screen, and whoever signs in next starts from nothing of the previous driver:
  * no truck pushed to their account, no trip events sent under their name, no route, no Motive key.
  *
