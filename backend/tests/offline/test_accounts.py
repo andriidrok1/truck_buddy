@@ -845,6 +845,42 @@ def test_an_idle_session_is_refused_and_deleted(client, monkeypatch):
     assert accounts.idle_days() == 180
 
 
+def test_a_session_ends_for_good_a_year_after_its_sign_in(client, monkeypatch):
+    """Renew needs no refresh token, so a copied access token could otherwise be renewed for ever. No token of a
+    session expires past ACCOUNT_SESSION_MAX_DAYS from its sign-in, and after that the session is closed."""
+    who = _person()
+    near, past, used = (_apple(client, who).json() for _ in range(3))
+    _age_session(client, near, "created_at", timedelta(days=accounts.MAX_DAYS_DEFAULT - 2))
+    for body in (past, used):
+        _age_session(client, body, "created_at", timedelta(days=accounts.MAX_DAYS_DEFAULT, minutes=1))
+    end = datetime.now(timezone.utc) + timedelta(days=2)
+    # two days before the end: renew and refresh hand out tokens that run out with the session, not 30 days on
+    renewed = client.post("/api/auth/renew", headers=_h(near)).json()
+    refreshed = _refresh(client, near).json()
+    for body in (renewed, refreshed):
+        assert abs(_claims(body["access_token"])["exp"] - end.timestamp()) < 60
+        assert abs(body["expires_in"] - 2 * 86400) < 60
+    # past the end: refused and closed, on every way in, however recently the phone was used
+    assert _refresh(client, past).status_code == 401 and _session_row(client, past) == []
+    accounts.reset_caches()
+    assert client.post("/api/auth/renew", headers=_h(used)).status_code == 401 and _session_row(client, used) == []
+    late = _apple(client, who).json()
+    _age_session(client, late, "created_at", timedelta(days=400))
+    accounts.reset_caches()
+    assert client.get("/api/auth/check", headers=_h(late)).status_code == 401 and _session_row(client, late) == []
+    # signing in again is a new session with a full year
+    again = _apple(client, who).json()
+    assert client.post("/api/auth/renew", headers=_h(again)).json()["expires_in"] == auth.JWT_DAYS * 86400
+    # 0 turns the limit off; a typo falls back to the default
+    old = _apple(client, who).json()
+    _age_session(client, old, "created_at", timedelta(days=800))
+    monkeypatch.setenv("ACCOUNT_SESSION_MAX_DAYS", "0")
+    assert client.post("/api/auth/renew", headers=_h(old)).json()["expires_in"] == auth.JWT_DAYS * 86400
+    assert _refresh(client, old).status_code == 200
+    monkeypatch.setenv("ACCOUNT_SESSION_MAX_DAYS", "a year")
+    assert accounts.max_days() == accounts.MAX_DAYS_DEFAULT
+
+
 def test_an_expired_account_token_gets_no_grace_but_a_device_token_does(client):
     who = _person()
     a = _apple(client, who).json()

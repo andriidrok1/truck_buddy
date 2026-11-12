@@ -4,7 +4,9 @@ An account's `sub` is the key the rest of the store already hangs a driver's dat
 the same person signing in on another phone gets a token with the same sub and finds everything there. Each phone
 is one account_sessions row with its own refresh token; the access token carries the row's id as `sid` and is
 refused once the row is gone (services/auth.py), which is how signing out works. A session nobody used for
-ACCOUNT_SESSION_IDLE_DAYS is deleted the next time it is looked at.
+ACCOUNT_SESSION_IDLE_DAYS is deleted the next time it is looked at, and so is one older than ACCOUNT_SESSION_MAX_DAYS
+however much it is used: no token of a session is valid past that age (see session_end), so a token that leaked
+cannot be renewed for ever, and the phone signs in again once a year.
 
 Callers check db.store() first: nothing here works with the store off."""
 import logging
@@ -215,6 +217,7 @@ _touched: dict[str, float] = {}  # sid -> when this worker last wrote seen_at
 TOUCH_EVERY_S = 3600.0
 MAX_SESSIONS = 20  # per account; a sign-in past it drops the ones used longest ago (phones that never signed out)
 IDLE_DAYS_DEFAULT = 180
+MAX_DAYS_DEFAULT = 365
 
 
 @dataclass(frozen=True)
@@ -224,6 +227,7 @@ class Session:
     current: bool  # the hash asked about is the session's refresh token now (False: the one before it)
     seen_at: datetime
     rotated_at: Optional[datetime]
+    created_at: datetime
 
 
 def idle_days() -> int:
@@ -237,6 +241,25 @@ def idle_days() -> int:
 def idle(seen_at: datetime) -> bool:
     days = idle_days()
     return days > 0 and _now() - seen_at > timedelta(days=days)
+
+
+def max_days() -> int:
+    """ACCOUNT_SESSION_MAX_DAYS: how long a session lives from its sign-in, used or not (0 = no limit)."""
+    try:
+        return max(0, int(os.environ.get("ACCOUNT_SESSION_MAX_DAYS", "") or MAX_DAYS_DEFAULT))
+    except ValueError:  # a typo must not make every session immortal or dead
+        return MAX_DAYS_DEFAULT
+
+
+def session_end(created_at: datetime) -> Optional[datetime]:
+    """When a session that started at `created_at` ends for good: no token of it may expire later. None = never."""
+    days = max_days()
+    return created_at + timedelta(days=days) if days > 0 else None
+
+
+def ended(created_at: datetime) -> bool:
+    end = session_end(created_at)
+    return end is not None and _now() >= end
 
 
 def _sign_in_script(sub: str, sid: str, refresh_hash: str, platform: Optional[str], at):
@@ -287,7 +310,7 @@ async def session_rotate(sid: str, refresh_hash: str, spent: Optional[str] = Non
 async def session_by_refresh(refresh_hash: str) -> Optional[Session]:
     """The session this refresh token belongs to: as its current token, or as the one it had before the last
     rotation (`current` says which). None when no session knows it."""
-    sql = ("SELECT id, sub, refresh_hash, seen_at, rotated_at FROM account_sessions "
+    sql = ("SELECT id, sub, refresh_hash, seen_at, rotated_at, created_at FROM account_sessions "
            "WHERE refresh_hash = {p1} OR prev_refresh_hash = {p2}")
     if db.store() == "sqlite":
         row = await db._sq_run(lambda con: con.execute(sql.format(p1="?", p2="?"), (refresh_hash, refresh_hash)).fetchone())
@@ -297,22 +320,24 @@ async def session_by_refresh(refresh_hash: str) -> Optional[Session]:
         row = tuple(r) if r else None
     if not row:
         return None
-    return Session(row[0], row[1], row[2] == refresh_hash, _at(row[3]), _at(row[4]) if row[4] is not None else None)
+    return Session(row[0], row[1], row[2] == refresh_hash, _at(row[3]), _at(row[4]) if row[4] is not None else None, _at(row[5]))
 
 
 async def session_alive(sid: str, sub: str) -> bool:
     """Whether this session still exists for this sub. Cached, so a token costs one small read per worker per
-    SESSION_TTL_S. A session idle past ACCOUNT_SESSION_IDLE_DAYS is deleted here and counts as gone."""
+    SESSION_TTL_S. A session idle past ACCOUNT_SESSION_IDLE_DAYS, or older than ACCOUNT_SESSION_MAX_DAYS, is deleted
+    here and counts as gone."""
     hit = _sessions.get(sid)
     if hit is None or time.monotonic() - hit[1] >= SESSION_TTL_S:
         if db.store() == "sqlite":
-            row = await db._sq_run(lambda con: con.execute("SELECT sub, seen_at FROM account_sessions WHERE id = ?", (sid,)).fetchone())
+            row = await db._sq_run(lambda con: con.execute(
+                "SELECT sub, seen_at, created_at FROM account_sessions WHERE id = ?", (sid,)).fetchone())
         else:
             pool = await db._db()
-            r = await pool.fetchrow("SELECT sub, seen_at FROM account_sessions WHERE id = $1", sid)
+            r = await pool.fetchrow("SELECT sub, seen_at, created_at FROM account_sessions WHERE id = $1", sid)
             row = tuple(r) if r else None
         owner = row[0] if row else None
-        if owner is not None and idle(_at(row[1])):
+        if owner is not None and (idle(_at(row[1])) or ended(_at(row[2]))):
             await session_close(sid)
             owner = None
         if len(_sessions) > 50_000:
@@ -321,13 +346,16 @@ async def session_alive(sid: str, sub: str) -> bool:
     return hit[0] == sub
 
 
-async def session_exists(sid: str, sub: str) -> bool:
-    """session_alive without the cache: what the store says now."""
-    sql = "SELECT 1 FROM account_sessions WHERE id = {p1} AND sub = {p2}"
+async def session_started(sid: str, sub: str) -> Optional[datetime]:
+    """When this session of this sub was opened; None when it is gone. What the store says now, not the cache of
+    session_alive."""
+    sql = "SELECT created_at FROM account_sessions WHERE id = {p1} AND sub = {p2}"
     if db.store() == "sqlite":
-        return bool(await db._sq_run(lambda con: con.execute(sql.format(p1="?", p2="?"), (sid, sub)).fetchone()))
+        row = await db._sq_run(lambda con: con.execute(sql.format(p1="?", p2="?"), (sid, sub)).fetchone())
+        return _at(row[0]) if row else None
     pool = await db._db()
-    return bool(await pool.fetchval(sql.format(p1="$1", p2="$2"), sid, sub))
+    at = await pool.fetchval(sql.format(p1="$1", p2="$2"), sid, sub)
+    return _at(at) if at is not None else None
 
 
 async def session_touch(sid: str) -> None:

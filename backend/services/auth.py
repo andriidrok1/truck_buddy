@@ -113,10 +113,13 @@ def new_sub() -> str:
     return f"drv_{uuid.uuid4().hex}"
 
 
-def _token(role: str, sub: Optional[str] = None, claims: Optional[dict] = None, days: int = JWT_DAYS) -> str:
+def _token(role: str, sub: Optional[str] = None, claims: Optional[dict] = None, days: int = JWT_DAYS,
+           until: Optional[datetime] = None) -> str:
     now_dt = datetime.now(timezone.utc)
-    payload = {"sub": sub or new_sub(), "role": role, "iat": now_dt, "exp": now_dt + timedelta(days=days),
-               **(claims or {})}
+    exp = now_dt + timedelta(days=days)
+    if until is not None:
+        exp = min(exp, until)
+    payload = {"sub": sub or new_sub(), "role": role, "iat": now_dt, "exp": exp, **(claims or {})}
     return jwt.encode(payload, _secret(), algorithm="HS256")
 
 
@@ -138,8 +141,18 @@ def _bad_refresh() -> HTTPException:
     return HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
 
-def _access(sub: str, role: str, dev: Optional[tenancy.Device], sid: Optional[str] = None) -> dict:
-    """The access token with the device's tenancy claims and, for an account, its session id."""
+def _expires_in(until: Optional[datetime]) -> int:
+    """Seconds an access token issued now lives: JWT_DAYS, or less near the end of its session (`until`)."""
+    full = JWT_DAYS * 86400
+    if until is None:
+        return full
+    return max(0, min(full, int((until - datetime.now(timezone.utc)).total_seconds())))
+
+
+def _access(sub: str, role: str, dev: Optional[tenancy.Device], sid: Optional[str] = None,
+            until: Optional[datetime] = None) -> dict:
+    """The access token with the device's tenancy claims and, for an account, its session id. `until` caps its exp:
+    an account session's end (accounts.session_end)."""
     claims = {}
     if dev is not None:
         claims = {"org_id": dev.org_id, "driver_id": dev.driver_id}
@@ -148,10 +161,11 @@ def _access(sub: str, role: str, dev: Optional[tenancy.Device], sid: Optional[st
         role = dev.role or role
     if sid:
         claims["sid"] = sid
-    return {"access_token": _token(role, sub, claims), "token_type": "bearer", "role": role}
+    return {"access_token": _token(role, sub, claims, until=until), "token_type": "bearer", "role": role}
 
 
-async def issue(sub: str, role: str, sid: Optional[str] = None, spent: Optional[str] = None) -> dict:
+async def issue(sub: str, role: str, sid: Optional[str] = None, spent: Optional[str] = None,
+                until: Optional[datetime] = None) -> dict:
     """Access token with the device's tenancy claims plus a fresh refresh token (stored hashed; the previous one
     stops working). Without a store the access token alone comes back, as before.
 
@@ -159,13 +173,13 @@ async def issue(sub: str, role: str, sid: Optional[str] = None, spent: Optional[
     phone of the account rotates its own; 401 when the session was closed in the meantime. `spent` is the hash of
     the refresh token being traded in: the new pair is handed out only if that token was still the current one
     (see accounts.session_rotate). Every token for an account must be issued with its sid: one without it would
-    outlive a sign-out."""
+    outlive a sign-out. `until` is the session's end: the access token expires no later."""
     # An account's rows are made at sign-in only (tenancy.ensure_solo_org says why): without them the account was
     # deleted while this refresh or renew was on its way.
     dev = await (tenancy.device_of(sub) if sid else tenancy.ensure_solo_org(sub, role))
     if sid and dev is None and db.store() != "off":
         raise _unregistered()
-    out = _access(sub, role, dev, sid)
+    out = _access(sub, role, dev, sid, until)
     if dev is None:
         return out
     refresh = _secrets.token_urlsafe(32)
@@ -173,7 +187,7 @@ async def issue(sub: str, role: str, sid: Optional[str] = None, spent: Optional[
         await tenancy.set_refresh(sub, _hash(refresh))
     elif not await accounts.session_rotate(sid, _hash(refresh), spent):
         raise _bad_refresh() if spent else _unregistered()
-    return {**out, "refresh_token": refresh, "expires_in": JWT_DAYS * 86400}
+    return {**out, "refresh_token": refresh, "expires_in": _expires_in(until)}
 
 
 async def renew(sub: str, role: str, sid: Optional[str] = None) -> dict:
@@ -184,13 +198,25 @@ async def renew(sub: str, role: str, sid: Optional[str] = None) -> dict:
     and the phone keeps the one it holds. Rotating it here made a lost answer expensive: the phone kept a refresh token
     the server already counted as spent, and once the access token ran out, its next /auth/refresh was taken for a
     stolen copy and closed the session (see REUSE_RACE_S). The session is read from the store, not this worker's copy,
-    so no token is minted for a phone that was signed out or deleted a moment ago."""
+    so no token is minted for a phone that was signed out or deleted a moment ago.
+
+    Renewing needs no refresh token, so a copied access token could be renewed by whoever holds it. Two things bound
+    that: every renew checks the session in the store (signing out, or "Sign out of all phones", ends the copies
+    too), and no token outlives the session's end (accounts.session_end, ACCOUNT_SESSION_MAX_DAYS from the sign-in):
+    past it the session is closed and the phone signs in again."""
     if not sid:
         return await issue(sub, role)
+    if db.store() == "off":
+        return {**_access(sub, role, None, sid), "expires_in": JWT_DAYS * 86400}
     dev = await tenancy.device_of(sub)
-    if (dev is None or not await accounts.session_exists(sid, sub)) and db.store() != "off":
+    started = await accounts.session_started(sid, sub) if dev is not None else None
+    if dev is None or started is None:
         raise _unregistered()
-    return {**_access(sub, role, dev, sid), "expires_in": JWT_DAYS * 86400}
+    if accounts.ended(started):
+        await accounts.session_close(sid)
+        raise _unregistered()
+    until = accounts.session_end(started)
+    return {**_access(sub, role, dev, sid, until), "expires_in": _expires_in(until)}
 
 
 async def open_session(sub: str, platform: Optional[str] = None) -> Optional[tuple[dict, bool]]:
@@ -229,11 +255,12 @@ async def refresh(refresh_token: str) -> dict:
             logging.getLogger("truckbuddy.auth").warning("spent refresh token reused for %s: session %s closed", session.sub, session.sid)
             await accounts.session_close(session.sid)
         raise _bad_refresh()
-    if accounts.idle(session.seen_at):
+    if accounts.idle(session.seen_at) or accounts.ended(session.created_at):
         await accounts.session_close(session.sid)
         raise _bad_refresh()
     dev = await tenancy.device_of(session.sub)
-    return await issue(session.sub, dev.role if dev else "driver", session.sid, spent=hashed)
+    return await issue(session.sub, dev.role if dev else "driver", session.sid, spent=hashed,
+                       until=accounts.session_end(session.created_at))
 
 
 def open_access() -> bool:
