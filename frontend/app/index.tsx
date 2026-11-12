@@ -42,6 +42,7 @@ import { useOfflineGuidance, type OfflineGuidance } from "@/src/hooks/useOffline
 import { useStartPins, useWarmCaches } from "@/src/hooks/useNearbyWarmup";
 import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
+import { useParkingLanguage } from "@/src/hooks/useParkingLanguage";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
 import { useFollowCamera } from "@/src/hooks/useFollowCamera";
 import { useHardwareBack } from "@/src/hooks/useHardwareBack";
@@ -670,6 +671,8 @@ export default function MapScreen() {
 
   // Background location, keep-awake, the fleet heartbeat and arrival events while driving.
   useDrivingSession(driving, active, loc);
+  // The route card's parking text is asked again in the new language when the driver changes it.
+  useParkingLanguage();
 
   // Resume of a restored route: the first real fix after it decides whether the truck is still near the line.
   // A parked truck never trips the off-route tracker, so far from it the plan is redone right away.
