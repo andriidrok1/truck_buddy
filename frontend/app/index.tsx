@@ -139,6 +139,7 @@ export default function MapScreen() {
   /** Drawn heights of the answer bubble and of the card on the map (height, mic): 0 when gone. */
   const [bubbleH, setBubbleH] = useState(0);
   const [cardH, setCardH] = useState(0);
+  const [restoredH, setRestoredH] = useState(0);
   // Whether this screen is the one on top (not under the truck profile or history).
   const [focused, setFocused] = useState(true);
   /** The answer that did not fit whole in the bubble, and the room it had: it stays in the sheet until a new
@@ -990,10 +991,13 @@ export default function MapScreen() {
             replanIfFar();
           }}
           onDismiss={clearRoute}
+          onHeight={setRestoredH}
         />
       )}
 
-      <Toast toast={toast} top={topH + spacing.sm} />
+      {/* Under the restored banner while it is up: "Tell me your truck height first" after a refused Resume sat
+          on the banner's own buttons (emulator, 2026-11-11). */}
+      <Toast toast={toast} top={topH + spacing.sm + (restored && active && restoredH > 0 ? restoredH + spacing.sm : 0)} />
 
       <HowToSheet mode={howTo.mode} name={truck.driver_name} motive={!!motiveKey} onAsk={howTo.ask} onTryNow={howTo.tryNow} onClose={howTo.close} />
 
