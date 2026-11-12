@@ -672,8 +672,8 @@ export interface paths {
         put?: never;
         /**
          * Warm
-         * @description Pre-fetch Places for all categories (+ satellite check for the top place) around the driver.
-         *     At most once per driver per WARM_EVERY_S; the answer is always ok (the app ignores it).
+         * @description No-op, kept for 1.0 builds that still call it when the map opens. Nothing paid runs before the driver
+         *     asks: no Places search, no HERE, no LLM, no satellite check. The answer is always ok.
          */
         post: operations["warm_api_warm_post"];
         delete?: never;

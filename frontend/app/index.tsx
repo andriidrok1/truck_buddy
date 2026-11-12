@@ -39,7 +39,7 @@ import { useDriverLocation } from "@/src/hooks/useDriverLocation";
 import { useDrivingSession } from "@/src/hooks/useDrivingSession";
 import { useGuidance, type Guidance } from "@/src/hooks/useGuidance";
 import { useOfflineGuidance, type OfflineGuidance } from "@/src/hooks/useOfflineGuidance";
-import { useStartPins, useWarmCaches } from "@/src/hooks/useNearbyWarmup";
+import { useStartPins } from "@/src/hooks/useStartPins";
 import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
@@ -286,9 +286,8 @@ export default function MapScreen() {
 
   const fillers = useFillers(voice.playAndWait);
 
-  // Warm the Places cache around the driver (parking is checked only when he asks or picks a place); the truck stops around him as pins on an empty map.
+  // The truck stops around the driver as pins on an empty map (parking is checked only when he asks or picks a place).
   const appActive = useAppActive();
-  useWarmCaches(loc, appActive, active);
   useStartPins(loc, { active, phase, optionsCount: options.length, providers, placesCount: places.length }, phaseRef, setFit);
 
   /** Satellite parking check runs after the route is set; its directions are spoken when the reply ends. */
