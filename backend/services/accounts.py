@@ -298,15 +298,6 @@ async def session_by_refresh(refresh_hash: str) -> Optional[Session]:
     if not row:
         return None
     return Session(row[0], row[1], row[2] == refresh_hash, _at(row[3]), _at(row[4]) if row[4] is not None else None)
-async def session_exists(sid: str, sub: str) -> bool:
-    """session_alive without the cache: what the store says now."""
-    sql = "SELECT 1 FROM account_sessions WHERE id = {p1} AND sub = {p2}"
-    if db.store() == "sqlite":
-        return bool(await db._sq_run(lambda con: con.execute(sql.format(p1="?", p2="?"), (sid, sub)).fetchone()))
-    pool = await db._db()
-    return bool(await pool.fetchval(sql.format(p1="$1", p2="$2"), sid, sub))
-
-
 
 
 async def session_alive(sid: str, sub: str) -> bool:
