@@ -209,15 +209,18 @@ describe("AccountActions, an account", () => {
     expect(screen.getByTestId("account-error")).toHaveTextContent(/флот/);
   });
 
-  test("a failure: nothing was removed, try again", async () => {
+  test.each([
+    ["not_removed", "Couldn't delete your account. Nothing was removed. Try again."],
+    ["failed", "Couldn't delete your account. Try again."],
+  ])("%s: %s", async (reason, text) => {
     await open();
-    mocks.del.mockResolvedValue({ ok: false, reason: "failed" });
+    mocks.del.mockResolvedValue({ ok: false, reason });
     await press("account-delete");
     later();
     await press("delete-account-sheet-confirm");
     later();
     await press("delete-account-final-confirm");
-    expect(screen.getByTestId("account-error")).toHaveTextContent("Couldn't delete your account. Nothing was removed. Try again.");
+    expect(screen.getByTestId("account-error")).toHaveTextContent(text);
   });
 
   test("no answer and no confirmation: we couldn't confirm", async () => {

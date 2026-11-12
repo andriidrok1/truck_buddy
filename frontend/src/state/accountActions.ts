@@ -2,9 +2,8 @@
 // out of every phone, delete the account. An access-code sign-in keeps its own "Sign out" and "Delete my data"
 // (src/state/firstLaunch.ts); none of these is offered to it.
 
-import { accountStillThere, api, ApiError, logout, type AccountDeleted } from "../api";
+import { api, ApiError, isNoLongerRegistered, logout, tokenState, type AccountDeleted } from "../api";
 import { getToken, signedInWithAccount } from "../auth";
-import { after401 } from "../net/tokenRenewal";
 import { serverThenReset, signedOutReset, type Nav } from "./firstLaunch";
 
 /** How long "Sign out" waits for the server to close this phone's session before signing out anyway. */
@@ -43,55 +42,72 @@ export type DeleteOutcome =
   | { ok: true; appleRevoked: boolean | null }
   /** 409: the server will not delete this account (the only owner of a fleet that still has drivers). */
   | { ok: false; reason: "refused"; detail: string }
-  /** 503, or no answer and the check said the account is still there: nothing was removed, and the server takes
-   *  the same request again. */
+  /** 503 with our JSON `detail`: the backend says it removed nothing, and takes the same request again. The only
+   *  outcome that may tell the driver "Nothing was removed". */
+  | { ok: false; reason: "not_removed" }
+  /** Any other answer from the server (a 500, a 4xx, a 401 the renewal could not fix): it did not delete, but did
+   *  not say what it kept either. */
   | { ok: false; reason: "failed" }
-  /** No answer, and the check got none either: nothing on the phone was touched, the server state is unknown. */
+  /** No answer to the DELETE, and the check could not settle it (the account still answers, which may only mean the
+   *  deletion is still running, or the check got no answer either). Nothing on the phone was touched. */
   | { ok: false; reason: "unconfirmed" };
 
-/** No answer to the DELETE: the server may have finished all the same (a timeout, a dead zone, the edge's 502/504).
- *  A 503 is the backend saying it did not. */
-const noAnswer = (e: unknown) => !(e instanceof ApiError) || e.status === 502 || e.status === 504;
+/** No answer to the DELETE: the server may have finished all the same (a timeout, a dead zone, the edge's 502/504,
+ *  a 503 page from the proxy during a deploy, which has no JSON `detail`). A 503 with our `detail` is the backend
+ *  saying it did not (review of #173, M4). */
+const noAnswer = (e: unknown) =>
+  !(e instanceof ApiError) || e.status === 502 || e.status === 504 || (e.status === 503 && e.detail === null);
 
 class Unconfirmed extends Error {}
 
 /**
+ * Treated as a deletion that went through, and the phone resets to a fresh install. Not proof that this request
+ * deleted the account: our 401 "no longer registered" is also what a phone hears when the account was deleted
+ * from another phone. Either way there is no account behind the token any more, so nothing on this phone or in
+ * the copy ever says "your account was deleted" (review of #173, M3): the driver just sees the first launch again.
+ */
+const GONE: AccountDeleted = { ok: true, apple_revoked: null }; // what Apple said is not known here
+
+/**
  * "Delete account and data": DELETE /api/account with every other request held (serverThenReset), then the phone
- * back to a fresh install (the language screen). On a 409 or any failure nothing on the phone changes. When the
- * DELETE gets no answer, GET /api/auth/check with the same token tells a deletion that went through (401 "no longer
- * registered": the phone resets as on a 200) from one that did not (200) and from no answer at all. A 401 (the
- * access token expired while the screen was open) is renewed outside the hold and the delete is sent once more.
+ * back to a fresh install (the language screen). On a 409 or any failure nothing on the phone changes.
+ *
+ * - A 401 "no longer registered" counts as a 200 (a retry after a deletion that went through, review of #173 H1).
+ * - Any other 401 (the access token expired while the screen was open) goes to serverThenReset, which renews the
+ *   token outside the hold and sends the delete once more. That is the only retry; there is none here.
+ * - No answer: GET /api/auth/check with the same token, still under the hold, so no other request gets the 401
+ *   first and signs the phone out with "You were signed out" instead of the fresh-install reset. "gone" resets as
+ *   on a 200, "refused" goes through the renewal like a 401, "alive" or no answer is "unconfirmed" (H2).
  */
 export async function deleteAccount(router: Nav, call: () => Promise<AccountDeleted> = api.deleteAccount): Promise<DeleteOutcome> {
-  for (let attempt = 0; ; attempt++) {
-    const sent = getToken();
-    // With no answer, one cheap authenticated call says what happened, still under the hold, so no other request
-    // gets the 401 first and signs the phone out with "You were signed out" instead of the fresh-install reset.
-    // The DELETE's header is read in the same tick as this function is called (serverThenReset relies on it).
-    const checked = async (): Promise<AccountDeleted> => {
-      try {
-        return await call();
-      } catch (e) {
-        if (!sent || !noAnswer(e)) throw e;
-        const state = await accountStillThere(sent);
-        if (state === "gone") return { ok: true, apple_revoked: null }; // what Apple said is not known here
-        throw state === "alive" ? e : new Unconfirmed();
-      }
-    };
-    const r = await serverThenReset(router, checked);
-    if (r.ok) {
-      const appleRevoked = r.value?.apple_revoked ?? null;
-      // Apple's settings keep listing the app until the driver removes it there; nothing to show on a fresh phone.
-      if (appleRevoked === false) console.warn("[account] deleted, but Apple did not take the revocation");
-      return { ok: true, appleRevoked };
+  const checked = async (): Promise<AccountDeleted> => {
+    const sent = getToken(); // per attempt: the retry after a renewal carries the new token
+    try {
+      return await call(); // reads its header in this same tick (serverThenReset relies on it)
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401 && isNoLongerRegistered(e.detail)) return GONE;
+      if (!sent || !noAnswer(e)) throw e;
+      const state = await tokenState(sent);
+      if (state === "gone") return GONE;
+      if (state === "refused") throw new ApiError(401, "/auth/check", "refused");
+      throw new Unconfirmed();
     }
-    const e = r.error;
-    if (e instanceof Unconfirmed) return { ok: false, reason: "unconfirmed" };
-    if (e instanceof ApiError && e.status === 409) return { ok: false, reason: "refused", detail: e.detail ?? REFUSED };
-    // Our 401 carries a detail; a proxy's does not and says nothing about the token.
-    if (e instanceof ApiError && e.status === 401 && e.detail !== null && attempt === 0 && sent && (await after401(sent))) continue;
-    return { ok: false, reason: "failed" };
+  };
+  const r = await serverThenReset(router, checked);
+  if (r.ok) {
+    const appleRevoked = r.value?.apple_revoked ?? null;
+    // Apple's settings keep listing the app until the driver removes it there; nothing to show on a fresh phone.
+    if (appleRevoked === false) console.warn("[account] Apple did not take the revocation");
+    return { ok: true, appleRevoked };
   }
+  const e = r.error;
+  if (e instanceof Unconfirmed) return { ok: false, reason: "unconfirmed" };
+  if (!(e instanceof ApiError)) return { ok: false, reason: "unconfirmed" }; // no answer and no token to check with
+  if (e.status === 409) return { ok: false, reason: "refused", detail: e.detail ?? REFUSED };
+  if (e.status === 503 && e.detail !== null) return { ok: false, reason: "not_removed" };
+  // A 401 the renewal could not fix: the session may have been closed, or the account deleted elsewhere. Not known.
+  if (e.status === 401) return { ok: false, reason: "unconfirmed" };
+  return { ok: false, reason: "failed" };
 }
 
 /** "Clear memory" on the history screen. An account clears the conversations and what the copilot learned from them

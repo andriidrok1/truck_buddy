@@ -2,7 +2,7 @@
 // per identity. The server is a fetch stand-in that answers like backend services/account_api.py.
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { api } from "../api";
+import { ACCOUNT_DELETE_TIMEOUT_MS, api } from "../api";
 import { getToken, holdToken, loadToken, setToken, tokenHold } from "../auth";
 import { CONSENT_KEY, giveConsent } from "../consent";
 import { saveProfile } from "../data/profile";
@@ -170,14 +170,65 @@ describe("Delete account and data", () => {
     await stillMike();
   });
 
+  test("503 with our detail: nothing was removed, nothing cleared, no check", async () => {
+    await signedIn();
+    answers[key("DELETE", "/account")] = reply(503, { detail: "The account could not be deleted right now. Try again." });
+    expect(await deleteAccount(router())).toEqual({ ok: false, reason: "not_removed" });
+    expect(calls.map((c) => c.path)).toEqual(["/account"]);
+    await stillMike();
+  });
+
   test.each([
-    ["503", () => reply(503, { detail: "The account could not be deleted right now. Try again." })],
-    ["no connection", () => "offline" as const],
-  ])("%s: failed, nothing cleared", async (_, a) => {
+    ["500", () => reply(500, { detail: "Internal Server Error" })],
+    ["429", () => reply(429, { detail: "Too many requests" })],
+  ])("%s: failed, without claiming nothing was removed; nothing cleared", async (_, a) => {
     await signedIn();
     answers[key("DELETE", "/account")] = a();
     expect(await deleteAccount(router())).toEqual({ ok: false, reason: "failed" });
+    expect(calls.map((c) => c.path)).toEqual(["/account"]);
     await stillMike();
+  });
+
+  describe("a 401 on the DELETE (review of #173, H1)", () => {
+    test("no longer registered: a deletion that already went through, the phone resets as on a 200, no renewal", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = reply(401, { detail: "This device is no longer registered" });
+      const r = router();
+      expect(await deleteAccount(r)).toEqual({ ok: true, appleRevoked: null });
+      expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["DELETE /account"]);
+      expect(r.dismissAll).toHaveBeenCalled();
+      expect(getToken()).toBeNull();
+      expect(useLangStore.getState().chosen).toBe(false);
+    });
+
+    test("an expired token: one renewal, one more DELETE with the new token, and no second round", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = reply(401, { detail: "Invalid or expired token" });
+      answers[key("POST", "/auth/renew")] = reply(401, { detail: "Invalid or expired token" });
+      answers[key("POST", "/auth/refresh")] = reply(200, { access_token: "ACC2", refresh_token: "REF2" });
+      expect(await deleteAccount(router())).toEqual({ ok: false, reason: "unconfirmed" });
+      const deletes = calls.filter((c) => c.method === "DELETE");
+      expect(deletes.map((c) => c.auth)).toEqual(["Bearer ACC", "Bearer ACC2"]);
+      expect(calls.filter((c) => c.path === "/auth/refresh")).toHaveLength(1);
+      expect(getToken()).toBe("ACC2"); // still signed in: nothing on the phone was touched
+      expect(getTruckProfile().height_in).toBe(168);
+    });
+
+    test("an expired token, and the retry hears no longer registered: the phone resets", async () => {
+      await signedIn();
+      let n = 0;
+      const call = jest.fn(async () => {
+        n++;
+        if (n === 1) return api.deleteAccount();
+        answers[key("DELETE", "/account")] = reply(401, { detail: "This device is no longer registered" });
+        return api.deleteAccount();
+      });
+      answers[key("DELETE", "/account")] = reply(401, { detail: "Invalid or expired token" });
+      answers[key("POST", "/auth/refresh")] = reply(200, { access_token: "ACC2", refresh_token: "REF2" });
+      expect(await deleteAccount(router(), call)).toEqual({ ok: true, appleRevoked: null });
+      expect(call).toHaveBeenCalledTimes(2);
+      expect(getToken()).toBeNull();
+    });
   });
 
   describe("no answer to the DELETE: GET /api/auth/check with the same token says what happened", () => {
@@ -197,11 +248,11 @@ describe("Delete account and data", () => {
       expect(calls.map((c) => c.path)).not.toContain("/auth/refresh"); // no renewal, no "You were signed out"
     });
 
-    test("200: the account is still there, nothing was removed", async () => {
+    test("200: the account still answers, which may only mean the deletion is still running: unconfirmed (H2)", async () => {
       await signedIn();
       answers[key("DELETE", "/account")] = reply(504, "gateway timeout");
       answers[key("GET", "/auth/check")] = reply(200, { ok: true });
-      expect(await deleteAccount(router())).toEqual({ ok: false, reason: "failed" });
+      expect(await deleteAccount(router())).toEqual({ ok: false, reason: "unconfirmed" });
       expect(calls.map((c) => c.path)).toEqual(["/account", "/auth/check"]);
       await stillMike();
     });
@@ -214,11 +265,31 @@ describe("Delete account and data", () => {
       await stillMike();
     });
 
-    test("a 503 is the server's own answer: no check", async () => {
+    test("a 503 without our JSON detail (the proxy during a deploy) is no answer: the check runs (M4)", async () => {
       await signedIn();
-      answers[key("DELETE", "/account")] = reply(503, { detail: "The account could not be deleted right now. Try again." });
-      expect(await deleteAccount(router())).toEqual({ ok: false, reason: "failed" });
-      expect(calls.map((c) => c.path)).toEqual(["/account"]);
+      answers[key("DELETE", "/account")] = new Response("<html>503 Service Unavailable</html>", { status: 503, headers: { "Content-Type": "text/html" } });
+      answers[key("GET", "/auth/check")] = reply(401, { detail: "This device is no longer registered" });
+      expect(await deleteAccount(router())).toEqual({ ok: true, appleRevoked: null });
+      expect(calls.map((c) => c.path)).toEqual(["/account", "/auth/check"]);
+      expect(getToken()).toBeNull();
+    });
+
+    test("the check says the token expired: renewed, and the DELETE goes once more with the new token", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = "offline";
+      answers[key("GET", "/auth/check")] = reply(401, { detail: "Invalid or expired token" });
+      answers[key("POST", "/auth/refresh")] = reply(200, { access_token: "ACC2", refresh_token: "REF2" });
+      let n = 0;
+      const call = jest.fn(async () => {
+        if (++n === 1) return api.deleteAccount();
+        return { ok: true, apple_revoked: true };
+      });
+      expect(await deleteAccount(router(), call)).toEqual({ ok: true, appleRevoked: true });
+      expect(call).toHaveBeenCalledTimes(2);
+    });
+
+    test("the DELETE waits 60 s before it counts as no answer", async () => {
+      expect(ACCOUNT_DELETE_TIMEOUT_MS).toBe(60000);
     });
 
     test("no other request goes out while the check runs", async () => {
@@ -248,7 +319,7 @@ describe("Delete account and data", () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(calls.map((c) => c.path)).toEqual(["/account"]);
     answer(reply(503, { detail: "x" }));
-    expect(await deleting).toEqual({ ok: false, reason: "failed" });
+    expect(await deleting).toEqual({ ok: false, reason: "not_removed" });
     answers[key("GET", "/memory")] = reply(200, { turns: [] });
     await other;
     expect(calls).toEqual([

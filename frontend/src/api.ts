@@ -304,6 +304,10 @@ export type AccountDeleted = {
   apple_revoked?: boolean | null;
 };
 
+/** How long the app waits for DELETE /api/account. The server revokes the Apple token and wipes every table in one
+ *  request; on a slow cell connection that takes longer than an ordinary call (review of #173, H2). */
+export const ACCOUNT_DELETE_TIMEOUT_MS = 60000;
+
 /**
  * Deletes the signed-in account and everything stored for it. Not through request(): the caller holds every other
  * request until this one settles (firstLaunch.ts serverThenReset), and request()'s renewal on a 401 would wait on
@@ -311,7 +315,7 @@ export type AccountDeleted = {
  * ApiError for the caller to renew and retry outside the hold; a 409 carries the server's reason in `detail`.
  */
 async function deleteAccount(): Promise<AccountDeleted> {
-  const d = deadline(DEFAULT_TIMEOUT_MS);
+  const d = deadline(ACCOUNT_DELETE_TIMEOUT_MS);
   try {
     const res = await fetchTracked(`${BASE}/account`, { method: "DELETE", signal: d.signal, headers: { "Content-Type": "application/json", ...authHeader() } });
     await check(res, "/account", null, false);
@@ -321,20 +325,27 @@ async function deleteAccount(): Promise<AccountDeleted> {
   }
 }
 
+/** Our 401 for a token whose sub has no driver any more (backend services/auth.py). It is also what a phone hears
+ *  after its account was deleted from another phone, so it never proves on its own that *this* request deleted
+ *  anything. */
+export const isNoLongerRegistered = (detail: string | null | undefined): boolean => typeof detail === "string" && /no longer registered/i.test(detail);
+
 /**
- * After a DELETE /api/account that got no answer: is `token` still good? GET /api/auth/check with that token, set
- * by hand because the caller holds every other request (authHeader() leaves the token out meanwhile) and because a
- * 401 here must not start a renewal. "gone": our 401 "no longer registered" (the deletion went through); "alive": a
- * 200; "unknown": anything else (offline, a timeout, a 5xx, a 429, a page that is not ours).
+ * What GET /api/auth/check says about `token`, after a call that got no answer (a DELETE /api/account, a POST
+ * /api/auth/logout-all). The token is set by hand because the caller may hold every other request (authHeader()
+ * leaves the token out meanwhile) and because a 401 here must not start a renewal.
+ * "alive": a 200. "gone": our 401 "no longer registered". "refused": our 401 for another reason (an expired access
+ * token, a closed session). "unknown": anything else (offline, a timeout, a 5xx, a 429, a page that is not ours).
  */
-export async function accountStillThere(token: string): Promise<"alive" | "gone" | "unknown"> {
+export async function tokenState(token: string): Promise<"alive" | "gone" | "refused" | "unknown"> {
   const d = deadline(10000);
   try {
     const res = await fetchTracked(`${BASE}/auth/check`, { signal: d.signal, headers: { Authorization: `Bearer ${token}`, "X-Lang": "en" } });
     if (res.ok) return "alive";
     if (res.status !== 401) return "unknown";
     const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
-    return typeof body?.detail === "string" && /no longer registered/i.test(body.detail) ? "gone" : "unknown";
+    if (typeof body?.detail !== "string") return "unknown";
+    return isNoLongerRegistered(body.detail) ? "gone" : "refused";
   } catch {
     return "unknown";
   } finally {

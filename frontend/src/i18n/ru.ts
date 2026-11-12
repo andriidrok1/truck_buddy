@@ -560,6 +560,7 @@ export const RU: Record<string, string> = {
     "Удаляет аккаунт и всё, что в нём есть, на наших серверах и на этом телефоне. Приложение начнётся заново, как после установки.",
   "We couldn't confirm. Check your connection and try again.": "Не получилось проверить. Проверь связь и попробуй ещё раз.",
   "Couldn't delete your account. Nothing was removed. Try again.": "Не получилось удалить аккаунт. Ничего не удалено. Попробуй ещё раз.",
+  "Couldn't delete your account. Try again.": "Не получилось удалить аккаунт. Попробуй ещё раз.",
   "This account can't be deleted from the app. Write to support@truckbuddy.io.":
     "Этот аккаунт нельзя удалить из приложения. Напиши на support@truckbuddy.io.",
   // the server's 409 detail for the last owner of a fleet (backend services/account_api.py LAST_OWNER), word for word
