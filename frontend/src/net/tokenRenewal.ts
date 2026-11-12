@@ -163,8 +163,18 @@ export async function renewOnStart(now = Date.now()): Promise<RenewOutcome | nul
   const exp = tokenExpiry(t);
   const due = !getRefreshToken() || (exp !== null && exp - now < RENEW_BEFORE_MS);
   if (!due) return null;
-  return renewToken();
+  // An account session near its end (#171: ACCOUNT_SESSION_MAX_DAYS): /auth/renew answers with a token that ends
+  // when the session does, so it is still "due". Renewing it again on every return to the foreground gains nothing;
+  // the expiry is read from the new token itself, and the 401 at its end signs in again.
+  if (exp !== null && exp === cappedExp) return null;
+  const out = await renewToken();
+  const next = getToken();
+  const nextExp = next ? tokenExpiry(next) : null;
+  cappedExp = out === "renewed" && exp !== null && nextExp !== null && nextExp - now < RENEW_BEFORE_MS ? nextExp : null;
+  return out;
 }
+/** The expiry of a token a renewal on start could not move past RENEW_BEFORE_MS (the session's end). */
+let cappedExp: number | null = null;
 
 let onRejected: (() => Promise<unknown>) | null = null;
 /** What to do when the server turns the identity down for good: src/state/firstLaunch.ts registers the sign-out
@@ -205,5 +215,6 @@ export async function after401(sent: string): Promise<boolean> {
 /** Tests only. */
 export function resetRenewalForTests() {
   inflight = null;
+  cappedExp = null;
   rejecting = null;
 }
