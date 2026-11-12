@@ -225,16 +225,29 @@ async def auth_logout_all(principal: auth.Principal = Depends(auth.require_drive
 
 @api.post("/auth/fleet-code")
 async def auth_fleet_code(req: FleetCodeRequest, principal: auth.Principal = Depends(auth.require_driver)):
-    """Binds this device to the fleet (and truck) the code was made for; answers with a token carrying the org."""
+    """Binds this device to the fleet (and truck) the code was made for; answers with a token carrying the org.
+
+    A device token gets a new pair, as before. An account session keeps its refresh token, as on /auth/renew: the
+    answer has a new access token and no refresh_token, and the phone keeps the one it holds (an answer lost on the
+    way would otherwise leave the phone with a refresh token the server counts as spent, and its next refresh would
+    close the session as stolen)."""
+    unavailable = HTTPException(status_code=503, detail="Fleet codes are unavailable right now")
     try:
         dev = await tenancy.bind_fleet_code(principal.sub, req.code, create=not principal.sid)
     except tenancy.Unregistered:  # the account was deleted while this request was on its way
         raise auth._unregistered()
     except tenancy.BadFleetCode:
         raise HTTPException(status_code=401, detail="That fleet code isn't right or has expired")
-    except RuntimeError:
-        raise HTTPException(status_code=503, detail="Fleet codes are unavailable right now")
-    out = await auth.issue(principal.sub, dev.role, principal.sid)
+    except Exception as e:  # noqa: BLE001 - the store, or anything else: never a 500 with a trace
+        logger.warning("fleet bind failed for %s: %s", principal.sub, type(e).__name__)
+        raise unavailable
+    try:
+        out = await (auth.renew(principal.sub, dev.role, principal.sid) if principal.sid else auth.issue(principal.sub, dev.role))
+    except HTTPException:  # the session or the account went while this request was on its way
+        raise
+    except Exception as e:  # noqa: BLE001 - the bind holds; the phone keeps its token and asks again
+        logger.warning("token after fleet bind failed for %s: %s", principal.sub, type(e).__name__)
+        raise unavailable
     out.update({"org_id": dev.org_id, "vehicle_id": dev.vehicle_id})
     return out
 

@@ -771,6 +771,44 @@ def test_renew_leaves_an_accounts_refresh_token_as_it_was(client):
     assert r.status_code == 200 and _session_row(client, a) != []
 
 
+def test_a_fleet_code_on_an_account_keeps_its_refresh_token(client, caplog):
+    """The fleet bind answers a token with the fleet's org and no refresh_token: the phone keeps the one it holds, so
+    an answer lost on the way costs nothing. A device token still gets a new pair."""
+    who = _person()
+    a = _apple(client, who).json()
+    before = _session_row(client, a) + _rows(client, "SELECT refresh_hash, prev_refresh_hash FROM account_sessions WHERE id = ?",
+                                             _claims(a["access_token"])["sid"])
+    r = client.post("/api/auth/fleet-code", json={"code": _fleet_code(client)}, headers=_h(a))
+    assert r.status_code == 200 and "refresh_token" not in r.json(), r.text
+    bound = r.json()
+    assert _claims(bound["access_token"])["org_id"] == bound["org_id"] and _claims(bound["access_token"])["sid"] == _claims(a["access_token"])["sid"]
+    after = _session_row(client, a) + _rows(client, "SELECT refresh_hash, prev_refresh_hash FROM account_sessions WHERE id = ?",
+                                            _claims(a["access_token"])["sid"])
+    assert after == before  # nothing rotated
+    _age_session(client, a, "rotated_at", timedelta(seconds=auth.REUSE_RACE_S + 5))
+    again = _refresh(client, a)  # long after: the refresh token the phone kept
+    assert again.status_code == 200 and _session_row(client, a) != []
+    assert _claims(again.json()["access_token"])["org_id"] == bound["org_id"]
+    # a device token: a new pair, as before
+    d = client.post("/api/auth/device").json()
+    r = client.post("/api/auth/fleet-code", json={"code": _fleet_code(client)}, headers=_h(d))
+    assert r.status_code == 200 and r.json()["refresh_token"]
+
+
+@pytest.mark.parametrize("where", ["bind", "token"])
+def test_a_fleet_code_that_fails_unexpectedly_is_a_503_without_a_trace(client, monkeypatch, caplog, where):
+    who = _person()
+    a = _apple(client, who).json()
+
+    async def boom(*args, **kwargs):
+        raise ValueError("secret detail from inside")
+    monkeypatch.setattr(*((tenancy, "bind_fleet_code") if where == "bind" else (auth, "renew")), boom)
+    with caplog.at_level(logging.WARNING, logger="truckbuddy"):
+        r = client.post("/api/auth/fleet-code", json={"code": _fleet_code(client)}, headers=_h(a))
+    assert r.status_code == 503 and r.json() == {"detail": "Fleet codes are unavailable right now"}
+    assert "secret detail" not in r.text and "secret detail" not in caplog.text and "ValueError" in caplog.text
+
+
 def test_renew_refuses_a_session_another_worker_closed(client):
     """renew reads the session from the store, not from this worker's minute-old copy."""
     who = _person()
