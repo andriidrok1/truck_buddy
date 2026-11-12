@@ -1,13 +1,14 @@
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Image, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, AppState, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { SignInError } from "../api";
 import { codeRequested, requestCode, useAuthState } from "../auth";
 import { PRIVACY_URL, TERMS_URL } from "../constants";
 import { t } from "../i18n";
 import { Text } from "../i18n/Text";
-import { signInWith, type SignInOutcome } from "../signin";
+import { signInWith, type SignInOutcome, type SignInStage } from "../signin";
 import { loadApple } from "../signin/apple";
 import { availableProviders, codeLinkAllowed, signInEnv, type Providers, type SignInEnv } from "../signin/available";
 import { setSignInNotice, useSignInNotice, type Provider } from "../state/account";
@@ -17,14 +18,36 @@ import { GoogleMark } from "./GoogleMark";
 import { PressableScale } from "./PressableScale";
 
 const FAILED = "Couldn't sign in. Check the connection and try again.";
+const REFUSED = "Sign-in was refused. Try again, or use the other button.";
+const UNAVAILABLE = "Sign-in isn't available right now. Try again in a minute.";
+const TOO_MANY = "Too many tries. Wait a few minutes.";
 const NOT_SET_UP = "Google sign-in isn't set up in this build.";
+
+/** What to tell the driver: no answer at all is the connection; the server's own "no" is said as what it is. */
+export function signInMessage(e: unknown): string {
+  if (!(e instanceof SignInError)) return FAILED; // the provider's sheet failed
+  if (e.status === 401 || e.status === 403) return REFUSED;
+  if (e.status === 429) return TOO_MANY;
+  if (e.status >= 500) return UNAVAILABLE;
+  return FAILED;
+}
+
+/** A provider sheet that never answers must not leave the buttons off for good. */
+export const PROVIDER_TIMEOUT_MS = 60_000;
+/** Back in the app with the sheet gone and still no answer after this long: the buttons come back. */
+export const BACK_WITHOUT_ANSWER_MS = 3_000;
+const TIMING = { provider: PROVIDER_TIMEOUT_MS, back: BACK_WITHOUT_ANSWER_MS };
+/** How long the avatar is held to show the access-code link in a build that hides it. */
+export const REVEAL_CODE_MS = 3_000;
 const BUTTON_H = 56;
 
 type Props = {
   /** Where the app runs (Expo Go, a dev build, a store build). Tests pass it; the app reads it from the runtime. */
   env?: SignInEnv;
   /** The sign-in itself, for tests. */
-  signIn?: (provider: Provider) => Promise<SignInOutcome>;
+  signIn?: (provider: Provider, onStage?: (s: SignInStage) => void) => Promise<SignInOutcome>;
+  /** The two waits, for tests (ms). */
+  timing?: { provider: number; back: number };
 };
 
 /**
@@ -35,14 +58,16 @@ type Props = {
  * States: idle; signing in (buttons off, a spinner, the title says so); failed (one line above the buttons, the
  * buttons work again). A provider's sheet closed by the driver is not a failure and shows nothing.
  *
- * Expo Go and dev builds also get "I have an access code" (the emulator stand signs in with a tester code there);
- * a build a driver gets never does.
+ * "I have an access code" (testers, the emulator stand, App Review, support) is visible at once in Expo Go and
+ * dev builds. A build a driver gets shows it only after the avatar is held for 3 s: hidden on purpose, so there
+ * is no hint for it.
  */
-export function SignInGate({ env: envProp, signIn = signInWith }: Props) {
+export function SignInGate({ env: envProp, signIn = signInWith, timing = TIMING }: Props) {
   const { colors, scheme } = useTheme();
   const insets = useSafeAreaInsets();
   const [env] = useState<SignInEnv>(() => envProp ?? signInEnv());
-  const codeLink = codeLinkAllowed(env);
+  const [revealed, setRevealed] = useState(false);
+  const codeLink = codeLinkAllowed(env) || revealed;
   const [providers, setProviders] = useState<Providers | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false); // a second tap in the same frame, before the state lands
@@ -73,26 +98,65 @@ export function SignInGate({ env: envProp, signIn = signInWith }: Props) {
     };
   }, [env]);
 
-  const start = async (provider: Provider) => {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    setBusy(true);
-    setError(null);
-    let failed: string | null = null;
-    try {
-      const outcome = await signIn(provider);
-      // Signed in: the root layout has already moved on. Cancelled: back to idle, nothing to say.
-      if (outcome === "not_configured") failed = NOT_SET_UP;
-      else if (outcome === "signed_in") setSignInNotice(null);
-    } catch (e) {
-      console.log(`[signin] ${provider} failed: ${String(e)}`);
-      failed = FAILED;
-    }
+  // One attempt at a time; `run` tells a late answer of an abandoned attempt from the current one.
+  const run = useRef(0);
+  const stage = useRef<SignInStage | null>(null);
+  const giveUp = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idle = (attempt: number, failed: string | null) => {
+    if (run.current !== attempt) return; // already given up on, or a newer attempt is running
+    run.current++;
+    stage.current = null;
+    if (giveUp.current) clearTimeout(giveUp.current);
+    giveUp.current = null;
     busyRef.current = false;
     if (!alive.current) return;
     setBusy(false);
     setError(failed);
   };
+
+  const start = async (provider: Provider) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    const attempt = ++run.current;
+    setBusy(true);
+    setError(null);
+    // The provider's sheet never came back with anything: the buttons work again. If its answer does arrive
+    // later the sign-in still completes; it just no longer holds the screen.
+    giveUp.current = setTimeout(() => idle(attempt, stage.current === "server" ? FAILED : null), timing.provider);
+    let failed: string | null = null;
+    try {
+      const outcome = await signIn(provider, (s) => {
+        if (run.current === attempt) stage.current = s;
+      });
+      // Signed in: the root layout has already moved on. Cancelled: back to idle, nothing to say.
+      if (outcome === "not_configured") failed = NOT_SET_UP;
+      else if (outcome === "signed_in") setSignInNotice(null);
+    } catch (e) {
+      console.log(`[signin] ${provider} failed: ${String(e)}`);
+      failed = signInMessage(e);
+    }
+    idle(attempt, failed);
+  };
+
+  // The system sheet is gone (the app is active again) and the provider still has not answered: some SDKs never
+  // settle a sheet dismissed by the system. Not while our own server is being asked; that call has its deadline.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const sub = AppState.addEventListener("change", (s) => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (s !== "active" || !busyRef.current || stage.current !== "provider") return;
+      const attempt = run.current;
+      timer = setTimeout(() => {
+        if (stage.current === "provider") idle(attempt, null);
+      }, timing.back);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      if (giveUp.current) clearTimeout(giveUp.current);
+      sub?.remove();
+    };
+  }, [timing.back]);
 
   if (showCode) {
     return (
@@ -111,7 +175,10 @@ export function SignInGate({ env: envProp, signIn = signInWith }: Props) {
   return (
     <View testID="signin-gate" style={[styles.root, { backgroundColor: colors.surface, paddingTop: insets.top, paddingBottom: insets.bottom + spacing.lg }]}>
       <ScrollView contentContainerStyle={styles.top} showsVerticalScrollIndicator={false}>
-        <Image source={require("../../assets/images/avatar.png")} style={[styles.avatar, { backgroundColor: colors.avatarBg }]} />
+        {/* Held for 3 s: the access-code link appears (App Review, support). No label and no hint on purpose. */}
+        <Pressable testID="signin-avatar" accessible={false} delayLongPress={REVEAL_CODE_MS} onLongPress={() => setRevealed(true)}>
+          <Image source={require("../../assets/images/avatar.png")} style={[styles.avatar, { backgroundColor: colors.avatarBg }]} />
+        </Pressable>
         <Text testID="signin-title" accessibilityRole="header" style={[styles.title, { color: colors.onSurface }]}>
           {busy ? "Signing you in…" : "Keep your truck, places and trips"}
         </Text>

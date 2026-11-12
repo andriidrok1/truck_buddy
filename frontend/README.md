@@ -40,13 +40,17 @@ plugin), `@react-native-google-signin/google-signin` (its plugin adds the iOS UR
 | --- | --- |
 | `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | OAuth client of type **Web application**. The id token is issued for it on both platforms. Required for Google sign-in |
 | `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | OAuth client of type **iOS** (bundle id `io.truckbuddy.ios`). Required on iOS |
-| `EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME` | The iOS client id reversed: `com.googleusercontent.apps.<the part before .apps.googleusercontent.com>`. Read at build time by `app.config.ts`; left out, it is worked out from the iOS client id |
+| `EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME` | The iOS client id reversed: `com.googleusercontent.apps.<the part before .apps.googleusercontent.com>`. Read at build time by `app.config.ts`; left out, it is worked out from the iOS client id. When both are set they must agree: a malformed value, or one that is not the reverse of the client id, stops `expo config` and the build with an error |
 
 None of them is a secret. They are read at build time (`EXPO_PUBLIC_*` is baked into the bundle, the URL scheme
 into Info.plist), so set them for every EAS environment the builds use (`npx eas-cli env:set production --name
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID --value <id> --visibility plaintext`, the same for every other environment)
 or in `eas.json` `env`, and in `.env.local` for a local run. Without them the config still evaluates (the Google
 plugin is left out), the app starts, and the Google button answers "Google sign-in isn't set up in this build."
+The same answer comes from an iOS binary that was built without the scheme and later got a bundle with the client
+ids over the air: the app asks the system whether the scheme is registered (`googleUsable` in
+`src/signin/available.ts`; `app.config.ts` lists the scheme under `LSApplicationQueriesSchemes` for that) before
+it calls Google's SDK, which would otherwise crash the app.
 Check: `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=<id> npx expo config --type introspect` shows the scheme under
 `ios.infoPlist.CFBundleURLTypes` and `com.apple.developer.applesignin` under `ios.entitlements`.
 
@@ -62,11 +66,26 @@ One-time owner steps:
      installed from Google Play is re-signed, so add the Play **App signing** SHA-1 too). The Android client id is
      never put in the app: Google matches the package and the SHA-1, and a mismatch shows as `DEVELOPER_ERROR`;
    - **Web application**, no redirect URIs needed.
-3. Put all three client ids into the backend's `GOOGLE_CLIENT_IDS` and the bundle id into `APPLE_AUDIENCES`.
+3. Backend env, exactly:
+   - `GOOGLE_CLIENT_IDS` = the **Web** client id + the **iOS** client id + **every Android** client id, comma
+     separated. The debug keystore, the EAS upload key and Play App Signing each have their own Android client;
+     leave one out and sign-in from that build is refused. Why all of them: an id token's `aud` is the Web
+     client id on both platforms, and its `azp` is the client of the platform that asked (iOS or that Android
+     keystore); the server checks both against this list.
+   - `APPLE_AUDIENCES` = `io.truckbuddy.ios`.
+
+What the sign-in screen says when it fails: no answer at all (offline, a timeout) "Couldn't sign in. Check the
+connection and try again."; the server refused the provider's token (401; most often an id missing from the two
+variables above) "Sign-in was refused. Try again, or use the other button."; 503 and other 5xx "Sign-in isn't
+available right now. Try again in a minute."; 429 "Too many tries. Wait a few minutes."
 
 Expo Go has neither provider (no Google module; Apple's token there is issued for Expo Go itself). In Expo Go and
 in dev builds the sign-in screen has "I have an access code" (the emulator stand signs in with `TESTER_CODE` or
-`ACCESS_CODE` from `backend/.env`); a staging or production build never shows it.
+`ACCESS_CODE` from `backend/.env`). A staging or production build hides the link: hold the avatar on the sign-in
+screen for 3 seconds and it appears (App Review and support; put this in the Review Notes with the tester code).
+
+A phone that still holds the anonymous device token of build 1.0 is treated as signed out on 1.1.0: it gets the
+sign-in screen, and the token and what the phone kept under it are cleared. An access-code sign-in stays.
 
 Nothing about the real providers runs under jest: their native modules are mocked. Before a release, on a phone:
 both buttons, a cancelled sheet, a second sign-in after a reinstall (the truck is back, "Welcome back" shows once),

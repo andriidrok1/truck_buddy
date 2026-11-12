@@ -6,7 +6,7 @@
 // a build made without them shows the button and says why it does nothing instead of crashing.
 
 import { isRunningInExpoGo } from "expo";
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
 
 import { loadApple } from "./apple";
 
@@ -29,6 +29,33 @@ export function googleConfigured(platform: string, config: GoogleConfig = google
   return platform !== "ios" || !!config.iosClientId;
 }
 
+const CLIENT_SUFFIX = ".apps.googleusercontent.com";
+
+/** "123-abc.apps.googleusercontent.com" -> "com.googleusercontent.apps.123-abc": the URL scheme Google's iOS SDK
+ *  returns through. Empty when the id is not an OAuth client id. The same rule as app.config.ts. */
+export function reversedClientId(iosClientId: string): string {
+  return iosClientId.endsWith(CLIENT_SUFFIX) && iosClientId.length > CLIENT_SUFFIX.length ? `com.googleusercontent.apps.${iosClientId.slice(0, -CLIENT_SUFFIX.length)}` : "";
+}
+
+/**
+ * Whether tapping the Google button can work in THIS binary. On iOS the client ids in the bundle are not enough:
+ * the binary must have been built with the URL scheme in its Info.plist, or Google's SDK raises an NSException
+ * when the sheet opens (a bundle delivered over the air to a binary built without the variables). The app can
+ * ask the system: app.config.ts lists the scheme under LSApplicationQueriesSchemes exactly when it registers it,
+ * so `canOpenURL` answers true only in a binary that has both.
+ */
+export async function googleUsable(platform: string, config: GoogleConfig = googleConfig(), canOpen: (url: string) => Promise<boolean> = Linking.canOpenURL): Promise<boolean> {
+  if (!googleConfigured(platform, config)) return false;
+  if (platform !== "ios") return true;
+  const scheme = reversedClientId(config.iosClientId);
+  if (!scheme) return false;
+  try {
+    return (await canOpen(`${scheme}://`)) === true;
+  } catch {
+    return false;
+  }
+}
+
 export type Providers = {
   apple: boolean;
   /** The Google button is shown. */
@@ -47,9 +74,10 @@ export async function availableProviders(env: SignInEnv = signInEnv()): Promise<
       apple = false;
     }
   }
-  return { apple, google: native, googleConfigured: native && googleConfigured(env.platform) };
+  return { apple, google: native, googleConfigured: native && (await googleUsable(env.platform)) };
 }
 
-/** "I have an access code" on the sign-in screen: Expo Go and dev builds only (the emulator stand signs in with a
- *  code there). Never in a build a driver gets. */
+/** "I have an access code" on the sign-in screen is visible at once in Expo Go and dev builds (the emulator stand
+ *  signs in with a code there). A build a driver gets shows it only after a 3 s press on the avatar (App Review,
+ *  support). */
 export const codeLinkAllowed = (env: SignInEnv = signInEnv()): boolean => env.expoGo || env.dev;

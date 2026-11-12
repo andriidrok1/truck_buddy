@@ -1,9 +1,10 @@
 // The provider modules with their native sides mocked: what goes to Apple and Google, and what comes back to the app.
 import { createHash } from "crypto";
-import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Linking, Platform } from "react-native";
 
-import { resetAppleForTests, signInWithApple } from "../signin/apple";
-import { availableProviders, codeLinkAllowed, googleConfigured } from "../signin/available";
+import { forgetRememberedName, resetAppleForTests, signInWithApple, withRememberedName } from "../signin/apple";
+import { availableProviders, codeLinkAllowed, googleConfigured, googleUsable, reversedClientId } from "../signin/available";
 import { resetGoogleForTests, signInWithGoogle } from "../signin/google";
 
 const mockApple = {
@@ -51,8 +52,12 @@ const setOS = (os: string) => Object.defineProperty(Platform, "OS", { configurab
 const WEB = "web-id.apps.googleusercontent.com";
 const IOS = "ios-id.apps.googleusercontent.com";
 
-beforeEach(() => {
+let canOpen: jest.SpyInstance;
+beforeEach(async () => {
   jest.clearAllMocks();
+  await AsyncStorage.clear();
+  // The binary registered the Google URL scheme (app.config.ts) unless a test says otherwise.
+  canOpen = jest.spyOn(Linking, "canOpenURL").mockResolvedValue(true);
   mockApple.available = true;
   resetAppleForTests();
   resetGoogleForTests();
@@ -90,7 +95,7 @@ describe("Sign in with Apple", () => {
     expect(sent.nonce).toBe(createHash("sha256").update(rawNonce).digest("hex"));
     expect(sent.nonce).not.toBe(rawNonce);
     expect(sent.requestedScopes).toEqual([0, 1]); // FULL_NAME, EMAIL
-    expect(res.credential).toEqual({ identityToken: "apple.identity.token", rawNonce, authorizationCode: "auth-code", name: "Mike Johnson" });
+    expect(res.credential).toEqual({ user: "apple-user", identityToken: "apple.identity.token", rawNonce, authorizationCode: "auth-code", name: "Mike Johnson" });
   });
 
   test("every sign-in gets its own nonce", async () => {
@@ -118,6 +123,20 @@ describe("Sign in with Apple", () => {
     await expect(signInWithApple()).rejects.toThrow("failed");
     mockApple.signInAsync.mockResolvedValue(credential({ identityToken: null }));
     await expect(signInWithApple()).rejects.toThrow("identity token");
+  });
+
+  test("Apple gives the name once: it is kept for a retry after a failed server call, also across a restart, and only for the same Apple ID", async () => {
+    const first = { user: "apple-user", identityToken: "t1", rawNonce: "n1", authorizationCode: null, name: "Mike Johnson" };
+    expect(await withRememberedName(first)).toBe(first);
+    // The server call failed; the driver taps again and Apple sends no name this time.
+    const second = { user: "apple-user", identityToken: "t2", rawNonce: "n2", authorizationCode: null, name: null };
+    expect((await withRememberedName(second)).name).toBe("Mike Johnson");
+    resetAppleForTests(); // the app was killed in between
+    expect((await withRememberedName(second)).name).toBe("Mike Johnson");
+    expect((await withRememberedName({ ...second, user: "someone-else" })).name).toBeNull();
+    await forgetRememberedName(); // a sign-in went through: the server has it
+    expect((await withRememberedName(second)).name).toBeNull();
+    expect(await AsyncStorage.getItem("apple_name_pending_v1")).toBeNull();
   });
 
   test("Android has no Sign in with Apple: the module is never loaded", async () => {
@@ -166,6 +185,38 @@ describe("Sign in with Google", () => {
     await expect(signInWithGoogle()).resolves.toEqual({ type: "success", idToken: "from-getTokens" });
     mockGoogle.getTokens.mockResolvedValueOnce({ idToken: "", accessToken: "x" });
     await expect(signInWithGoogle()).rejects.toThrow("id token");
+  });
+
+  test("a failed sign-in configures the SDK again on the next tap", async () => {
+    mockGoogle.signIn.mockRejectedValueOnce(Object.assign(new Error("configure failed on the native side"), { code: "UNKNOWN" }));
+    await expect(signInWithGoogle()).rejects.toThrow("configure failed");
+    mockGoogle.signIn.mockResolvedValue(success());
+    await signInWithGoogle();
+    expect(mockGoogle.configure).toHaveBeenCalledTimes(2);
+    mockGoogle.configure.mockImplementationOnce(() => {
+      throw new Error("bad options");
+    });
+    resetGoogleForTests();
+    await expect(signInWithGoogle()).rejects.toThrow("bad options");
+    await signInWithGoogle(); // not remembered as configured
+    expect(mockGoogle.configure).toHaveBeenCalledTimes(4);
+  });
+
+  test("iOS, a binary built without the URL scheme (a bundle that came over the air): not set up, the native module is never called", async () => {
+    canOpen.mockResolvedValue(false);
+    await expect(signInWithGoogle()).resolves.toEqual({ type: "not_configured" });
+    expect(canOpen).toHaveBeenCalledWith("com.googleusercontent.apps.ios-id://");
+    expect(mockGoogle.configure).not.toHaveBeenCalled();
+    expect(mockGoogle.signIn).not.toHaveBeenCalled();
+    await expect(availableProviders({ platform: "ios", expoGo: false, dev: false })).resolves.toMatchObject({ google: true, googleConfigured: false });
+    canOpen.mockRejectedValue(new Error("no"));
+    expect(await googleUsable("ios")).toBe(false);
+    // Android has no such scheme: nothing is asked.
+    canOpen.mockClear();
+    expect(await googleUsable("android")).toBe(true);
+    expect(canOpen).not.toHaveBeenCalled();
+    expect(reversedClientId("123-abc.apps.googleusercontent.com")).toBe("com.googleusercontent.apps.123-abc");
+    expect(reversedClientId("nonsense")).toBe("");
   });
 
   test("a build without the client ids says so and never touches the native module", async () => {

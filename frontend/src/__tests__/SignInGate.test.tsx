@@ -3,10 +3,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createHash } from "crypto";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
+import { AppState, Linking, type AppStateStatus } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 
 import { getRefreshToken, getToken, requestCode, setToken, signedInVia } from "../auth";
-import { SignInGate } from "../components/SignInGate";
+import { REVEAL_CODE_MS, SignInGate, signInMessage } from "../components/SignInGate";
+import { SignInError } from "../api";
+import { resetProfile, restorePending } from "../data/profile";
+import { queryClient } from "../query-client";
 import { PRIVACY_URL, TERMS_URL } from "../constants";
 import { forgetTruckProfile, isOnboarded } from "../hooks/useTruckProfile";
 import { t, useLangStore } from "../i18n";
@@ -156,6 +160,8 @@ beforeEach(async () => {
   resetGoogleForTests();
   resetAccountForTests();
   requestCode(false);
+  jest.spyOn(Linking, "canOpenURL").mockResolvedValue(true); // the binary has the Google URL scheme
+  await resetProfile();
   await setToken(null);
   await forgetTruckProfile();
   await forgetHowTo();
@@ -164,6 +170,7 @@ beforeEach(async () => {
   process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID = "ios-id.apps.googleusercontent.com";
   server(answer(200, account()));
 });
+afterEach(() => queryClient.clear()); // its gc timer would keep jest alive
 afterAll(() => {
   global.fetch = realFetch;
   delete process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
@@ -230,9 +237,12 @@ describe("SignInGate", () => {
     expect(getToken()).toBe("ACC-2");
     expect(signedInVia()).toBe("account");
     expect(getAccount()).toMatchObject({ provider: "google", email: "mike@example.com" });
-    expect(await isOnboarded()).toBe(true);
-    expect(await loadHowTo()).toBe("seen"); // the screen does not open by itself for a driver who knows the app
+    // Welcome back holds the app until the server's truck has landed; "onboarded" is written then, not before
+    // (afterSignIn.test.ts), so nothing can be saved over the server copy from the map.
     expect(welcomeBackDue()).toBe(true);
+    expect(restorePending()).toBe(true);
+    expect(await isOnboarded()).toBe(false);
+    expect(await loadHowTo()).toBeNull();
   });
 
   test("the sheet was closed: no error, no request, the buttons work again", async () => {
@@ -269,17 +279,25 @@ describe("SignInGate", () => {
     expect(getToken()).toBe("ACC-1");
   });
 
-  test("the server says no (401, 429, 503): the same error, nothing stored", async () => {
+  test("the server says no: each case in its own words, nothing stored", async () => {
     mockGoogle.signIn.mockResolvedValue(googleUser);
     await show();
-    for (const status of [401, 429, 503]) {
+    for (const [status, text] of [
+      [401, "Sign-in was refused. Try again, or use the other button."],
+      [503, "Sign-in isn't available right now. Try again in a minute."],
+      [429, "Too many tries. Wait a few minutes."],
+      [500, "Sign-in isn't available right now. Try again in a minute."],
+    ] as const) {
       server(answer(status, { detail: "Sign-in failed" }));
       await fireEvent.press(screen.getByTestId("signin-google"));
       await settle();
-      expect(screen.getByTestId("signin-error").props.children).toBe(FAILED);
+      expect(screen.getByTestId("signin-error").props.children).toBe(text);
       expect(getToken()).toBeNull();
+      expect(RU[text]).toBeTruthy();
     }
     expect(await isOnboarded()).toBe(false);
+    expect(signInMessage(new SignInError(0))).toBe(FAILED); // no answer at all: the connection
+    expect(signInMessage(new Error("provider"))).toBe(FAILED);
   });
 
   test("a provider that fails outright shows the error too", async () => {
@@ -365,6 +383,67 @@ describe("SignInGate", () => {
     expect(screen.queryByTestId("access-gate")).toBeNull();
     expect(screen.queryByText("I have an access code")).toBeNull();
     expect(screen.getByTestId("signin-gate")).toBeTruthy();
+  });
+
+  test("a store build: holding the avatar for 3 s brings the access-code link up (App Review, support); a tap does not", async () => {
+    await show(STORE);
+    const avatar = screen.getByTestId("signin-avatar");
+    expect(avatar.props.accessibilityHint).toBeUndefined(); // hidden on purpose
+    expect(REVEAL_CODE_MS).toBe(3000); // what the avatar's delayLongPress is set to
+    await fireEvent.press(avatar);
+    expect(screen.queryByTestId("signin-code")).toBeNull();
+    await fireEvent(avatar, "longPress");
+    await fireEvent.press(screen.getByTestId("signin-code"));
+    expect(screen.getByTestId("access-gate")).toBeTruthy();
+  });
+
+  test("a provider sheet that never answers does not leave the buttons off for good", async () => {
+    const signIn = jest.fn(() => new Promise<never>(() => {}));
+    await render(<SignInGate env={STORE} signIn={signIn} timing={{ provider: 40, back: 10_000 }} />);
+    await settle();
+    await fireEvent.press(screen.getByTestId("signin-google"));
+    expect(disabled("signin-google")).toBe(true);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 80));
+    });
+    expect(disabled("signin-google")).toBe(false);
+    expect(screen.getByText(TITLE)).toBeTruthy();
+    expect(screen.queryByTestId("signin-error")).toBeNull();
+    await fireEvent.press(screen.getByTestId("signin-google"));
+    expect(signIn).toHaveBeenCalledTimes(2);
+  });
+
+  test("back in the app with the system sheet gone and no answer for 3 s: the buttons come back; not while our server is being asked", async () => {
+    let onChange: (s: AppStateStatus) => void = () => {};
+    const original = AppState.addEventListener;
+    AppState.addEventListener = ((_type: string, handler: (s: AppStateStatus) => void) => {
+      onChange = handler;
+      return { remove: () => {} };
+    }) as typeof AppState.addEventListener;
+    let stage: (s: "provider" | "server") => void = () => {};
+    const signIn = jest.fn((_p: string, onStage?: (s: "provider" | "server") => void) => {
+      stage = onStage ?? stage;
+      onStage?.("provider");
+      return new Promise<never>(() => {});
+    });
+    await render(<SignInGate env={STORE} signIn={signIn} timing={{ provider: 60_000, back: 30 }} />);
+    await settle();
+    await fireEvent.press(screen.getByTestId("signin-google"));
+    await act(async () => {
+      onChange("inactive"); // the sheet came up
+      onChange("active"); // and went, without a word from the SDK
+      await new Promise((r) => setTimeout(r, 70));
+    });
+    expect(disabled("signin-google")).toBe(false);
+
+    await fireEvent.press(screen.getByTestId("signin-google"));
+    await act(async () => {
+      stage("server"); // the provider answered; POST /auth/google is on the wire
+      onChange("active");
+      await new Promise((r) => setTimeout(r, 70));
+    });
+    expect(disabled("signin-google")).toBe(true);
+    AppState.addEventListener = original;
   });
 
   test("a tester who signed out lands on the code screen in a dev build", async () => {

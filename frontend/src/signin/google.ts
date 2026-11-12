@@ -7,7 +7,7 @@
 
 import { Platform } from "react-native";
 
-import { googleConfig, googleConfigured } from "./available";
+import { googleConfig, googleUsable } from "./available";
 
 export type GoogleModule = typeof import("@react-native-google-signin/google-signin");
 
@@ -44,7 +44,7 @@ const codeOf = (e: unknown): string | null => {
 
 export async function signInWithGoogle(): Promise<GoogleResult> {
   const config = googleConfig();
-  if (!googleConfigured(Platform.OS, config)) return { type: "not_configured" };
+  if (!(await googleUsable(Platform.OS, config))) return { type: "not_configured" };
   const google = loadGoogle();
   if (!google) return { type: "not_configured" };
   const { GoogleSignin, statusCodes } = google;
@@ -53,7 +53,7 @@ export async function signInWithGoogle(): Promise<GoogleResult> {
   const key = `${config.webClientId}|${config.iosClientId}`;
   if (configuredFor !== key) {
     GoogleSignin.configure({ webClientId: config.webClientId, ...(config.iosClientId ? { iosClientId: config.iosClientId } : {}) });
-    configuredFor = key;
+    configuredFor = key; // only once configure() has not thrown; a sign-in that fails below configures again
   }
 
   try {
@@ -71,6 +71,9 @@ export async function signInWithGoogle(): Promise<GoogleResult> {
     const code = codeOf(e);
     // The sheet was closed, or a second tap landed while it was up.
     if (code !== null && (code === statusCodes.SIGN_IN_CANCELLED || code === statusCodes.IN_PROGRESS)) return { type: "cancelled" };
+    // configure() hands its options to the native side asynchronously, and a failure there surfaces here: the next
+    // tap must not assume the SDK is configured.
+    configuredFor = null;
     throw e;
   }
 }
