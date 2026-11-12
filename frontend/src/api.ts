@@ -3,7 +3,7 @@ import { AgentResponseSchema, checkContract, RouteResultSchema } from "./api/sch
 import { eldHeader } from "./eld";
 import { ensureTruckProfile, type TruckProfile } from "./hooks/useTruckProfile";
 import { isNetworkError, offlineHint } from "./net/offlineHint";
-import { after401 } from "./net/tokenRenewal";
+import { after401, isOur401 } from "./net/tokenRenewal";
 import { stopsAhead, viaOf } from "./state/tripStore";
 import { uploadForm } from "./utils/upload";
 import type { components } from "./types.generated";
@@ -69,7 +69,7 @@ export const isNoTruckRoute = (e: unknown): boolean =>
  *  without the token (or with one already replaced) says nothing about the driver's sign-in. `renew: false`: the
  *  caller already went through that (request() after its retry). */
 async function check(res: Response, path: string, sent: string | null, renew = true): Promise<void> {
-  if (renew && res.status === 401 && sent !== null && sent === getToken()) await after401(sent);
+  if (renew && sent !== null && sent === getToken() && (await isOur401(res))) await after401(sent);
   if (res.ok) return;
   let detail: string | null = null;
   try {
@@ -147,6 +147,12 @@ async function heldToken(): Promise<string | null> {
   return getToken();
 }
 
+/** An answer that arrives after the driver it was asked for has signed out is thrown away here, so no handler
+ *  further up writes it into the phone of whoever signed in since (a truck change, a route, a parking check). */
+function stillSameDriver(who: number, path: string): void {
+  if (identityEpoch() !== who) throw new Error(`${path} dropped: the driver signed out`);
+}
+
 async function request<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, ...rest } = init ?? {};
   const d = deadline(timeoutMs, rest.signal);
@@ -166,7 +172,7 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
       // The driver this request was made for has signed out since (and someone else may be signed in by now):
       // it is never sent again under another identity.
       await check(res, path, sent, false);
-    } else if (res.status === 401 && sent !== null) {
+    } else if (sent !== null && (await isOur401(res))) {
       // An expired token: renew once (or take the one another request just renewed) and send it again.
       const now = getToken();
       const replaced = now !== null && now !== sent;
@@ -178,6 +184,7 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
     } else {
       await check(res, path, sent);
     }
+    stillSameDriver(who, path);
     return json<T>(res, path);
   } finally {
     d.done();
@@ -270,7 +277,8 @@ export async function logout(): Promise<boolean> {
 }
 
 /** Open sign-up: a device token without a code. Not part of the launch flow since sign-in became required
- *  (src/components/SignInGate.tsx); kept for the fallback in the plan (an anonymous "Not now"). */
+ *  (src/components/SignInGate.tsx), and a "device" identity is now treated as signed out (firstLaunch.ts
+ *  countsAsSignedIn). Kept for the fallback in the plan (an anonymous "Not now"), which would have to lift that rule. */
 export async function registerDevice() {
   let res: Response;
   const d = deadline(DEFAULT_TIMEOUT_MS);
@@ -344,8 +352,10 @@ export const api = {
     const d = deadline(DEFAULT_TIMEOUT_MS);
     try {
       const sent = await heldToken();
+      const who = identityEpoch();
       const res = await fetchTracked(`${BASE}/me/profile`, { signal: d.signal, headers: { "Content-Type": "application/json", ...authHeader() } });
       await check(res, "/me/profile", sent);
+      stillSameDriver(who, "/me/profile");
       const source = res.headers.get("x-profile-source") === "vehicle" ? "vehicle" : "driver";
       return { profile: await json<TruckProfile>(res, "/me/profile"), source };
     } finally {
@@ -397,6 +407,7 @@ export const api = {
     const t0 = Date.now();
     try {
       const sent = await heldToken();
+      const who = identityEpoch();
       const res = await uploadForm(`${BASE}/voice/transcribe`, {
         fields: { ...(hint ? { hint: hint.slice(0, 600) } : {}), ...(maybe ? { maybe: "1" } : {}) },
         files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
@@ -404,6 +415,7 @@ export const api = {
         signal: d.signal,
       });
       await check(res as Response, "/voice/transcribe", sent);
+      stillSameDriver(who, "/voice/transcribe");
       const out = await json<{ transcript: string; timings?: Record<string, number>; stt_confidence?: number | null }>(res, "/voice/transcribe");
       return { ...out, stt_ms: out.timings?.stt ?? Date.now() - t0, stt_confidence: out.stt_confidence ?? null };
     } finally {
@@ -474,6 +486,7 @@ export const api = {
     const d = deadline(30000);
     try {
       const sent = await heldToken();
+      const who = identityEpoch();
       const res = await uploadForm(`${BASE}/onboarding/parse`, {
         fields: { step },
         files: { audio: { uri, name: web ? "speech.webm" : "speech.m4a", mimeType: web ? "audio/webm" : "audio/mp4" } },
@@ -481,6 +494,7 @@ export const api = {
         signal: d.signal,
       });
       await check(res as Response, "/onboarding/parse", sent);
+      stillSameDriver(who, "/onboarding/parse");
       return json<{ transcript: string; updates: Record<string, unknown> }>(res, "/onboarding/parse");
     } finally {
       d.done();

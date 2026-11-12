@@ -19,7 +19,8 @@ const pending = () => wipeGate(removeSecure);
 /** Every key the app writes, a failed one retried once; the keys still there come back (pendingWipe.ts). */
 export const removeAllAppKeys = (): Promise<string[]> => removeAppKeys(removeSecure);
 /** The signed-in driver's keys only (sign-out): the language, consent, the intro flag and the theme stay. */
-export const removeIdentityKeys = (): Promise<string[]> => removeAppKeys(removeSecure, IDENTITY_KEYS);
+export const removeIdentityKeys = (except: readonly string[] = []): Promise<string[]> =>
+  removeAppKeys(removeSecure, IDENTITY_KEYS.filter((k) => !except.includes(k)));
 /** A wipe still pending when the phone signs in again: the old leftovers go, the new identity stays. */
 export const settleWipe = (): Promise<string[]> => settleWipeAfterSignIn(removeSecure);
 

@@ -25,7 +25,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 
-import { IDENTITY_KEYS, noteWrite, removeAppKeys, settleWipeAfterSignIn, wipeGate } from "./pendingWipe";
+import { AUTH_KEYS, IDENTITY_KEYS, noteWrite, removeAppKeys, settleWipeAfterSignIn, wipeGate } from "./pendingWipe";
 import { AssertNoExtras, StorageBase, StorageItemValue } from "./storage-base";
 
 // A "Delete my data" the last run could not finish is finished before the first read (pendingWipe.ts).
@@ -36,7 +36,8 @@ const pending = () => wipeGate(removeSecure);
 /** Every key the app writes, a failed one retried once; the keys still there come back (pendingWipe.ts). */
 export const removeAllAppKeys = (): Promise<string[]> => removeAppKeys(removeSecure);
 /** The signed-in driver's keys only (sign-out): the language, consent, the intro flag and the theme stay. */
-export const removeIdentityKeys = (): Promise<string[]> => removeAppKeys(removeSecure, IDENTITY_KEYS);
+export const removeIdentityKeys = (except: readonly string[] = []): Promise<string[]> =>
+  removeAppKeys(removeSecure, IDENTITY_KEYS.filter((k) => !except.includes(k)));
 /** A wipe still pending when the phone signs in again: the old leftovers go, the new identity stays. */
 export const settleWipe = (): Promise<string[]> => settleWipeAfterSignIn(removeSecure);
 
@@ -112,7 +113,9 @@ export class Storage extends StorageBase {
       const gate = pending();
       if (gate) await gate;
       noteWrite(key);
-      await SecureStore.setItemAsync(key, JSON.stringify(value));
+      // The auth keys must be readable on a locked phone (pendingWipe.ts AUTH_KEYS); the rest keep the default.
+      const options = AUTH_KEYS.includes(key) ? { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK } : undefined;
+      await SecureStore.setItemAsync(key, JSON.stringify(value), options);
       return true;
     } catch (e) {
       this.warn("secureSet", key, e);

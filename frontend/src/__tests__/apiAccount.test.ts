@@ -22,7 +22,7 @@ function server(r: Response | "offline") {
   }) as typeof fetch;
 }
 const PAIR = { access_token: "ACC", refresh_token: "REF", token_type: "bearer", role: "driver", expires_in: 2592000, new_account: true, has_profile: false, name: null, email: null };
-const APPLE = { identityToken: "id.token", rawNonce: "a".repeat(64), authorizationCode: "code", name: "Mike Johnson" };
+const APPLE = { user: "apple-user", identityToken: "id.token", rawNonce: "a".repeat(64), authorizationCode: "code", name: "Mike Johnson" };
 
 beforeEach(async () => {
   mockSecure.clear();

@@ -7,10 +7,13 @@
  *   token itself, valid or inside the server's grace window, for a pair. A server without /renew answers 404.
  *
  * `renewToken()` is single-flight: the 401s of a burst of requests share one attempt, and a refresh token is never
- * sent twice at once. An account's refresh token is single-use on the server: see `unanswered` below.
+ * sent twice at once. An account's refresh token is single-use on the server: see `viaRefresh` and `attempt`.
  */
-import { getRefreshToken, getToken, isTester, setToken, signedInVia, tokenHold } from "../auth";
+import { clearRefreshSent, getRefreshToken, getToken, isTester, markRefreshSent, refreshMaybeSpent, setToken, signedInVia, tokenHold } from "../auth";
 import { BASE } from "../url";
+import { tokenExpiry } from "../utils/jwt";
+
+export { tokenExpiry };
 
 /** "renewed": a new token is in place. "rejected": the server said this identity is gone (sign in again).
  *  "unavailable": no answer that settles it (offline, timeout, 5xx, 429): keep the token and try later. */
@@ -21,40 +24,6 @@ export const RENEW_BEFORE_MS = 7 * 86400_000;
 const TIMEOUT_MS = 15000;
 
 type Pair = { access_token?: unknown; refresh_token?: unknown; role?: unknown };
-
-/** The `exp` of a JWT in ms, or null when the token is not one we can read (no signature check: the server does it). */
-export function tokenExpiry(t: string | null): number | null {
-  const part = t?.split(".")[1];
-  if (!part) return null;
-  try {
-    const b64 = part.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (part.length % 4)) % 4);
-    const exp = (JSON.parse(decodeBase64(b64)) as { exp?: unknown }).exp;
-    return typeof exp === "number" && Number.isFinite(exp) ? exp * 1000 : null;
-  } catch {
-    return null;
-  }
-}
-
-const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-/** atob without relying on the engine having it (the payload is ASCII JSON). */
-function decodeBase64(s: string): string {
-  let out = "";
-  let bits = 0;
-  let acc = 0;
-  for (const ch of s) {
-    if (ch === "=") break;
-    const v = B64.indexOf(ch);
-    if (v < 0) throw new Error("not base64");
-    acc = (acc << 6) | v;
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      out += String.fromCharCode((acc >> bits) & 0xff);
-    }
-  }
-  return out;
-}
 
 async function post(path: string, init: { body?: string; bearer?: string }): Promise<Response | null> {
   const ctrl = new AbortController();
@@ -92,56 +61,80 @@ async function adopt(res: Response, from: string): Promise<boolean> {
   return true;
 }
 
-const settles = (status: number) => status === 401 || status === 403 || status === 404;
-
-type Step = "renewed" | "unavailable" | "dead";
-
-/** A refresh token whose trade got no answer (a dead zone, a timeout). The request may have reached the server,
- *  and then the token is spent: an account session treats a spent token that shows up again later as stolen and
- *  closes (backend services/auth.py, REUSE_RACE_S). So it is not sent a second time while the access token can
- *  still do the job. In memory only: after a restart the refresh token is tried as usual. */
-let unanswered: string | null = null;
-
-/** POST /auth/refresh. "dead": the server will never take this refresh token. */
-async function viaRefresh(from: string, rt: string): Promise<Step> {
-  const res = await post("/auth/refresh", { body: JSON.stringify({ refresh_token: rt }) });
-  if (!res) {
-    unanswered = rt;
-    return "unavailable";
+/** Our API said "no" to this credential: a 401 with the JSON `detail` every 401 of ours carries. A 401, 403 or
+ *  404 from a proxy or a captive portal is not a verdict about the driver and must never sign a phone out. */
+export async function isOur401(res: Response): Promise<boolean> {
+  if (res.status !== 401) return false;
+  try {
+    const body = (await (typeof res.clone === "function" ? res.clone() : res).json()) as { detail?: unknown };
+    return typeof body?.detail === "string";
+  } catch {
+    return false;
   }
-  if (res.ok) return (await adopt(res, from)) ? "renewed" : "unavailable";
-  if (!settles(res.status) && res.status !== 422) return "unavailable";
-  // Turned down (rotated elsewhere, the session closed, wiped): it never goes out again.
-  if (res.status === 401 && getToken() === from && getRefreshToken() === rt) await setToken(from, isTester() ? "tester" : "driver", signedInVia(), null);
-  return "dead";
 }
 
-/** POST /auth/renew with the access token itself (valid, or a device token inside the server's grace window). */
-async function viaAccess(from: string): Promise<Step> {
-  const res = await post("/auth/renew", { bearer: from });
+/** "dead": our API turned this credential down (the only answer that counts towards signing the phone out).
+ *  "skip": this way is closed for another reason (no such endpoint, a proxy's 4xx): try the other one.
+ *  "unavailable": no answer that settles anything (offline, a timeout, a 5xx, a page that is not ours). */
+type Step = "renewed" | "unavailable" | "dead" | "skip";
+
+async function judge(res: Response | null, from: string): Promise<Step> {
   if (!res) return "unavailable";
   if (res.ok) return (await adopt(res, from)) ? "renewed" : "unavailable";
-  return settles(res.status) ? "dead" : "unavailable";
+  if (await isOur401(res)) return "dead";
+  return res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429 ? "skip" : "unavailable";
 }
 
-async function attempt(): Promise<RenewOutcome> {
+/**
+ * POST /auth/refresh. An account's refresh token is single-use: the server rotates it, and a spent one that shows
+ * up again more than 10 s later closes the session (backend services/auth.py, REUSE_RACE_S). So the token is
+ * marked as sent, on disk, before it goes out; the mark stays unless the server clearly did not take it. With the
+ * mark up, `attempt` goes through the access token first, also after a restart.
+ */
+async function viaRefresh(from: string, rt: string): Promise<Step> {
+  await markRefreshSent(rt);
+  const out = await judge(await post("/auth/refresh", { body: JSON.stringify({ refresh_token: rt }) }), from);
+  const current = getToken() === from && getRefreshToken() === rt;
+  // Turned down (rotated elsewhere, the session closed, wiped): it never goes out again.
+  if (out === "dead" && current) await setToken(from, isTester() ? "tester" : "driver", signedInVia(), null);
+  // A 4xx that is not ours to read as "no": the request never got to the rotation.
+  if (out === "skip" && current) await clearRefreshSent();
+  return out;
+}
+
+/** POST /auth/renew with the access token itself (valid, or a device token inside the server's grace window):
+ *  a whole new pair, whatever happened to the refresh token. */
+const viaAccess = async (from: string): Promise<Step> => judge(await post("/auth/renew", { bearer: from }), from);
+
+/** `accessRefused`: a request just got our 401 on this access token. */
+async function attempt(accessRefused: boolean): Promise<RenewOutcome> {
   const hold = tokenHold();
   if (hold) await hold; // "Delete my data" is on the wire: renew whatever is left after it
   const from = getToken();
   if (!from) return "rejected";
   const rt = getRefreshToken();
+  const account = signedInVia() === "account";
+  const exp = tokenExpiry(from);
+  // An account token gets no grace on the server: past its exp, or already answered 401, /auth/renew can only say no.
+  const accessDead = account && (accessRefused || (exp !== null && exp <= Date.now()));
   const refresh = rt ? () => viaRefresh(from, rt) : null;
-  const access = () => viaAccess(from);
-  // The usual order: the refresh token, then the access token (the refresh token is gone, the access token may
-  // still do). A refresh token that may already be spent goes last.
-  const steps = !refresh ? [access] : rt === unanswered ? [access, refresh] : [refresh, access];
+  const access = accessDead ? null : () => viaAccess(from);
+  // An account renews through the access token while it is good (at the start-up check it always is: renewal
+  // starts a week before expiry), so the single-use refresh token is spent only when nothing else is left. The
+  // same when the refresh token may already be spent. A device or code token keeps the old order: its refresh
+  // token is not single-use, and an expired one still renews inside the server's grace window.
+  const accessFirst = account || refreshMaybeSpent();
+  const steps = (accessFirst ? [access, refresh] : [refresh, access]).filter((f): f is () => Promise<Step> => f !== null);
+  let verdicts = accessDead ? 1 : 0;
   for (const step of steps) {
     const out = await step();
-    if (out !== "dead") return out;
+    if (out === "renewed" || out === "unavailable") return out;
+    if (out === "dead") verdicts++;
   }
-  // Both turned down: the identity is gone. Nothing here signs the phone up as a new anonymous device; the
-  // driver signs in again (after401).
-  return "rejected";
+  // Signed out only when our API said no to everything the phone holds. Nothing here registers a new anonymous
+  // device; the driver signs in again (after401).
+  const held = (rt ? 1 : 0) + 1;
+  return verdicts >= held ? "rejected" : "unavailable";
 }
 
 // One attempt at a time, shared by every caller: two requests that get a 401 together, the start-up check and a
@@ -149,9 +142,9 @@ async function attempt(): Promise<RenewOutcome> {
 // same token must never go out twice.
 let inflight: Promise<RenewOutcome> | null = null;
 
-export function renewToken(): Promise<RenewOutcome> {
+export function renewToken(accessRefused = false): Promise<RenewOutcome> {
   if (!inflight) {
-    inflight = attempt()
+    inflight = attempt(accessRefused)
       .catch((): RenewOutcome => "unavailable")
       .finally(() => {
         inflight = null;
@@ -197,19 +190,18 @@ function rejected(sent: string): Promise<void> {
   return rejecting;
 }
 
-/** A 401 on a request that carried `sent` (still the current token): one renewal attempt. The phone is signed out
+/** Our 401 (isOur401) on a request that carried `sent` (still the current token): one renewal attempt. The phone is signed out
  *  (the sign-in screen, with the previous driver's data cleared) only when the server rejected the identity;
  *  offline or a server error keeps the token, so a dead zone never signs a driver out. Never a new anonymous
  *  device: an account's data is on the server, and whoever signs in next gets their own. True when a new token is in. */
 export async function after401(sent: string): Promise<boolean> {
-  const outcome = await renewToken();
+  const outcome = await renewToken(true);
   if (outcome === "rejected" && getToken() === sent) await rejected(sent);
   return outcome === "renewed";
 }
 
 /** Tests only. */
 export function resetRenewalForTests() {
-  unanswered = null;
   inflight = null;
   rejecting = null;
 }

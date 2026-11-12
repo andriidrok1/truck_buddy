@@ -1,6 +1,7 @@
 import { getLang } from "./i18n";
 import { useEffect, useState } from "react";
 
+import { tokenSub } from "./utils/jwt";
 import { settleWipe, storage } from "./utils/storage";
 
 const KEY = "auth_token";
@@ -12,8 +13,15 @@ export type SignedInVia = "code" | "device" | "account";
 // The refresh token the server hands out with the access token (POST /api/auth/refresh trades it for a new pair).
 // Build 2 never kept it; net/tokenRenewal.ts gets one with POST /api/auth/renew on the first start after an update.
 const REFRESH_KEY = "auth_refresh";
+// The refresh token that has been sent to POST /api/auth/refresh and not replaced since. Written BEFORE the request
+// goes out and kept across restarts: if the answer was lost (a dead zone, a kill, a 502 from the edge) the server
+// may have spent the token, and a spent token that shows up again closes an account's session. While this equals
+// the stored refresh token, net/tokenRenewal.ts goes through the access token first.
+const REFRESH_SENT_KEY = "auth_refresh_sent";
 let token: string | null = null;
 let refresh: string | null = null;
+let refreshSent: string | null = null;
+let sub: string | null = null;
 let role: "driver" | "tester" = "driver";
 let via: SignedInVia = "device";
 let loaded = false;
@@ -41,6 +49,22 @@ export function requestCode(on = true) {
 
 export const getToken = () => token;
 export const getRefreshToken = () => refresh;
+/** Whose data this phone is working with: the token's `sub` (null when signed out). */
+export const identitySub = () => sub;
+/** True when the stored refresh token has already been sent once and may be spent on the server. */
+export const refreshMaybeSpent = () => refresh !== null && refreshSent === refresh;
+
+/** Before a refresh token goes out. Awaited: the mark must be on disk before the request is. */
+export async function markRefreshSent(rt: string): Promise<void> {
+  refreshSent = rt;
+  await storage.secureSet(REFRESH_SENT_KEY, rt);
+}
+
+/** The server answered that it did not take the token (it never looked at it): it is as good as unsent. */
+export async function clearRefreshSent(): Promise<void> {
+  refreshSent = null;
+  await storage.secureRemove(REFRESH_SENT_KEY);
+}
 export const isTester = () => role === "tester";
 export const signedInVia = () => via;
 /** True when the driver typed an access code. */
@@ -55,6 +79,8 @@ export async function loadToken(): Promise<string | null> {
     const v = await storage.secureGet(VIA_KEY, null);
     via = v === "code" || v === "account" ? v : "device";
     refresh = token ? await storage.secureGet(REFRESH_KEY, null) : null;
+    refreshSent = refresh ? await storage.secureGet(REFRESH_SENT_KEY, null) : null;
+    sub = tokenSub(token);
     loaded = true;
     emit();
   }
@@ -73,13 +99,21 @@ export async function setToken(
   role = t ? r : "driver";
   via = t ? v : "device";
   refresh = t ? rt : null;
+  sub = tokenSub(t);
+  const staleMark = refreshSent !== null && refreshSent !== refresh;
+  if (staleMark) refreshSent = null;
   loaded = true;
   if (t) {
+    // The refresh token first, then the access token: a kill in between leaves the new refresh token with the old,
+    // still valid access token, and either renews the other. The other order left a new access token with a
+    // refresh token the server had already spent. Separate Keychain items on purpose: one combined value would
+    // need a migration of what 1.0 stored, and this order makes the gap harmless.
+    if (refresh) await storage.secureSet(REFRESH_KEY, refresh);
+    else await storage.secureRemove(REFRESH_KEY);
+    if (staleMark) await storage.secureRemove(REFRESH_SENT_KEY);
     await storage.secureSet(KEY, t);
     await storage.secureSet(ROLE_KEY, role);
     await storage.secureSet(VIA_KEY, via);
-    if (refresh) await storage.secureSet(REFRESH_KEY, refresh);
-    else await storage.secureRemove(REFRESH_KEY);
     // A "Delete my data" that could not remove everything: the old identity's leftovers go now, not the new
     // identity on the next cold start (pendingWipe.ts).
     await settleWipe().catch(() => []);
@@ -88,6 +122,7 @@ export async function setToken(
     await storage.secureRemove(ROLE_KEY);
     await storage.secureRemove(VIA_KEY);
     await storage.secureRemove(REFRESH_KEY);
+    await storage.secureRemove(REFRESH_SENT_KEY);
   }
   emit();
 }
