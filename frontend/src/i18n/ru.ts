@@ -562,6 +562,7 @@ export const RU: Record<string, string> = {
     "Удаляет аккаунт и всё, что в нём есть, на наших серверах и на этом телефоне. Приложение начнётся заново, как после установки.",
   "We couldn't confirm. Check your connection and try again.": "Не получилось проверить. Проверь связь и попробуй ещё раз.",
   "Another deletion is still running. Try again in a minute.": "Ещё идёт другое удаление. Попробуй через минуту.",
+  "Deleting… this can take a minute": "Удаляем… это может занять минуту",
   "Couldn't delete your account. Nothing was removed. Try again.": "Не получилось удалить аккаунт. Ничего не удалено. Попробуй ещё раз.",
   "Couldn't delete your account. Try again.": "Не получилось удалить аккаунт. Попробуй ещё раз.",
   "This account can't be deleted from the app. Write to support@truckbuddy.io.":

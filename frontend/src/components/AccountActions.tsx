@@ -17,6 +17,9 @@ import { PressableScale } from "./PressableScale";
 import { styles } from "./truckProfileStyles";
 import { confirmDestructive } from "../utils/confirmDestructive";
 
+/** Under the spinner while a delete runs: the server can take up to a minute (review of #173, L-5). */
+const DELETING = "Deleting… this can take a minute";
+
 const DELETE_MSG = "This removes everything TruckBuddy stored for this device on our servers and on this phone. The app starts over like a fresh install. This can't be undone.";
 
 type Sheet = "signout" | "everywhere" | "delete" | "deleteFinal";
@@ -135,7 +138,11 @@ export function AccountActions({ router }: { router: Nav }) {
         {busy === "delete" ? <ActivityIndicator color={colors.error} /> : <Icon name="delete-outline" size={20} color={colors.error} />}
         <Text style={[styles.signOutText, { color: colors.error }]}>Delete account and data</Text>
       </PressableScale>
-      {error ? (
+      {busy === "delete" ? (
+        <Text testID="delete-progress" accessibilityLiveRegion="polite" style={[styles.deleteNote, { color: colors.muted }]}>
+          {DELETING}
+        </Text>
+      ) : error ? (
         <Text testID="account-error" style={[styles.accountError, { color: colors.error }]}>
           {error}
         </Text>
@@ -214,9 +221,15 @@ function CodeActions({ router }: { router: Nav }) {
         {busy === "delete" ? <ActivityIndicator color={colors.error} /> : <Icon name="delete-outline" size={20} color={colors.error} />}
         <Text style={[styles.signOutText, { color: colors.error }]}>Delete my data</Text>
       </PressableScale>
-      <Text style={[styles.deleteNote, { color: colors.muted }]}>
-        Erases everything stored for this device on our servers (conversation memory, trip events, your name and truck profile) and on this phone: language, settings, the truck profile. The app starts over like a fresh install.
-      </Text>
+      {busy === "delete" ? (
+        <Text testID="delete-progress" accessibilityLiveRegion="polite" style={[styles.deleteNote, { color: colors.muted }]}>
+          {DELETING}
+        </Text>
+      ) : (
+        <Text style={[styles.deleteNote, { color: colors.muted }]}>
+          Erases everything stored for this device on our servers (conversation memory, trip events, your name and truck profile) and on this phone: language, settings, the truck profile. The app starts over like a fresh install.
+        </Text>
+      )}
     </View>
   );
 }

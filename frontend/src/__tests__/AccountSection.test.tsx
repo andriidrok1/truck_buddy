@@ -285,6 +285,7 @@ describe("AccountActions, an access code, one action at a time (re-review of #17
     await settle();
     await press("delete-my-data");
     expect(mocks.delMyData).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("delete-progress")).toHaveTextContent("Deleting… this can take a minute");
     await press("sign-out");
     await press("delete-my-data");
     expect(mocks.reset).not.toHaveBeenCalled();
@@ -292,9 +293,30 @@ describe("AccountActions, an access code, one action at a time (re-review of #17
     alert.mockClear();
     await act(async () => finish("unconfirmed"));
     await settle();
+    expect(screen.queryByTestId("delete-progress")).toBeNull();
     expect(alert).toHaveBeenCalledWith("Delete my data", "We couldn't confirm. Check your connection and try again.");
     await press("sign-out");
     expect(mocks.reset).toHaveBeenCalledTimes(1);
   });
 });
 
+test("Delete account: while it runs, a short line under the spinner, in Russian on a Russian phone (L-5)", async () => {
+  await setToken("ACC", "driver", "account", "REF");
+  await saveAccount({ name: "Mike", email: "mike@example.com", provider: "google" });
+  setLang("ru");
+  let finish: (v: unknown) => void = () => {};
+  mocks.del.mockImplementationOnce(() => new Promise((r) => (finish = r)));
+  await render(<AccountActions router={{ canDismiss: () => true, dismissAll: jest.fn() }} />);
+  await settle();
+  await press("account-delete");
+  later();
+  await press("delete-account-sheet-confirm");
+  later();
+  await press("delete-account-final-confirm");
+  expect(mocks.del).toHaveBeenCalledTimes(1);
+  expect(screen.getByTestId("delete-progress")).toHaveTextContent("Удаляем… это может занять минуту");
+  await act(async () => finish({ ok: false, reason: "unconfirmed" }));
+  await settle();
+  expect(screen.queryByTestId("delete-progress")).toBeNull();
+  expect(screen.getByTestId("account-error")).toHaveTextContent("Не получилось проверить. Проверь связь и попробуй ещё раз.");
+});
