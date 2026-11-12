@@ -107,6 +107,17 @@ export class SpeechQueue {
     this.onDrop?.(q, "expired");
   }
 
+  /**
+   * A line `take` handed out that could not start: the driver began talking, or a reply came on, while its
+   * audio was fetched. Back in line with its age and order, so it is said (or expires) as if never taken.
+   * A newer line of the same key that arrived meanwhile wins.
+   */
+  putBack(q: QueuedSpeech) {
+    this.untake(q);
+    if (q.key !== undefined && this.items.some((i) => i.key === q.key)) this.onDrop?.(q, "replaced");
+    else this.items.push(q);
+  }
+
   clear() {
     const gone = this.items;
     this.items = [];

@@ -102,3 +102,41 @@ test("a line whose TTL passed while the audio was fetched is dropped, not said l
   expect(q.done).toEqual([]);
   expect(q.drops).toEqual([["Turn right.", "expired"]]);
 });
+
+test("the driver tapped the mic while the audio was fetched: the line waits and is said after", async () => {
+  const q = await setup();
+  const cloud = pendingSpeak();
+  q.say("Rerouting.", SYSTEM);
+  await settle();
+  q.state.recording = true; // the mic opened during the /speak round trip
+  cloud.resolve();
+  await settle();
+  expect(q.voice.playAndWait).not.toHaveBeenCalled();
+  expect(q.shown).toEqual([]);
+  expect(q.queue.pending()).toBe(1);
+  q.state.recording = false;
+  q.state.speaking = true; // the copilot's reply is on air now
+  await act(async () => void jest.advanceTimersByTime(500));
+  expect(q.voice.playAndWait).not.toHaveBeenCalled();
+  q.state.speaking = false;
+  await act(async () => void jest.advanceTimersByTime(500));
+  expect(q.played).toEqual(["https://ci.invalid/audio/a.mp3"]);
+  expect(q.shown).toEqual(["Rerouting."]);
+  expect(q.done).toEqual(["Rerouting."]);
+  expect(q.drops).toEqual([]);
+});
+
+test("a turn call held back by a turn in progress expires instead of playing late", async () => {
+  const q = await setup();
+  const cloud = pendingSpeak();
+  q.say("Turn right.", NOW);
+  await settle();
+  q.state.busy = true; // listening / thinking
+  cloud.resolve();
+  await settle();
+  await act(async () => void jest.advanceTimersByTime(8000));
+  q.state.busy = false;
+  await act(async () => void jest.advanceTimersByTime(500));
+  expect(q.voice.playAndWait).not.toHaveBeenCalled();
+  expect(q.drops).toEqual([["Turn right.", "expired"]]);
+});

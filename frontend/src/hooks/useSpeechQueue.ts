@@ -101,6 +101,13 @@ export function useSpeechQueue(
           q.dropTaken(item);
           continue;
         }
+        // The driver tapped the mic, or a reply came on, while the audio was being made: the line waits its
+        // turn again instead of starting over an open mic or a reply (nothing of ours is on the player yet).
+        if (busyRef.current() || isRecording() || isSpeaking()) {
+          playing.current = null;
+          q.putBack(item);
+          break;
+        }
         if (__DEV__) logAnnouncement(item.text, LOG_KIND[item.kind]);
         onPlayRef.current?.(item);
         try {
