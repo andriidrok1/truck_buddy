@@ -55,7 +55,8 @@ deterministic STT-noise variants. One JSON object per line:
 
 `context_preset` names a dialog state from `presets.py`: `idle`, `route_active` (route to the Pilot, 4.7 mi /
 9 min), `options_shown` (three places on the list), `route_active_alts` (the same with one alternative route cached, as a live dialog has), `stops` (one stop on the way), `near_follow_up` (last
-search was near Stockton), `past_memory` (earlier dialogs in long-term memory; must not be acted on). The
+search was near Stockton), `past_memory` (earlier dialogs in long-term memory; must not be acted on), `idle_ru` and `route_active_alts_ru` (the
+same states with the app in Russian, so the context has the "Language: Russian" line; use them for Russian text). The
 context string is built by the real `LlmAgentProvider._context`, so the model sees exactly what it sees in
 production. Places come from `tests/fixtures/google/truck_stop_sac.json`.
 

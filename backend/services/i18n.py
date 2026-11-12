@@ -14,6 +14,7 @@ be mistranslated. A Russian template can shape a value with a filter:
                               "{name}{off}" the name stops where ", right off ..." starts
   {at|clock}                  "3:30 pm" -> "15:30", "tomorrow 8:58 am" -> "завтра в 8:58"
 
+Entries with "scope" (HERE's incident descriptions) match only where that scope is set (localize_route).
 Entries with "part": true are fragments (", right off {street}", " via {roads}") used only inside {x|part}; they never
 match a whole sentence, so a short generic fragment cannot swallow a line it was not written for.
 
@@ -41,6 +42,9 @@ CATALOG_DIR = Path(__file__).resolve().parent.parent / "i18n"
 _lang: contextvars.ContextVar[str] = contextvars.ContextVar("tb_lang", default="en")
 _fallback: contextvars.ContextVar[Optional[Callable[[str, str], Optional[str]]]] = contextvars.ContextVar(
     "tb_i18n_fallback", default=None)  # translate()'s fallback, for the {x|mt} values inside a matched template
+# Templates with a "scope" match only inside it: an incident description ("Construction", "Closed", "Event") is a
+# whole short line, and outside the incident field it took a place name: "Маршрут до Ремонт дороги готов".
+_scope: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("tb_i18n_scope", default=None)
 _PH = re.compile(r"\{(\w+)(?:\|([^{}]*))?\}")
 _NUM = re.compile(r"\d+(?:[.,]\d+)?")
 
@@ -76,10 +80,10 @@ _VALUE = r"(?:(?![.!?]\s).)*?"
 
 
 class Template:
-    __slots__ = ("en", "target", "rx", "fixed", "part")
+    __slots__ = ("en", "target", "rx", "fixed", "part", "scope")
 
-    def __init__(self, en: str, target: str, part: bool = False):
-        self.en, self.target, self.part = en, target, part
+    def __init__(self, en: str, target: str, part: bool = False, scope: Optional[str] = None):
+        self.en, self.target, self.part, self.scope = en, target, part, scope
         self.fixed = len(re.sub(_PH, "", en))  # literal length: the more literal text, the surer the match
         self.compile(None)
 
@@ -113,7 +117,7 @@ def catalog(code: str) -> tuple[list[Template], dict]:
     if code == "en" or not path.exists():
         return [], {}
     data = json.loads(path.read_text())
-    tpls = [Template(e["en"], e[code], bool(e.get("part"))) for e in data.get("templates", [])
+    tpls = [Template(e["en"], e[code], bool(e.get("part")), e.get("scope")) for e in data.get("templates", [])
             if e.get("en") and e.get(code) is not None]
     tpls.sort(key=lambda t: -t.fixed)
     # Fragments as one anonymous alternation, for the {x|part} slots of the other templates.
@@ -156,7 +160,7 @@ def time_ru(value: str, case: str = "nom") -> str:
         return value
     out = []
     hours = ("часа", "часов", "часов") if case == "gen" else ("час", "часа", "часов")
-    mins = ("минуты", "минут", "минут") if case == "gen" else ("минута", "минуты", "минут")
+    mins = {"gen": ("минуты", "минут", "минут"), "acc": ("минуту", "минуты", "минут")}.get(case, ("минута", "минуты", "минут"))
     if m.group(1):
         h = int(m.group(1))
         out.append(f"{h} {plural_ru(h, *hours)}")
@@ -288,7 +292,7 @@ def _words_known(t: Template, m: re.Match, words: dict) -> bool:
 def _match(text: str, code: str, parts: bool = False) -> Optional[str]:
     tpls, words = catalog(code)
     for t in tpls:
-        if t.part and not parts:
+        if (t.part and not parts) or (t.scope and t.scope != _scope.get()):
             continue
         m = t.rx.fullmatch(text)
         if m and _words_known(t, m, words):
@@ -355,16 +359,24 @@ def numbers_kept(src: str, dst: str) -> bool:
     return sorted(_NUM.findall(src)) == sorted(_NUM.findall(dst))
 
 
+# What a Russian line may keep in Latin letters besides names: words the catalog itself keeps ("hazmat включён",
+# "CAT scale" on a sign), things with no Russian form, and a brand the model wrote in lower case.
+_LATIN_OK = frozenset({"hazmat", "wifi", "scale", "scales", "pilot", "flying", "love's", "loves", "petro", "sapp", "bros",
+                       "roady's", "roadys", "walmart", "kwik", "trip", "caltrans", "motive", "google"})
+_QUOTED = re.compile(r"«[^»]*»|“[^”]*”|\"[^\"]*\"")
+_URL = re.compile(r"(?:https?://|www\.)\S+|\b[\w-]+(?:\.[\w-]+)*\.(?:com|net|org|gov|io|us|app)\b\S*", re.I)
 _LATIN_WORD = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)*")
 
 
-def latin_left(src: str, dst: str) -> list[str]:
-    """Latin words of four letters or more in a model translation that are not names from the source. A name is
-    a word the English has with a capital (West Capitol Avenue, Roady's, Pilot); road numbers and units (I-80,
-    CA-99, ft, mph) are shorter than four letters. "Используй юго-западный подъезд с West Capitol Avenue, рядом
-    с fuel canopy" left two English words in a Russian card (QA 2026-11-11)."""
-    names = {w.lower().replace("’", "'") for w in _LATIN_WORD.findall(src) if w[0].isupper()}
-    return [w for w in _LATIN_WORD.findall(dst) if len(w) >= 4 and w.lower().replace("’", "'") not in names]
+def latin_left(text: str) -> list[str]:
+    """English common words a model translation left behind: lower-case Latin words of four letters or more.
+    "Используй юго-западный подъезд с West Capitol Avenue, рядом с fuel canopy" left two in a Russian card (QA
+    2026-11-11). A capitalised word is a name (West Capitol Avenue, Loves, Walmart: the model may spell or expand
+    it its own way), road numbers and units are short (I-80, ft, mph), and a quoted sign («trucks only»), a web
+    address and the few words in _LATIN_OK stay as they are."""
+    bare = _URL.sub(" ", _QUOTED.sub(" ", text))
+    return [w for w in _LATIN_WORD.findall(bare)
+            if len(w) >= 4 and w[0].islower() and w.lower().replace("’", "'") not in _LATIN_OK]
 
 
 def _model_ok(src: str, got: str) -> bool:
@@ -373,7 +385,7 @@ def _model_ok(src: str, got: str) -> bool:
     if not numbers_kept(src, got):
         logger.warning("i18n fallback changed numbers, kept English: %r -> %r", src, got)
         return False
-    left = latin_left(src, got)
+    left = latin_left(got)
     if left:
         logger.warning("i18n fallback left English words %s, kept English: %r -> %r", left, src, got)
         return False
@@ -395,7 +407,9 @@ def _miss(sentence: str, code: str, fallback: Optional[Callable[[str, str], Opti
 
 
 FALLBACK_PROMPT = ("Translate this line a truck copilot says aloud into {language}. Keep every number, unit, road "
-                   "name (I-80, CA-99) and place name exactly as written. Plain spoken text, one line, nothing else.{style}")
+                   "name (I-80, CA-99) and place name exactly as written. Translate every common word: no English word may "
+                   "be left, only proper names, brands, road names and numbers. Plain spoken text, one line, nothing "
+                   "else.{style}")
 # The words the catalog uses, so a model-translated line sits next to a templated one without a change of voice:
 # a parking card said «Используйте юго-западный подъезд» next to «Паркуйся в ряду для грузовиков» (QA 2026-11-09).
 _STYLE = {
@@ -406,7 +420,7 @@ _STYLE = {
            "(never «вантажівка» or «фура»), a trailer is «трейлер» (never «напівпричіп»)."),
 }
 # Part of the model cache key: a new prompt must not serve the translations the old one made.
-FALLBACK_VERSION = 2
+FALLBACK_VERSION = 3
 _LANG_NAMES = {"ru": "Russian", "uk": "Ukrainian"}
 
 
@@ -435,20 +449,23 @@ async def localize(text: str, code: Optional[str] = None) -> str:
             return s, None
         if got and _model_ok(s, got):
             return s, got
-        return s, None
+        return s, _KEEP_ENGLISH if got else None  # an empty answer is a hiccup: ask again next time
 
     async def cached(s: str) -> tuple[str, Optional[str]]:
         key = (code, FALLBACK_VERSION, s.rstrip(" ."))  # "Park along ..." on the card and "Park along ...." said
         if key in _model_cache:
             _model_cache.move_to_end(key)
-            return s, _period_like(s, _model_cache[key])
+            hit = _model_cache[key]
+            return s, _period_like(s, hit) if hit else None
         task = _inflight.get(key)
         if task is None:  # the card fields and the reply ask for the same tip at once: one call
             task = asyncio.ensure_future(one(key[2]))
             _inflight[key] = task
             task.add_done_callback(lambda _t: _inflight.pop(key, None))
         _src, got = await asyncio.shield(task)
-        if got:
+        if got is not None:
+            # A rejected translation is kept too (_KEEP_ENGLISH): the same tip is on every request for that place,
+            # and each one paid the model again for an answer that is thrown away.
             _model_cache[key] = got
             _model_cache.move_to_end(key)
             while len(_model_cache) > MODEL_CACHE_MAX:
@@ -464,6 +481,7 @@ async def localize(text: str, code: Optional[str] = None) -> str:
 # card and the spoken answer pay the model once per text, not once per request. Bounded, oldest out.
 MODEL_CACHE_MAX = 2000
 _model_cache: "OrderedDict[tuple[str, int, str], str]" = OrderedDict()
+_KEEP_ENGLISH = ""  # cached for a translation that failed the checks: the sentence stays English, no new call
 _inflight: dict = {}
 
 
@@ -498,8 +516,12 @@ def localize_route(route):
     if getattr(route, "notices", None):
         route.notices = [_whole_or_english(n) for n in route.notices]
     for inc in getattr(route, "incidents", None) or []:
-        inc.type = _whole_or_english(inc.type)
-        inc.description = _whole_or_english(inc.description)
+        token = _scope.set("incident")
+        try:
+            inc.type = _whole_or_english(inc.type)
+            inc.description = _whole_or_english(inc.description)
+        finally:
+            _scope.reset(token)
     for field in ("weather", "weather_later"):
         for a in getattr(route, field, None) or []:
             a.event = _whole_or_english(a.event)

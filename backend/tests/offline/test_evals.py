@@ -90,6 +90,10 @@ def test_preset_contexts_carry_their_state(agent_sandbox):
     assert "Stockton" in near and "No route is active" in near
     past = build_context("past_memory")[1]
     assert "Long-term memory" in past and "take me to Reno" in past
+    for name in ("idle_ru", "route_active_alts_ru"):  # the Russian cases run with the language line the app's turns have
+        assert "Language: Russian (reply in Russian; query and near in English)." in build_context(name)[1]
+    assert "Language:" not in build_context("idle")[1]
+    assert "1 alternative route" in build_context("route_active_alts_ru")[1]
 
 
 # ---- generated variants -----------------------------------------------------------------------

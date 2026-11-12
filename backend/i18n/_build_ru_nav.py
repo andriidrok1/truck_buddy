@@ -124,6 +124,10 @@ t("Pass {n} roundabouts and continue toward {to}", "Проедь {n|plural:кр�
 t("Pass the roundabout and continue on {road}", "Проедь круг и продолжай по {road}")
 t("Make a U-turn toward {to}", "Развернись в сторону {to}")
 t("Make a U-turn at {road}", "Развернись на {road}")
+# HERE also writes it with a capital T ("Make a U-Turn onto West Capitol Ave", in the miss log of 2026-11-11).
+for en, ru in [("Make a U-Turn", "Развернись"), ("Make a U-Turn onto {road}", "Развернись на {road}"),
+               ("Make a U-Turn toward {to}", "Развернись в сторону {to}"), ("Make a U-Turn at {road}", "Развернись на {road}")]:
+    t(en, ru)
 t("Arrive at {place} on the left", "Прибытие: {place}, слева")
 t("Arrive at {place} on the right", "Прибытие: {place}, справа")
 t("Your destination is on the left.", "Место назначения слева.")

@@ -7,7 +7,7 @@ import re
 import pytest
 from conftest import run
 
-from models import AgentRequest, Incident, Maneuver, RouteInfo
+from models import AgentRequest, Incident, Maneuver, Place, RouteInfo, TruckProfile
 from services import i18n
 
 SAC = {"lat": 38.5816, "lng": -121.4944}
@@ -62,6 +62,8 @@ EVENT_LINES = [
     ("{e} near Donner Pass.", "{R} в районе Donner Pass."),
     ("{e} and 1 more weather alert along the route.", "{R} и ещё 1 погодное предупреждение по маршруту."),
     ("{e} and 2 more weather alerts along the route.", "{R} и ещё 2 предупреждения по маршруту."),
+    ("{e} near Donner Pass around 3:30 pm and 1 more weather alert along the route.",
+     "{R} в районе Donner Pass около 15:30 и ещё 1 погодное предупреждение по маршруту."),
     ("{e} near Donner Pass around 3:30 pm and 2 more weather alerts along the route.",
      "{R} в районе Donner Pass около 15:30 и ещё 2 предупреждения по маршруту."),
     ("The way via I-80 only runs into a {e}. Say 'take the other way' if you want it.",
@@ -71,20 +73,39 @@ EVENT_LINES = [
     ("The way via I-80 only runs into a {e} and takes about the same time. Say 'take the other way' if you want it.",
      "На пути через I-80 только {r} и по времени примерно так же. Скажи «давай другим путём», если хочешь."),
     ("The way via I-80 misses it and takes about the same time.", "Путь через I-80 это обходит и по времени примерно так же."),
+    ("The way via I-80 only runs into a {e}, about 12 min longer.", "На пути через I-80 только {r}, примерно на 12 минут дольше."),
+    # no road name for the other way (weather.detour_speech): a sentence of its own, not "На пути через the other road"
+    ("The way via the other road only runs into a {e}, about 21 min longer. Say 'take the other way' if you want it.",
+     "На другой дороге только {r}, примерно на 21 минуту дольше. Скажи «давай другим путём», если хочешь."),
+    ("The way via the other road only runs into a {e}, about 12 min longer.", "На другой дороге только {r}, примерно на 12 минут дольше."),
     ("Here's another way via I-80 and CA-89, 4 h 29 min, 204 miles, about 1 h 40 min longer, and it misses the {e}.",
-     "Вот другой путь через I-80 и CA-89, 4 часа 29 минут, 204 мили, примерно на 1 час 40 минут дольше, и {r} обходит стороной."),
+     "Вот другой путь через I-80 и CA-89, 4 часа 29 минут, 204 мили, примерно на 1 час 40 минут дольше, и он обходит участок, где {r}."),
     ("Here's another way via I-80, 4 h 29 min, 204 miles, about 1 h 40 min longer, but it runs into a {e}.",
      "Вот другой путь через I-80, 4 часа 29 минут, 204 мили, примерно на 1 час 40 минут дольше, но там {r}."),
 ]
 
 
 def test_every_event_template_is_exercised():
-    """A new template with {event} must get a line in EVENT_LINES, so a watch is checked in it too."""
+    """The list comes from the catalog: a new template with {event} fails here until EVENT_LINES has a line for it,
+    so a watch is checked in it too."""
     tpls, _words = i18n.catalog("ru")
     with_event = [t for t in tpls if "{event" in t.target]
-    assert len(with_event) == 13, [t.en for t in with_event]
+    assert len(with_event) >= 16
+    lines = [en.replace("{e}", "Wind Advisory") for en, _ru_line in EVENT_LINES]
     for t in with_event:
         assert "{event|nom}" in t.target, t.target  # the only form the words table holds for an event
+        assert any(t.rx.search(line) for line in lines), f"no line in EVENT_LINES for: {t.en}"
+
+
+def test_detour_line_as_the_code_builds_it():
+    """weather.DETOUR_LIGHTER with no road name and every shape of the time difference."""
+    from services import weather
+    for diff, tail in (("", ""), (", about 1 h 21 min longer", ", примерно на 1 час 21 минуту дольше"),
+                       (", about 12 min faster", ", примерно на 12 минут быстрее"),
+                       (weather.SAME_TIME, " и по времени примерно так же")):
+        got, misses = _ru(weather.DETOUR_LIGHTER.format(via="the other road", event="Wind Advisory", diff=diff))
+        assert not misses
+        assert got == f"На другой дороге только предупреждение о ветре{tail}. Скажи «давай другим путём», если хочешь."
 
 
 @pytest.mark.parametrize("event,noun", list(WATCHES.items()) + list(OTHER_EVENTS.items()))
@@ -162,6 +183,83 @@ def test_break_reminder_hours(en, ru):
     assert not misses and got == ru
 
 
+# ---- every control answer through the real controls.apply_actions (review of #168) -----------------------------
+
+PILOT = Place(id="p", name="Pilot Travel Center", category="truck_stop", lat=38.6, lng=-121.5)
+CONTROLS = [
+    ("set_height_in", 162, "высота теперь 13 футов 6 дюймов"), ("set_height_in", 156, "высота теперь 13 футов"),
+    ("set_trailer_ft", 40, "трейлер теперь 40 футов"), ("set_weight_lb", 70000, "вес теперь 70\u00a0000 фунтов"),
+    ("set_hazmat", True, "hazmat включён, поведу по дорогам, где он разрешён"), ("set_hazmat", False, "hazmat выключен"),
+    ("avoid_tolls", True, "буду объезжать платные дороги"), ("avoid_tolls", False, "платные дороги теперь можно"),
+    ("avoid_ferries_tunnels", True, "буду объезжать паромы и тоннели"),
+    ("avoid_ferries_tunnels", False, "паромы и тоннели теперь можно"),
+    ("add_favorite_chain", "Pilot", "добавил Pilot в любимые"), ("remove_favorite_chain", "TA", "убрал TA из любимых"),
+    ("set_break_hours", 1, "буду напоминать о перерыве каждый час"),
+    ("set_break_hours", 3, "буду напоминать о перерыве каждые 3 часа"),
+    ("set_break_hours", 0, "напоминания о перерыве выключены"),
+]
+REROUTES = {"set_height_in", "set_trailer_ft", "set_weight_lb", "set_hazmat", "avoid_tolls", "avoid_ferries_tunnels"}
+NOT_DONE = [  # answers that do not start with "Done, "
+    ("set_driver_name", "Mike", "Понял, буду звать тебя Mike."), ("set_chains_on_board", True, "Понял, цепи есть."),
+    ("set_chains_on_board", False, "Понял, цепей нет."), ("set_nudges", True, "Снова буду подсказывать."),
+    ("set_nudges", False, "Хорошо, больше не буду ничего предлагать."),
+    ("voice_guidance", True, "Хорошо, буду подсказывать повороты."), ("voice_guidance", False, "Хорошо, подсказки поворотов выключены."),
+    ("recenter", None, "Снова на тебе."), ("zoom_in", None, "Приближаю."), ("zoom_out", None, "Отдаляю."),
+]
+
+
+def _control(actions: list, active: bool = False) -> str:
+    from services.controls import apply_actions
+    req = AgentRequest(text="", active_place=PILOT if active else None, truck_profile=TruckProfile(favorite_chains=["TA"]), **SAC)
+    _acts, say, _end = apply_actions([{"type": k, "value": v} for k, v in actions], req)
+    got, misses = _ru(say)
+    assert not misses, (say, misses)
+    return got
+
+
+def _no_english(text: str) -> bool:
+    return not i18n.latin_left(text) and not re.search(r"\b(?:is|are|now|it|on|off|I'll|to|the|for)\b", text)
+
+
+@pytest.mark.parametrize("kind,value,ru", CONTROLS)
+def test_a_single_control_answer_is_whole_russian(kind, value, ru):
+    assert _control([(kind, value)]) == f"Готово: {ru}."
+    tail = ", перестраиваю маршрут" if kind in REROUTES else ""
+    assert _control([(kind, value)], active=True) == f"Готово: {ru}{tail}."
+
+
+@pytest.mark.parametrize("kind,value,ru", NOT_DONE)
+def test_control_answers_without_done(kind, value, ru):
+    got = _control([(kind, value)])
+    assert got == ru and _no_english(got.replace("Mike", ""))
+
+
+def test_every_control_action_type_is_covered():
+    """A new action type in controls.py must get a line above."""
+    import inspect
+    from services import controls
+    kinds = set(re.findall(r'kind == "(\w+)"', inspect.getsource(controls.apply_actions)))
+    kinds |= {"recenter", "zoom_in", "zoom_out"}
+    seen = {k for k, _v, _r in CONTROLS + NOT_DONE}
+    # these need a route or the options list on screen; their lines are in the catalog since the first Russian pass
+    assert kinds - seen == {"start_navigation", "end_route", "show_options", "overview", "wake_word", "stop_talking"}
+
+
+def test_combined_control_answers():
+    """Every data control in one answer, each in every position: first (bare) and after a comma."""
+    data = [c for c in CONTROLS if c[0] != "remove_favorite_chain"]
+    for shift in range(len(data)):
+        order = data[shift:] + data[:shift]
+        picked: dict = {}
+        for kind, value, ru in order:  # one value per action type, as one driver sentence would give
+            picked.setdefault(kind, (value, ru))
+        got = _control([(k, v) for k, (v, _r) in picked.items()], active=True)
+        assert got == "Готово: " + ", ".join(r for _v, r in picked.values()) + ", перестраиваю маршрут."
+        assert _no_english(got.replace("Pilot", ""))
+    got = _control([("set_trailer_ft", 40), ("set_driver_name", "Mike"), ("set_chains_on_board", True)])
+    assert got == "Готово: трейлер теперь 40 футов, понял, буду звать тебя Mike, понял, цепи есть."
+
+
 # ---- arrival at "your destination" on a side (item 5) ---------------------------------------------------------
 
 @pytest.mark.parametrize("en,ru", [
@@ -214,26 +312,24 @@ def test_last_maneuver_of_a_route_is_whole_russian():
 
 # ---- HERE incident descriptions (item 6) ----------------------------------------------------------------------
 
+def _descriptions(*texts: str) -> list[str]:
+    out = _localized(_route(incidents=[Incident(type="other", closed=False, description=t, index=i) for i, t in enumerate(texts)]))
+    return [i.description for i in out.incidents]
+
+
 def test_incident_descriptions_from_the_qa_routes_are_translated():
     """The two descriptions the QA run logged as `i18n miss ru`, as routing._incident stores them (no last period)."""
-    out = _localized(_route(incidents=[
-        Incident(type="other", closed=False, description="Major event", index=1),
-        Incident(type="construction", closed=False, description="Road construction. Roadway reduced to two lanes", index=2),
-        Incident(type="accident", closed=False, description="Accident. Right lane blocked", index=3),
-        Incident(type="construction", closed=False, description="Roadway reduced to one lane", index=4)]))
-    assert [(i.type, i.description) for i in out.incidents] == [
-        ("Происшествие", "Крупное мероприятие"), ("Ремонт дороги", "Ремонт дороги. Дорога сужена до двух полос"),
-        ("Авария", "Авария. Правая полоса перекрыта"), ("Ремонт дороги", "Дорога сужена до одной полосы")]
+    assert _descriptions("Major event", "Road construction. Roadway reduced to two lanes", "Accident. Right lane blocked",
+                         "Roadway reduced to one lane", "Roadway reduced to 2 lanes", "Three lanes blocked",
+                         "Road construction. 2 lanes closed") == [
+        "Крупное мероприятие", "Ремонт дороги. Дорога сужена до двух полос", "Авария. Правая полоса перекрыта",
+        "Дорога сужена до одной полосы", "Дорога сужена до 2 полос", "Три полосы перекрыты", "Ремонт дороги. Закрыто полос: 2"]
 
 
 def test_unknown_incident_description_stays_english_whole():
-    out = _localized(_route(incidents=[
-        Incident(type="other", closed=False, description="Road construction. Pilot car operations in the canyon", index=1),
-        Incident(type="construction", closed=False, description="Roadway reduced to two narrow lanes", index=2)]))
     # one sentence the catalog lacks keeps the whole description English: the app does not say such a description
-    assert [(i.type, i.description) for i in out.incidents] == [
-        ("Происшествие", "Road construction. Pilot car operations in the canyon"),
-        ("Ремонт дороги", "Roadway reduced to two narrow lanes")]
+    texts = ["Road construction. Pilot car operations in the canyon", "Roadway reduced to two narrow lanes"]
+    assert _descriptions(*texts) == texts
 
 
 def test_recorded_here_incident_descriptions_all_translate():
@@ -245,8 +341,18 @@ def test_recorded_here_incident_descriptions_all_translate():
         seen.update(re.findall(r'"description":\s*"([^"]+)"', json.dumps(json.loads(path.read_text()), ensure_ascii=False)))
     assert {"Road construction", "Major road construction"} <= seen
     for text in seen:
-        _got, misses = _ru(text.rstrip("."))
-        assert not misses, text
+        got = _descriptions(text.rstrip("."))[0]
+        assert not re.search(r"[A-Za-z]{4,}", got), (text, got)
+
+
+def test_incident_wordings_match_only_in_the_incident_field():
+    """"Construction", "Closed", "Event" are whole short lines: outside an incident they must not take a place name."""
+    for town in ("Construction", "Event", "Closed", "Accident", "Incident", "Weather", "Other"):
+        got, _misses = _ru(f"Route to {town} is set, 2 h 52 min, about 132 miles.")
+        assert got == f"Маршрут до {town} готов, 2 часа 52 минуты, около 132 миль."
+        assert _ru(town)[0] == town
+    for text in ("Construction", "Event", "Closed", "Accident", "Incident", "roadClosure"):  # no description: HERE's type
+        assert not re.search(r"[A-Za-z]", _descriptions(text)[0])
 
 
 # ---- English words a model translation left behind (item 9) ---------------------------------------------------
@@ -254,17 +360,26 @@ def test_recorded_here_incident_descriptions_all_translate():
 TIP = "Use the southwest driveway off West Capitol Avenue, beside fuel canopy"
 
 
-def test_latin_left():
-    left = i18n.latin_left
-    assert left(TIP, "Используй юго-западный подъезд с West Capitol Avenue, рядом с fuel canopy") == ["fuel", "canopy"]
-    assert left(TIP, "Используй юго-западный подъезд с West Capitol Avenue, рядом с навесом у заправки") == []
-    # names, road numbers and brands of the source stay as they are; short units too
-    assert left("Take I-80 E toward Reno, 13 ft 6 in under the bridge at Roady's Truck Stop",
-                "Езжай по I-80 E в сторону Reno, 13 ft 6 in под мостом у Roady's Truck Stop") == []
-    assert left("Park behind the Love’s.", "Паркуйся за Love's.") == []
-    # a capital does not make a word a name when the source does not have it
-    assert left("Park beside the fuel canopy.", "Паркуйся рядом с Fuel Canopy.") == ["Fuel", "Canopy"]
-    assert left("Turn left in 500 feet.", "Через 500 feet налево.") == ["feet"]
+@pytest.mark.parametrize("ru,left", [
+    ("Используй юго-западный подъезд с West Capitol Avenue, рядом с fuel canopy", ["fuel", "canopy"]),
+    ("Въезд для truck на Elm St.", ["truck"]),
+    ("Паркуйся за park.", ["park"]),
+    ("Через 500 feet налево.", ["feet"]),
+    ("Используй юго-западный подъезд с West Capitol Avenue, рядом с навесом у заправки", []),
+    ("В заднем ряду нельзя парковать hazmat.", []),            # the catalog itself keeps hazmat Latin
+    ("Паркуйся у входа в Walmart.", []),                       # the source had "walmart" in lower case
+    ("Паркуйся у входа в walmart.", []),
+    ("Используй въезд с El Centro Road.", []),                 # source "el centro road"
+    ("Въезд с West Capitol Avenue.", []),                      # source "W Capitol Ave": the model expanded it
+    ("Заезжай у CAT scale.", []),
+    ("Паркуйся за Loves.", []), ("Паркуйся за Pilot's.", []),  # a source name spelled another way
+    ("Паркуйся за Love’s, там есть wifi.", []),
+    ("Посмотри место на truckparkingclub.com.", []), ("Смотри https://example.org/lots/west?x=1 перед выездом.", []),
+    ("На въезде знак «trucks only».", []), ('На въезде знак "trucks only".', []),
+    ("Езжай по I-80 E в сторону Reno, 13 ft 6 in под мостом, не быстрее 25 mph.", []),
+])
+def test_latin_left(ru, left):
+    assert i18n.latin_left(ru) == left
 
 
 def _model(monkeypatch, answers: dict):
@@ -292,7 +407,22 @@ def test_model_translation_with_english_left_stays_english_whole(monkeypatch):
     calls = _model(monkeypatch, {TIP: "Используй юго-западный подъезд с West Capitol Avenue, рядом с fuel canopy"})
     assert _localize_ru(TIP) == TIP  # as for a translation that changed a number: the English, not a mix
     assert calls == [TIP]
-    assert not i18n._model_cache  # a rejected translation is not kept
+
+
+def test_a_rejected_translation_is_paid_for_once(monkeypatch):
+    """The tip is the same on every request for that place: five requests, one model call."""
+    calls = _model(monkeypatch, {TIP: "Используй юго-западный подъезд с West Capitol Avenue, рядом с fuel canopy",
+                                 "Stay 3 feet off the fence": "Держись в 5 футах от забора"})
+    for _ in range(5):
+        assert _localize_ru(TIP) == TIP
+        assert _localize_ru(f"Alright. {TIP}.") == f"Хорошо. {TIP}."
+        assert _localize_ru("Stay 3 feet off the fence.") == "Stay 3 feet off the fence."  # a changed number, the same way
+    assert calls == [TIP, "Stay 3 feet off the fence"]
+
+
+def test_fallback_prompt_forbids_english_words_and_has_a_new_cache_version():
+    assert "no English word may be left" in i18n.fallback_prompt("ru")
+    assert i18n.FALLBACK_VERSION == 3
 
 
 def test_clean_model_translation_is_used(monkeypatch):
@@ -327,18 +457,55 @@ def test_prompt_sends_overnight_parking_to_a_truck_stop():
     assert PROMPT_VERSION == 6 and PROMPT_CACHE_KEY == "agent-v6"  # a changed prompt gets a new cache key
 
 
-@pytest.mark.parametrize("said", ["где встать на ночь", "где припарковать трак на ночь", "нужна стоянка на ночь",
-                                  "где тут переночевать", "Где можно постоять ночью"])
+PARKING_RU = ["где встать на ночь", "где припарковать трак на ночь", "нужна стоянка на ночь", "где тут переночевать",
+              "Где можно постоять ночью", "где ночевать", "где переночую", "где остановиться на ночь",
+              "где можно поспать в траке", "хочу спать в кабине", "где запарковаться на ночь", "нужен паркинг на ночь",
+              "где встать на ночь, чтобы был душ"]  # showers are a truck-stop thing
+BED_RU = ["нужен мотель на ночь", "хочу поспать в номере", "найди отель со стоянкой для трака", "я устал, хочу спать",
+          "я устал стоять в пробке, найди где поспать", "хочу нормальную постель, надоело стоять на стоянках",
+          "мотель с душем"]
+
+
+def _filed_as_hotel(agent_sandbox, said: str, lang: str = "ru"):
+    agent_sandbox.llm.default = {"intent": "find", "category": "hotel"}
+    return run(agent_sandbox.provider().handle(AgentRequest(text=said, session_id=f"g-{said}", lang=lang, **SAC), None))
+
+
+@pytest.mark.parametrize("said", PARKING_RU)
 def test_russian_parking_filed_as_hotel_becomes_a_truck_stop(agent_sandbox, fake_http, said):
     """The guard behind the prompt (tests/offline/test_park_not_hotel.py), for the Russian words."""
-    agent_sandbox.llm.default = {"intent": "find", "category": "hotel"}
-    res = run(agent_sandbox.provider().handle(AgentRequest(text=said, session_id="ru-park", lang="ru", **SAC), None))
+    res = _filed_as_hotel(agent_sandbox, said)
     assert res.category == "truck_stop" and res.status in ("route_set", "no_results")
 
 
-@pytest.mark.parametrize("said", ["нужен мотель на ночь", "хочу поспать в номере", "найди отель со стоянкой для трака",
-                                  "я устал, хочу спать"])
+@pytest.mark.parametrize("said", BED_RU)
 def test_a_russian_ask_for_a_bed_stays_a_hotel(agent_sandbox, fake_http, said):
-    agent_sandbox.llm.default = {"intent": "find", "category": "hotel"}
-    res = run(agent_sandbox.provider().handle(AgentRequest(text=said, session_id="ru-bed", lang="ru", **SAC), None))
-    assert res.category == "hotel"
+    assert _filed_as_hotel(agent_sandbox, said).category == "hotel"
+
+
+@pytest.mark.parametrize("said,category", [("where can I park tonight, somewhere with a shower", "truck_stop"),
+                                           ("a motel with a shower and truck parking", "hotel")])
+def test_a_shower_is_not_a_bed_word(agent_sandbox, fake_http, said, category):
+    assert _filed_as_hotel(agent_sandbox, said, "en").category == category
+
+
+# ---- small ones from the review of #168 ------------------------------------------------------------------------
+
+@pytest.mark.parametrize("en,ru", [
+    ("Make a U-Turn onto West Capitol Ave", "Развернись на West Capitol Ave"),  # capital T, from the miss log
+    ("Make a U-Turn", "Развернись"), ("Make a U-turn onto West Capitol Ave", "Развернись на West Capitol Ave"),
+    ("Here's another way via I-80, 4 h 29 min, 204 miles, about 1 h 21 min longer.",
+     "Вот другой путь через I-80, 4 часа 29 минут, 204 мили, примерно на 1 час 21 минуту дольше."),
+    ("Here's another way via I-80, 2 h 49 min, 132 miles, about 1 min faster.",
+     "Вот другой путь через I-80, 2 часа 49 минут, 132 мили, примерно на 1 минуту быстрее."),
+    ("Here's another way via I-80, 2 h 49 min, 132 miles, about 1 h 59 min faster.",
+     "Вот другой путь через I-80, 2 часа 49 минут, 132 мили, примерно на 1 час 59 минут быстрее."),
+])
+def test_u_turn_and_minutes_after_na(en, ru):
+    got, misses = _ru(en)
+    assert not misses and got == ru
+
+
+def test_time_forms():
+    assert i18n.time_ru("1 h 21 min", "acc") == "1 час 21 минуту" and i18n.time_ru("21 min") == "21 минута"
+    assert i18n.time_ru("2 h 2 min", "acc") == "2 часа 2 минуты" and i18n.time_ru("45 min", "acc") == "45 минут"

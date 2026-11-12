@@ -17,9 +17,11 @@ t("each stop", "каждую остановку", True)
 t(" via {r1} and {r2}", " через {r1} и {r2}", True)
 t(" via {road}", " через {road}", True)
 t(", about ${usd} in tolls", ", около ${usd} за платные дороги", True)
-t(", about {d} longer", ", примерно на {d|time} дольше", True)
-t(", about {d} faster", ", примерно на {d|time} быстрее", True)
-t(", and it misses the {event}", ", и {event|nom} обходит стороной", True)
+t(", about {d} longer", ", примерно на {d|time:acc} дольше", True)  # на 1 час 21 минуту
+t(", about {d} faster", ", примерно на {d|time:acc} быстрее", True)
+# "где" takes any event as it stands in the nominative (угроза зимнего шторма, пожароопасная погода): as the
+# subject of "обходит стороной" it read as if the storm went around something.
+t(", and it misses the {event}", ", и он обходит участок, где {event|nom}", True)
 t(", but it runs into a {event}", ", но там {event|nom}", True)
 t(", in effect till {till}", ", действует до {till|clock}", True)
 t(" has {n} spots open right now", ", там сейчас свободно {n|plural:место,места,мест}", True)

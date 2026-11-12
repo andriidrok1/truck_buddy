@@ -20,12 +20,12 @@
 {"id": "h_find_park_tonight", "text": "where can I park tonight", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
 {"id": "h_find_shut_down_night", "text": "I need somewhere to shut down for the night", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
 {"id": "h_find_motel_parking", "text": "find me a motel with truck parking", "context_preset": "idle", "expected": {"intent": "find", "category": "hotel"}, "tags": [], "source": "hand"}
-{"id": "h_find_ru_vstat_na_noch", "text": "где встать на ночь", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
-{"id": "h_find_ru_park_truck_night", "text": "где припарковать трак на ночь", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
-{"id": "h_find_ru_stoyanka_noch", "text": "нужна стоянка на ночь", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
-{"id": "h_find_ru_perenochevat", "text": "где тут переночевать с траком", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": ["ambiguous"], "source": "hand"}
-{"id": "h_find_ru_motel", "text": "нужен мотель на ночь", "context_preset": "idle", "expected": {"intent": "find", "category": "hotel"}, "tags": [], "source": "hand"}
-{"id": "h_find_ru_room", "text": "хочу поспать в номере", "context_preset": "idle", "expected": {"intent": "find", "category": "hotel"}, "tags": [], "source": "hand"}
+{"id": "h_find_ru_vstat_na_noch", "text": "где встать на ночь", "context_preset": "idle_ru", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
+{"id": "h_find_ru_park_truck_night", "text": "где припарковать трак на ночь", "context_preset": "idle_ru", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
+{"id": "h_find_ru_stoyanka_noch", "text": "нужна стоянка на ночь", "context_preset": "idle_ru", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
+{"id": "h_find_ru_perenochevat", "text": "где тут переночевать с траком", "context_preset": "idle_ru", "expected": {"intent": "find", "category": "truck_stop"}, "tags": ["ambiguous"], "source": "hand"}
+{"id": "h_find_ru_motel", "text": "нужен мотель на ночь", "context_preset": "idle_ru", "expected": {"intent": "find", "category": "hotel"}, "tags": [], "source": "hand"}
+{"id": "h_find_ru_room", "text": "хочу поспать в номере", "context_preset": "idle_ru", "expected": {"intent": "find", "category": "hotel"}, "tags": [], "source": "hand"}
 {"id": "h_find_rest_area", "text": "find a rest area", "context_preset": "idle", "expected": {"intent": "find", "category": "rest_area"}, "tags": ["core"], "source": "hand"}
 {"id": "h_find_restroom", "text": "I need a restroom quick", "context_preset": "idle", "expected": {"intent": "find", "category": "rest_area"}, "tags": ["core"], "source": "hand"}
 {"id": "h_find_nap", "text": "I need a short nap", "context_preset": "idle", "expected": {"intent": "find", "category": "rest_area"}, "tags": [], "source": "hand"}
@@ -53,6 +53,12 @@
 {"id": "h_go_lets_go_sac", "text": "let's go to Sacramento", "context_preset": "idle", "expected": {"intent": "go", "query": {"contains": "sacramento"}}, "tags": ["edge"], "source": "hand"}
 {"id": "h_go_exit", "text": "take me to exit 85 on I-80", "context_preset": "idle", "expected": {"intent": "go", "query": {"contains": "85"}}, "tags": ["core", "edge"], "source": "hand"}
 {"id": "h_go_reno_instead", "text": "take me to Reno instead", "context_preset": "route_active", "expected": {"intent": "go", "query": {"contains": "reno"}}, "tags": ["core"], "source": "hand"}
+{"id": "h_go_ru_reno", "text": "Маршрут до Рино", "context_preset": "idle_ru", "expected": {"intent": "go", "query": {"contains": "reno"}}, "tags": [], "source": "hand"}
+{"id": "h_go_ru_reno_latin", "text": "Маршрут до Reno", "context_preset": "idle_ru", "expected": {"intent": "go", "query": {"contains": "reno"}}, "tags": [], "source": "hand"}
+{"id": "h_go_ru_address", "text": "Маршрут до 1200 Main St, Sacramento", "context_preset": "idle_ru", "expected": {"intent": "go", "query": {"contains": "1200 main"}}, "tags": ["address"], "source": "hand"}
+{"id": "h_go_ru_loves", "text": "Маршрут до Love's", "context_preset": "idle_ru", "expected": {"intent": "go", "query": {"contains": "love"}}, "tags": ["ambiguous"], "source": "hand"}
+{"id": "h_go_ru_reno_active", "text": "Маршрут до Рино", "context_preset": "route_active_alts_ru", "expected": {"intent": "go", "query": {"contains": "reno"}}, "tags": ["edge"], "source": "hand"}
+{"id": "h_go_ru_address_active", "text": "Маршрут до 1200 Main St, Sacramento", "context_preset": "route_active_alts_ru", "expected": {"intent": "go", "query": {"contains": "1200 main"}}, "tags": ["address", "edge"], "source": "hand"}
 {"id": "h_pick_pilot", "text": "the Pilot", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [3]}, "tags": ["core", "follow_up"], "source": "hand"}
 {"id": "h_pick_first", "text": "the first one", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [1]}, "tags": ["follow_up"], "source": "hand"}
 {"id": "h_pick_loves", "text": "the Love's", "context_preset": "options_shown", "expected": {"intent": "pick", "place_index": [1]}, "tags": ["core", "follow_up"], "source": "hand"}

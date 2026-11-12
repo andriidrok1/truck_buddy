@@ -23,6 +23,11 @@ t("Say 'take the other way' if you want it.", "Скажи «давай друг�
 # {diff|part} above, not {diff|tr}: an open {diff} took the event's own words and the line never matched (the model
 # translated it, or it stayed English). SAME_TIME had no fragment at all.
 t(" and takes about the same time", " и по времени примерно так же", True)
+# No road name for the lighter way (weather.detour_speech says "the other road"): its own sentence, the preposition
+# changes. The generic line left "На пути через the other road".
+t("The way via the other road only runs into a {event}{diff}. Say 'take the other way' if you want it.", "На другой дороге только {event|nom}{diff|part}. Скажи «давай другим путём», если хочешь.")
+t("The way via the other road only runs into a {event}{diff}.", "На другой дороге только {event|nom}{diff|part}.")
+t("The way via {via} only runs into a {event}{diff}.", "На пути через {via|and} только {event|nom}{diff|part}.")
 t("No truck route around it.", "Объезда для трака нет.")
 t("I don't have another truck route to try.", "Другого маршрута для трака у меня нет.")
 t("No truck route around it; it should clear by {till}.", "Объезда для трака нет; должно закончиться к {till|clock}.")
@@ -175,22 +180,27 @@ t("I'll remind you to take a break every {n} hours.", "Буду напомина
 t("I'll remind you to take a break every {n} hour.", "Буду напоминать о перерыве каждый час.")
 t("Done, {items}.", "Готово: {items|tr}.")
 t("Done. {rest}", "Готово. {rest|tr}")
-for en, ru in [(", height is now {ft} foot {inch}", ", высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}"),
-               (", height is now {ft} feet", ", высота теперь {ft|plural:фут,фута,футов}"),
-               (", trailer is now {n} feet", ", трейлер теперь {n|plural:фут,фута,футов}"),
-               (", weight is now {n} pounds", ", вес теперь {n|plural:фунт,фунта,фунтов}"),
-               (", hazmat is on, I'll keep you on hazmat-legal roads", ", hazmat включён, поведу по дорогам, где он разрешён"),
-               (", hazmat is off", ", hazmat выключен"), (", I'll avoid toll roads", ", буду объезжать платные дороги"),
-               (", toll roads are fine now", ", платные дороги теперь можно"), (", I'll avoid ferries and tunnels", ", буду объезжать паромы и тоннели"),
-               (", ferries and tunnels are fine now", ", паромы и тоннели теперь можно"), (", got it, chains on board", ", цепи есть"),
-               (", got it, no chains on board", ", цепей нет"), (", break reminders are off", ", напоминания о перерыве выключены"),
-               (", got it, I'll call you {name}", ", буду звать тебя {name}"), (", added {name} to your favorites", ", добавил {name} в любимые"),
-               (", removed {name} from your favorites", ", убрал {name} из любимых"),
-               (", I'll remind you to take a break every {n} hours", ", буду напоминать о перерыве каждые {n|plural:час,часа,часов}"),
-               (", I'll remind you to take a break every {n} hour", ", буду напоминать о перерыве каждый час")]:
+# The pieces of a combined answer, "Done, trailer is now 40 feet, hazmat is off, rerouting for that." Each piece
+# has two fragments: after a comma, and bare for the first place right after "Done, ". Only the height had the
+# bare one, so every single control said "Готово: trailer is now 40 feet." (review of #168).
+for en, ru in [("height is now {ft} foot {inch}", "высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}"),
+               ("height is now {ft} feet", "высота теперь {ft|plural:фут,фута,футов}"),
+               ("trailer is now {n} feet", "трейлер теперь {n|plural:фут,фута,футов}"),
+               ("weight is now {n} pounds", "вес теперь {n|plural:фунт,фунта,фунтов}"),
+               # said as "hazmat is on, I'll keep you on hazmat-legal roads": two pieces once it is split at commas
+               ("hazmat is on", "hazmat включён"), ("I'll keep you on hazmat-legal roads", "поведу по дорогам, где он разрешён"),
+               ("hazmat is off", "hazmat выключен"), ("I'll avoid toll roads", "буду объезжать платные дороги"),
+               ("toll roads are fine now", "платные дороги теперь можно"), ("I'll avoid ferries and tunnels", "буду объезжать паромы и тоннели"),
+               ("ferries and tunnels are fine now", "паромы и тоннели теперь можно"), ("break reminders are off", "напоминания о перерыве выключены"),
+               # "got it, chains on board" and "got it, I'll call you Mike" are two pieces each as well
+               ("got it", "понял"), ("chains on board", "цепи есть"), ("no chains on board", "цепей нет"),
+               ("I'll call you {name}", "буду звать тебя {name}"), ("added {name} to your favorites", "добавил {name} в любимые"),
+               ("removed {name} from your favorites", "убрал {name} из любимых"),
+               ("I'll remind you to take a break every {n} hours", "буду напоминать о перерыве каждые {n|plural:час,часа,часов}"),
+               ("I'll remind you to take a break every {n} hour", "буду напоминать о перерыве каждый час"),
+               ("rerouting for that", "перестраиваю маршрут")]:
     t(en, ru, True)
-t("height is now {ft} foot {inch}", "высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}", True)
-t("height is now {ft} feet", "высота теперь {ft|plural:фут,фута,футов}", True)
+    t(", " + en, ", " + ru, True)
 
 # --- breakdown ---
 t("Okay. Give me a minute, I'll check who's around and what drivers say about them.", "Хорошо. Дай минуту, посмотрю, кто есть рядом и что о них говорят водители.")
@@ -284,8 +294,8 @@ t("I can't tell where we are right now.", "Сейчас не могу понят
 # a cheaper way (S17)
 t("There's a way {diff} that saves about ${saves}. Want it?", "Есть путь {diff|tr}, экономия около ${saves}. Поедем по нему?")
 t("There's a way {diff} that saves about ${saves}.", "Есть путь {diff|tr}, экономия около ${saves}.")
-t("{d} slower", "на {d|time} дольше", True)
-t("{d} faster", "на {d|time} быстрее", True)
+t("{d} slower", "на {d|time:acc} дольше", True)
+t("{d} faster", "на {d|time:acc} быстрее", True)
 t("about as fast", "примерно за то же время", True)
 t("Want it?", "Поедем по нему?")
 t("Okay, staying on this one.", "Хорошо, остаёмся на этом.")
@@ -343,11 +353,17 @@ W["drive"] = {"tire": "ведущее колесо"}
 W["trailer"] = {"tire": "колесо трейлера"}
 
 # --- incidents on the route (HERE type and description; S10) ---
+# A type or a description is a short whole line ("construction", "Closed", "Event"), so these match only inside
+# the incident fields (scope, set by i18n.localize_route): anywhere else one took a place name, "Route to Construction is set" ->
+# "Маршрут до Ремонт дороги готов" (review of #168).
+def inc(en, ru):
+    for dot in ("", "."):
+        T2.append({"en": en + dot, "ru": ru + dot, "scope": "incident"})
 for typ, ru in [("accident", "Авария"), ("congestion", "Пробка"), ("construction", "Ремонт дороги"),
                 ("disabledVehicle", "Сломанная машина"), ("massTransit", "Общественный транспорт"),
                 ("plannedEvent", "Мероприятие"), ("roadHazard", "Опасность на дороге"), ("roadClosure", "Дорога закрыта"),
                 ("weather", "Погода"), ("laneRestriction", "Сужение дороги"), ("other", "Происшествие")]:
-    W[typ.lower()] = ru
+    T2.append({"en": typ, "ru": ru, "scope": "incident"})
 for en, ru in [("Road construction", "Ремонт дороги"), ("Major road construction", "Большой ремонт дороги"),
                ("Road maintenance operations", "Дорожные работы"), ("Construction work", "Дорожные работы"),
                ("Roadworks", "Дорожные работы"), ("Accident", "Авария"), ("Multi-vehicle accident", "Авария с несколькими машинами"),
@@ -362,10 +378,8 @@ for en, ru in [("Road construction", "Ремонт дороги"), ("Major road 
                ("Broken down vehicle", "Сломанная машина"), ("Debris on road", "Мусор на дороге"),
                ("Object on roadway", "Предмет на дороге"), ("Vehicle fire", "Горит машина"), ("Flooding", "Подтопление"),
                ("Road closed due to construction", "Дорога закрыта на ремонт"), ("Closed due to accident", "Закрыто из-за аварии")]:
-    t(en, ru)
-    t(en + ".", ru + ".")
-t("{n} lanes closed", "Закрыто полос: {n}")
-t("{n} lanes closed.", "Закрыто полос: {n}.")
+    inc(en, ru)
+inc("{n} lanes closed", "Закрыто полос: {n}")
 # More of what HERE writes in an incident's description. "Major event" and "Roadway reduced to two lanes" are from
 # the `i18n miss ru` lines of the QA run of 2026-11-11 (routes Sacramento - Reno and to Sac Valley Truck Stop); the
 # rest are the same family. A description outside these lists stays English whole (i18n.localize_route).
@@ -375,17 +389,18 @@ for en, ru in [("Major event", "Крупное мероприятие"), ("Event
                ("Roadway reduced to two lanes", "Дорога сужена до двух полос"),
                ("Roadway reduced to three lanes", "Дорога сужена до трёх полос"),
                ("Roadway reduced to four lanes", "Дорога сужена до четырёх полос"),
+               ("Roadway reduced to 1 lane", "Дорога сужена до 1 полосы"), ("Roadway reduced to 2 lanes", "Дорога сужена до 2 полос"),
+               ("Roadway reduced to 3 lanes", "Дорога сужена до 3 полос"), ("Roadway reduced to 4 lanes", "Дорога сужена до 4 полос"),
                ("Road blocked", "Дорога перекрыта"), ("Lane blocked", "Полоса перекрыта"),
                ("Right lane blocked", "Правая полоса перекрыта"), ("Left lane blocked", "Левая полоса перекрыта"),
                ("Center lane blocked", "Средняя полоса перекрыта"), ("Center lane closed", "Средняя полоса закрыта"),
-               ("One lane blocked", "Одна полоса перекрыта"), ("Two lanes blocked", "Две полосы перекрыты"),
+               ("One lane blocked", "Одна полоса перекрыта"), ("Two lanes blocked", "Две полосы перекрыты"), ("Three lanes blocked", "Три полосы перекрыты"),
                ("Right shoulder closed", "Правая обочина закрыта"), ("Left shoulder closed", "Левая обочина закрыта"),
                ("Earlier accident", "Последствия аварии"), ("Overturned vehicle", "Перевернулась машина"),
                ("Overturned truck", "Перевернулся трак"), ("Broken down truck", "Сломанный трак"),
                ("Disabled truck", "Сломанный трак"), ("Object on the road", "Предмет на дороге"),
                ("Debris on the road", "Мусор на дороге")]:
-    t(en, ru)
-    t(en + ".", ru + ".")
+    inc(en, ru)
 
 # --- Caltrans chain-control descriptions (S10; the app shows R-1..R-3 and these) ---
 for en, ru in [("No chain controls are in effect at this time.", "Сейчас цепи нигде не нужны."),
