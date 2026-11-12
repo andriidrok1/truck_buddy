@@ -2,8 +2,9 @@
 // out of every phone, delete the account. An access-code sign-in keeps its own "Sign out" and "Delete my data"
 // (src/state/firstLaunch.ts); none of these is offered to it.
 
-import { api, ApiError, isNoAnswer, isNoLongerRegistered, logout, tokenState, type AccountDeleted, type RefusalCode } from "../api";
-import { getToken, signedInWithAccount } from "../auth";
+import { api, ApiError, isNoAnswer, logout, tokenState, why401, type AccountDeleted, type RefusalCode } from "../api";
+import { getToken, identitySub, signedInWithAccount } from "../auth";
+import { storage } from "../utils/storage";
 import { serverThenReset, SignedOutByServer, signedOutReset, WipeBusy, type Nav } from "./firstLaunch";
 
 /** How long "Sign out" waits for the server to close this phone's session before signing out anyway. */
@@ -76,23 +77,36 @@ export type DeleteOutcome =
 class Unconfirmed extends Error {}
 
 /**
- * Treated as a deletion that went through, and the phone resets to a fresh install. Not proof that this request
- * deleted the account: our 401 "no longer registered" is also what a phone hears when the account was deleted
- * from another phone. Either way there is no account behind the token any more, so nothing on this phone or in
- * the copy ever says "your account was deleted" (review of #173, M3): the driver just sees the first launch again.
+ * Treated as a deletion that went through, and the phone resets to a fresh install. Only on our 401 with `code`
+ * "account_gone", or, from a server without codes, on "no longer registered" after this phone sent a DELETE that got
+ * no answer (UNANSWERED_KEY): without codes that text is also what a closed session hears (review of #173, H-1).
+ * Nothing on this phone or in the copy ever says "your account was deleted" (M3): the driver sees the first launch.
  */
 const GONE: AccountDeleted = { ok: true, apple_revoked: null, deleted: 0, trip_events: 0, profile: false, sessions: 0 }; // counts and Apple's answer are not known here
+
+/** On disk: this phone sent DELETE /api/account and got no answer, for the account (token `sub`) in the value. It
+ *  survives a restart; a sign-out removes it with the rest of the driver's keys (IDENTITY_KEYS). */
+export const UNANSWERED_KEY = "account_delete_unanswered_v1";
+const markUnanswered = () => storage.setItem(UNANSWERED_KEY, identitySub() ?? "");
+const clearUnanswered = () => storage.removeItem(UNANSWERED_KEY);
+async function sentUnanswered(): Promise<boolean> {
+  return (await storage.getItem<string | null>(UNANSWERED_KEY, null).catch(() => null)) === (identitySub() ?? "");
+}
 
 /**
  * "Delete account and data": DELETE /api/account with every other request held (serverThenReset), then the phone
  * back to a fresh install (the language screen). On a 409 or any failure nothing on the phone changes.
  *
- * - A 401 "no longer registered" counts as a 200 (a retry after a deletion that went through, review of #173 H1).
- * - Any other 401 (the access token expired while the screen was open) goes to serverThenReset, which renews the
- *   token outside the hold and sends the delete once more. That is the only retry; there is none here.
- * - No answer: GET /api/auth/check with the same token, still under the hold, so no other request gets the 401
- *   first and signs the phone out with "You were signed out" instead of the fresh-install reset. "gone" resets as
- *   on a 200, "refused" goes through the renewal like a 401, "alive" or no answer is "unconfirmed" (H2).
+ * Our 401 on the DELETE (review of #173, H-1): `account_gone` counts as a 200 (a retry after a deletion that went
+ * through). `session_closed` (logout-all from another phone, a reused refresh token, an idle session: the account
+ * is alive) is the forced sign-out with "You were signed out", never "deleted". "No longer registered" without a
+ * code (an older server) counts as a 200 only when this phone already sent a DELETE that got no answer, and is the
+ * forced sign-out otherwise. Any other 401 (the access token expired while the screen was open) goes to
+ * serverThenReset, which renews the token outside the hold and sends the delete once more. That is the only retry.
+ *
+ * No answer: GET /api/auth/check with the same token, still under the hold, so no other request gets the 401
+ * first. The same rules (the DELETE that just went unanswered counts), "refused" goes through the renewal like a
+ * 401, "alive" or no answer is "unconfirmed" (H2).
  */
 export async function deleteAccount(router: Nav, call: () => Promise<AccountDeleted> = api.deleteAccount): Promise<DeleteOutcome> {
   const checked = async (): Promise<AccountDeleted> => {
@@ -100,11 +114,25 @@ export async function deleteAccount(router: Nav, call: () => Promise<AccountDele
     try {
       return await call(); // reads its header in this same tick (serverThenReset relies on it)
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401 && isNoLongerRegistered(e.detail)) return GONE;
-      if (!sent || !isNoAnswer(e)) throw e;
+      if (e instanceof ApiError && e.status === 401) {
+        const why = why401(e.detail, e.code);
+        if (why === "account_gone") return GONE;
+        if (why === "session_closed") throw new SignedOutByServer();
+        if (why === "unregistered") {
+          if (await sentUnanswered()) return GONE;
+          throw new SignedOutByServer();
+        }
+        throw e; // "refused": the renewal in serverThenReset
+      }
+      if (!sent || !isNoAnswer(e)) {
+        if (e instanceof ApiError) await clearUnanswered(); // the server answered: the account was still there
+        throw e;
+      }
+      await markUnanswered();
       const state = await tokenState(sent);
-      if (state === "account_gone" || state === "unregistered") return GONE;
-      if (state === "refused" || state === "session_closed") throw new ApiError(401, "/auth/check", "refused");
+      if (state === "account_gone" || state === "unregistered") return GONE; // unregistered: after our unanswered DELETE
+      if (state === "session_closed") throw new SignedOutByServer();
+      if (state === "refused") throw new ApiError(401, "/auth/check", "refused");
       throw new Unconfirmed();
     }
   };

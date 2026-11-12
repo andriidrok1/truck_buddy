@@ -11,7 +11,7 @@ import { loadLang, setLang, useLangStore } from "../i18n";
 import { after401, resetRenewalForTests } from "../net/tokenRenewal";
 import { queryClient } from "../query-client";
 import { getAccount, saveAccount, setSignInNotice, signInNotice } from "../state/account";
-import { clearConversations, deleteAccount, LOGOUT_WAIT_MS, signOut, signOutEverywhere } from "../state/accountActions";
+import { clearConversations, deleteAccount, LOGOUT_WAIT_MS, signOut, signOutEverywhere, UNANSWERED_KEY } from "../state/accountActions";
 import { deleteMyData, signedOutReset, wipeRunning } from "../state/firstLaunch";
 import { markIntroSeen } from "../state/intro";
 import { saveActiveRoute } from "../state/routeStore";
@@ -253,15 +253,69 @@ describe("Delete account and data", () => {
   });
 
   describe("a 401 on the DELETE (review of #173, H1)", () => {
-    test("no longer registered: a deletion that already went through, the phone resets as on a 200, no renewal", async () => {
+    test("account_gone: a deletion that already went through, the phone resets as on a 200, no renewal", async () => {
       await signedIn();
-      answers[key("DELETE", "/account")] = reply(401, { detail: "This device is no longer registered" });
+      answers[key("DELETE", "/account")] = reply(401, { detail: "This device is no longer registered", code: "account_gone" });
       const r = router();
       expect(await deleteAccount(r)).toEqual({ ok: true, appleRevoked: null });
       expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["DELETE /account"]);
       expect(r.dismissAll).toHaveBeenCalled();
       expect(getToken()).toBeNull();
       expect(useLangStore.getState().chosen).toBe(false);
+    });
+
+    test("session_closed: the account is alive, so the forced sign-out with the notice, never a fresh install", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = reply(401, { detail: "This device is no longer registered", code: "session_closed" });
+      const r = router();
+      expect(await deleteAccount(r)).toEqual({ ok: false, reason: "signed_out" });
+      expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["DELETE /account"]);
+      expect(r.dismissAll).not.toHaveBeenCalled();
+      expect(getToken()).toBeNull();
+      expect(signInNotice()).toBe("signed_out");
+      expect(getAccount()).toBeNull();
+      expect(useLangStore.getState().chosen).toBe(true);
+    });
+
+    test("no longer registered without a code (an older server), no earlier unanswered DELETE: the forced sign-out", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = reply(401, { detail: "This device is no longer registered" });
+      expect(await deleteAccount(router())).toEqual({ ok: false, reason: "signed_out" });
+      expect(signInNotice()).toBe("signed_out");
+      expect(useLangStore.getState().chosen).toBe(true);
+    });
+
+    test("no longer registered without a code after this phone's DELETE got no answer (even across a restart): the deletion went through", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = "offline";
+      answers[key("GET", "/auth/check")] = "offline";
+      expect(await deleteAccount(router())).toEqual({ ok: false, reason: "unconfirmed" });
+      expect(await storage.getItem(UNANSWERED_KEY, null as string | null)).not.toBeNull();
+      answers[key("DELETE", "/account")] = reply(401, { detail: "This device is no longer registered" });
+      expect(await deleteAccount(router())).toEqual({ ok: true, appleRevoked: null });
+      expect(useLangStore.getState().chosen).toBe(false);
+      expect(await storage.getItem(UNANSWERED_KEY, null as string | null)).toBeNull();
+    });
+
+    test("an answer after an unanswered DELETE takes the mark down: a later codeless 401 is a sign-out again", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = "offline";
+      answers[key("GET", "/auth/check")] = "offline";
+      await deleteAccount(router());
+      answers[key("DELETE", "/account")] = reply(503, { detail: "The account could not be deleted right now. Try again." });
+      expect(await deleteAccount(router())).toEqual({ ok: false, reason: "not_removed" });
+      expect(await storage.getItem(UNANSWERED_KEY, null as string | null)).toBeNull();
+      answers[key("DELETE", "/account")] = reply(401, { detail: "This device is no longer registered" });
+      expect(await deleteAccount(router())).toEqual({ ok: false, reason: "signed_out" });
+    });
+
+    test("a sign-out takes the mark down with the driver's other keys", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = "offline";
+      answers[key("GET", "/auth/check")] = "offline";
+      await deleteAccount(router());
+      await signedOutReset();
+      expect(await AsyncStorage.getItem(UNANSWERED_KEY)).toBeNull();
     });
 
     test("an expired token: one renewal, one more DELETE with the new token, and no second round", async () => {
@@ -301,13 +355,13 @@ describe("Delete account and data", () => {
       expect(signInNotice()).toBeNull();
     });
 
-    test("an expired token, and the retry hears no longer registered: the phone resets", async () => {
+    test("an expired token, and the retry hears account_gone: the phone resets", async () => {
       await signedIn();
       let n = 0;
       const call = jest.fn(async () => {
         n++;
         if (n === 1) return api.deleteAccount();
-        answers[key("DELETE", "/account")] = reply(401, { detail: "This device is no longer registered" });
+        answers[key("DELETE", "/account")] = reply(401, { detail: "This device is no longer registered", code: "account_gone" });
         return api.deleteAccount();
       });
       answers[key("DELETE", "/account")] = reply(401, { detail: "Invalid or expired token" });
@@ -319,7 +373,7 @@ describe("Delete account and data", () => {
   });
 
   describe("no answer to the DELETE: GET /api/auth/check with the same token says what happened", () => {
-    test("401 no longer registered: the deletion went through, the phone resets as on a 200", async () => {
+    test("401 no longer registered without a code: this phone's DELETE just went unanswered, so the deletion went through", async () => {
       await signedIn();
       answers[key("DELETE", "/account")] = "offline";
       answers[key("GET", "/auth/check")] = reply(401, { detail: "This device is no longer registered" });
@@ -333,6 +387,26 @@ describe("Delete account and data", () => {
       expect(getToken()).toBeNull();
       expect(useLangStore.getState().chosen).toBe(false);
       expect(calls.map((c) => c.path)).not.toContain("/auth/refresh"); // no renewal, no "You were signed out"
+    });
+
+    test("account_gone from the check: the phone resets", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = "offline";
+      answers[key("GET", "/auth/check")] = reply(401, { detail: "This device is no longer registered", code: "account_gone" });
+      expect(await deleteAccount(router())).toEqual({ ok: true, appleRevoked: null });
+      expect(useLangStore.getState().chosen).toBe(false);
+    });
+
+    test("session_closed from the check: the forced sign-out with the notice, never \"deleted\" (H-1)", async () => {
+      await signedIn();
+      answers[key("DELETE", "/account")] = "offline";
+      answers[key("GET", "/auth/check")] = reply(401, { detail: "This device is no longer registered", code: "session_closed" });
+      const r = router();
+      expect(await deleteAccount(r)).toEqual({ ok: false, reason: "signed_out" });
+      expect(r.dismissAll).not.toHaveBeenCalled();
+      expect(getToken()).toBeNull();
+      expect(signInNotice()).toBe("signed_out");
+      expect(useLangStore.getState().chosen).toBe(true);
     });
 
     test("200: the account still answers, which may only mean the deletion is still running: unconfirmed (H2)", async () => {

@@ -27,6 +27,7 @@ export const APP_KEYS = [
   "profile_restore_v1",
   "apple_name_pending_v1",
   "held_trip_v1",
+  "account_delete_unanswered_v1",
 ] as const;
 
 /** Keychain keys (AsyncStorage on web). */
