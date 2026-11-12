@@ -100,7 +100,9 @@ export function useReroute(
       } catch (e) {
         console.log(`[reroute] /reroute failed (${String(e)}), planning from scratch`);
         fallback = true;
-        res = await api.route(loc.coords, cur.place, false, (route.via ?? []).slice(sectionIndex), cur.trip_id ?? null);
+        // From where the truck is now: `loc.coords` is the fix this reroute began with, up to 15 s behind
+        // by the time /reroute has failed.
+        res = await api.route(coordsRef.current, cur.place, false, (route.via ?? []).slice(sectionIndex), cur.trip_id ?? null);
       }
       // Only onto the route the truck left: a stop added or a route picked while this ran is newer.
       const applied = trip().applyRoute(gen, res.route, ahead, res.parking);
