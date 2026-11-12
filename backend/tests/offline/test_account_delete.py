@@ -1386,6 +1386,28 @@ async def _done(task) -> bool:
     return task.done()
 
 
+def test_a_slow_deletion_is_waited_out_on_sqlite_and_timed_out_on_postgres(client, monkeypatch):
+    """SQLite's transaction runs in a thread a timeout cannot stop: it would commit after the 503. Postgres's is
+    cancelled and rolled back, and the 503 means nothing was deleted."""
+    from services import account_api
+    a = _google(client, _person()).json()
+    sub = _claims(a["access_token"])["sub"]
+    monkeypatch.setattr(account_api, "MEMORY_WAIT_S", 0.05)
+    real = accounts.erase_account
+
+    async def slow(s):
+        await asyncio.sleep(0.3)
+        return await real(s)
+    monkeypatch.setattr(accounts, "erase_account", slow)
+    r = client.delete("/api/account", headers=_h(a))
+    if client.store == "sqlite":
+        assert r.status_code == 200 and r.json()["sessions"] == 1
+        _nothing_left(client, sub)
+    else:
+        assert r.status_code == 503
+        assert _rows(client, "SELECT count(*) FROM accounts WHERE sub = ?", sub) == [(1,)]
+
+
 def test_a_fleet_join_waits_for_its_owners_deletion(client, monkeypatch):
     """Postgres: the owner's deletion counted nobody else in the fleet and is about to delete it. A bind into the
     fleet in that moment waits on the fleet's row and then finds the fleet gone; without the lock it would join, and

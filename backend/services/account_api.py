@@ -374,7 +374,10 @@ async def account_delete(principal: auth.Principal = Depends(auth.require_driver
         if account and account[0] == "apple":
             revoked_sealed = account[1]
             revoked = await apple.revoke(revoked_sealed, driver)
-        erased, sealed = await asyncio.wait_for(accounts.erase_account(driver), MEMORY_WAIT_S)
+        erasing = accounts.erase_account(driver)
+        # SQLite (tests, a keyless dev box) runs the transaction in a thread no timeout can stop: it would commit
+        # after a 503 and skip the cache cleanup in erase_account. There it is waited out; Postgres rolls back.
+        erased, sealed = await (erasing if db.store() == "sqlite" else asyncio.wait_for(erasing, MEMORY_WAIT_S))
     except accounts.LastOwner:
         # Somebody joined the fleet after the check. Nothing was deleted; only the Apple token may be revoked, and
         # then it is forgotten, so the next sign-in with Apple exchanges a live one instead of keeping a dead one.
