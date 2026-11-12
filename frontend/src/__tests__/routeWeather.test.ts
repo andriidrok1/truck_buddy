@@ -2,7 +2,7 @@ import { useLangStore } from "../i18n";
 import { reduceActions } from "../state/agentReducer";
 import type { AppAction, WeatherAlert } from "../types";
 import {
-  alertAt, cardLine, chipMode, chips, chipValue, detail, DETAIL_ZOOM, samplePoints, zoomOf, type RoutePoint,
+  alertAt, cardLine, chipMode, chips, chipValue, detail, DETAIL_ZOOM, nearestIndex, samplePoints, zoomOf, type RoutePoint,
 } from "../weather/routeWeather";
 
 // Sacramento -> Reno along I-80, roughly.
@@ -89,5 +89,21 @@ describe("empty trailer by voice", () => {
   it("goes into the truck profile", () => {
     const fx = reduceActions([{ type: "set_trailer_empty", value: true } as AppAction], { activePlaceId: null, optionsCount: 0, favoriteChains: [] });
     expect(fx).toContainEqual(expect.objectContaining({ type: "saveProfile", patch: expect.objectContaining({ trailer_empty: true }) }));
+  });
+});
+
+describe("sampling from the truck", () => {
+  it("starts where the truck is and counts the times from now", () => {
+    const s = samplePoints(LINE, 3 * 3600, NOW, 40, 14, 5);
+    expect(s[0].index).toBe(5);
+    expect(s[0].eta).toBe(NOW.toISOString());
+    expect(s.every((p) => p.index >= 5)).toBe(true);
+    const full = samplePoints(LINE, 3 * 3600, NOW, 40);
+    // The end is reached sooner from the middle than from the start.
+    expect(Date.parse(s[s.length - 1].eta)).toBeLessThan(Date.parse(full[full.length - 1].eta));
+  });
+  it("nearest vertex", () => {
+    expect(nearestIndex(LINE, { lat: 39.31, lng: -120.34 })).toBe(5);
+    expect(nearestIndex(LINE, { lat: 38.58, lng: -121.49 })).toBe(0);
   });
 });

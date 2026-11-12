@@ -23,19 +23,38 @@ function km(a: [number, number], b: [number, number]): number {
   return 2 * R_KM * Math.asin(Math.sqrt(h));
 }
 
-/** Points about every `everyKm` along the route (first and last always), each with its ETA by the share of the
- *  distance before it: the same rule as the backend's weather.eta_at. Long routes get a wider step to stay
- *  within `max`. */
-export function samplePoints(geometry: [number, number][], durationS: number, now: Date, everyKm = SAMPLE_KM, max = MAX_SAMPLES): PointSample[] {
+/** The route vertex closest to a point (the truck), for counting what is still ahead. */
+export function nearestIndex(geometry: [number, number][], p: { lat: number; lng: number }): number {
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < geometry.length; i++) {
+    const dLat = geometry[i][0] - p.lat;
+    const dLng = (geometry[i][1] - p.lng) * Math.cos((p.lat * Math.PI) / 180);
+    const d = dLat * dLat + dLng * dLng;
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/** Points about every `everyKm` along the route from `fromIndex` (where the truck is) to the end, each with its
+ *  ETA from now by the share of the route's length still to cover: the backend's weather.eta_at rule, counted
+ *  from the truck, so a refresh mid-drive or after an app restart asks for the part ahead at its real times.
+ *  Long routes get a wider step to stay within `max`. */
+export function samplePoints(geometry: [number, number][], durationS: number, now: Date, everyKm = SAMPLE_KM, max = MAX_SAMPLES, fromIndex = 0): PointSample[] {
   if (geometry.length === 0) return [];
+  const from = Math.max(0, Math.min(fromIndex, geometry.length - 1));
   const steps = geometry.slice(1).map((p, i) => km(geometry[i], p));
   const total = steps.reduce((a, b) => a + b, 0);
-  const step = Math.max(everyKm, total / Math.max(1, max - 1));
+  const ahead = steps.slice(from).reduce((a, b) => a + b, 0);
+  const step = Math.max(everyKm, ahead / Math.max(1, max - 1));
   const at = (before: number) => new Date(now.getTime() + (total > 0 ? (before / total) * durationS * 1000 : 0)).toISOString();
-  const out: PointSample[] = [{ index: 0, lat: geometry[0][0], lng: geometry[0][1], eta: at(0) }];
+  const out: PointSample[] = [{ index: from, lat: geometry[from][0], lng: geometry[from][1], eta: at(0) }];
   let before = 0;
   let since = 0;
-  for (let i = 1; i < geometry.length; i++) {
+  for (let i = from + 1; i < geometry.length; i++) {
     before += steps[i - 1];
     since += steps[i - 1];
     if (since >= step && out.length < max - 1 && i < geometry.length - 1) {
@@ -44,7 +63,7 @@ export function samplePoints(geometry: [number, number][], durationS: number, no
     }
   }
   const last = geometry.length - 1;
-  if (last > 0) out.push({ index: last, lat: geometry[last][0], lng: geometry[last][1], eta: at(total) });
+  if (last > from) out.push({ index: last, lat: geometry[last][0], lng: geometry[last][1], eta: at(ahead) });
   return out;
 }
 

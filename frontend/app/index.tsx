@@ -833,7 +833,7 @@ export default function MapScreen() {
   };
 
   // Weather along the active route at the truck's ETA (Figma "Weather v2"): chips on the map, a line in the card.
-  useRouteWeather(active?.route, truck.trailer_empty);
+  useRouteWeather(active?.route, truck.trailer_empty, coordsRef);
   const wxPoints = useRouteWeatherStore((st) => st.points);
   const wxChips = useMemo(() => (active ? weatherChipsOf(wxPoints, active.route) : []), [wxPoints, active]);
 
