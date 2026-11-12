@@ -13,6 +13,7 @@ export const APP_KEYS = [
   "ai_consent_v2",
   "onboarded_v1",
   "lang_v1",
+  "intro_seen_v1",
   "height_confirmed_v1",
   "how_to_seen_v1",
   "theme_pref_v1",

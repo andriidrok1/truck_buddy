@@ -1,6 +1,6 @@
 // "Delete my data" on the truck screen: after the server copy is gone, the phone goes back to how a fresh install
 // looks. Every key the app writes is removed and every store that read one is reset, so the root layout shows the
-// language screen, then consent, a new anonymous sign-in, and the map sends the driver through onboarding again
+// language screen, the intro, then consent, a new anonymous sign-in, and the map sends the driver through onboarding again
 // (QA 2026-11-05, M-1: language, theme, consent and onboarding stayed, and the code screen came up instead).
 //
 // Not removed: the storage schema stamp (a fresh install writes it on its first start too) and downloaded offline
@@ -22,6 +22,7 @@ import { forgetHeight } from "../truck/heightConfirmed";
 import { removeAllAppKeys } from "../utils/storage";
 import { markWipePending } from "../utils/storage/pendingWipe";
 import { forgetHowTo } from "./howTo";
+import { forgetIntro } from "./intro";
 import { clearSavedRoute } from "./routeStore";
 import { forgetSettings } from "./settingsStore";
 import { useTripStore } from "./tripStore";
@@ -47,15 +48,19 @@ export async function resetToFirstLaunch(): Promise<string[]> {
   // The gates last, language first: once `chosen` is false the layout shows the language screen, so the token
   // removal below cannot start an automatic sign-in behind it.
   await step(forgetLang);
+  await step(forgetIntro);
   await step(forgetConsent);
   await step(forgetIdentity);
   return removeAllAppKeys();
 }
 
 /** Which screen the root layout shows (app/_layout.tsx): the gates in first-launch order, then the app's stack. */
-export type RootScreen = "language" | "consent" | "device" | "app";
-export function rootScreen(langChosen: boolean, consent: "loading" | "yes" | "no", auth: "loading" | "in" | "out"): RootScreen {
+export type RootScreen = "language" | "intro" | "consent" | "device" | "app";
+/** `introSeen`: src/state/intro.ts. A driver who has already agreed to the consent screen is past first launch and
+ *  never gets the intro, whatever the flag says (an install from before the intro existed). */
+export function rootScreen(langChosen: boolean, introSeen: boolean, consent: "loading" | "yes" | "no", auth: "loading" | "in" | "out"): RootScreen {
   if (!langChosen) return "language";
+  if (!introSeen && consent !== "yes") return "intro";
   if (consent !== "yes") return "consent";
   if (auth !== "in") return "device";
   return "app";

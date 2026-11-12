@@ -13,6 +13,7 @@ import { loadLang, setLang, useLangStore } from "../i18n";
 import { tripLog } from "../net/tripEvents";
 import { deleteMyData, resetToFirstLaunch, rootScreen } from "../state/firstLaunch";
 import { loadHowTo, markHowToSeen } from "../state/howTo";
+import { loadIntro, markIntroSeen } from "../state/intro";
 import { saveActiveRoute } from "../state/routeStore";
 import { setSpeedAlerts, useSettings } from "../state/settingsStore";
 import { loadThemePref, setThemePref, useThemePref } from "../theme";
@@ -41,6 +42,7 @@ async function fillTheAppUp() {
   await setOnboarded();
   await confirmHeight();
   await markHowToSeen();
+  await markIntroSeen();
   await saveProfile({ ...DEFAULT_TRUCK, height_in: 168, driver_name: "Mike" });
   setSpeedAlerts(true);
   const place = { id: "p1", name: "Pilot", category: "truck_stop", lat: 38.55, lng: -121.42, tags: [] };
@@ -63,7 +65,7 @@ test("Delete my data: storage holds no app key, every store is back to a fresh i
   const consent = await renderHook(() => useConsent());
   const auth = await renderHook(() => useAuthState());
   await flush();
-  expect(rootScreen(useLangStore.getState().chosen, consent.result.current, auth.result.current)).toBe("app");
+  expect(rootScreen(useLangStore.getState().chosen, await loadIntro(), consent.result.current, auth.result.current)).toBe("app");
 
   const router = { canDismiss: jest.fn(() => true), dismissAll: jest.fn() };
   const clearServer = jest.fn(async () => ({ deleted: 3 }));
@@ -87,6 +89,7 @@ test("Delete my data: storage holds no app key, every store is back to a fresh i
   expect(isHeightConfirmed()).toBe(false);
   expect(await isOnboarded()).toBe(false);
   expect(await loadHowTo()).toBeNull(); // the next onboarding shows "How to use" again
+  expect(await loadIntro()).toBe(false); // and the intro comes back after the language screen
   expect(getTruckProfile()).toEqual(DEFAULT_TRUCK);
   expect(useSettings.getState().speedAlerts).toBe(false);
   expect(tripLog.size()).toBe(0);
@@ -95,14 +98,22 @@ test("Delete my data: storage holds no app key, every store is back to a fresh i
   await auth.rerender({});
   expect(consent.result.current).toBe("no");
   expect(auth.result.current).toBe("out");
-  expect(rootScreen(useLangStore.getState().chosen, consent.result.current, auth.result.current)).toBe("language");
+  expect(rootScreen(useLangStore.getState().chosen, await loadIntro(), consent.result.current, auth.result.current)).toBe("language");
 });
 
-test("the gates come in first-launch order: language, consent, a new anonymous sign-in, then the app", () => {
-  expect(rootScreen(false, "no", "out")).toBe("language");
-  expect(rootScreen(true, "no", "out")).toBe("consent");
-  expect(rootScreen(true, "yes", "out")).toBe("device");
-  expect(rootScreen(true, "yes", "in")).toBe("app");
+test("the gates come in first-launch order: language, the intro, consent, a new anonymous sign-in, then the app", () => {
+  expect(rootScreen(false, false, "no", "out")).toBe("language");
+  expect(rootScreen(true, false, "no", "out")).toBe("intro");
+  expect(rootScreen(true, true, "no", "out")).toBe("consent");
+  expect(rootScreen(true, true, "yes", "out")).toBe("device");
+  expect(rootScreen(true, true, "yes", "in")).toBe("app");
+  // The language screen comes first even when the intro was seen (a wipe that left the intro key behind).
+  expect(rootScreen(false, true, "no", "out")).toBe("language");
+});
+
+test("a driver who agreed to the consent screen before the intro existed never gets it", () => {
+  expect(rootScreen(true, false, "yes", "out")).toBe("device");
+  expect(rootScreen(true, false, "yes", "in")).toBe("app");
 });
 
 test("no server, nothing deleted: the phone keeps its data and the driver gets the error", async () => {
