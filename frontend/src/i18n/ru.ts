@@ -387,7 +387,6 @@ export const RU: Record<string, string> = {
   "Clear memory": "Очистить память",
   "Clear memory?": "Очистить память?",
   "Clear": "Очистить",
-  "Your copilot will forget everything you've talked about.": "Штурман забудет всё, о чём вы говорили.",
   "Nothing yet. Talk to your copilot and it will remember.": "Пока пусто. Поговори со штурманом, и он запомнит.",
   "Today": "Сегодня",
   "Yesterday": "Вчера",

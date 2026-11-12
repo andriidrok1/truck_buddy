@@ -54,7 +54,7 @@ const TRUCK = { ...DEFAULT_TRUCK, height_in: 168, driver_name: "Mike" };
 const DELETED = { ok: true, deleted: 3, trip_events: 2, profile: true, sessions: 1, apple_revoked: null as boolean | null };
 
 /** A driver signed in with Google, onboarded, on a Russian phone. */
-async function signedIn(via: "account" | "code" = "account") {
+async function signedIn(via: "account" | "code" | "device" = "account") {
   await AsyncStorage.clear();
   mockSecure.clear();
   __resetWipeGate();
@@ -672,20 +672,26 @@ describe("a rejected token while the DELETE is on the wire (re-review of #173, L
 });
 
 describe("Clear memory", () => {
-  test("an account clears only the conversations (DELETE /api/memory/history); the truck stays", async () => {
-    await signedIn("account");
+  // Emulator QA of #173: an access-code sign-in sent DELETE /api/memory ("Delete my data"), which took the stored
+  // truck on the server while the phone kept showing it as synced.
+  test.each(["account", "code", "device"] as const)("%s: only the conversations go (DELETE /api/memory/history); the truck stays", async (via) => {
+    await signedIn(via);
+    const truckOnDisk = await AsyncStorage.getItem("truck_profile_v1");
+    expect(truckOnDisk).not.toBeNull();
     answers[key("DELETE", "/memory/history")] = reply(200, { deleted: 4, facts: true });
     await clearConversations();
     expect(calls).toEqual([{ path: "/memory/history", method: "DELETE", auth: "Bearer ACC" }]);
+    expect(calls.some((c) => c.method === "DELETE" && c.path === "/memory")).toBe(false);
     expect(getTruckProfile().height_in).toBe(168);
+    expect(await AsyncStorage.getItem("truck_profile_v1")).toBe(truckOnDisk);
     expect(getToken()).toBe("ACC");
   });
 
-  test("an access-code sign-in keeps the older DELETE /api/memory", async () => {
+  test("a refusal reaches the history screen as an error and still sends no DELETE /api/memory", async () => {
     await signedIn("code");
-    answers[key("DELETE", "/memory")] = reply(200, { deleted: 4 });
-    await clearConversations();
-    expect(calls).toEqual([{ path: "/memory", method: "DELETE", auth: "Bearer ACC" }]);
+    answers[key("DELETE", "/memory/history")] = reply(503, { detail: "Memory is unavailable right now" });
+    await expect(clearConversations()).rejects.toBeTruthy();
+    expect(calls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual(["/memory/history"]);
     expect(getTruckProfile().height_in).toBe(168);
   });
 });

@@ -420,9 +420,7 @@ export async function redeemAccessCode(code: string) {
 
 export const api = {
   memory: () => request<{ turns: MemoryTurn[] }>(`/memory`),
-  /** "Delete my data" for an access-code sign-in: the conversations, the facts, the trip events and the truck. */
-  clearMemory: () => request<{ deleted: number }>(`/memory`, { method: "DELETE" }),
-  /** "Clear memory" for an account: the conversations and what the copilot learned from them. The truck profile,
+  /** "Clear memory", for any sign-in: the conversations and what the copilot learned from them. The truck profile,
    *  the trip events and the visit counts stay. */
   clearHistory: () => request<components["schemas"]["HistoryClearResponse"]>(`/memory/history`, { method: "DELETE" }),
   /** Signs every phone of the account out, this one included. */

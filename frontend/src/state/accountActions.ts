@@ -3,7 +3,7 @@
 // (src/state/firstLaunch.ts); none of these is offered to it.
 
 import { api, ApiError, isNoAnswer, logout, tokenState, why401, type AccountDeleted, type RefusalCode } from "../api";
-import { getToken, identitySub, signedInWithAccount } from "../auth";
+import { getToken, identitySub } from "../auth";
 import { storage } from "../utils/storage";
 import { serverThenReset, SignedOutByServer, signedOutReset, WipeBusy, type Nav } from "./firstLaunch";
 
@@ -158,10 +158,11 @@ export async function deleteAccount(router: Nav, call: () => Promise<AccountDele
   return { ok: false, reason: "failed" };
 }
 
-/** "Clear memory" on the history screen. An account clears the conversations and what the copilot learned from them
- *  (DELETE /api/memory/history); the truck profile and the trips stay. An access-code sign-in has only the older
- *  full wipe (DELETE /api/memory), as before. */
-export const clearConversations = (): Promise<unknown> => (signedInWithAccount() ? api.clearHistory() : api.clearMemory());
+/** "Clear memory" on the history screen, for every kind of sign-in (account, access code, device): the conversations
+ *  and what the copilot learned from them (DELETE /api/memory/history, any driver token). The truck profile, the
+ *  trips and the visit counts stay, on the server and on the phone. DELETE /api/memory is "Delete my data" only: it
+ *  takes the stored truck too. */
+export const clearConversations = (): Promise<unknown> => api.clearHistory();
 
 const REFUSED = "This account can't be deleted from the app. Write to support@truckbuddy.io.";
 /** The 409 `last_owner` (backend services/account_api.py LAST_OWNER): the same words, translated in ru.ts. After it
