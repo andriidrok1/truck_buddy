@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { act, renderHook } from "@testing-library/react-native";
 
 import { api } from "../api";
-import { getToken, loadToken, setToken, useAuthState } from "../auth";
+import { getToken, loadToken, setToken, tokenHold, useAuthState } from "../auth";
 import { giveConsent, useConsent } from "../consent";
 import { saveProfile } from "../data/profile";
 import { loadEldToken, setEldToken } from "../eld";
@@ -115,6 +115,21 @@ test("no server, nothing deleted: the phone keeps its data and the driver gets t
   expect(ok).toBe(false);
   expect(router.dismissAll).not.toHaveBeenCalled();
   expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru"));
+});
+
+test("the router throws after the server wipe: the hold goes and the trip log sends again all the same (review of #173, L-1)", async () => {
+  await setToken("tok", "driver", "code");
+  const router = { canDismiss: () => true, dismissAll: jest.fn(() => {
+    throw new Error("navigator gone");
+  }) };
+  const resume = jest.spyOn(tripLog, "resume");
+  try {
+    await expect(deleteMyData(router, async () => ({ deleted: 1 }))).rejects.toThrow("navigator gone");
+    expect(tokenHold()).toBeNull();
+    expect(resume).toHaveBeenCalled();
+  } finally {
+    resume.mockRestore();
+  }
 });
 
 describe("the delete and the old token (review of #129)", () => {

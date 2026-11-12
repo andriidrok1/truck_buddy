@@ -256,10 +256,14 @@ async function wipeOnce<T>(router: Nav, clearServer: () => Promise<T>): Promise<
     tripLog.resume();
     return { ok: false, error };
   }
-  if (router.canDismiss()) router.dismissAll();
-  await resetToFirstLaunch(); // releases the hold once the token is gone (forgetIdentity)
-  release(); // in case that step failed
-  tripLog.resume(); // empty now; the next events belong to the new identity
+  try {
+    if (router.canDismiss()) router.dismissAll();
+    await resetToFirstLaunch();
+  } finally {
+    // Whatever threw above (review of #173, L-1): the held requests and the trip log never stay stopped.
+    release(); // the queued requests go now, without the token
+    tripLog.resume(); // empty now; the next events belong to the new identity
+  }
   return { ok: true, value };
 }
 
