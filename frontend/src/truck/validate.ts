@@ -61,7 +61,7 @@ export function saidHeight(transcript: string): boolean {
   return (
     /(^|[^\d.,])1[0-4](?!\d)(?![,.]\d{3})/.test(transcript) ||
     /\b(ten|eleven|twelve|thirteen|fourteen|height|tall|high)\b/i.test(transcript) ||
-    /десят|одиннадцат|двенадцат|тринадцат|четырнадцат|высот/i.test(transcript)
+    /(^|[^а-яё])(десять|десяти|одиннадцат|двенадцат|тринадцат|четырнадцат)|высот/i.test(transcript)
   );
 }
 

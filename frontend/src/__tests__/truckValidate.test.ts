@@ -26,7 +26,7 @@ test("the heard line shows only what the driver said, never a prefilled default"
 });
 
 test("saidHeight: only the driver's own words count as a height", () => {
-  for (const yes of ["13 foot 6", "13'6\"", "It's 13 6, 53 foot trailer, 80,000 pounds", "thirteen six", "Fourteen feet", "13.6", "тринадцать шесть", "высота 13 и 6", "about 12 feet tall"]) {
+  for (const yes of ["13 foot 6", "13'6\"", "It's 13 6, 53 foot trailer, 80,000 pounds", "thirteen six", "Fourteen feet", "13.6", "тринадцать шесть", "десять футов", "высота 13 и 6", "about 12 feet tall"]) {
     expect([yes, saidHeight(yes)]).toEqual([yes, true]);
   }
   for (const no of ["80,000 pounds, no hazmat", "53 foot trailer", "no hazmat", "14,000 pounds", "восемьдесят тысяч фунтов", "trailer is 48, weight 72000", ""]) {
