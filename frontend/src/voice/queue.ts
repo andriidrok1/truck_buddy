@@ -29,6 +29,9 @@ export type SpeechItem = {
   kind: SpeechKind;
   /** The clip the server already made for this line (a parking answer): played as is, no /speak call. */
   audioUrl?: string;
+  /** Still worth saying? Asked when the line's turn comes, which can be long after it was queued: a parking
+   *  verdict that waited behind a driver's turn must not be said about the destination before this one. */
+  valid?: () => boolean;
 };
 
 export type QueuedSpeech = SpeechItem & {

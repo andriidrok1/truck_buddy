@@ -96,7 +96,8 @@ export function useSpeechQueue(
         // Cut off (preempted) while the audio was being made: play the newer line instead.
         if (playing.current !== item) continue;
         // The audio took its time and the line is stale now ("Turn right." after the turn): not said at all.
-        if (isExpired(item, Date.now())) {
+        // Or it is about something that is gone (its own check): the same.
+        if (isExpired(item, Date.now()) || (item.valid && !item.valid())) {
           playing.current = null;
           q.dropTaken(item);
           continue;
@@ -105,6 +106,7 @@ export function useSpeechQueue(
         // turn again instead of starting over an open mic or a reply (nothing of ours is on the player yet).
         if (busyRef.current() || isRecording() || isSpeaking()) {
           playing.current = null;
+          if (cloud) item.audioUrl = cloud; // the clip is made: no second /speak wait when the air is free
           q.putBack(item);
           break;
         }

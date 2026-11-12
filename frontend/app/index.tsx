@@ -165,9 +165,14 @@ export default function MapScreen() {
   // to add a stop at Pilot Fernley?") opens the mic for a few seconds once it has played:
   // listenForAnswer, defined further down (it needs the wake word and the mic), through this ref.
   const nudgeAnswer = useRef<() => void>(() => {});
+  // A tap on the mic (or a typed request) stops the line on air, and the queue goes on to the next one in the
+  // same tick: before the phase reads "listening" and before the recorder is up. A line with a ready clip (a
+  // parking verdict) then started over the opening mic. Until this time the queue counts the copilot as busy.
+  const turnStarting = useRef(0);
+  const TURN_STARTING_MS = 1500;
   const { say, clear: clearSpeech } = useSpeechQueue(
     voice,
-    () => phaseRef.current === "listening" || phaseRef.current === "thinking",
+    () => phaseRef.current === "listening" || phaseRef.current === "thinking" || Date.now() < turnStarting.current,
     (item) => {
       showLine(item.text);
       recorder.mark("said", item.text);
@@ -322,7 +327,12 @@ export default function MapScreen() {
       // clip failed it asks /speak itself or uses the phone's voice.
       const audioUrl = await audio.then((r) => absoluteUrl(r.audio_url), () => undefined);
       if (isCurrent() && trip().active?.place.id === place.id) {
-        say(text, { priority: PRIORITY.MANEUVER, kind: "system", key: "parking-verdict", ttlMs: 30000, audioUrl });
+        // It can wait behind a turn call and a whole driver's turn: a minute to be said in, and only while
+        // this is still the destination (the queue asks again when its turn comes).
+        say(text, {
+          priority: PRIORITY.MANEUVER, kind: "system", key: "parking-verdict", ttlMs: 60000, audioUrl,
+          valid: () => trip().active?.place.id === place.id,
+        });
       }
     } catch {
       // parking stays "unclear"; the route still works
@@ -458,6 +468,7 @@ export default function MapScreen() {
     // "Where to?" box took it after every typed request and kept the keyboard over the answer.
     searchBlurGuard.current = true;
     setTimeout(() => (searchBlurGuard.current = false), 1500);
+    turnStarting.current = Date.now() + TURN_STARTING_MS;
     voice.stopSpeaking();
     setCaption(null);
     turn.text(text);
@@ -518,6 +529,7 @@ export default function MapScreen() {
     }
     // Barge-in: a tap while the copilot is still working drops that turn and listens again (same session,
     // so "no, the other one" lands where it should); useCopilotTurn does the dropping.
+    turnStarting.current = Date.now() + TURN_STARTING_MS;
     voice.stopSpeaking();
     // The permission round trip only until it is known granted: the tap must start recording at once.
     if (!voice.micKnownGranted()) {
@@ -756,7 +768,9 @@ export default function MapScreen() {
           // is only shown, as before.
           say: async (text, url) => {
             const audioUrl = toAudio(url);
-            if (audioUrl) say(text, { priority: PRIORITY.MANEUVER, kind: "system", key: "parking-answer", ttlMs: 30000, audioUrl });
+            // Only while the place it is about is still on screen (the destination, the list or the pins).
+            const stillThere = () => [trip().active?.place, ...trip().options, ...trip().places()].some((p) => p?.id === placeId);
+            if (audioUrl) say(text, { priority: PRIORITY.MANEUVER, kind: "system", key: "parking-answer", ttlMs: 30000, audioUrl, valid: stillThere });
             else showLine(text);
           },
         });

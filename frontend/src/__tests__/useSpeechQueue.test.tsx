@@ -163,3 +163,42 @@ test("a parking line with the server's clip waits for the turn call on air and p
   expect(speak).toHaveBeenCalledTimes(1); // the verdict's clip was already made
   expect(q.shown).toEqual(["In half a mile, turn right.", "Parking looks good there."]);
 });
+
+test("a parking verdict whose destination changed while it waited is dropped, not said about the old place", async () => {
+  const q = await setup();
+  let destination = "A";
+  q.state.busy = true; // the driver is asking for another place
+  q.say("Parking looks tight there.", {
+    priority: PRIORITY.MANEUVER, kind: "system", key: "parking-verdict", ttlMs: 60000, audioUrl: "https://ci.invalid/audio/verdict.mp3",
+    valid: () => destination === "A",
+  });
+  await settle();
+  expect(q.played).toEqual([]);
+  destination = "B";
+  q.state.busy = false;
+  await act(async () => {
+    jest.advanceTimersByTime(600); // the idle poll takes the line again
+  });
+  await settle();
+  expect(q.played).toEqual([]);
+  expect(q.shown).toEqual([]);
+  expect(q.drops).toEqual([["Parking looks tight there.", "expired"]]);
+});
+
+test("a line held back after its audio was made keeps the clip: one /speak call in all", async () => {
+  const q = await setup();
+  const first = pendingSpeak();
+  q.say("Rerouting.", SYSTEM);
+  await settle();
+  q.state.busy = true; // the mic opened while the audio was being made
+  first.resolve();
+  await settle();
+  expect(q.played).toEqual([]);
+  q.state.busy = false;
+  await act(async () => {
+    jest.advanceTimersByTime(600);
+  });
+  await settle();
+  expect(q.played).toEqual(["https://ci.invalid/audio/a.mp3"]);
+  expect(speak).toHaveBeenCalledTimes(1);
+});
