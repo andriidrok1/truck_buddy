@@ -56,7 +56,9 @@ const SHEETS: Record<Sheet, { testID: string; title: string; message: string; co
 const DELETE_NOT_REMOVED = "Couldn't delete your account. Nothing was removed. Try again.";
 const DELETE_FAILED = "Couldn't delete your account. Try again.";
 const DELETE_UNCONFIRMED = "We couldn't confirm. Check your connection and try again.";
-const DELETE_ERROR = { not_removed: DELETE_NOT_REMOVED, failed: DELETE_FAILED, unconfirmed: DELETE_UNCONFIRMED } as const;
+/** Another deletion on this phone is still running (a second truck screen); nothing was sent for this one. */
+const DELETE_BUSY = "Another deletion is still running. Try again in a minute.";
+const DELETE_ERROR = { not_removed: DELETE_NOT_REMOVED, failed: DELETE_FAILED, unconfirmed: DELETE_UNCONFIRMED, busy: DELETE_BUSY } as const;
 const EVERYWHERE_FAILED = "Couldn't reach the server. You're still signed in everywhere. Try again.";
 const EVERYWHERE_UNCONFIRMED = "We couldn't confirm that every phone was signed out. Check your connection and try again.";
 
@@ -159,9 +161,9 @@ export function AccountActions({ router }: { router: Nav }) {
 function CodeActions({ router }: { router: Nav }) {
   const { colors } = useTheme();
   const onDelete = async () => {
-    if (!(await deleteMyData(router))) {
-      Alert.alert(t("Couldn't reach the server"), t("Your data is still there. Check your connection and try again."));
-    }
+    const out = await deleteMyData(router);
+    if (out === "failed") Alert.alert(t("Couldn't reach the server"), t("Your data is still there. Check your connection and try again."));
+    else if (out === "busy") Alert.alert(t("Delete my data"), t(DELETE_BUSY));
   };
   return (
     <View>

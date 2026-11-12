@@ -4,7 +4,7 @@
 
 import { api, ApiError, isNoAnswer, isNoLongerRegistered, logout, tokenState, type AccountDeleted, type RefusalCode } from "../api";
 import { getToken, signedInWithAccount } from "../auth";
-import { serverThenReset, signedOutReset, type Nav } from "./firstLaunch";
+import { serverThenReset, signedOutReset, WipeBusy, type Nav } from "./firstLaunch";
 
 /** How long "Sign out" waits for the server to close this phone's session before signing out anyway. */
 export const LOGOUT_WAIT_MS = 3000;
@@ -66,7 +66,9 @@ export type DeleteOutcome =
   | { ok: false; reason: "failed" }
   /** No answer to the DELETE, and the check could not settle it (the account still answers, which may only mean the
    *  deletion is still running, or the check got no answer either). Nothing on the phone was touched. */
-  | { ok: false; reason: "unconfirmed" };
+  | { ok: false; reason: "unconfirmed" }
+  /** "Delete my data" is under way on this phone: nothing was sent for this one. */
+  | { ok: false; reason: "busy" };
 
 class Unconfirmed extends Error {}
 
@@ -103,7 +105,7 @@ export async function deleteAccount(router: Nav, call: () => Promise<AccountDele
       throw new Unconfirmed();
     }
   };
-  const r = await serverThenReset(router, checked);
+  const r = await serverThenReset(router, checked, "account");
   if (r.ok) {
     const appleRevoked = r.value?.apple_revoked ?? null;
     // Apple's settings keep listing the app until the driver removes it there; nothing to show on a fresh phone.
@@ -111,6 +113,7 @@ export async function deleteAccount(router: Nav, call: () => Promise<AccountDele
     return { ok: true, appleRevoked };
   }
   const e = r.error;
+  if (e instanceof WipeBusy) return { ok: false, reason: "busy" };
   if (e instanceof Unconfirmed) return { ok: false, reason: "unconfirmed" };
   if (!(e instanceof ApiError)) return { ok: false, reason: "unconfirmed" }; // no answer and no token to check with
   if (e.status === 409) {

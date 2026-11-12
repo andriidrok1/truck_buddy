@@ -184,8 +184,13 @@ export function rootScreen(
 export type Nav = { canDismiss: () => boolean; dismissAll: () => void };
 
 // One server wipe at a time for the whole app, whichever screen or button started it (review of #173, M1): a second
-// truck screen, or "Delete my data" pressed while "Delete account" runs, gets the wipe already under way.
-let wiping: Promise<{ ok: true; value: unknown } | { ok: false; error: unknown }> | null = null;
+// truck screen gets the wipe already under way. A wipe of the other kind ("Delete my data" while "Delete account"
+// runs) gets WipeBusy, never the result of a wipe it did not ask for.
+export type WipeKind = "data" | "account";
+export type WipeResult<T> = { ok: true; value: T } | { ok: false; error: unknown };
+/** Another kind of server wipe is under way: nothing was sent for this one. */
+export class WipeBusy extends Error {}
+let wiping: { kind: WipeKind; result: Promise<WipeResult<unknown>> } | null = null;
 const wipeListeners = new Set<() => void>();
 const wipeChanged = () => wipeListeners.forEach((l) => l());
 
@@ -211,21 +216,23 @@ export function useWipeRunning(): boolean {
  * not onboarded to onboarding), then the fresh-install state. When the server call fails nothing is touched and the
  * error comes back to the caller.
  *
- * Single-flight: a call made while another wipe runs does not send anything and gets that wipe's result (its
- * `value` is what the first caller's `clearServer` returned).
+ * Single-flight: a call made while a wipe of the same `kind` runs does not send anything and gets that wipe's result
+ * (its `value` is what the first caller's `clearServer` returned); one of the other kind gets WipeBusy.
  */
-export function serverThenReset<T>(router: Nav, clearServer: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
+export function serverThenReset<T>(router: Nav, clearServer: () => Promise<T>, kind: WipeKind): Promise<WipeResult<T>> {
+  if (wiping && wiping.kind !== kind) return Promise.resolve({ ok: false, error: new WipeBusy() });
   if (!wiping) {
-    wiping = wipeOnce(router, clearServer).finally(() => {
+    const result = wipeOnce(router, clearServer).finally(() => {
       wiping = null;
       wipeChanged();
     });
+    wiping = { kind, result };
     wipeChanged();
   }
-  return wiping as Promise<{ ok: true; value: T } | { ok: false; error: unknown }>;
+  return wiping.result as Promise<WipeResult<T>>;
 }
 
-async function wipeOnce<T>(router: Nav, clearServer: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
+async function wipeOnce<T>(router: Nav, clearServer: () => Promise<T>): Promise<WipeResult<T>> {
   // Nothing may reach the server with the old token once the delete is under way: an event posted after it would
   // bring trip rows back for the driver just wiped (review of #129). The trip log stops sending (a batch already on
   // the wire lands first, before the DELETE), the DELETE takes the token with it, and every other request waits for
@@ -267,8 +274,13 @@ async function wipeOnce<T>(router: Nav, clearServer: () => Promise<T>): Promise<
   return { ok: true, value };
 }
 
-/** "Delete my data" for an access-code sign-in (DELETE /api/memory). False when the server could not be reached:
- *  nothing is touched then. */
-export async function deleteMyData(router: Nav, clearServer: () => Promise<unknown> = wipeServerData): Promise<boolean> {
-  return (await serverThenReset(router, clearServer)).ok;
+/** How "Delete my data" ended. "done": the phone is a fresh install. "failed": the server could not be reached or
+ *  answered with an error; nothing on the phone was touched. "busy": "Delete account" is under way. */
+export type DataOutcome = "done" | "failed" | "busy";
+
+/** "Delete my data" for an access-code sign-in (DELETE /api/memory). */
+export async function deleteMyData(router: Nav, clearServer: () => Promise<unknown> = wipeServerData): Promise<DataOutcome> {
+  const r = await serverThenReset(router, clearServer, "data");
+  if (r.ok) return "done";
+  return r.error instanceof WipeBusy ? "busy" : "failed";
 }

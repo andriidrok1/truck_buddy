@@ -421,7 +421,7 @@ describe("Delete account and data", () => {
 });
 
 describe("one wipe at a time (review of #173, M1)", () => {
-  test("two deletes at once (a second truck screen): one DELETE, both get its result, nothing else goes out meanwhile", async () => {
+  test("two deletes at once (a second truck screen): one DELETE, both get its result, Delete my data is busy, nothing else goes out meanwhile", async () => {
     await signedIn();
     let answer: (r: Response) => void = () => {};
     answers[key("DELETE", "/account")] = new Promise<Response>((res) => (answer = res));
@@ -436,11 +436,23 @@ describe("one wipe at a time (review of #173, M1)", () => {
     answer(reply(200, { ok: true, apple_revoked: null }));
     expect(await first).toEqual({ ok: true, appleRevoked: null });
     expect(await second).toEqual({ ok: true, appleRevoked: null });
-    expect(await third).toBe(true);
+    expect(await third).toBe("busy"); // never the result of a wipe it did not ask for
     await other;
     expect(wipeRunning()).toBe(false);
     expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1);
     expect(calls.map((c) => c.path)).not.toContain("/memory/history");
+  });
+
+  test("Delete account while Delete my data runs: busy, nothing sent for it, the data wipe ends on its own", async () => {
+    await signedIn("code");
+    let answer: (r: Response) => void = () => {};
+    answers[key("DELETE", "/memory")] = new Promise<Response>((res) => (answer = res));
+    const data = deleteMyData(router());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await deleteAccount(router())).toEqual({ ok: false, reason: "busy" });
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["DELETE /memory"]);
+    answer(reply(200, { deleted: 1 }));
+    expect(await data).toBe("done");
   });
 
   test("holdToken: a second caller cannot take down a hold it did not put up", async () => {

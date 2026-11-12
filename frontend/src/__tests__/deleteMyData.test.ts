@@ -71,11 +71,11 @@ test("Delete my data: storage holds no app key, every store is back to a fresh i
 
   const router = { canDismiss: jest.fn(() => true), dismissAll: jest.fn() };
   const clearServer = jest.fn(async () => ({ deleted: 3 }));
-  let ok = false;
+  let ok = "";
   await act(async () => {
     ok = await deleteMyData(router, clearServer);
   });
-  expect(ok).toBe(true);
+  expect(ok).toBe("done");
 
   expect(clearServer).toHaveBeenCalledTimes(1);
   expect(router.dismissAll).toHaveBeenCalledTimes(1);
@@ -112,7 +112,7 @@ test("no server, nothing deleted: the phone keeps its data and the driver gets t
   const ok = await deleteMyData(router, async () => {
     throw new Error("offline");
   });
-  expect(ok).toBe(false);
+  expect(ok).toBe("failed");
   expect(router.dismissAll).not.toHaveBeenCalled();
   expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru"));
 });
@@ -170,7 +170,7 @@ describe("the delete and the old token (review of #129)", () => {
     tripLog.log("question", { text: "before" });
     const early = tripLog.flush(); // on the wire before the driver confirmed
     const router = { canDismiss: () => false, dismissAll: jest.fn() };
-    let done: Promise<boolean> = Promise.resolve(false);
+    let done: Promise<string> = Promise.resolve("");
     await act(async () => {
       done = deleteMyData(router);
       await early;
@@ -189,7 +189,7 @@ describe("the delete and the old token (review of #129)", () => {
 
     await act(async () => {
       finishDelete(true);
-      expect(await done).toBe(true);
+      expect(await done).toBe("done");
       await queued; // went out after the wipe, without a token
     });
     tripLog.log("question", { text: "after" });
@@ -204,7 +204,7 @@ describe("the delete and the old token (review of #129)", () => {
   test("the server can't be reached: the token and the trip log come back, nothing local is wiped", async () => {
     await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
     const router = { canDismiss: () => true, dismissAll: jest.fn() };
-    let done: Promise<boolean> = Promise.resolve(true);
+    let done: Promise<string> = Promise.resolve("");
     let queued: Promise<unknown> = Promise.resolve();
     await act(async () => {
       done = deleteMyData(router);
@@ -214,7 +214,7 @@ describe("the delete and the old token (review of #129)", () => {
       await flush();
       expect(calls.map((c) => c.method)).toEqual(["DELETE"]);
       finishDelete(false);
-      expect(await done).toBe(false);
+      expect(await done).toBe("failed");
       await queued;
     });
     // Same identity: the waiting request went with the old token, nothing signed the phone in anew.
@@ -273,11 +273,11 @@ describe("Delete my data with an expired access token (re-review of #172)", () =
     await setToken(EXPIRED, "driver", "code", "R1");
     server("ok");
     const router = { canDismiss: () => false, dismissAll: jest.fn() };
-    let ok = false;
+    let ok = "";
     await act(async () => {
       ok = await within(deleteMyData(router));
     });
-    expect(ok).toBe(true);
+    expect(ok).toBe("done");
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["DELETE /memory", "POST /auth/refresh", "DELETE /memory"]);
     expect(calls[2].auth).toBe("Bearer FRESH");
     expect(getToken()).toBeNull();
@@ -289,11 +289,11 @@ describe("Delete my data with an expired access token (re-review of #172)", () =
     await setToken(EXPIRED, "driver", "code", "R1");
     server("refused");
     const router = { canDismiss: () => true, dismissAll: jest.fn() };
-    let ok = true;
+    let ok = "";
     await act(async () => {
       ok = await within(deleteMyData(router));
     });
-    expect(ok).toBe(false);
+    expect(ok).toBe("failed");
     expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1); // one retry only after a renewal that worked
     expect(router.dismissAll).not.toHaveBeenCalled();
     expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru"));

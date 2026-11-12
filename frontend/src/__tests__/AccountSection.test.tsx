@@ -33,7 +33,7 @@ jest.mock("react-native-reanimated", () => {
 jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemAsync: async () => {}, deleteItemAsync: async () => {} }));
 jest.mock("../state/accountActions", () => ({ signOut: jest.fn(async () => {}), signOutEverywhere: jest.fn(async () => "done"), deleteAccount: jest.fn() }));
-jest.mock("../state/firstLaunch", () => ({ ...jest.requireActual("../state/firstLaunch"), deleteMyData: jest.fn(async () => true), signedOutReset: jest.fn(async () => []) }));
+jest.mock("../state/firstLaunch", () => ({ ...jest.requireActual("../state/firstLaunch"), deleteMyData: jest.fn(async () => "done"), signedOutReset: jest.fn(async () => []) }));
 jest.mock("../api", () => {
   const actual = jest.requireActual("../api");
   return { ...actual, api: { ...actual.api, saveProfile: jest.fn(async (p: unknown) => p) } };
