@@ -66,13 +66,15 @@ async def by_sub(sub: str) -> Optional[tuple[str, Optional[str]]]:
     return tuple(r) if r else None
 
 
-async def apple_refresh_set(sub: str, sealed: str) -> None:
-    """Keeps Apple's refresh token for the account (encrypted by the caller, services/apple.py)."""
+async def apple_refresh_set(sub: str, sealed: Optional[str]) -> bool:
+    """Keeps Apple's refresh token for the account (encrypted by the caller, services/apple.py; None forgets it).
+    False when there is no account under this sub any more."""
     if db.store() == "sqlite":
-        await db._sq_run(lambda con: con.execute("UPDATE accounts SET apple_refresh_enc = ? WHERE sub = ?", (sealed, sub)))
+        n = await db._sq_run(lambda con: con.execute("UPDATE accounts SET apple_refresh_enc = ? WHERE sub = ?", (sealed, sub)).rowcount)
     else:
         pool = await db._db()
-        await pool.execute("UPDATE accounts SET apple_refresh_enc = $1 WHERE sub = $2", sealed, sub)
+        n = int((await pool.execute("UPDATE accounts SET apple_refresh_enc = $1 WHERE sub = $2", sealed, sub)).split()[-1])
+    return n > 0
 
 
 # ---- transactions on either engine ---------------------------------------------------------------------------

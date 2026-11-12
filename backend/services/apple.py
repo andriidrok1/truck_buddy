@@ -115,9 +115,15 @@ async def _remember(sub: str, code: str, client_id: str) -> None:
         # The client id goes in with the token: Apple revokes a token only for the client it was issued to, and
         # APPLE_AUDIENCES may list more than one.
         sealed = sec.encrypt(json.dumps({"token": token, "client_id": client_id}))
-        await accounts.apple_refresh_set(sub, sealed)
+        kept = await accounts.apple_refresh_set(sub, sealed)
     except Exception as e:  # noqa: BLE001
         logger.warning("apple refresh token not stored for %s: %s", sub, type(e).__name__)
+        return
+    if not kept:
+        # The account was deleted while Apple was answering (the deletion waits for an exchange, but only so long):
+        # nothing will ever revoke this token unless it is revoked now, while it is in hand.
+        outcome = await _revoke(token, client_id, sub)
+        logger.warning("apple refresh token arrived after account %s was deleted: revoked=%s", sub, outcome)
 
 
 def remember_later(sub: str, code: Optional[str], client_id: Optional[str]) -> None:
@@ -169,6 +175,15 @@ async def revoke(sealed: Optional[str], sub: str) -> Optional[bool]:
     try:
         kept = json.loads(sec.decrypt(sealed))
         token, client_id = kept["token"], kept["client_id"]
+    except Exception as e:  # noqa: BLE001 - CREDENTIALS_KEY changed since
+        logger.warning("apple revoke failed for %s: %s", sub, type(e).__name__)
+        return False
+    return await _revoke(token, client_id, sub)
+
+
+async def _revoke(token: str, client_id: str, sub: str) -> bool:
+    """One revoke call at Apple; True when Apple accepted it. Never raises."""
+    try:
         r = await http.client().post(REVOKE_URL, timeout=TIMEOUT_S, data={
             "token": token, "token_type_hint": "refresh_token", "client_id": client_id,
             "client_secret": client_secret(client_id)})
