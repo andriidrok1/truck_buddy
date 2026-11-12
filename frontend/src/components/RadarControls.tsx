@@ -24,6 +24,23 @@ export function MapViewButton({ bottom, active, onPress }: { bottom: number; act
   );
 }
 
+/** "Satellite near the stop · Map" (Figma V9): the map turned satellite on its own; one tap keeps the plain map
+ *  for this stop. */
+export function AutoSatelliteChip({ top, onMap }: { top: number; onMap: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <View pointerEvents="box-none" style={[styles.status, { top }]}>
+      <View testID="auto-satellite" style={[styles.chip, shadow(colors), { backgroundColor: colors.surface }]}>
+        <Icon name="satellite-variant" size={18} color={colors.info} />
+        <Text style={[styles.chipText, { color: colors.onSurface }]}>Satellite near the stop</Text>
+        <PressableScale testID="auto-satellite-off" accessibilityRole="button" hitSlop={12} onPress={onMap} style={styles.chipBtn}>
+          <Text style={[styles.chipText, { color: colors.info }]}>Map</Text>
+        </PressableScale>
+      </View>
+    </View>
+  );
+}
+
 const FORECAST_DOT = "#AF52DE";
 
 const KEY_ROWS = [
@@ -106,6 +123,7 @@ const styles = StyleSheet.create({
   status: { position: "absolute", left: spacing.lg, gap: spacing.sm, alignItems: "flex-start" },
   chip: { minHeight: 40, borderRadius: radius.pill, paddingHorizontal: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.sm },
   chipText: { fontFamily: fonts.bold, fontSize: 14 },
+  chipBtn: { paddingHorizontal: spacing.sm, minHeight: 40, justifyContent: "center" },
   dot: { width: 10, height: 10, borderRadius: 5 },
   swatch: { width: 28, height: 8, borderRadius: 4, overflow: "hidden", flexDirection: "row" },
   swatchHalf: { flex: 1 },

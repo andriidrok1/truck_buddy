@@ -1,18 +1,20 @@
-import { Platform, StyleSheet, useWindowDimensions } from "react-native";
-import MapView, { Polyline, UrlTile } from "react-native-maps";
+import { StyleSheet, useWindowDimensions } from "react-native";
+import MapView, { Polyline } from "react-native-maps";
 
 import { useTheme } from "../theme";
 import { ViewMarker } from "./MapLayerApple.native";
-import { cameraDistanceForZoom, ESRI_MAX_NATIVE_Z, ESRI_TILES, frameSpan, SAT_MAX_Z, SAT_MIN_Z, type ParkingSatMapProps } from "./mapTypes";
+import { cameraDistanceForZoom, frameSpan, SAT_MAX_Z, SAT_MIN_Z, type ParkingSatMapProps } from "./mapTypes";
 import { Pin } from "./Pin";
 import { SpotBadge } from "./SpotBadge";
 
 const toCoord = (lat: number, lng: number) => ({ latitude: lat, longitude: lng });
 
 /**
- * Zoomable satellite map of the parking check frame (Esri imagery, same as the verdict).
- * Stays on react-native-maps whatever the main map's provider: the Esri tiles are online-only,
- * so there is nothing an offline pack could add here.
+ * Zoomable satellite map of the parking check frame: the map engine's own imagery (Apple on iOS, Google on
+ * Android), free inside the app. It was Esri World Imagery tiles fetched without a key, which Esri's terms
+ * don't allow in a commercial app (weather research 2026-11-11). The verdict itself is still made on the
+ * server's image; spots are lat/lng, so they sit on either imagery (dates can differ by months).
+ * Stays on react-native-maps whatever the main map's provider: MapLibre has no imagery here.
  */
 export default function ParkingSatMap({ center, place, spots, tail }: ParkingSatMapProps) {
   const { colors } = useTheme();
@@ -22,13 +24,11 @@ export default function ParkingSatMap({ center, place, spots, tail }: ParkingSat
     <MapView
       testID="parking-sat-map"
       style={StyleSheet.absoluteFill}
-      // Android draws only the Esri tiles; iOS keeps satellite underneath (replaced by the tiles).
-      mapType={Platform.OS === "android" ? "none" : "satellite"}
+      mapType="satellite"
       initialRegion={{ ...toCoord(center.lat, center.lng), latitudeDelta: 2 * dLat, longitudeDelta: 2 * dLng }}
       zoomEnabled
-      // Esri serves imagery to z19; past it the z19 tiles are upscaled (maximumNativeZ) and the
-      // camera stops at SAT_MAX_Z, so the view never reaches the gray grid of missing tiles.
-      // SAT_MIN_Z keeps a parking view from zooming out to the whole state. The zoom-level props
+      // The camera stops at SAT_MAX_Z (Apple and Google imagery stay sharp to about there) and SAT_MIN_Z keeps a
+      // parking view from zooming out to the whole state. The zoom-level props
       // are what Google Maps honours; Apple Maps takes the same limits as camera distances.
       maxZoomLevel={SAT_MAX_Z}
       minZoomLevel={SAT_MIN_Z}
@@ -43,7 +43,6 @@ export default function ParkingSatMap({ center, place, spots, tail }: ParkingSat
       showsCompass={false}
       toolbarEnabled={false}
     >
-      <UrlTile urlTemplate={ESRI_TILES} maximumZ={SAT_MAX_Z} maximumNativeZ={ESRI_MAX_NATIVE_Z} tileSize={256} shouldReplaceMapContent zIndex={0} />
       {tail.length > 1 && (
         <>
           <Polyline coordinates={tail.map(([a, b]) => toCoord(a, b))} strokeColor={colors.routeCasing} strokeWidth={9} zIndex={1} />
