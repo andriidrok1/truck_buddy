@@ -187,8 +187,8 @@ describe("a returning driver's truck that has not landed (went to the map anyway
     });
   };
   afterEach(async () => {
+    await resetProfile(); // writes the cache: the clear comes after, or its gc timer keeps jest alive
     queryClient.clear();
-    await resetProfile();
   });
 
   test("asked again on every return to the foreground and when the connection comes back, and no more once it landed", async () => {
@@ -201,7 +201,9 @@ describe("a returning driver's truck that has not landed (went to the map anyway
     useNetStore.setState({ net: false, hinted: false });
     await beginRestore();
     A.profile.mockRejectedValue(new ApiError(503, "/me/profile"));
-    await renderHook(() => useProfileSync(true));
+    // The app's client retries a failed query on timers of its own; one attempt per trigger keeps the count exact.
+    queryClient.setDefaultOptions({ queries: { retry: false } });
+    const hook = await renderHook(() => useProfileSync(true));
     await tick();
     expect(A.profile).toHaveBeenCalledTimes(1);
     expect(restorePending()).toBe(true);
@@ -220,6 +222,8 @@ describe("a returning driver's truck that has not landed (went to the map anyway
     await act(async () => onChange("active"));
     await tick();
     expect(A.profile).toHaveBeenCalledTimes(3); // landed: the usual start-up pull only, not one per foreground
+    hook.unmount();
+    queryClient.setDefaultOptions({ queries: {} });
     AppState.addEventListener = original;
   });
 });
