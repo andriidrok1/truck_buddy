@@ -448,10 +448,12 @@ async def motive_auth(request: Optional[Request], driver) -> tuple[Optional[str]
 
 
 @api.get("/breakdown/{rid}", response_model=AgentResponse)
-async def breakdown_result(rid: str, speak: bool = Query(False)):
-    """Result of a breakdown research started by /agent (status=researching); waits until it's ready."""
+async def breakdown_result(rid: str, speak: bool = Query(False), driver: auth.Principal = Depends(auth.require_driver)):
+    """Result of a breakdown research started by /agent (status=researching); waits until it's ready. Only for the
+    driver who started it: to anyone else the id is unknown (a tester reads across drivers, as on the tester
+    screen)."""
     timing.begin()
-    res = await breakdown.result(rid)
+    res = await breakdown.result(rid, None if driver.role == "tester" else driver.sub)
     if res is None:
         raise HTTPException(status_code=404, detail="Unknown research id")
     return _finish(await _speak(res, speak))

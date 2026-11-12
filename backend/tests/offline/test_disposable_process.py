@@ -146,11 +146,39 @@ def test_breakdown_result_is_read_from_the_store_on_another_worker(sqlite_store,
 
 def test_breakdown_endpoint_answers_from_the_store(api_client, sqlite_store, monkeypatch):
     monkeypatch.setenv("MEMORY_STORE", "sqlite")
+    me = auth.sub_of(api_client.headers["Authorization"].split()[1])
     done = AgentResponse(status="providers", transcript="", reply="Found them.", source="test").model_dump(mode="json")
-    run(kv.job_put("rid-api", "drv_1", "breakdown", done))
+    run(kv.job_put("rid-api", me, "breakdown", done))
     breakdown._JOBS.clear()
     r = api_client.get("/api/breakdown/rid-api")
     assert r.status_code == 200 and r.json()["reply"] == "Found them."
+
+
+def test_breakdown_result_is_only_for_the_driver_who_asked(api_client, sqlite_store, monkeypatch):
+    """Another driver's research id is an unknown id: the result holds that driver's shops, summary and position."""
+    monkeypatch.setenv("MEMORY_STORE", "sqlite")
+    done = AgentResponse(status="providers", transcript="", reply="Found them.", source="test").model_dump(mode="json")
+    run(kv.job_put("rid-theirs", "drv_somebody_else", "breakdown", done))
+    run(kv.job_put("rid-nobody", None, "breakdown", done))  # started without a token (dev): there is no owner to guard
+    breakdown._JOBS.clear()
+    r = api_client.get("/api/breakdown/rid-theirs")
+    assert r.status_code == 404 and r.json() == {"detail": "Unknown research id"}
+    assert api_client.get("/api/breakdown/rid-nobody").status_code == 200
+    tester = {"Authorization": f"Bearer {auth._token('tester')}"}  # the tester screen reads across drivers
+    assert api_client.get("/api/breakdown/rid-theirs", headers=tester).json()["reply"] == "Found them."
+
+
+def test_a_running_breakdown_research_is_only_for_the_driver_who_asked(monkeypatch):
+    """The same rule while the research still runs in this worker (no store involved)."""
+    async def go():
+        async def research():
+            return AgentResponse(status="providers", transcript="", reply="Found them.", source="test")
+        task = asyncio.create_task(research())
+        monkeypatch.setitem(breakdown._JOBS, "rid-live", task)
+        monkeypatch.setitem(breakdown._OWNERS, "rid-live", "drv_me")
+        return await breakdown.result("rid-live", "drv_other"), await breakdown.result("rid-live", "drv_me")
+    theirs, mine = run(go())
+    assert theirs is None and mine.reply == "Found them."
 
 
 # ---- parking verdicts and approaches ----
