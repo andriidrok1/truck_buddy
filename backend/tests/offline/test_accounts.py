@@ -492,7 +492,7 @@ def _fleet_code(client) -> str:
 
 
 def test_has_profile_means_setup_is_done(client):
-    """Three ways to be done: an own profile (above), a fleet truck, or a stored name."""
+    """Two ways to be done: an own profile (above) or a fleet truck. A stored name alone is not setup."""
     # a fleet driver on a fleet truck: the sizes are the fleet's, profile_put stores nothing of theirs but the name
     who = _person()
     a = _apple(client, who).json()
@@ -501,27 +501,30 @@ def test_has_profile_means_setup_is_done(client):
     assert client.put("/api/me/profile", json={**PROFILE, "driver_name": "Sam"}, headers=_h(bound)).status_code == 200
     again = _apple(client, who).json()
     assert again["has_profile"] is True and again["new_account"] is False
-    # a name alone
+    # a name alone: GET /api/me/profile has nothing to give, so the app must still run onboarding
     who = _person()
     b = _apple(client, who).json()
     assert _apple(client, who).json()["has_profile"] is False
     _rows(client, "UPDATE drivers SET display_name = ? WHERE id = ?", "Sam", _claims(b["access_token"])["driver_id"])
+    assert _apple(client, who).json()["has_profile"] is False
+    assert client.get("/api/me/profile", headers=_h(b)).status_code == 404
+    assert client.put("/api/me/profile", json={**PROFILE, "driver_name": "Sam"}, headers=_h(b)).status_code == 200
     assert _apple(client, who).json()["has_profile"] is True
-    _rows(client, "UPDATE drivers SET display_name = ? WHERE id = ?", "", _claims(b["access_token"])["driver_id"])
-    assert _apple(client, who).json()["has_profile"] is False  # an empty name is no name
 
 
 def test_a_first_sign_in_that_fails_halfway_leaves_no_session_and_is_still_first(client, monkeypatch):
     who = _person()
-    real = tenancy.ensure_solo_org
+    real = tenancy.solo_org_statements
 
-    async def boom(sub, role="driver"):
-        raise RuntimeError("db hiccup")
-    monkeypatch.setattr(tenancy, "ensure_solo_org", boom)
+    def boom(sub, role, at):  # the last of the tenancy inserts fails: the org and driver rows before it are rolled back
+        return [*real(sub, role, at)[:2], ("INSERT INTO no_such_table (sub) VALUES (?)", (sub,))]
+    monkeypatch.setattr(tenancy, "solo_org_statements", boom)
     r = _apple(client, who, name="Sam")
     assert r.status_code == 503 and r.json() == {"detail": "Sign-in is unavailable right now"}
     assert _rows(client, "SELECT 1 FROM account_sessions s JOIN accounts a ON a.sub = s.sub WHERE a.provider_sub = ?", who) == []
-    monkeypatch.setattr(tenancy, "ensure_solo_org", real)
+    (sub,), = _rows(client, "SELECT sub FROM accounts WHERE provider_sub = ?", who)
+    assert _rows(client, "SELECT 1 FROM devices WHERE sub = ?", sub) == []
+    monkeypatch.setattr(tenancy, "solo_org_statements", real)
     body = _apple(client, who).json()
     assert body["new_account"] is True and body["has_profile"] is False and body["name"] == "Sam"
     sub = _claims(body["access_token"])["sub"]

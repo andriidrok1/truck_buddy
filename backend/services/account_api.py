@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from models import TruckProfile
-from services import accounts, apple, auth, db, identity, memory, session_store, tenancy, trip_events
+from services import accounts, apple, auth, breakdown, db, identity, memory, session_store, tenancy, trip_events
 
 logger = logging.getLogger("truckbuddy")
 
@@ -53,7 +53,7 @@ class SignInResponse(BaseModel):
     refresh_token: str
     expires_in: int
     new_account: bool  # the account's first time through: nothing was ever set up for it
-    has_profile: bool  # the driver finished setup before (own profile, a fleet truck, or a name): the app skips onboarding
+    has_profile: bool  # the driver finished setup before (own stored profile, or a fleet truck): the app skips onboarding
     name: Optional[str] = None
     email: Optional[str] = None
 
@@ -111,8 +111,16 @@ async def _sign_in(provider: identity.Provider, request: Request, verify, name: 
     except identity.NotConfigured:  # the variable was emptied between the check above and the verification
         raise _not_configured(provider)
     try:
-        account = await accounts.find_or_create(who.provider, who.sub, auth.new_sub(), who.email, who.name or name)
-        out, new = await auth.open_session(account.sub, platform)
+        # Twice at most: an account deleted between being found and being signed in to (another phone's "Delete
+        # account" in that moment) is gone for good, and this sign-in starts a new one under a new sub.
+        for _ in range(2):
+            account = await accounts.find_or_create(who.provider, who.sub, auth.new_sub(), who.email, who.name or name)
+            opened = await auth.open_session(account.sub, platform)
+            if opened is not None:
+                break
+        else:
+            raise _unavailable()
+        out, new = opened
         has_profile = await tenancy.has_profile(account.sub)
     except HTTPException:
         raise
@@ -188,7 +196,9 @@ async def auth_logout_all(principal: auth.Principal = Depends(auth.require_drive
 async def auth_fleet_code(req: FleetCodeRequest, principal: auth.Principal = Depends(auth.require_driver)):
     """Binds this device to the fleet (and truck) the code was made for; answers with a token carrying the org."""
     try:
-        dev = await tenancy.bind_fleet_code(principal.sub, req.code)
+        dev = await tenancy.bind_fleet_code(principal.sub, req.code, create=not principal.sid)
+    except tenancy.Unregistered:  # the account was deleted while this request was on its way
+        raise auth._unregistered()
     except tenancy.BadFleetCode:
         raise HTTPException(status_code=401, detail="That fleet code isn't right or has expired")
     except RuntimeError:
@@ -219,7 +229,9 @@ async def me_profile(response: Response, principal: auth.Principal = Depends(aut
 @api.put("/me/profile", response_model=TruckProfile)
 async def me_profile_put(profile: TruckProfile, principal: auth.Principal = Depends(auth.require_driver)):
     try:
-        await tenancy.profile_put(principal.sub, profile)
+        await tenancy.profile_put(principal.sub, profile, create=not principal.sid)
+    except tenancy.Unregistered:  # the account was deleted while this request was on its way
+        raise auth._unregistered()
     except Exception as e:  # noqa: BLE001
         logger.warning("profile write failed: %s", e)
         raise HTTPException(status_code=503, detail="Profile is unavailable right now")
@@ -279,15 +291,22 @@ async def memory_history_clear(driver: str = Depends(auth.require_driver)):
     return {"deleted": turns, "facts": facts > 0}
 
 
+LAST_OWNER = ("This account is the only owner of a fleet that still has drivers or a stored key. "
+              "Write to support@truckbuddy.io to close the fleet or hand it over.")
+
+
 @api.delete("/account")
 async def account_delete(principal: auth.Principal = Depends(auth.require_driver)):
     """Deletes the signed-in driver's account and everything stored for it; nothing of the driver is left, and every
     phone of the account is signed out. An Apple account's refresh token is revoked at Apple first (`apple_revoked`:
-    true, false when Apple could not be reached or refused, null when there was no token or no key to revoke with);
-    the deletion goes on either way.
+    true when Apple accepted the call, false when Apple could not be reached or refused, null when there was no
+    token or no key to revoke with); the deletion goes on either way.
 
     The data goes first and the account row last, in one transaction with the sessions, so a deletion that failed
-    halfway (503) is repeated with the same token."""
+    halfway (503) is repeated with the same token; the stored Apple token is still there for the retry.
+
+    409 for the only owner of a fleet that still has drivers, other phones or a stored key (nobody could manage it
+    afterwards). A fleet with nobody else in it goes with its owner."""
     if not principal.sid:
         # A device or access-code token has no account behind it; its data goes with DELETE /api/memory.
         raise HTTPException(status_code=409, detail="This sign-in has no account. Use DELETE /api/memory to delete its data.")
@@ -295,17 +314,25 @@ async def account_delete(principal: auth.Principal = Depends(auth.require_driver
         raise _unavailable()
     driver = principal.sub
     try:
+        await accounts.check_may_delete(driver)  # before anything is wiped
+        await apple.settled(driver)  # an exchange still running for this account: its token is revoked too
         account = await accounts.by_sub(driver)
         revoked = await apple.revoke(account[1], driver) if account and account[0] == "apple" else None
-        await agent_sessions_drop(driver)
+        breakdown.forget(driver)
+        await agent_sessions_drop(driver, strict=True)
         wiped = await asyncio.wait_for(_wipe(driver), MEMORY_WAIT_S)
         sessions = await asyncio.wait_for(accounts.erase(driver), MEMORY_WAIT_S)
+    except accounts.LastOwner:
+        raise HTTPException(status_code=409, detail=LAST_OWNER)
     except Exception as e:  # noqa: BLE001
         logger.warning("account deletion failed for %s: %s", driver, e)
         raise HTTPException(status_code=503, detail="The account could not be deleted right now. Try again.")
     return {"ok": True, **wiped, "sessions": sessions, "apple_revoked": revoked}
 
 
-async def agent_sessions_drop(driver: str) -> None:
-    """Forget the dialogs of this driver too (its id prefixes the session ids), wherever they are stored."""
-    await session_store.drop_prefix(f"{driver}:")
+async def agent_sessions_drop(driver: str, strict: bool = False) -> None:
+    """Forget the dialogs of this driver too (its id prefixes the session ids), wherever they are stored, and the
+    memory reads still running for them."""
+    from services import agent  # lazy: the agent imports half the services
+    agent.forget_past(f"{driver}:")
+    await session_store.drop_prefix(f"{driver}:", strict)

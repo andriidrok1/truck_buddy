@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
 
-from services import db, tenancy
+from services import db, session_store, tenancy
 from services.db import iso as _iso, parse_at as _at, utcnow as _now
 from services.tenancy import new_id
 
@@ -75,6 +75,58 @@ async def apple_refresh_set(sub: str, sealed: str) -> None:
         await pool.execute("UPDATE accounts SET apple_refresh_enc = $1 WHERE sub = $2", sealed, sub)
 
 
+# ---- transactions on either engine ---------------------------------------------------------------------------
+
+def _numbered(sql: str) -> str:
+    """`?` placeholders as Postgres's $1, $2, ..."""
+    parts = sql.split("?")
+    return "".join(f"{part}${i}" for i, part in enumerate(parts[:-1], 1)) + parts[-1]
+
+
+async def _in_transaction(script):
+    """Runs a script of statements in one transaction, on SQLite or Postgres, so signing in and deleting are written
+    once. `script` is a generator: it yields (sql with `?` placeholders, args), is handed the rows back (tuples;
+    none for a write) and returns the result. An exception it raises rolls everything back.
+
+    `FOR UPDATE` in a statement is the row lock two scripts meet on in Postgres. SQLite has one writer at a time
+    (BEGIN IMMEDIATE), which is the same guarantee, and does not know the clause."""
+    if db.store() == "sqlite":
+        def _run(con):
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                rows = None
+                while True:
+                    try:
+                        sql, args = script.send(rows)
+                    except StopIteration as done:
+                        con.execute("COMMIT")
+                        return done.value
+                    rows = con.execute(sql.replace(" FOR UPDATE", ""), args).fetchall()
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+        return await db._sq_run(_run)
+    pool = await db._db()
+    async with pool.acquire() as con, con.transaction():
+        rows = None
+        while True:
+            try:
+                sql, args = script.send(rows)
+            except StopIteration as done:
+                return done.value
+            rows = [tuple(r) for r in await con.fetch(_numbered(sql), *args)]
+
+
+# Signing in and deleting both start here. Whichever comes second waits for the first and then sees what it did: a
+# sign-in finds the account gone and starts over, a deletion takes the session the sign-in just opened with it.
+ACCOUNT_LOCK = "SELECT 1 FROM accounts WHERE sub = ? FOR UPDATE"
+
+
+def _stamp(at: datetime):
+    """A timestamp in the store's own form."""
+    return _iso(at) if db.store() == "sqlite" else at
+
+
 # ---- deleting an account -------------------------------------------------------------------------------------
 
 # Every table with a column that holds a driver's sub. A migration that adds another one adds it here:
@@ -85,10 +137,55 @@ SUB_COLUMNS = (("conversation", "driver"), ("driver_facts", "driver"), ("driver_
 CODE_USER_GONE = "deleted"  # fleet_codes.used_by once the driver who used the code deleted the account
 
 
-def _erase_steps(sub: str, driver_id: Optional[str], org_id: Optional[str]) -> list[tuple[str, tuple]]:
+class LastOwner(Exception):
+    """The account is the only owner of a fleet that still has people or a stored key in it."""
+
+
+# For the org of a device: (solo, owners besides this sub, what else lives in it: other devices, other driver rows,
+# stored credentials). Args: sub, sub, driver id, org id.
+ORG_FACTS = ("SELECT o.solo, (SELECT count(*) FROM devices WHERE org_id = o.id AND role = 'owner' AND sub <> ?), "
+             "(SELECT count(*) FROM devices WHERE org_id = o.id AND sub <> ?) + "
+             "(SELECT count(*) FROM drivers WHERE org_id = o.id AND id <> ?) + "
+             "(SELECT count(*) FROM org_credentials WHERE org_id = o.id) FROM orgs o WHERE o.id = ?")
+
+
+def _closes_fleet(role: Optional[str], facts: list[tuple]) -> bool:
+    """Whether the fleet goes with this account: its only owner is leaving and nobody else is in it. LastOwner when
+    somebody is, or a key is stored: the fleet would be left with drivers and a Motive key and nobody who can manage
+    them, and there is no way to add an owner afterwards. Dispatchers and drivers leave freely."""
+    if role != "owner" or not facts:
+        return False
+    solo, other_owners, others = facts[0]
+    if solo or other_owners:
+        return False
+    if others:
+        raise LastOwner()
+    return True
+
+
+def _device_script(sub: str):
+    """(driver id, org id, whether the org is a fleet this deletion closes) for the sub's device row."""
+    rows = yield ("SELECT driver_id, org_id, role FROM devices WHERE sub = ?", (sub,))
+    if not rows:
+        return None, None, False
+    driver_id, org_id, role = rows[0]
+    facts = yield (ORG_FACTS, (sub, sub, driver_id, org_id))
+    return driver_id, org_id, _closes_fleet(role, facts)
+
+
+async def check_may_delete(sub: str) -> None:
+    """LastOwner when deleting this account would be refused (see _closes_fleet). Asked before anything is wiped;
+    the deletion itself asks again inside its transaction."""
+    await _in_transaction(_device_script(sub))
+
+
+def _erase_steps(sub: str, driver_id: Optional[str], org_id: Optional[str], close_fleet: bool = False) -> list[tuple[str, tuple]]:
     """The deletes, in the order the foreign keys allow (device, then its driver row, then the org), the account
     row last. `?` placeholders."""
     steps = [(f"DELETE FROM {table} WHERE {column} = ?", (sub,)) for table, column in SUB_COLUMNS]
+    # A dialog saved by a /api/nudges poll may carry no driver; its id always starts with the sub.
+    steps.append((f"DELETE FROM dialog_sessions WHERE session_id LIKE ? ESCAPE '{session_store.LIKE_ESCAPE}'",
+                  (session_store.like_prefix(f"{sub}:"),)))
     # A used code must stay used (used_by empty would let it bind another phone to the fleet), without the sub.
     steps.append(("UPDATE fleet_codes SET used_by = ? WHERE used_by = ?", (CODE_USER_GONE, sub)))
     steps.append(("DELETE FROM devices WHERE sub = ?", (sub,)))
@@ -97,52 +194,37 @@ def _erase_steps(sub: str, driver_id: Optional[str], org_id: Optional[str]) -> l
         # trucks and their profiles.
         steps.append(("DELETE FROM drivers WHERE id = ? AND NOT EXISTS (SELECT 1 FROM devices WHERE driver_id = drivers.id)",
                       (driver_id,)))
-    if org_id:
+    if org_id and close_fleet:
+        # The last owner of a fleet with nobody else in it: the fleet is theirs alone and goes with them.
+        steps += [(f"DELETE FROM {table} WHERE org_id = ?", (org_id,))
+                  for table in ("fleet_codes", "vehicles", "org_credentials", "users")]
+        steps.append(("DELETE FROM orgs WHERE id = ? AND solo = 0", (org_id,)))
+    elif org_id:
         steps.append((tenancy.DROP_EMPTY_SOLO_ORG.format(p="?"), (org_id,)))  # the org of one made for this sub
     steps.append(("DELETE FROM account_sessions WHERE sub = ?", (sub,)))
     steps.append(("DELETE FROM accounts WHERE sub = ?", (sub,)))
     return steps
 
 
-def _numbered(sql: str) -> str:
-    """`?` placeholders as Postgres's $1, $2, ..."""
-    parts = sql.split("?")
-    return "".join(f"{part}${i}" for i, part in enumerate(parts[:-1], 1)) + parts[-1]
+def _erase_script(sub: str):
+    yield (ACCOUNT_LOCK, (sub,))
+    driver_id, org_id, close_fleet = yield from _device_script(sub)
+    sids = [r[0] for r in (yield ("SELECT id FROM account_sessions WHERE sub = ?", (sub,)))]
+    for step in _erase_steps(sub, driver_id, org_id, close_fleet):
+        yield step
+    return driver_id, sids
 
 
 async def erase(sub: str) -> int:
     """Deletes the account and every row keyed on its sub, in one transaction: either all of it is gone or the
     account is still whole and the same token can ask again. Returns how many phones were signed in. Their tokens
     are refused at once on this worker and within SESSION_TTL_S on the others; signing in again with the same
-    Apple or Google identity finds no account and starts a new one, under a new sub."""
-    device = "SELECT driver_id, org_id FROM devices WHERE sub = ?"
-    sessions = "SELECT id FROM account_sessions WHERE sub = ?"
-    if db.store() == "sqlite":
-        def _erase(con):
-            con.execute("BEGIN IMMEDIATE")
-            try:
-                dev = con.execute(device, (sub,)).fetchone() or (None, None)
-                sids = [r[0] for r in con.execute(sessions, (sub,)).fetchall()]
-                for sql, args in _erase_steps(sub, *dev):
-                    con.execute(sql, args)
-                con.execute("COMMIT")
-            except BaseException:
-                con.execute("ROLLBACK")
-                raise
-            return dev, sids
-        dev, sids = await db._sq_run(_erase)
-    else:
-        pool = await db._db()
-        async with pool.acquire() as con, con.transaction():
-            row = await con.fetchrow(_numbered(device), sub)
-            dev = tuple(row) if row else (None, None)
-            sids = [r["id"] for r in await con.fetch(_numbered(sessions), sub)]
-            for sql, args in _erase_steps(sub, *dev):
-                await con.execute(_numbered(sql), *args)
+    Apple or Google identity finds no account and starts a new one, under a new sub. LastOwner: nothing changed."""
+    driver_id, sids = await _in_transaction(_erase_script(sub))
     for sid in sids:
         _sessions.pop(sid, None)
         _touched.pop(sid, None)
-    tenancy.forget(sub, dev[0])
+    tenancy.forget(sub, driver_id)
     return len(sids)
 
 
@@ -180,24 +262,31 @@ def idle(seen_at: datetime) -> bool:
     return days > 0 and _now() - seen_at > timedelta(days=days)
 
 
-async def session_open(sub: str, refresh_hash: str, platform: Optional[str] = None) -> str:
-    """A new session for this phone, holding its first refresh token; returns its id. Past MAX_SESSIONS the
-    account's least recently used sessions go."""
-    sid, now = new_id("ses"), _now()
-    insert = ("INSERT INTO account_sessions (id, sub, refresh_hash, platform, created_at, seen_at) "
-              "VALUES ({p1}, {p2}, {p3}, {p4}, {p5}, {p5})")
-    prune = ("DELETE FROM account_sessions WHERE sub = {p1} AND id NOT IN "
-             "(SELECT id FROM account_sessions WHERE sub = {p1} ORDER BY seen_at DESC, created_at DESC LIMIT {n})")
-    if db.store() == "sqlite":
-        def _open(con):
-            con.execute(insert.format(p1="?", p2="?", p3="?", p4="?", p5="?"), (sid, sub, refresh_hash, platform, _iso(now), _iso(now)))
-            con.execute(prune.format(p1="?", n=MAX_SESSIONS), (sub, sub))
-        await db._sq_run(_open)
-    else:
-        pool = await db._db()
-        await pool.execute(insert.format(p1="$1", p2="$2", p3="$3", p4="$4", p5="$5"), sid, sub, refresh_hash, platform, now)
-        await pool.execute(prune.format(p1="$1", n=MAX_SESSIONS), sub)
-    return sid
+def _sign_in_script(sub: str, sid: str, refresh_hash: str, platform: Optional[str], at):
+    if not (yield (ACCOUNT_LOCK, (sub,))):
+        return None  # deleted since the caller looked the account up
+    first = not (yield ("SELECT 1 FROM devices WHERE sub = ?", (sub,)))
+    if first:
+        for step in tenancy.solo_org_statements(sub, "driver", at):
+            yield step
+    yield ("INSERT INTO account_sessions (id, sub, refresh_hash, platform, created_at, seen_at) VALUES (?, ?, ?, ?, ?, ?)",
+           (sid, sub, refresh_hash, platform, at, at))
+    yield ("DELETE FROM account_sessions WHERE sub = ? AND id NOT IN (SELECT id FROM account_sessions WHERE sub = ? "
+           f"ORDER BY seen_at DESC, created_at DESC LIMIT {MAX_SESSIONS})", (sub, sub))
+    return first
+
+
+async def session_open(sub: str, refresh_hash: str, platform: Optional[str] = None) -> Optional[tuple[str, bool]]:
+    """Signs the account in on one phone, in one transaction: the account row is still there (and is held against
+    a deletion running beside this one), the org, driver and device rows are made when the sub has none, and a new
+    session holds the phone's first refresh token. Past MAX_SESSIONS the account's least recently used sessions go.
+
+    Returns (session id, whether the rows were made now: the account's first time through), or None when the
+    account is gone. This is the only place an account's sub gets its tenancy rows, so nothing can make them for
+    an account that was deleted."""
+    sid = new_id("ses")
+    first = await _in_transaction(_sign_in_script(sub, sid, refresh_hash, platform, _stamp(_now())))
+    return None if first is None else (sid, first)
 
 
 async def session_rotate(sid: str, refresh_hash: str, spent: Optional[str] = None) -> bool:

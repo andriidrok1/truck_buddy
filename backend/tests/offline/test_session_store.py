@@ -70,6 +70,8 @@ def test_dict_surface_matches_what_the_agent_expects():
 
 def test_db_store_saves_loads_sweeps_and_drops(sqlite_store, monkeypatch):
     monkeypatch.setenv("SESSION_STORE", "db")
+    # earlier tests leave dialogs of random subs in this process; one that starts "drv_a" would be counted below
+    session_store.memory_sessions().clear()
     store = session_store.DbSessionStore()
     assert session_store.kind() == "db" and isinstance(session_store.get_store(), session_store.DbSessionStore)
     s = _populated()

@@ -160,7 +160,11 @@ async def issue(sub: str, role: str, sid: Optional[str] = None, spent: Optional[
     the refresh token being traded in: the new pair is handed out only if that token was still the current one
     (see accounts.session_rotate). Every token for an account must be issued with its sid: one without it would
     outlive a sign-out."""
-    dev = await tenancy.ensure_solo_org(sub, role)
+    # An account's rows are made at sign-in only (tenancy.ensure_solo_org says why): without them the account was
+    # deleted while this refresh or renew was on its way.
+    dev = await (tenancy.device_of(sub) if sid else tenancy.ensure_solo_org(sub, role))
+    if sid and dev is None and db.store() != "off":
+        raise _unregistered()
     out = _access(sub, role, dev, sid)
     if dev is None:
         return out
@@ -172,18 +176,21 @@ async def issue(sub: str, role: str, sid: Optional[str] = None, spent: Optional[
     return {**out, "refresh_token": refresh, "expires_in": JWT_DAYS * 86400}
 
 
-async def open_session(sub: str, platform: Optional[str] = None) -> tuple[dict, bool]:
+async def open_session(sub: str, platform: Optional[str] = None) -> Optional[tuple[dict, bool]]:
     """Signs an account in on one phone: a token pair on a new session. Also says whether this is the account's
     first time through (no device row existed for the sub), which is when the app runs onboarding. The tenancy rows
-    come first and the session last, so a failure on the way leaves no session behind and the retry is still a
-    first time."""
-    first = await tenancy.device_of(sub) is None
-    dev = await tenancy.ensure_solo_org(sub, "driver")
-    if dev is None:
-        raise RuntimeError("store is off")
+    and the session are made in one transaction, so a failure leaves neither behind and the retry is still a first
+    time. None when the account was deleted since it was looked up: the caller starts over with a new one."""
     refresh = _secrets.token_urlsafe(32)
-    sid = await accounts.session_open(sub, _hash(refresh), platform)
-    return {**_access(sub, "driver", dev, sid), "refresh_token": refresh, "expires_in": JWT_DAYS * 86400}, first
+    opened = await accounts.session_open(sub, _hash(refresh), platform)
+    if opened is None:
+        return None
+    sid, first = opened
+    tenancy.forget(sub)  # a copy from before the rows were made, or before a deletion
+    dev = await tenancy.device_of(sub)
+    if dev is None:
+        raise RuntimeError("no device row after sign-in")
+    return {**_access(sub, dev.role, dev, sid), "refresh_token": refresh, "expires_in": JWT_DAYS * 86400}, first
 
 
 async def refresh(refresh_token: str) -> dict:
@@ -413,12 +420,15 @@ async def _device_principal(claims: dict) -> Principal:
             # (review 2026-11-02, bug 6).
             raise _unregistered()
         return Principal(sub, role, claims.get("driver_id"), claims["org_id"], claims.get("vehicle_id"))
+    account = bool(claims.get("sid"))  # its rows are made at sign-in only (tenancy.ensure_solo_org says why)
     try:
-        dev = await tenancy.ensure_solo_org(sub, role)
+        dev = await (tenancy.device_of(sub) if account else tenancy.ensure_solo_org(sub, role))
     except Exception as e:  # noqa: BLE001 - a store hiccup must not lock every driver out
         logging.getLogger("truckbuddy.auth").warning("tenancy lookup failed for %s: %s", sub, e)
-        dev = None
+        return Principal(sub, role)
     if dev is None:
+        if account and db.store() != "off":
+            raise _unregistered()
         return Principal(sub, role)
     return Principal(sub, dev.role or role, dev.driver_id, dev.org_id, dev.vehicle_id)
 

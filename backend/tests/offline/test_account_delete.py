@@ -4,9 +4,11 @@
 Same harness as test_accounts.py: a test RSA key behind a stubbed JWKS, Apple's token and revoke endpoints stubbed,
 every test on SQLite and, with TEST_DATABASE_URL, on Postgres."""
 import asyncio
+import hashlib
 import json
 import logging
 import re
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -21,7 +23,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from conftest import run
-from services import accounts, apple, auth, db, kv, memory, secrets as sec, session_store, tenancy, trip_events
+from models import AgentRequest, AgentResponse, TruckProfile
+from services import accounts, agent, apple, auth, breakdown, db, kv, memory, secrets as sec, session_store, tenancy, trip_events
 from services.dialog_state import DialogState
 import test_accounts
 from test_accounts import APPLE_HOST, BUNDLE, GONE, PROFILE, _apple, _claims, _fleet_code, _google, _h, _person, _rows
@@ -352,7 +355,8 @@ def _refused(request):
 
 
 def _network_down(request):
-    raise httpx.ConnectError("no route to appleid.apple.com")
+    # the message carries the whole form, as a transport error may: nothing of it is to reach the log
+    raise httpx.ConnectError(f"no route to appleid.apple.com for {request.content.decode()}")
 
 
 def _no_refresh_token(request):
@@ -444,12 +448,17 @@ def test_deleting_an_apple_account_revokes_its_token(client, apple_api, caplog):
     _no_secrets_in(caplog, form["client_secret"], apple_api.exchanges[0]["client_secret"], sealed)
 
 
-def test_a_later_sign_in_replaces_the_stored_token(client, apple_api):
+def test_signing_in_again_does_not_exchange_again_unless_the_stored_token_is_unreadable(client, apple_api, monkeypatch):
     who = _person()
     a = _signed_in_with_token(client, who)
     apple_api.token_reply = lambda request: httpx.Response(200, request=request, json={"refresh_token": "r.newer"})
     _apple(client, who, authorization_code=CODE)
     _settle(client)
+    assert len(apple_api.exchanges) == 1  # the account holds a token for this client: Apple is not asked
+    monkeypatch.setenv("CREDENTIALS_KEY", Fernet.generate_key().decode())  # rotated: the stored token no longer opens
+    _apple(client, who, authorization_code=CODE)
+    _settle(client)
+    assert len(apple_api.exchanges) == 2
     client.delete("/api/account", headers=_h(a))
     assert [f["token"] for f in apple_api.revocations] == ["r.newer"]
 
@@ -641,3 +650,569 @@ def test_drop_prefix_takes_wildcards_in_the_prefix_literally(store, monkeypatch)
     dropped, left = run(go())
     assert dropped == [2, 2]
     assert left == sorted(f"{sub}:dlg-{n}" for sub in (neighbour, any_of) for n in (1, 2))
+
+
+# ---- a deleted account's sub never gets rows again -----------------------------------------------------------------
+# The org, driver and device rows of an account are made at sign-in only, in the transaction that holds the account
+# row. Everything else reads them, so a request, a refresh or a sign-in that was on its way during the deletion
+# cannot bring the driver back.
+
+def _nothing_left(client, sub: str) -> None:
+    assert _holding(client, {"sub": sub}) == {}
+
+
+def test_a_sign_in_racing_the_deletion_starts_a_new_account(client, monkeypatch):
+    who = _person()
+    a = _apple(client, who).json()
+    sub = _claims(a["access_token"])["sub"]
+    real = accounts.find_or_create
+
+    async def then_deleted(*args, **kw):
+        account = await real(*args, **kw)  # phone B's sign-in has found the account ...
+        if account.sub == sub:
+            await accounts.erase(sub)  # ... and phone A's "Delete account" commits here
+        return account
+    monkeypatch.setattr(accounts, "find_or_create", then_deleted)
+    r = _apple(client, who)
+    assert r.status_code == 200, r.text
+    b = r.json()
+    new_sub = _claims(b["access_token"])["sub"]
+    assert new_sub != sub and b["new_account"] is True and b["has_profile"] is False
+    _nothing_left(client, sub)
+    assert client.get("/api/auth/check", headers=_h(a)).status_code == 401
+    assert client.get("/api/auth/check", headers=_h(b)).status_code == 200
+    assert _rows(client, "SELECT sub FROM accounts WHERE provider_sub = ?", who) == [(new_sub,)]
+    assert _rows(client, "SELECT count(*) FROM devices WHERE sub = ?", new_sub) == [(1,)]
+
+
+def test_a_sign_in_whose_account_keeps_vanishing_is_503_and_leaves_nothing(client, monkeypatch):
+    who = _person()
+    real, seen = accounts.find_or_create, []
+
+    async def always_deleted(*args, **kw):
+        account = await real(*args, **kw)
+        seen.append(account.sub)
+        await accounts.erase(account.sub)
+        return account
+    monkeypatch.setattr(accounts, "find_or_create", always_deleted)
+    r = _apple(client, who)
+    assert r.status_code == 503 and len(seen) == 2 and seen[0] != seen[1]  # it started over once, with a new sub
+    for sub in seen:
+        _nothing_left(client, sub)
+
+
+def test_a_refresh_racing_the_deletion_is_refused_and_leaves_nothing(client, monkeypatch):
+    who = _person()
+    a, b = _apple(client, who).json(), _apple(client, who).json()
+    sub = _claims(a["access_token"])["sub"]
+    real = accounts.session_by_refresh
+
+    async def then_deleted(hashed):
+        session = await real(hashed)
+        await accounts.erase(session.sub)  # the deletion commits after the refresh found its session
+        return session
+    monkeypatch.setattr(accounts, "session_by_refresh", then_deleted)
+    r = client.post("/api/auth/refresh", json={"refresh_token": b["refresh_token"]})
+    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    _nothing_left(client, sub)
+
+
+@pytest.mark.parametrize("stale_device", [False, True])
+def test_a_renew_racing_the_deletion_is_refused_and_leaves_nothing(client, stale_device):
+    """The renew passed the session check on a worker whose copies are from before the deletion."""
+    who = _person()
+    a = _apple(client, who).json()
+    sub, sid = _claims(a["access_token"])["sub"], _claims(a["access_token"])["sid"]
+    assert client.get("/api/auth/check", headers=_h(a)).status_code == 200
+    stale = dict(accounts._sessions), dict(tenancy._devices)
+    client.portal.call(accounts.erase, sub)
+    accounts._sessions.update(stale[0])
+    if stale_device:
+        tenancy._devices.update(stale[1])
+    r = client.post("/api/auth/renew", headers=_h(a))
+    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    # a token without the org claims takes the other way through the principal: no rows from there either
+    bare = {"access_token": auth._token("driver", sub, {"sid": sid})}
+    tenancy.forget(sub)
+    assert client.get("/api/auth/check", headers=_h(bare)).json() == {"detail": GONE}
+    _nothing_left(client, sub)
+
+
+def test_a_sign_in_and_a_deletion_at_the_same_moment_leave_nothing(client):
+    async def round_():
+        account = await accounts.find_or_create("google", _person(), auth.new_sub())
+        await accounts.session_open(account.sub, uuid.uuid4().hex)
+        await asyncio.gather(accounts.session_open(account.sub, uuid.uuid4().hex), accounts.erase(account.sub),
+                             accounts.session_open(account.sub, uuid.uuid4().hex))
+        return account.sub
+    for _ in range(5):
+        sub = client.portal.call(round_)
+        for table in ("accounts", "account_sessions", "devices"):
+            assert _rows(client, f"SELECT count(*) FROM {table} WHERE sub = ?", sub) == [(0,)], table
+
+
+def test_a_deletion_waits_for_a_sign_in_that_holds_the_account(client):
+    """Postgres: both start on the account row. A deletion that did not wait there would pass the session table
+    while the sign-in's session is not committed yet, and leave it behind."""
+    if client.store != "pg":
+        pytest.skip("SQLite has one writer at a time")
+
+    def slow_sign_in(sub):
+        yield (accounts.ACCOUNT_LOCK, (sub,))
+        yield ("SELECT pg_sleep(0.4)", ())  # the sign-in is in the middle of its transaction ...
+        return (yield from accounts._sign_in_script(sub, tenancy.new_id("ses"), uuid.uuid4().hex, "ios", accounts._now()))
+
+    async def race():
+        account = await accounts.find_or_create("google", _person(), auth.new_sub())
+        await accounts.session_open(account.sub, uuid.uuid4().hex)
+        signing_in = asyncio.create_task(accounts._in_transaction(slow_sign_in(account.sub)))
+        await asyncio.sleep(0.1)
+        await accounts.erase(account.sub)  # ... when the deletion starts
+        return account.sub, await signing_in
+    sub, first = client.portal.call(race)
+    assert first is False  # the sign-in went through, as an existing account
+    for table in ("accounts", "account_sessions", "devices"):
+        assert _rows(client, f"SELECT count(*) FROM {table} WHERE sub = ?", sub) == [(0,)], table
+
+
+def test_a_profile_save_that_lands_after_the_deletion_writes_nothing(client, monkeypatch):
+    who = _person()
+    a = _apple(client, who, name="Sam Driver").json()
+    sub = _claims(a["access_token"])["sub"]
+    assert client.get("/api/auth/check", headers=_h(a)).status_code == 200
+    stale = dict(accounts._sessions), dict(tenancy._devices)
+    assert client.delete("/api/account", headers=_h(a)).status_code == 200
+    late = TruckProfile(**{**PROFILE, "driver_name": "Late Sam"})
+
+    async def put():  # a PUT /api/me/profile that passed auth before the deletion
+        with pytest.raises(tenancy.Unregistered):
+            await tenancy.profile_put(sub, late, create=False)
+    client.portal.call(put)
+    _nothing_left(client, sub)
+    # the endpoint answers it like any request of a deleted account
+    accounts._sessions.update(stale[0])
+    tenancy._devices.update(stale[1])
+    real = tenancy.profile_put
+
+    async def after_the_copy_ran_out(sub, profile, create=True):
+        tenancy.forget(sub)
+        return await real(sub, profile, create)
+    monkeypatch.setattr(tenancy, "profile_put", after_the_copy_ran_out)
+    r = client.put("/api/me/profile", json={**PROFILE, "driver_name": "Late Sam"}, headers=_h(a))
+    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    # and on a worker whose device copy is still there, the write finds no row to change
+    monkeypatch.setattr(tenancy, "profile_put", real)
+    accounts._sessions.update(stale[0])
+    tenancy._devices.update(stale[1])
+    assert client.put("/api/me/profile", json={**PROFILE, "driver_name": "Stale Sam"}, headers=_h(a)).status_code == 200
+    _nothing_left(client, sub)
+    assert _rows(client, "SELECT count(*) FROM drivers WHERE display_name IN ('Late Sam', 'Stale Sam')") == [(0,)]
+
+
+def test_a_fleet_code_that_lands_after_the_deletion_binds_nothing(client, monkeypatch):
+    a = _apple(client, _person()).json()
+    sub = _claims(a["access_token"])["sub"]
+    code = _fleet_code(client)
+    assert client.get("/api/auth/check", headers=_h(a)).status_code == 200
+    stale = dict(accounts._sessions), dict(tenancy._devices)
+    assert client.delete("/api/account", headers=_h(a)).status_code == 200
+    accounts._sessions.update(stale[0])
+    tenancy._devices.update(stale[1])
+    real = tenancy.bind_fleet_code
+
+    async def after_the_copy_ran_out(sub, code, create=True):
+        tenancy.forget(sub)
+        return await real(sub, code, create)
+    monkeypatch.setattr(tenancy, "bind_fleet_code", after_the_copy_ran_out)
+    r = client.post("/api/auth/fleet-code", json={"code": code}, headers=_h(a))
+    assert r.status_code == 401 and r.json() == {"detail": GONE}
+    _nothing_left(client, sub)
+    assert _rows(client, "SELECT used_by FROM fleet_codes WHERE code = ?", code) == [(None,)]  # still good for its driver
+
+
+def test_a_device_token_still_gets_its_rows_on_first_contact(client):
+    d = client.post("/api/auth/device").json()
+    sub = _claims(d["access_token"])["sub"]
+    _rows(client, "DELETE FROM devices WHERE sub = ?", sub)
+    tenancy.forget(sub)
+    plain = {"access_token": auth._token("driver", sub)}  # as build 2 holds it: no org claims
+    assert client.put("/api/me/profile", json=PROFILE, headers=_h(plain)).status_code == 200
+    assert _rows(client, "SELECT count(*) FROM devices WHERE sub = ?", sub) == [(1,)]
+
+
+# ---- the owner of a fleet ---------------------------------------------------------------------------------------
+
+def _fleet(client) -> SimpleNamespace:
+    async def make():
+        org = await tenancy.create_org("Acme")
+        truck = await tenancy.create_vehicle(org, "Truck 7")
+        return SimpleNamespace(org=org, truck=truck)
+    return client.portal.call(make)
+
+
+def _join(client, fleet, body: dict, role: str = "driver") -> dict:
+    code = client.portal.call(tenancy.create_fleet_code, fleet.org, fleet.truck if role == "driver" else None, role)
+    r = client.post("/api/auth/fleet-code", json={"code": code}, headers=_h(body))
+    assert r.status_code == 200 and r.json()["role"] == role, r.text
+    return r.json()
+
+
+def _org_rows(client, org: str) -> dict[str, int]:
+    return {t: _rows(client, f"SELECT count(*) FROM {t} WHERE {'id' if t == 'orgs' else 'org_id'} = ?", org)[0][0]
+            for t in ("orgs", "vehicles", "fleet_codes", "org_credentials", "devices", "drivers")}
+
+
+def test_the_only_owner_of_a_fleet_with_drivers_cannot_delete_the_account(client, db_dialogs):
+    fleet = _fleet(client)
+    owner = _join(client, fleet, _google(client, _person()).json(), "owner")
+    driver = _join(client, fleet, _google(client, _person()).json())
+    needles = _fill(client, owner)
+    r = client.delete("/api/account", headers=_h(owner))
+    assert r.status_code == 409 and r.json() == {"detail": account_api_last_owner()}
+    # refused before anything was wiped
+    assert len(client.get("/api/memory", headers=_h(owner)).json()["turns"]) == 2
+    assert _rows(client, "SELECT count(*) FROM dialog_sessions WHERE driver = ?", needles["sub"]) == [(1,)]
+    assert client.get("/api/auth/check", headers=_h(owner)).status_code == 200
+    # the driver leaves freely; then the owner is alone in the fleet and it goes with them
+    assert client.delete("/api/account", headers=_h(driver)).status_code == 200
+    assert _org_rows(client, fleet.org)["orgs"] == 1
+    assert client.delete("/api/account", headers=_h(owner)).status_code == 200
+    assert _org_rows(client, fleet.org) == {t: 0 for t in ("orgs", "vehicles", "fleet_codes", "org_credentials", "devices", "drivers")}
+    assert _holding(client, {**needles, "org": fleet.org, "truck": fleet.truck}) == {}
+
+
+def account_api_last_owner() -> str:
+    from services import account_api
+    assert "only owner of a fleet" in account_api.LAST_OWNER
+    return account_api.LAST_OWNER
+
+
+def test_the_only_owner_of_a_fleet_with_a_stored_key_cannot_delete_the_account(client, monkeypatch):
+    monkeypatch.setenv("CREDENTIALS_KEY", Fernet.generate_key().decode())
+    fleet = _fleet(client)
+    owner = _join(client, fleet, _apple(client, _person()).json(), "owner")
+    assert client.put("/api/fleet/credentials/motive", json={"key": "motive-key-123456789"}, headers=_h(owner)).status_code == 200
+    assert client.delete("/api/account", headers=_h(owner)).status_code == 409
+    assert _org_rows(client, fleet.org)["org_credentials"] == 1
+
+
+def test_one_of_two_owners_and_a_dispatcher_delete_freely(client):
+    fleet = _fleet(client)
+    first = _join(client, fleet, _google(client, _person()).json(), "owner")
+    second = _join(client, fleet, _google(client, _person()).json(), "owner")
+    dispatcher = _join(client, fleet, _google(client, _person()).json(), "dispatcher")
+    driver = _join(client, fleet, client.post("/api/auth/device").json())  # a build-2 phone on the truck
+    assert client.delete("/api/account", headers=_h(first)).status_code == 200  # the fleet still has an owner
+    assert client.delete("/api/account", headers=_h(dispatcher)).status_code == 200
+    assert _org_rows(client, fleet.org) == {"orgs": 1, "vehicles": 1, "fleet_codes": 4, "org_credentials": 0, "devices": 2, "drivers": 2}
+    assert client.delete("/api/account", headers=_h(second)).status_code == 409  # now the last one, and a driver is left
+    assert client.get("/api/auth/check", headers=_h(driver)).status_code == 200
+
+
+def test_a_deletion_that_became_the_last_owners_inside_the_transaction_is_refused(client, monkeypatch):
+    """The check before the wipe passed; by the transaction somebody joined."""
+    fleet = _fleet(client)
+    owner = _join(client, fleet, _google(client, _person()).json(), "owner")
+    sub = _claims(owner["access_token"])["sub"]
+
+    async def passed(sub):
+        return None
+    monkeypatch.setattr(accounts, "check_may_delete", passed)
+    _join(client, fleet, client.post("/api/auth/device").json())
+    assert client.delete("/api/account", headers=_h(owner)).status_code == 409
+    assert _rows(client, "SELECT count(*) FROM accounts WHERE sub = ?", sub) == [(1,)]
+    assert client.get("/api/auth/check", headers=_h(owner)).status_code == 200
+
+
+# ---- dialogs go inside the transaction, and a drop that fails fails the deletion ------------------------------------
+
+def test_a_dialog_without_a_driver_goes_in_the_transaction(client, monkeypatch, db_dialogs):
+    a = _apple(client, _person()).json()
+    sub = _claims(a["access_token"])["sub"]
+    now = datetime.now(timezone.utc)
+    _rows(client, "INSERT INTO dialog_sessions (session_id, driver, state, updated_at) VALUES (?, NULL, '{}', ?)",
+          f"{sub}:old-poll", now.isoformat() if client.store == "sqlite" else now)
+
+    async def not_run(prefix, strict=False):  # the drop before the transaction did nothing
+        return 0
+    monkeypatch.setattr(session_store, "drop_prefix", not_run)
+    assert client.delete("/api/account", headers=_h(a)).status_code == 200
+    assert _rows(client, "SELECT count(*) FROM dialog_sessions WHERE session_id LIKE ?", f"{sub}%") == [(0,)]
+
+
+def test_a_failing_dialog_drop_fails_the_deletion(client, monkeypatch, db_dialogs):
+    a = _apple(client, _person()).json()
+    sub = _claims(a["access_token"])["sub"]
+    _nudge(client, monkeypatch, a, "nudge text")
+    real = session_store.DbSessionStore.drop_prefix
+
+    async def boom(self, prefix):
+        raise RuntimeError("pool timeout")
+    monkeypatch.setattr(session_store.DbSessionStore, "drop_prefix", boom)
+    assert client.delete("/api/account", headers=_h(a)).status_code == 503
+    assert _rows(client, "SELECT count(*) FROM accounts WHERE sub = ?", sub) == [(1,)]
+    assert client.delete("/api/memory", headers=_h(a)).status_code == 200  # "Delete my data" logs it and goes on, as before
+    monkeypatch.setattr(session_store.DbSessionStore, "drop_prefix", real)
+    assert client.delete("/api/account", headers=_h(a)).status_code == 200
+    _nothing_left(client, sub)
+
+
+def test_a_dialog_started_by_a_poll_carries_its_driver(client, monkeypatch, db_dialogs):
+    a = _apple(client, _person()).json()
+    sub = _claims(a["access_token"])["sub"]
+    _nudge(client, monkeypatch, a, "nudge text")
+    assert _rows(client, "SELECT driver FROM dialog_sessions WHERE session_id LIKE ?", f"{sub}%") == [(sub,)]
+
+
+def test_deleting_the_account_forgets_the_dialogs_in_this_process(client, monkeypatch):
+    monkeypatch.setenv("SESSION_STORE", "memory")
+    a = _apple(client, _person()).json()
+    sub = _claims(a["access_token"])["sub"]
+    _nudge(client, monkeypatch, a, "nudge text")
+    assert [k for k in session_store.memory_sessions() if k.startswith(sub)]
+    assert client.delete("/api/account", headers=_h(a)).status_code == 200
+    assert not [k for k in session_store.memory_sessions() if k.startswith(sub)]
+
+
+# ---- the agent's turns use the phone's dialog too -------------------------------------------------------------------
+
+def _turn(client, monkeypatch, phone: dict, mark: str, session_id: str | None = None) -> None:
+    """One /api/agent turn that leaves `mark` in the dialog it ran in."""
+    async def turn(self, req, driver, sess):
+        sess["pending"] = {"text": mark, "kind": "nudge"}
+        return AgentResponse(status="chat", transcript=req.text, reply="OK.", source="test")
+    monkeypatch.setattr(agent.LlmAgentProvider, "_turn", turn)
+    body = {"text": "hi", **SAC, **({"session_id": session_id} if session_id else {})}
+    assert client.post("/api/agent", json=body, headers=_h(phone)).status_code == 200
+
+
+def test_two_phones_of_one_account_do_not_share_a_dialog_through_the_agent(client, monkeypatch, db_dialogs):
+    who = _person()
+    a, b = _apple(client, who).json(), _apple(client, who).json()
+    sub = _claims(a["access_token"])["sub"]
+    sid8 = {name: _claims(p["access_token"])["sid"].split("_")[1][:8] for name, p in (("a", a), ("b", b))}
+    _turn(client, monkeypatch, a, "a typed")  # no dialog id: the agent's own "solo" fallback
+    _turn(client, monkeypatch, b, "b typed")
+    assert _dialogs(client, sub) == {f"{sub}:{sid8['a']}:solo": "a typed", f"{sub}:{sid8['b']}:solo": "b typed"}
+    _turn(client, monkeypatch, a, "a in trip", "trip")  # a dialog id: prefixed by the server
+    _turn(client, monkeypatch, b, "b in trip", "trip")
+    dialogs = _dialogs(client, sub)
+    assert dialogs[f"{sub}:{sid8['a']}:trip"] == "a in trip" and dialogs[f"{sub}:{sid8['b']}:trip"] == "b in trip"
+    assert len(dialogs) == 4
+    d = client.post("/api/auth/device").json()  # a device token: where it always was
+    _turn(client, monkeypatch, d, "device typed")
+    _turn(client, monkeypatch, d, "device in trip", "trip")
+    dsub = _claims(d["access_token"])["sub"]
+    assert _dialogs(client, dsub) == {f"{dsub}:solo": "device typed", f"{dsub}:trip": "device in trip"}
+
+
+def test_a_dialog_key_never_exceeds_64_characters():
+    long_sub = "drv_" + "a" * 60
+    a, b = _principal(long_sub, "ses_0123456789abcdef0123"), _principal(long_sub, "ses_fedcba98765432100000")
+    keys = {session_store.dialog_key(p, i) for p in (a, b) for i in (None, "trip", "dlg-1731400000000-abc123", "x" * 500)}
+    assert len(keys) == 8 and all(len(k) == 64 for k in keys)
+    for n in (1, 30, 44, 45, 46, 47, 63, 64, 200):  # every sub length around the points where the form changes
+        p = _principal("d" * n, "ses_0123456789abcdef0123")
+        for app_id in (None, "t", "x" * 17, "x" * 18, "x" * 19, "dlg-1731400000000-abc123"):
+            assert len(session_store.dialog_key(p, app_id)) <= 64
+        assert session_store.dialog_key(p, "one-long-dialog-id-0001") != session_store.dialog_key(p, "one-long-dialog-id-0002")
+    # the usual sub: the id is hashed whole into the 18 characters left
+    sub = auth.new_sub()
+    app_id = "dlg-1731400000000-abc123"
+    assert session_store.dialog_key(_principal(sub, "ses_0123456789abcdef0123"), app_id) == \
+        f"{sub}:01234567:{hashlib.sha256(app_id.encode()).hexdigest()[:18]}"
+
+
+# ---- what is still running when the memory is cleared or the account goes -------------------------------------------
+
+def _in_thread(call) -> tuple[threading.Thread, dict]:
+    out: dict = {}
+    t = threading.Thread(target=lambda: out.setdefault("r", call()))
+    t.start()
+    return t, out
+
+
+def test_clear_history_waits_for_the_saves_in_flight(client):
+    a = _google(client, _person()).json()
+    sub = _claims(a["access_token"])["sub"]
+    gate = asyncio.Event()
+
+    async def start():
+        async def slow_text():
+            await gate.wait()
+            return "the copilot's line, translated late"
+        memory.add_later(sub, [("driver", "a line still being saved"), ("copilot", slow_text)])
+    client.portal.call(start)
+    t, out = _in_thread(lambda: client.delete("/api/memory/history", headers=_h(a)))
+    t.join(0.4)
+    assert t.is_alive()  # it waits: a save that landed after the clear would bring the line back
+    client.portal.call(gate.set)
+    t.join(10)
+    assert out["r"].status_code == 200 and out["r"].json()["deleted"] == 2
+    assert client.get("/api/memory", headers=_h(a)).json() == {"turns": []}
+
+
+def test_clearing_forgets_the_memory_reads_in_flight_for_the_drivers_dialogs(client):
+    a, other = _google(client, _person()).json(), _google(client, _person()).json()
+    sub, other_sub = _claims(a["access_token"])["sub"], _claims(other["access_token"])["sub"]
+
+    async def start():
+        tasks = {f"{s}:{n}": asyncio.create_task(asyncio.sleep(60)) for s in (sub, other_sub) for n in ("solo", "trip")}
+        agent._past_tasks.update(tasks)
+        return tasks
+    tasks = client.portal.call(start)
+    try:
+        assert client.delete("/api/memory/history", headers=_h(a)).status_code == 200
+        assert sorted(agent._past_tasks) == sorted(k for k in tasks if k.startswith(other_sub))
+
+        async def cancelled():
+            await asyncio.sleep(0)
+            return {k: t.cancelled() for k, t in tasks.items()}
+        assert client.portal.call(cancelled) == {k: k.startswith(sub) for k in tasks}
+        assert client.delete("/api/account", headers=_h(other)).status_code == 200
+        assert not agent._past_tasks
+    finally:
+        agent._past_tasks.clear()
+
+
+def test_deleting_the_account_stops_its_breakdown_research(client):
+    a = _google(client, _person()).json()
+    sub = _claims(a["access_token"])["sub"]
+
+    async def start():
+        tasks = {rid: asyncio.create_task(asyncio.sleep(60)) for rid in ("rid-mine", "rid-theirs")}
+        breakdown._JOBS.update(tasks)
+        breakdown._OWNERS.update({"rid-mine": sub, "rid-theirs": "drv_somebody_else"})
+        return tasks
+    tasks = client.portal.call(start)
+    try:
+        assert client.delete("/api/account", headers=_h(a)).status_code == 200
+        assert list(breakdown._JOBS) == ["rid-theirs"] and breakdown._OWNERS == {"rid-theirs": "drv_somebody_else"}
+
+        async def cancelled():
+            await asyncio.sleep(0)
+            return tasks["rid-mine"].cancelled(), tasks["rid-theirs"].cancelled()
+        assert client.portal.call(cancelled) == (True, False)
+    finally:
+        client.portal.call(tasks["rid-theirs"].cancel)
+        breakdown._JOBS.clear()
+        breakdown._OWNERS.clear()
+
+
+def test_a_research_remembers_who_started_it_and_a_cancelled_one_writes_nothing(client, monkeypatch):
+    sub = auth.new_sub()
+
+    async def research(d, req, sess, source):
+        await asyncio.sleep(60)
+    monkeypatch.setattr(breakdown, "_run", research)
+
+    async def go():
+        sess = DialogState()
+        sess["driver"] = sub
+        res = breakdown.start_research({"kind": "tire"}, AgentRequest(text="flat tire", **SAC), sess, "flat tire", "test")
+        rid = res.research_id
+        owner, theirs = breakdown._OWNERS[rid], await breakdown.result(rid, "drv_somebody_else")
+        await asyncio.sleep(0.05)  # the "researching" row is written
+        breakdown.forget(sub)
+        await asyncio.sleep(0.05)
+        return rid, owner, theirs
+    rid, owner, theirs = client.portal.call(go)
+    assert owner == sub and theirs is None and rid not in breakdown._JOBS and rid not in breakdown._OWNERS
+    assert _rows(client, "SELECT state FROM jobs WHERE rid = ?", rid)[0][0].count("researching") == 1  # no result landed
+    _rows(client, "DELETE FROM jobs WHERE rid = ?", rid)
+
+
+def test_deleting_the_account_clears_this_workers_copies(client):
+    a = _google(client, _person()).json()
+    claims = _claims(a["access_token"])
+    sub = claims["sub"]
+    assert client.put("/api/me/profile", json=PROFILE, headers=_h(a)).status_code == 200
+
+    async def warm():
+        await tenancy.device_created(sub)
+        await tenancy.grace_info(sub)
+        await tenancy.touch(sub)
+        await tenancy.motive_user(claims["driver_id"])
+    client.portal.call(warm)
+    caches = (tenancy._devices, tenancy._profiles, tenancy._grace, tenancy._created, tenancy._touched)
+    assert all(sub in c for c in caches) and claims["driver_id"] in tenancy._motive_users and claims["sid"] in accounts._sessions
+    assert client.delete("/api/account", headers=_h(a)).status_code == 200
+    assert not any(sub in c for c in caches) and claims["driver_id"] not in tenancy._motive_users
+    assert claims["sid"] not in accounts._sessions and claims["sid"] not in accounts._touched
+
+
+# ---- Apple: bounded exchanges, and a deletion that meets one in flight ------------------------------------------------
+
+def _held(apple_api, reply) -> asyncio.Event:
+    """Apple's token endpoint answers only once the returned event is set."""
+    release = asyncio.Event()
+
+    async def slow(request):
+        await release.wait()
+        return reply(request)
+    apple_api.token_reply = slow
+    return release
+
+
+def test_one_identity_token_replayed_starts_one_exchange(client, apple_api):
+    release = _held(apple_api, _refused)
+    who = _person()
+    token = test_accounts._sign(test_accounts._apple_claims(who))
+    statuses = {_apple(client, who, token, authorization_code=f"junk-{i}").status_code for i in range(30)}
+    client.portal.call(asyncio.sleep, 0.05)
+    assert statuses == {200} and len(apple._tasks) == 1 and len(apple_api.exchanges) == 1
+    client.portal.call(release.set)
+    _settle(client)
+    assert not apple._tasks and not apple._inflight and len(apple_api.exchanges) == 1
+
+
+def test_at_most_four_exchanges_run_at_once(client, apple_api):
+    release = _held(apple_api, lambda request: httpx.Response(200, request=request, json={"refresh_token": REFRESH}))
+    bodies = [_apple(client, _person(), authorization_code=CODE).json() for _ in range(7)]
+    client.portal.call(asyncio.sleep, 0.05)
+    assert len(apple._tasks) == 7 and len(apple_api.exchanges) == apple.MAX_EXCHANGES == 4
+    client.portal.call(release.set)
+    _settle(client)
+    assert len(apple_api.exchanges) == 7
+    assert all(_sealed(client, _claims(b["access_token"])["sub"]) for b in bodies)
+
+
+def test_the_exchanges_in_flight_are_drained_at_shutdown(client, apple_api):
+    import server
+    release = _held(apple_api, lambda request: httpx.Response(200, request=request, json={"refresh_token": REFRESH}))
+    a = _apple(client, _person(), authorization_code=CODE).json()
+    assert [t for t in server._draining() if t in apple._tasks]
+    assert client.portal.call(server.drain, 0.05) >= 1  # still running at the deadline: it is being waited for
+    client.portal.call(release.set)
+    assert client.portal.call(server.drain, 5) == 0
+    assert _sealed(client, _claims(a["access_token"])["sub"])
+
+
+def test_a_deletion_waits_for_the_accounts_exchange_and_revokes_its_token(client, apple_api):
+    release = _held(apple_api, lambda request: httpx.Response(200, request=request, json={"refresh_token": REFRESH}))
+    a = _apple(client, _person(), authorization_code=CODE).json()
+    sub = _claims(a["access_token"])["sub"]
+    t, out = _in_thread(lambda: client.delete("/api/account", headers=_h(a)))
+    t.join(0.4)
+    assert t.is_alive() and apple_api.revocations == []  # Apple has not issued the token yet
+    client.portal.call(release.set)
+    t.join(10)
+    assert out["r"].status_code == 200 and out["r"].json()["apple_revoked"] is True
+    assert [f["token"] for f in apple_api.revocations] == [REFRESH]
+    _settle(client)
+    _nothing_left(client, sub)
+
+
+def test_a_deletion_that_fails_after_the_revoke_keeps_the_token_for_the_retry(client, apple_api, monkeypatch):
+    a = _signed_in_with_token(client, _person())
+    sub = _claims(a["access_token"])["sub"]
+    sealed = _sealed(client, sub)
+    steps = accounts._erase_steps
+    monkeypatch.setattr(accounts, "_erase_steps", lambda *args: [*steps(*args), ("DELETE FROM no_such_table WHERE sub = ?", (sub,))])
+    assert client.delete("/api/account", headers=_h(a)).status_code == 503
+    assert _sealed(client, sub) == sealed and len(apple_api.revocations) == 1
+    monkeypatch.setattr(accounts, "_erase_steps", steps)
+    r = client.delete("/api/account", headers=_h(a))
+    # Apple answers 200 for a token it already revoked: true means Apple accepted the call
+    assert r.status_code == 200 and r.json()["apple_revoked"] is True and len(apple_api.revocations) == 2
+    _nothing_left(client, sub)

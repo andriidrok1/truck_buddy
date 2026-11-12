@@ -110,8 +110,29 @@ async def device_created(sub: Optional[str]) -> Optional[datetime]:
     return at
 
 
+class Unregistered(LookupError):
+    """The sub has no device row and the caller may not make one (an account's rows are made at sign-in only)."""
+
+
+def solo_org_statements(sub: str, role: str, at) -> list[tuple[str, tuple]]:
+    """The inserts that give a new sub its organisation of one, driver row and device row (`?` placeholders; `at`
+    is the timestamp in the store's own form). For a caller that runs them inside its own transaction: signing an
+    account in (services/accounts.py)."""
+    org_id, driver_id = new_id("org"), new_id("drv")
+    return [("INSERT INTO orgs (id, name, solo, created_at) VALUES (?, 'Solo', 1, ?)", (org_id, at)),
+            ("INSERT INTO drivers (id, org_id, created_at) VALUES (?, ?, ?)", (driver_id, org_id, at)),
+            ("INSERT INTO devices (sub, driver_id, org_id, role, bound_at, seen_at) VALUES (?, ?, ?, ?, ?, ?)",
+             (sub, driver_id, org_id, role, at, at))]
+
+
 async def ensure_solo_org(sub: str, role: str = "driver") -> Optional[Device]:
-    """The device's org/driver rows, created as an organisation of one when this sub is new."""
+    """The device's org/driver rows, created as an organisation of one when this sub is new.
+
+    Only for a device or access-code token's sub, which exists by being used. Never for an account's: once the
+    account is deleted its sub looks like a new one, and making rows for it here would bring a deleted driver back
+    (a request or a refresh that was on its way during the deletion). An account's rows are made at sign-in, in
+    the transaction that checks the account is still there (accounts.session_open); everything else reads them
+    with device_of."""
     d = await device_of(sub)
     if d is not None:
         return d
@@ -202,9 +223,10 @@ class BadFleetCode(ValueError):
     pass
 
 
-async def bind_fleet_code(sub: str, code: str) -> Device:
+async def bind_fleet_code(sub: str, code: str, create: bool = True) -> Device:
     """Binds the device (and its driver row) to the code's org and vehicle; the code is spent. The driver row is
-    moved into the fleet, so the driver's memory and trips come along."""
+    moved into the fleet, so the driver's memory and trips come along. `create=False` for an account's sub: its
+    rows are not made here (see ensure_solo_org), Unregistered when they are gone."""
     code = code.strip().upper()
     k = db.store()
     if k == "off":
@@ -220,7 +242,9 @@ async def bind_fleet_code(sub: str, code: str) -> Device:
     if not row or row[4] or _at(row[3]) < now:
         raise BadFleetCode("code unknown, used or expired")
     org_id, vehicle_id, role = row[0], row[1], row[2]
-    dev = await ensure_solo_org(sub, role)
+    dev = await (ensure_solo_org(sub, role) if create else device_of(sub))
+    if dev is None:
+        raise Unregistered(sub)
     if k == "sqlite":
         def _bind(con):
             con.execute("UPDATE drivers SET org_id = ? WHERE id = ?", (org_id, dev.driver_id))
@@ -498,15 +522,17 @@ async def profile_get(sub: str) -> Optional[TruckProfile]:
 async def has_profile(sub: str) -> bool:
     """Whether this driver has finished setup, which is what the app skips onboarding on: a truck profile of their
     own is stored, or the device is bound to a fleet truck (its sizes are the fleet's; profile_put stores only the
-    driver's name there), or a name is stored. Read from the store and not from this worker's copies: a sign-in
-    right after the profile was saved through another worker must not send the driver to onboarding again."""
+    driver's name there). A stored name alone is not setup: GET /api/me/profile answers 404 for it, and the app
+    greeted such a driver with "Welcome back" over a default truck. Read from the store and not from this worker's
+    copies: a sign-in right after the profile was saved through another worker must not send the driver to
+    onboarding again."""
     _devices.pop(sub, None)
     dev = await device_of(sub)
     if dev is None:
         return False
     if dev.vehicle_id:
         return True
-    sql = "SELECT (profile IS NOT NULL) OR (COALESCE(display_name, '') <> '') FROM drivers WHERE id = {p}"
+    sql = "SELECT profile IS NOT NULL FROM drivers WHERE id = {p}"
     if db.store() == "sqlite":
         row = await db._sq_run(lambda con: con.execute(sql.format(p="?"), (dev.driver_id,)).fetchone())
         return bool(row and row[0])
@@ -514,14 +540,17 @@ async def has_profile(sub: str) -> bool:
     return bool(await pool.fetchval(sql.format(p="$1"), dev.driver_id))
 
 
-async def profile_put(sub: str, profile: TruckProfile) -> None:
+async def profile_put(sub: str, profile: TruckProfile, create: bool = True) -> None:
     """The app's profile. A fleet driver's sizes are not written anywhere: they change the trip, which the phone
     carries (decision 2026-11-02, bug 2: one driver's trailer and name were written onto the truck for all of
-    its drivers). Their name goes to their own drivers row."""
-    dev = await ensure_solo_org(sub)
-    if dev is None:
-        raise RuntimeError("store is off")
+    its drivers). Their name goes to their own drivers row. `create=False` for an account's sub: its rows are not
+    made here (see ensure_solo_org), Unregistered when they are gone."""
     k = db.store()
+    if k == "off":
+        raise RuntimeError("store is off")
+    dev = await (ensure_solo_org(sub) if create else device_of(sub))
+    if dev is None:
+        raise Unregistered(sub)
     if _drives_a_fleet_truck(dev):
         name = profile.driver_name
         if k == "sqlite":
