@@ -754,13 +754,31 @@ def test_concurrent_refreshes_have_exactly_one_winner(client):
     assert _refresh(client, won[0]).status_code == 200  # the one pair handed out is the live one
 
 
-def test_renew_makes_the_old_refresh_token_a_spent_one(client):
+def test_renew_leaves_an_accounts_refresh_token_as_it_was(client):
+    """A renew answer that never reached the phone must not cost the session: the phone still holds its refresh token,
+    and the server still takes it."""
     who = _person()
     a = _apple(client, who).json()
-    renewed = client.post("/api/auth/renew", headers=_h(a)).json()
-    _age_session(client, a, "rotated_at", timedelta(minutes=1))
-    assert _refresh(client, a).status_code == 401 and _session_row(client, a) == []
-    assert _refresh(client, renewed).status_code == 401
+    before = _session_row(client, a)
+    renewed = client.post("/api/auth/renew", headers=_h(a))
+    assert renewed.status_code == 200 and "refresh_token" not in renewed.json()
+    assert renewed.json()["expires_in"] == auth.JWT_DAYS * 86400 and renewed.json()["role"] == "driver"
+    assert _session_row(client, a) == before  # nothing rotated
+    for _ in range(3):  # lost answers, one after another
+        assert client.post("/api/auth/renew", headers=_h(a)).status_code == 200
+    _age_session(client, a, "seen_at", timedelta(minutes=1))
+    r = _refresh(client, a)  # much later, the refresh token the phone kept all along
+    assert r.status_code == 200 and _session_row(client, a) != []
+
+
+def test_renew_refuses_a_session_another_worker_closed(client):
+    """renew reads the session from the store, not from this worker's minute-old copy."""
+    who = _person()
+    a = _apple(client, who).json()
+    assert client.get("/api/auth/check", headers=_h(a)).status_code == 200
+    _rows(client, "DELETE FROM account_sessions WHERE id = ?", _claims(a["access_token"])["sid"])
+    r = client.post("/api/auth/renew", headers=_h(a))
+    assert r.status_code == 401 and r.json() == {"detail": GONE}
 
 
 def test_an_idle_session_is_refused_and_deleted(client, monkeypatch):
@@ -872,8 +890,8 @@ def test_renew_keeps_the_account_and_the_session(client):
     r = client.post("/api/auth/renew", headers=_h(a))
     assert r.status_code == 200
     was, now = _claims(a["access_token"]), _claims(r.json()["access_token"])
-    assert (now["sub"], now["sid"]) == (was["sub"], was["sid"])
-    assert _refresh(client, a).status_code == 401 and _refresh(client, r.json()).status_code == 200
+    assert (now["sub"], now["sid"]) == (was["sub"], was["sid"]) and now["org_id"] == was["org_id"]
+    assert "refresh_token" not in r.json() and _refresh(client, a).status_code == 200
 
 
 def test_a_fleet_code_keeps_the_session_in_the_new_token(client):

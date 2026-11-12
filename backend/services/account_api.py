@@ -168,10 +168,11 @@ async def auth_refresh(req: RefreshRequest):
 
 @api.post("/auth/renew")
 async def auth_renew(principal: auth.Principal = Depends(auth.require_driver)):
-    """A fresh access token and refresh token for the device behind the Bearer token (valid, or expired inside the
-    grace window). For app builds that never stored a refresh token: they trade the token they have for both."""
+    """A fresh access token for the one behind the Bearer token (valid, or a device token expired inside the grace
+    window). A device token also gets a new refresh token: app builds that never stored one trade the token they have
+    for both. An account session keeps its refresh token and the answer carries none (auth.renew says why)."""
     try:
-        return await auth.issue(principal.sub, principal.role, principal.sid)
+        return await auth.renew(principal.sub, principal.role, principal.sid)
     except HTTPException:  # the session was closed while this request was on its way
         raise
     except Exception as e:  # noqa: BLE001

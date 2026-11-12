@@ -176,6 +176,23 @@ async def issue(sub: str, role: str, sid: Optional[str] = None, spent: Optional[
     return {**out, "refresh_token": refresh, "expires_in": JWT_DAYS * 86400}
 
 
+async def renew(sub: str, role: str, sid: Optional[str] = None) -> dict:
+    """POST /api/auth/renew: a fresh access token for the one presented.
+
+    A device token gets a whole new pair, as always (build 2 never stored a refresh token and trades its access token
+    for both). An account's session keeps its refresh token: the answer has a new access token and no refresh token,
+    and the phone keeps the one it holds. Rotating it here made a lost answer expensive: the phone kept a refresh token
+    the server already counted as spent, and once the access token ran out, its next /auth/refresh was taken for a
+    stolen copy and closed the session (see REUSE_RACE_S). The session is read from the store, not this worker's copy,
+    so no token is minted for a phone that was signed out or deleted a moment ago."""
+    if not sid:
+        return await issue(sub, role)
+    dev = await tenancy.device_of(sub)
+    if (dev is None or not await accounts.session_exists(sid, sub)) and db.store() != "off":
+        raise _unregistered()
+    return {**_access(sub, role, dev, sid), "expires_in": JWT_DAYS * 86400}
+
+
 async def open_session(sub: str, platform: Optional[str] = None) -> Optional[tuple[dict, bool]]:
     """Signs an account in on one phone: a token pair on a new session. Also says whether this is the account's
     first time through (no device row existed for the sub), which is when the app runs onboarding. The tenancy rows
