@@ -293,6 +293,34 @@ export async function wipeServerData(): Promise<{ deleted: number }> {
   }
 }
 
+/** What DELETE /api/account answers (backend services/account_api.py account_delete; no response model there). */
+export type AccountDeleted = {
+  ok: boolean;
+  deleted?: number;
+  trip_events?: number;
+  profile?: boolean;
+  sessions?: number;
+  /** true: Apple took the revocation; false: Apple could not be reached or refused; null: nothing to revoke. */
+  apple_revoked?: boolean | null;
+};
+
+/**
+ * Deletes the signed-in account and everything stored for it. Not through request(): the caller holds every other
+ * request until this one settles (firstLaunch.ts serverThenReset), and request()'s renewal on a 401 would wait on
+ * that very hold. The header is read in the same tick as the call, before the hold goes up. A 401 comes back as an
+ * ApiError for the caller to renew and retry outside the hold; a 409 carries the server's reason in `detail`.
+ */
+async function deleteAccount(): Promise<AccountDeleted> {
+  const d = deadline(DEFAULT_TIMEOUT_MS);
+  try {
+    const res = await fetchTracked(`${BASE}/account`, { method: "DELETE", signal: d.signal, headers: { "Content-Type": "application/json", ...authHeader() } });
+    await check(res, "/account", null, false);
+    return await json<AccountDeleted>(res, "/account");
+  } finally {
+    d.done();
+  }
+}
+
 /** Open sign-up: a device token without a code. Not part of the launch flow since sign-in became required
  *  (src/components/SignInGate.tsx), and a "device" identity is now treated as signed out (firstLaunch.ts
  *  countsAsSignedIn). Kept for the fallback in the plan (an anonymous "Not now"), which would have to lift that rule. */
@@ -338,7 +366,14 @@ export async function redeemAccessCode(code: string) {
 
 export const api = {
   memory: () => request<{ turns: MemoryTurn[] }>(`/memory`),
+  /** "Delete my data" for an access-code sign-in: the conversations, the facts, the trip events and the truck. */
   clearMemory: () => request<{ deleted: number }>(`/memory`, { method: "DELETE" }),
+  /** "Clear memory" for an account: the conversations and what the copilot learned from them. The truck profile,
+   *  the trip events and the visit counts stay. */
+  clearHistory: () => request<{ deleted: number; facts: boolean }>(`/memory/history`, { method: "DELETE" }),
+  /** Signs every phone of the account out, this one included. */
+  logoutAll: () => request<{ ok: boolean; closed: number }>(`/auth/logout-all`, { method: "POST", timeoutMs: 15000 }),
+  deleteAccount,
   places: (category: Category, at: LatLng) =>
     request<PlacesResponse>(`/places?category=${category}&lat=${at.lat}&lng=${at.lng}`),
   /** POST /api/route; `via` = the stops already on the way, so a re-plan (new truck size, entrance,

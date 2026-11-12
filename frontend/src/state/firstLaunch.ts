@@ -165,14 +165,16 @@ export function rootScreen(
   return welcomeBack ? "welcome" : "app";
 }
 
-type Nav = { canDismiss: () => boolean; dismissAll: () => void };
+export type Nav = { canDismiss: () => boolean; dismissAll: () => void };
 
 /**
- * The whole "Delete my data": the server records first (while the token is still valid), then off the truck screen,
- * so the stack that comes back after the gates starts on the map (which sends a driver who is not onboarded to
- * onboarding), then the fresh-install state. False when the server could not be reached: nothing is touched then.
+ * A server wipe, then the phone back to a fresh install: "Delete my data" (an access-code sign-in) and "Delete
+ * account and data" (src/state/accountActions.ts). The server records first, while the token is still valid, then
+ * off the truck screen, so the stack that comes back after the gates starts on the map (which sends a driver who is
+ * not onboarded to onboarding), then the fresh-install state. When the server call fails nothing is touched and the
+ * error comes back to the caller.
  */
-export async function deleteMyData(router: Nav, clearServer: () => Promise<unknown> = wipeServerData): Promise<boolean> {
+export async function serverThenReset<T>(router: Nav, clearServer: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
   // Nothing may reach the server with the old token once the delete is under way: an event posted after it would
   // bring trip rows back for the driver just wiped (review of #129). The trip log stops sending (a batch already on
   // the wire lands first, before the DELETE), the DELETE takes the token with it, and every other request waits for
@@ -180,10 +182,11 @@ export async function deleteMyData(router: Nav, clearServer: () => Promise<unkno
   // one. None goes out tokenless meanwhile, so no 401 can sign the phone out behind the dialog (re-review of #129).
   await tripLog.pause();
   let release: () => void = () => {};
+  let value!: T;
   const underHold = async () => {
     const call = clearServer(); // reads authHeader() synchronously, before its first await
     release = holdToken();
-    await call;
+    value = await call;
   };
   try {
     try {
@@ -196,14 +199,20 @@ export async function deleteMyData(router: Nav, clearServer: () => Promise<unkno
       if ((await renewToken(true)) !== "renewed") throw e;
       await underHold();
     }
-  } catch {
+  } catch (error) {
     release();
     tripLog.resume();
-    return false;
+    return { ok: false, error };
   }
   if (router.canDismiss()) router.dismissAll();
   await resetToFirstLaunch(); // releases the hold once the token is gone (forgetIdentity)
   release(); // in case that step failed
   tripLog.resume(); // empty now; the next events belong to the new identity
-  return true;
+  return { ok: true, value };
+}
+
+/** "Delete my data" for an access-code sign-in (DELETE /api/memory). False when the server could not be reached:
+ *  nothing is touched then. */
+export async function deleteMyData(router: Nav, clearServer: () => Promise<unknown> = wipeServerData): Promise<boolean> {
+  return (await serverThenReset(router, clearServer)).ok;
 }

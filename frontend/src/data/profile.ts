@@ -38,8 +38,25 @@ let wipes = 0; // bumped when the phone changes hands: an answer for the driver 
 
 const stamp = (p: unknown) => JSON.stringify(p);
 
+// Whether UNSYNCED_KEY is on disk, mirrored in memory for the "Synced" pill on the truck screen
+// (src/components/AccountSection.tsx). undefined = not read yet.
+let unsynced: boolean | undefined;
+function setUnsynced(on: boolean) {
+  if (unsynced === on) return;
+  unsynced = on;
+  emitRestore();
+}
+async function loadUnsynced(): Promise<boolean> {
+  if (unsynced === undefined) {
+    const stored = !!(await storage.getItem<string | null>(UNSYNCED_KEY, null));
+    if (unsynced === undefined) setUnsynced(stored);
+  }
+  return unsynced as boolean;
+}
+
 async function push(p: TruckProfile): Promise<void> {
   const sent = stamp(p);
+  setUnsynced(true);
   await storage.setItem(UNSYNCED_KEY, sent);
   try {
     await api.saveProfile(p);
@@ -49,7 +66,10 @@ async function push(p: TruckProfile): Promise<void> {
     // no endpoint (404) or refused: nothing more to send, the flag goes below
   }
   // Only this save's flag: a newer save made while this request ran has its own and keeps it.
-  if ((await storage.getItem<string | null>(UNSYNCED_KEY, null)) === sent) await storage.removeItem(UNSYNCED_KEY);
+  if ((await storage.getItem<string | null>(UNSYNCED_KEY, null)) === sent) {
+    await storage.removeItem(UNSYNCED_KEY);
+    setUnsynced(false);
+  }
 }
 
 // ---- A returning driver's first pull (after sign-in on a new phone or a reinstall) ----
@@ -133,6 +153,25 @@ export function useRestorePending(): boolean | undefined {
     };
   }, []);
   return restoring;
+}
+
+/**
+ * True when the truck on this phone is the one the server has: no change waiting to be sent (UNSYNCED_KEY) and no
+ * returning driver's first pull still on its way (RESTORE_KEY). False while either is pending, and until both flags
+ * are read. It says nothing about changes made on another phone since.
+ */
+export function useProfileSynced(): boolean {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const l = () => force((n) => n + 1);
+    restoreListeners.add(l);
+    loadRestore();
+    loadUnsynced();
+    return () => {
+      restoreListeners.delete(l);
+    };
+  }, []);
+  return restoring === false && unsynced === false;
 }
 
 /** The profile from the server, else the local one; the local copy is kept in step with what the server says.
@@ -240,6 +279,7 @@ export async function resetProfile(): Promise<void> {
   await saveTruckProfile(DEFAULT_TRUCK);
   queryClient.setQueryData(PROFILE_KEY, DEFAULT_TRUCK);
   await storage.removeItem(UNSYNCED_KEY);
+  setUnsynced(false);
 }
 
 /** The trip log rows the backend holds for one drive (tester screen). */

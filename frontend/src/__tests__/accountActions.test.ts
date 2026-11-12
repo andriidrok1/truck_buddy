@@ -1,0 +1,250 @@
+// The account on the truck screen (APP-3): sign out, sign out of all phones, delete the account, and "Clear memory"
+// per identity. The server is a fetch stand-in that answers like backend services/account_api.py.
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { api } from "../api";
+import { getToken, loadToken, setToken } from "../auth";
+import { CONSENT_KEY, giveConsent } from "../consent";
+import { saveProfile } from "../data/profile";
+import { DEFAULT_TRUCK, getTruckProfile } from "../hooks/useTruckProfile";
+import { loadLang, setLang, useLangStore } from "../i18n";
+import { resetRenewalForTests } from "../net/tokenRenewal";
+import { queryClient } from "../query-client";
+import { getAccount, saveAccount } from "../state/account";
+import { clearConversations, deleteAccount, LOGOUT_WAIT_MS, signOut, signOutEverywhere } from "../state/accountActions";
+import { markIntroSeen } from "../state/intro";
+import { storage } from "../utils/storage";
+import { __resetWipeGate } from "../utils/storage/pendingWipe";
+
+const mockSecure = new Map<string, string>();
+jest.mock("expo-secure-store", () => ({
+  getItemAsync: async (k: string) => mockSecure.get(k) ?? null,
+  setItemAsync: async (k: string, v: string) => void mockSecure.set(k, v),
+  deleteItemAsync: async (k: string) => void mockSecure.delete(k),
+}));
+
+type Call = { path: string; method: string; auth: string | undefined };
+let calls: Call[] = [];
+type Answer = Response | "offline" | Promise<Response>;
+let answers: Record<string, Answer> = {};
+const realFetch = global.fetch;
+const reply = (status: number, body: unknown = {}) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+const key = (method: string, path: string) => `${method} ${path}`;
+
+beforeAll(() => {
+  global.fetch = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(url).replace("https://ci.invalid/api", "").split("?")[0];
+    const method = init?.method ?? "GET";
+    calls.push({ path, method, auth: (init?.headers as Record<string, string> | undefined)?.Authorization });
+    const a = answers[key(method, path)] ?? reply(200, { ok: true });
+    if (a === "offline") throw new TypeError("Network request failed");
+    return (await a).clone();
+  }) as typeof fetch;
+});
+afterAll(() => {
+  queryClient.clear(); // saveProfile left the profile in the cache, with a garbage-collection timer of minutes
+  global.fetch = realFetch;
+});
+
+const router = () => ({ canDismiss: jest.fn(() => true), dismissAll: jest.fn() });
+const TRUCK = { ...DEFAULT_TRUCK, height_in: 168, driver_name: "Mike" };
+
+/** A driver signed in with Google, onboarded, on a Russian phone. */
+async function signedIn(via: "account" | "code" = "account") {
+  await AsyncStorage.clear();
+  mockSecure.clear();
+  __resetWipeGate();
+  resetRenewalForTests();
+  await loadLang();
+  await loadToken();
+  setLang("ru");
+  await giveConsent();
+  await markIntroSeen();
+  await setToken("ACC", "driver", via, "REF");
+  if (via === "account") await saveAccount({ name: "Mike Johnson", email: "mike@example.com", provider: "google" });
+  answers = {};
+  await saveProfile(TRUCK);
+  await new Promise((r) => setTimeout(r, 0));
+  calls = [];
+}
+
+const stillMike = async () => {
+  expect(getToken()).toBe("ACC");
+  expect(getTruckProfile().height_in).toBe(168);
+  expect(getAccount()?.email).toBe("mike@example.com");
+  expect(useLangStore.getState().chosen).toBe(true);
+};
+
+describe("Sign out", () => {
+  test("online: this phone's session is closed, then the phone forgets the driver and keeps the language and consent", async () => {
+    await signedIn();
+    await signOut();
+    expect(calls).toEqual([{ path: "/auth/logout", method: "POST", auth: "Bearer ACC" }]);
+    expect(getToken()).toBeNull();
+    expect(getTruckProfile()).toEqual(DEFAULT_TRUCK);
+    expect(getAccount()).toBeNull();
+    expect(useLangStore.getState().chosen).toBe(true);
+    expect(await storage.getItem(CONSENT_KEY, false as boolean)).toBe(true);
+  });
+
+  test("offline: the phone signs out all the same", async () => {
+    await signedIn();
+    answers[key("POST", "/auth/logout")] = "offline";
+    await signOut();
+    expect(calls.map((c) => c.path)).toEqual(["/auth/logout"]);
+    expect(getToken()).toBeNull();
+    expect(getAccount()).toBeNull();
+  });
+
+  test("no answer: after LOGOUT_WAIT_MS the phone signs out without waiting for the request", async () => {
+    await signedIn();
+    const close = jest.fn(() => new Promise<boolean>(() => {}));
+    jest.useFakeTimers();
+    try {
+      const done = signOut(close);
+      await jest.advanceTimersByTimeAsync(LOGOUT_WAIT_MS + 10);
+      jest.useRealTimers();
+      await done;
+    } finally {
+      jest.useRealTimers();
+    }
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(getToken()).toBeNull();
+  });
+});
+
+describe("Sign out of all phones", () => {
+  test("every session closes on the server, then this phone signs out", async () => {
+    await signedIn();
+    expect(await signOutEverywhere()).toBe(true);
+    expect(calls).toEqual([{ path: "/auth/logout-all", method: "POST", auth: "Bearer ACC" }]);
+    expect(getToken()).toBeNull();
+    expect(getAccount()).toBeNull();
+  });
+
+  test("offline or a 503: still signed in, nothing cleared", async () => {
+    await signedIn();
+    answers[key("POST", "/auth/logout-all")] = "offline";
+    expect(await signOutEverywhere()).toBe(false);
+    await stillMike();
+    answers[key("POST", "/auth/logout-all")] = reply(503, { detail: "Sign-in is unavailable right now" });
+    expect(await signOutEverywhere()).toBe(false);
+    await stillMike();
+  });
+});
+
+describe("Delete account and data", () => {
+  test("200: DELETE /api/account, then a fresh install (the language screen)", async () => {
+    await signedIn();
+    answers[key("DELETE", "/account")] = reply(200, { ok: true, deleted: 3, trip_events: 2, profile: true, sessions: 1, apple_revoked: null });
+    const r = router();
+    const out = await deleteAccount(r);
+    expect(out).toEqual({ ok: true, appleRevoked: null });
+    expect(calls).toEqual([{ path: "/account", method: "DELETE", auth: "Bearer ACC" }]);
+    expect(r.dismissAll).toHaveBeenCalled();
+    expect(getToken()).toBeNull();
+    expect(getAccount()).toBeNull();
+    expect(getTruckProfile()).toEqual(DEFAULT_TRUCK);
+    expect(useLangStore.getState().chosen).toBe(false);
+    expect(await storage.getItem(CONSENT_KEY, false as boolean)).toBe(false);
+  });
+
+  test("Apple did not take the revocation: still a success, only logged", async () => {
+    await signedIn();
+    answers[key("DELETE", "/account")] = reply(200, { ok: true, apple_revoked: false });
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await deleteAccount(router())).toEqual({ ok: true, appleRevoked: false });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Apple"));
+    warn.mockRestore();
+    expect(getToken()).toBeNull();
+  });
+
+  test("409 (the last owner of a fleet): the server's reason comes back and nothing is cleared", async () => {
+    await signedIn();
+    const detail = "This account is the only owner of a fleet that still has drivers or a stored key. Write to support@truckbuddy.io to close the fleet or hand it over.";
+    answers[key("DELETE", "/account")] = reply(409, { detail });
+    const r = router();
+    expect(await deleteAccount(r)).toEqual({ ok: false, reason: "refused", detail });
+    expect(r.dismissAll).not.toHaveBeenCalled();
+    await stillMike();
+  });
+
+  test.each([
+    ["503", () => reply(503, { detail: "The account could not be deleted right now. Try again." })],
+    ["no connection", () => "offline" as const],
+  ])("%s: failed, nothing cleared", async (_, a) => {
+    await signedIn();
+    answers[key("DELETE", "/account")] = a();
+    expect(await deleteAccount(router())).toEqual({ ok: false, reason: "failed" });
+    await stillMike();
+  });
+
+  test("while the DELETE is on the wire no other request goes out; on failure they go with the same token", async () => {
+    await signedIn();
+    let answer: (r: Response) => void = () => {};
+    answers[key("DELETE", "/account")] = new Promise<Response>((res) => (answer = res));
+    const deleting = deleteAccount(router());
+    await new Promise((r) => setTimeout(r, 0));
+    const other = api.memory();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.map((c) => c.path)).toEqual(["/account"]);
+    answer(reply(503, { detail: "x" }));
+    expect(await deleting).toEqual({ ok: false, reason: "failed" });
+    answers[key("GET", "/memory")] = reply(200, { turns: [] });
+    await other;
+    expect(calls).toEqual([
+      { path: "/account", method: "DELETE", auth: "Bearer ACC" },
+      { path: "/memory", method: "GET", auth: "Bearer ACC" },
+    ]);
+  });
+
+  test("while the DELETE is on the wire no other request goes out; on success they go without the token", async () => {
+    await signedIn();
+    let answer: (r: Response) => void = () => {};
+    answers[key("DELETE", "/account")] = new Promise<Response>((res) => (answer = res));
+    const deleting = deleteAccount(router());
+    await new Promise((r) => setTimeout(r, 0));
+    const other = api.memory().catch(() => null);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.map((c) => c.path)).toEqual(["/account"]);
+    answer(reply(200, { ok: true, apple_revoked: true }));
+    expect((await deleting).ok).toBe(true);
+    await other;
+    expect(calls[1]).toEqual({ path: "/memory", method: "GET", auth: undefined });
+  });
+
+  test("an expired access token: renewed outside the hold, and the delete goes once more with the new one", async () => {
+    await signedIn();
+    let n = 0;
+    const call = jest.fn(async () => {
+      n++;
+      if (n === 1) return api.deleteAccount(); // answered 401 below
+      return { ok: true, apple_revoked: null };
+    });
+    answers[key("DELETE", "/account")] = reply(401, { detail: "Token expired" });
+    answers[key("POST", "/auth/renew")] = reply(401, { detail: "Token expired" });
+    answers[key("POST", "/auth/refresh")] = reply(200, { access_token: "ACC2", refresh_token: "REF2" });
+    expect(await deleteAccount(router(), call)).toEqual({ ok: true, appleRevoked: null });
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(calls.map((c) => c.path)).toContain("/auth/refresh");
+  });
+});
+
+describe("Clear memory", () => {
+  test("an account clears only the conversations (DELETE /api/memory/history); the truck stays", async () => {
+    await signedIn("account");
+    answers[key("DELETE", "/memory/history")] = reply(200, { deleted: 4, facts: true });
+    await clearConversations();
+    expect(calls).toEqual([{ path: "/memory/history", method: "DELETE", auth: "Bearer ACC" }]);
+    expect(getTruckProfile().height_in).toBe(168);
+    expect(getToken()).toBe("ACC");
+  });
+
+  test("an access-code sign-in keeps the older DELETE /api/memory", async () => {
+    await signedIn("code");
+    answers[key("DELETE", "/memory")] = reply(200, { deleted: 4 });
+    await clearConversations();
+    expect(calls).toEqual([{ path: "/memory", method: "DELETE", auth: "Bearer ACC" }]);
+    expect(getTruckProfile().height_in).toBe(168);
+  });
+});
