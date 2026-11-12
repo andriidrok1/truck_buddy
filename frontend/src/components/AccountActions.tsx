@@ -58,6 +58,7 @@ const DELETE_FAILED = "Couldn't delete your account. Try again.";
 const DELETE_UNCONFIRMED = "We couldn't confirm. Check your connection and try again.";
 const DELETE_ERROR = { not_removed: DELETE_NOT_REMOVED, failed: DELETE_FAILED, unconfirmed: DELETE_UNCONFIRMED } as const;
 const EVERYWHERE_FAILED = "Couldn't reach the server. You're still signed in everywhere. Try again.";
+const EVERYWHERE_UNCONFIRMED = "We couldn't confirm that every phone was signed out. Check your connection and try again.";
 
 export function AccountActions({ router }: { router: Nav }) {
   const { colors } = useTheme();
@@ -74,7 +75,8 @@ export function AccountActions({ router }: { router: Nav }) {
     try {
       if (what === "signout") await signOut();
       else if (what === "everywhere") {
-        if (!(await signOutEverywhere())) setError(EVERYWHERE_FAILED);
+        const out = await signOutEverywhere();
+        if (out !== "done") setError(out === "failed" ? EVERYWHERE_FAILED : EVERYWHERE_UNCONFIRMED);
       } else {
         const out = await deleteAccount(router);
         if (!out.ok) setError(out.reason === "refused" ? out.detail : DELETE_ERROR[out.reason]);

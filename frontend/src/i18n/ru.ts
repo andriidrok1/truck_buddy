@@ -547,6 +547,8 @@ export const RU: Record<string, string> = {
   "Every phone signed in to this account goes back to the sign-in screen within a minute, this one too. Your data stays in your account.":
     "Все телефоны с этим аккаунтом, и этот тоже, в течение минуты вернутся к экрану входа. Данные остаются в твоём аккаунте.",
   "Sign out everywhere": "Выйти везде",
+  "We couldn't confirm that every phone was signed out. Check your connection and try again.":
+    "Не получилось проверить, что выход сделан на всех телефонах. Проверь связь и попробуй ещё раз.",
   "Couldn't reach the server. You're still signed in everywhere. Try again.":
     "Сервер недоступен. Вход на всех телефонах остался. Попробуй ещё раз.",
   "Delete account and data": "Удалить аккаунт и данные",

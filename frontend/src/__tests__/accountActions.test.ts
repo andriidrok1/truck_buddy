@@ -10,7 +10,7 @@ import { DEFAULT_TRUCK, getTruckProfile } from "../hooks/useTruckProfile";
 import { loadLang, setLang, useLangStore } from "../i18n";
 import { resetRenewalForTests } from "../net/tokenRenewal";
 import { queryClient } from "../query-client";
-import { getAccount, saveAccount } from "../state/account";
+import { getAccount, saveAccount, signInNotice } from "../state/account";
 import { clearConversations, deleteAccount, LOGOUT_WAIT_MS, signOut, signOutEverywhere } from "../state/accountActions";
 import { deleteMyData, wipeRunning } from "../state/firstLaunch";
 import { markIntroSeen } from "../state/intro";
@@ -117,20 +117,48 @@ describe("Sign out", () => {
 describe("Sign out of all phones", () => {
   test("every session closes on the server, then this phone signs out", async () => {
     await signedIn();
-    expect(await signOutEverywhere()).toBe(true);
+    expect(await signOutEverywhere()).toBe("done");
     expect(calls).toEqual([{ path: "/auth/logout-all", method: "POST", auth: "Bearer ACC" }]);
     expect(getToken()).toBeNull();
     expect(getAccount()).toBeNull();
   });
 
-  test("offline or a 503: still signed in, nothing cleared", async () => {
+  test("a 503 with our detail: still signed in, nothing cleared, no check", async () => {
     await signedIn();
-    answers[key("POST", "/auth/logout-all")] = "offline";
-    expect(await signOutEverywhere()).toBe(false);
-    await stillMike();
     answers[key("POST", "/auth/logout-all")] = reply(503, { detail: "Sign-in is unavailable right now" });
-    expect(await signOutEverywhere()).toBe(false);
+    expect(await signOutEverywhere()).toBe("failed");
+    expect(calls.map((c) => c.path)).toEqual(["/auth/logout-all"]);
     await stillMike();
+  });
+
+  describe("no answer: GET /api/auth/check with the same token (review of #173, M2)", () => {
+    test("our 401: the sessions are closed, this phone signs out as the driver asked (no notice)", async () => {
+      await signedIn();
+      answers[key("POST", "/auth/logout-all")] = "offline";
+      answers[key("GET", "/auth/check")] = reply(401, { detail: "This session was signed out" });
+      expect(await signOutEverywhere()).toBe("done");
+      expect(calls.map((c) => c.path)).toEqual(["/auth/logout-all", "/auth/check"]);
+      expect(calls[1].auth).toBe("Bearer ACC");
+      expect(getToken()).toBeNull();
+      expect(signInNotice()).toBeNull();
+      expect(useLangStore.getState().chosen).toBe(true);
+    });
+
+    test("200: nothing closed, still signed in everywhere", async () => {
+      await signedIn();
+      answers[key("POST", "/auth/logout-all")] = reply(504, "gateway timeout");
+      answers[key("GET", "/auth/check")] = reply(200, { ok: true });
+      expect(await signOutEverywhere()).toBe("failed");
+      await stillMike();
+    });
+
+    test("the check gets no answer either: unconfirmed, still signed in", async () => {
+      await signedIn();
+      answers[key("POST", "/auth/logout-all")] = "offline";
+      answers[key("GET", "/auth/check")] = "offline";
+      expect(await signOutEverywhere()).toBe("unconfirmed");
+      await stillMike();
+    });
   });
 });
 

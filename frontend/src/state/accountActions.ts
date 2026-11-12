@@ -6,6 +6,12 @@ import { api, ApiError, isNoLongerRegistered, logout, tokenState, type AccountDe
 import { getToken, signedInWithAccount } from "../auth";
 import { serverThenReset, signedOutReset, type Nav } from "./firstLaunch";
 
+/** No answer to a DELETE /api/account or a POST /api/auth/logout-all: the server may have finished all the same (a
+ *  timeout, a dead zone, the edge's 502/504, a 503 page from the proxy during a deploy, which has no JSON `detail`).
+ *  A 503 with our `detail` is the backend saying it did not (review of #173, M4). */
+const noAnswer = (e: unknown) =>
+  !(e instanceof ApiError) || e.status === 502 || e.status === 504 || (e.status === 503 && e.detail === null);
+
 /** How long "Sign out" waits for the server to close this phone's session before signing out anyway. */
 export const LOGOUT_WAIT_MS = 3000;
 
@@ -23,19 +29,32 @@ export async function signOut(close: () => Promise<boolean> = logout): Promise<v
   await signedOutReset();
 }
 
+/** "done": every session closed and this phone signed out. "failed": the server answered and every phone is still
+ *  signed in. "unconfirmed": no answer, and the check got none either; this phone stays signed in. */
+export type EverywhereOutcome = "done" | "failed" | "unconfirmed";
+
 /**
  * "Sign out of all phones": every session of the account closes on the server, this phone's included, and this
- * phone forgets the driver. False when the server could not be reached: the phone stays signed in, because
- * signing out here alone would leave a lost phone signed in while the driver thinks it is not.
+ * phone forgets the driver. When the server cannot be reached the phone stays signed in, because signing out here
+ * alone would leave a lost phone signed in while the driver thinks it is not.
+ *
+ * No answer (review of #173, M2): the request may have gone through. GET /api/auth/check with the token it carried
+ * says which: our 401 means the session is closed, and this phone signs out as on a 200 (the driver asked for it:
+ * no notice, no route kept); a 200 means nothing closed; no answer is "unconfirmed".
  */
-export async function signOutEverywhere(call: () => Promise<unknown> = api.logoutAll): Promise<boolean> {
+export async function signOutEverywhere(call: () => Promise<unknown> = api.logoutAll): Promise<EverywhereOutcome> {
+  const sent = getToken();
   try {
     await call();
-  } catch {
-    return false;
+  } catch (e) {
+    if (!getToken()) return "done"; // our 401 on the request itself, and the renewal signed the phone out already
+    if (!sent || !noAnswer(e)) return "failed";
+    const state = await tokenState(sent);
+    if (state === "alive") return "failed";
+    if (state === "unknown") return "unconfirmed";
   }
   await signedOutReset();
-  return true;
+  return "done";
 }
 
 export type DeleteOutcome =
@@ -51,12 +70,6 @@ export type DeleteOutcome =
   /** No answer to the DELETE, and the check could not settle it (the account still answers, which may only mean the
    *  deletion is still running, or the check got no answer either). Nothing on the phone was touched. */
   | { ok: false; reason: "unconfirmed" };
-
-/** No answer to the DELETE: the server may have finished all the same (a timeout, a dead zone, the edge's 502/504,
- *  a 503 page from the proxy during a deploy, which has no JSON `detail`). A 503 with our `detail` is the backend
- *  saying it did not (review of #173, M4). */
-const noAnswer = (e: unknown) =>
-  !(e instanceof ApiError) || e.status === 502 || e.status === 504 || (e.status === 503 && e.detail === null);
 
 class Unconfirmed extends Error {}
 

@@ -32,7 +32,7 @@ jest.mock("react-native-reanimated", () => {
 });
 jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemAsync: async () => {}, deleteItemAsync: async () => {} }));
-jest.mock("../state/accountActions", () => ({ signOut: jest.fn(async () => {}), signOutEverywhere: jest.fn(async () => true), deleteAccount: jest.fn() }));
+jest.mock("../state/accountActions", () => ({ signOut: jest.fn(async () => {}), signOutEverywhere: jest.fn(async () => "done"), deleteAccount: jest.fn() }));
 jest.mock("../state/firstLaunch", () => ({ ...jest.requireActual("../state/firstLaunch"), deleteMyData: jest.fn(async () => true), signedOutReset: jest.fn(async () => []) }));
 jest.mock("../api", () => {
   const actual = jest.requireActual("../api");
@@ -170,11 +170,17 @@ describe("AccountActions, an account", () => {
     await press("sign-out-all-sheet-confirm");
     expect(mocks.everywhere).toHaveBeenCalledTimes(1);
 
-    mocks.everywhere.mockResolvedValueOnce(false);
+    mocks.everywhere.mockResolvedValueOnce("failed");
     await press("account-sign-out-all");
     later();
     await press("sign-out-all-sheet-confirm");
     expect(screen.getByTestId("account-error")).toHaveTextContent("Couldn't reach the server. You're still signed in everywhere. Try again.");
+
+    mocks.everywhere.mockResolvedValueOnce("unconfirmed");
+    await press("account-sign-out-all");
+    later();
+    await press("sign-out-all-sheet-confirm");
+    expect(screen.getByTestId("account-error")).toHaveTextContent("We couldn't confirm that every phone was signed out. Check your connection and try again.");
   });
 
   test("Delete takes two steps; a double tap does not go through the second", async () => {
