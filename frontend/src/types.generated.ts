@@ -34,6 +34,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/apple": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Apple
+         * @description Sign in with Apple: the identity token from the phone, plus the raw nonce the app made for it.
+         */
+        post: operations["auth_apple_api_auth_apple_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/check": {
         parameters: {
             query?: never;
@@ -88,6 +108,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/google": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Google
+         * @description Sign in with Google: the id token from the phone.
+         */
+        post: operations["auth_google_api_auth_google_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Logout
+         * @description Signs this phone out: its session and refresh token go, the account's other phones stay signed in. Any token
+         *     this server signed will do, expired or not. Answers the same when the session is already gone, or for a device
+         *     token (which has no session), so the app can always finish signing out.
+         */
+        post: operations["auth_logout_api_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Logout All
+         * @description Signs every phone of this account out, this one included (a phone was lost or stolen). The other phones are
+         *     refused within a minute. A device token has no account: nothing to close.
+         */
+        post: operations["auth_logout_all_api_auth_logout_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/refresh": {
         parameters: {
             query?: never;
@@ -99,9 +182,30 @@ export interface paths {
         put?: never;
         /**
          * Auth Refresh
-         * @description A new access token for a device's refresh token (the refresh token rotates).
+         * @description A new access token for a refresh token (which rotates): an account session's, or a device's.
          */
         post: operations["auth_refresh_api_auth_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Renew
+         * @description A fresh access token and refresh token for the device behind the Bearer token (valid, or expired inside the
+         *     grace window). For app builds that never stored a refresh token: they trade the token they have for both.
+         */
+        post: operations["auth_renew_api_auth_renew_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -801,6 +905,19 @@ export interface components {
             /** Value */
             value?: boolean | number | string | null;
         };
+        /** AppleSignInRequest */
+        AppleSignInRequest: {
+            /** Authorization Code */
+            authorization_code?: string | null;
+            /** Identity Token */
+            identity_token: string;
+            /** Name */
+            name?: string | null;
+            /** Nonce */
+            nonce: string;
+            /** Platform */
+            platform?: ("ios" | "android") | null;
+        };
         /**
          * Approach
          * @description How the driver arrives: heading over the last 300 m and the street of the last maneuver.
@@ -942,6 +1059,13 @@ export interface components {
         FleetCodeRequest: {
             /** Code */
             code: string;
+        };
+        /** GoogleSignInRequest */
+        GoogleSignInRequest: {
+            /** Id Token */
+            id_token: string;
+            /** Platform */
+            platform?: ("ios" | "android") | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1445,6 +1569,27 @@ export interface components {
             place: components["schemas"]["Place"];
             route: components["schemas"]["RouteInfo"];
         };
+        /** SignInResponse */
+        SignInResponse: {
+            /** Access Token */
+            access_token: string;
+            /** Email */
+            email?: string | null;
+            /** Expires In */
+            expires_in: number;
+            /** Has Profile */
+            has_profile: boolean;
+            /** Name */
+            name?: string | null;
+            /** New Account */
+            new_account: boolean;
+            /** Refresh Token */
+            refresh_token: string;
+            /** Role */
+            role: string;
+            /** Token Type */
+            token_type: string;
+        };
         /** SpeakRequest */
         SpeakRequest: {
             /** Eleven Voice Id */
@@ -1678,6 +1823,39 @@ export interface operations {
             };
         };
     };
+    auth_apple_api_auth_apple_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppleSignInRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     auth_check_api_auth_check_get: {
         parameters: {
             query?: never;
@@ -1751,6 +1929,79 @@ export interface operations {
             };
         };
     };
+    auth_google_api_auth_google_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleSignInRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_logout_api_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    auth_logout_all_api_auth_logout_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     auth_refresh_api_auth_refresh_post: {
         parameters: {
             query?: never;
@@ -1780,6 +2031,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_renew_api_auth_renew_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

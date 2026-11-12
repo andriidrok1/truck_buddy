@@ -1,4 +1,4 @@
-import { authHeader, getToken, requestCode, setToken, tokenHold } from "./auth";
+import { authHeader, getToken, identityEpoch, requestCode, setToken, tokenHold } from "./auth";
 import { AgentResponseSchema, checkContract, RouteResultSchema } from "./api/schemas";
 import { eldHeader } from "./eld";
 import { ensureTruckProfile, type TruckProfile } from "./hooks/useTruckProfile";
@@ -6,8 +6,11 @@ import { isNetworkError, offlineHint } from "./net/offlineHint";
 import { after401 } from "./net/tokenRenewal";
 import { stopsAhead, viaOf } from "./state/tripStore";
 import { uploadForm } from "./utils/upload";
+import type { components } from "./types.generated";
+import type { AppleCredential } from "./signin/apple";
 import type { ActiveRoute, AgentResponse, Approach, Category, LatLng, Nudge, NudgeRequest, ParkingCheck, PlacesResponse, Place, RouteInfo, UiState } from "./types";
 import { BASE } from "./url";
+import { Platform } from "react-native";
 
 // ./url throws at load time when EXPO_PUBLIC_BACKEND_URL is missing, so importing this module still fails loudly.
 export { absoluteUrl, apiUrl } from "./url";
@@ -157,8 +160,13 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
         headers: { "Content-Type": "application/json", ...authHeader(), ...(rest.headers ?? {}) },
       });
     let sent = getToken();
+    const who = identityEpoch();
     let res = await send();
-    if (res.status === 401 && sent !== null) {
+    if (res.status === 401 && sent !== null && identityEpoch() !== who) {
+      // The driver this request was made for has signed out since (and someone else may be signed in by now):
+      // it is never sent again under another identity.
+      await check(res, path, sent, false);
+    } else if (res.status === 401 && sent !== null) {
       // An expired token: renew once (or take the one another request just renewed) and send it again.
       const now = getToken();
       const replaced = now !== null && now !== sent;
@@ -179,7 +187,90 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
 /** Thrown when the server has open sign-up turned off: the driver needs an access code. */
 export class CodeRequiredError extends Error {}
 
-/** Open sign-up: a device token without a code. */
+/** What POST /api/auth/apple and /api/auth/google answer (backend services/account_api.py SignInResponse). */
+export type SignInResponse = components["schemas"]["SignInResponse"];
+type AppleSignInBody = components["schemas"]["AppleSignInRequest"];
+type GoogleSignInBody = components["schemas"]["GoogleSignInRequest"];
+
+/** A sign-in the server did not complete. `status` 0: no answer at all (offline, timed out). */
+export class SignInError extends Error {
+  constructor(public readonly status: number) {
+    super(`sign-in failed: ${status || "network"}`);
+    this.name = "SignInError";
+  }
+}
+
+const signInPlatform = (): "ios" | "android" | undefined => (Platform.OS === "ios" || Platform.OS === "android" ? Platform.OS : undefined);
+
+/**
+ * Trades a provider token for the account's token pair and stores it (`via` "account"). `prepare` runs between the
+ * server's answer and the token going in: the moment the token is stored the root layout leaves the sign-in screen,
+ * so whatever the next screen reads (is this driver onboarded? is "Welcome back" due?) is written first.
+ */
+async function signIn(path: "/auth/apple" | "/auth/google", body: AppleSignInBody | GoogleSignInBody, prepare?: (r: SignInResponse) => unknown): Promise<SignInResponse> {
+  let res: Response;
+  const d = deadline(20000);
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Lang": authHeader()["X-Lang"] },
+      body: JSON.stringify(body),
+      signal: d.signal,
+    });
+  } catch {
+    throw new SignInError(0);
+  } finally {
+    d.done();
+  }
+  if (!res.ok) throw new SignInError(res.status);
+  let data: SignInResponse;
+  try {
+    data = await json<SignInResponse>(res, path);
+  } catch {
+    throw new SignInError(0);
+  }
+  if (typeof data?.access_token !== "string" || !data.access_token || typeof data.refresh_token !== "string" || !data.refresh_token) throw new SignInError(0);
+  await prepare?.(data);
+  await setToken(data.access_token, data.role === "tester" ? "tester" : "driver", "account", data.refresh_token);
+  requestCode(false);
+  return data;
+}
+
+/** Sign in with Apple: the identity token, the raw nonce made for it (src/signin/apple.ts), the authorization code
+ *  (the server revokes the sign-in with it when the account is deleted) and the name Apple gave, if any. */
+export const signInApple = (c: AppleCredential, prepare?: (r: SignInResponse) => unknown) =>
+  signIn(
+    "/auth/apple",
+    { identity_token: c.identityToken, nonce: c.rawNonce, authorization_code: c.authorizationCode ?? undefined, name: c.name ?? undefined, platform: signInPlatform() },
+    prepare,
+  );
+
+/** Sign in with Google: the id token from Google's sheet (src/signin/google.ts). */
+export const signInGoogle = (idToken: string, prepare?: (r: SignInResponse) => unknown) =>
+  signIn("/auth/google", { id_token: idToken, platform: signInPlatform() }, prepare);
+
+/**
+ * Closes this phone's session on the server (the account's other phones stay signed in). The server takes any
+ * token it signed, expired or not, and answers the same when the session is already gone. False when it could not
+ * be reached: the caller signs out locally all the same, and the session ends when it goes idle. Not through
+ * request(): a 401 here must not start a renewal.
+ */
+export async function logout(): Promise<boolean> {
+  const token = getToken();
+  if (!token) return true;
+  const d = deadline(15000);
+  try {
+    const res = await fetch(`${BASE}/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, signal: d.signal });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    d.done();
+  }
+}
+
+/** Open sign-up: a device token without a code. Not part of the launch flow since sign-in became required
+ *  (src/components/SignInGate.tsx); kept for the fallback in the plan (an anonymous "Not now"). */
 export async function registerDevice() {
   let res: Response;
   const d = deadline(DEFAULT_TIMEOUT_MS);
