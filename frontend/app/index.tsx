@@ -340,6 +340,12 @@ export default function MapScreen() {
   };
 
   const backToIdle = () => setPhase(trip().idleSheet());
+  /** A tapped route that is dropped must not leave "Setting route…" up: nothing else takes it down, and the
+   *  pins and Route buttons are dead while it shows. Only when "thinking" is still on screen: a mic turn that
+   *  began meanwhile owns "listening". */
+  const leaveRouting = () => {
+    if (phaseRef.current === "thinking") backToIdle();
+  };
 
   const restored = useTripRestore(active, driving, restoredId, setDialogPhase, setFit);
 
@@ -804,12 +810,13 @@ export default function MapScreen() {
       // Breakdown providers: the driver needs the shop, not a satellite parking check (faster route).
       const isProvider = p.category === "service" || !!t.providers?.providers.some((x) => x.id === p.id);
       const res = await api.route(coordsRef.current, p, isProvider);
-      if (trip().routeGen !== gen) return; // a newer route landed while this one was planned
+      if (trip().routeGen !== gen) return leaveRouting(); // a newer route landed while this one was planned
       // Keep the previous destination among the alternatives.
       trip().setOptions((list) => [...(prev ? [prev.place] : []), ...list].filter((o) => o.id !== p.id));
       startRoute(res);
     } catch (e) {
-      if (trip().routeGen !== gen) return;
+      if (trip().routeGen !== gen) return leaveRouting();
+      trip().releaseRoute(gen); // the route on screen stays: its re-plans may land again
       backToIdle();
       showToast(routeFailText(e));
     }

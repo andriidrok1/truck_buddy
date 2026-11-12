@@ -42,6 +42,9 @@ export type TripState = {
   sheet: Sheet;
   /** Bumped on every route replacement; a re-plan that started under an older value is dropped. */
   routeGen: number;
+  /** The generation the last tapped place claimed (claimRoute). While `routeGen` is still this value the
+   *  tap's request is in flight and owns the route; any later route change moves `routeGen` past it. */
+  claimedGen: number | null;
 };
 
 export type TripActions = {
@@ -50,7 +53,11 @@ export type TripActions = {
   /** A route request is about to start (a pin tapped): bumps the generation so whatever was in flight is
    *  dropped when it lands, and returns the value this request owns. */
   claimRoute: () => number;
-  /** Same destination, a new line (reroute, re-plan, copilot's stop change): only when `gen` is still current. */
+  /** The claimed request failed and nothing landed: re-plans of the route on screen may land again. */
+  releaseRoute: (gen: number) => void;
+  /** Same destination, a new line (reroute, re-plan, copilot's stop change): only when `gen` is still current
+   *  and no tap holds it. A re-plan that began after the tap read the tap's own generation, landed first and
+   *  moved it on, and the tapped route was dropped as stale. The last tap wins. */
   /** `parking`: the entry tip phrased for this route's approach (the backend sends it with every route), so
    *  the card names the same side and street as the voice. */
   applyRoute: (gen: number, route: RouteInfo, stops?: Place[], parking?: ParkingCheck | null) => boolean;
@@ -100,7 +107,7 @@ export function stopsAhead(route: Pick<RouteInfo, "geometry" | "section_starts">
 
 const INITIAL: TripState = {
   active: null, driving: false, restoredId: null, restoredDriving: false, routeStart: null, drivingSince: null,
-  options: [], providers: null, agentPlaces: [], startPins: [], parking: {}, sheet: "ready", routeGen: 0,
+  options: [], providers: null, agentPlaces: [], startPins: [], parking: {}, sheet: "ready", routeGen: 0, claimedGen: null,
 };
 
 export const useTripStore = create<TripState & TripActions>()((set, get) => ({
@@ -113,12 +120,15 @@ export const useTripStore = create<TripState & TripActions>()((set, get) => ({
   },
   claimRoute: () => {
     const gen = get().routeGen + 1;
-    set({ routeGen: gen });
+    set({ routeGen: gen, claimedGen: gen });
     return gen;
+  },
+  releaseRoute: (gen) => {
+    if (get().claimedGen === gen) set({ claimedGen: null });
   },
   applyRoute: (gen, route, stops, parking) => {
     const cur = get();
-    if (!cur.active || cur.routeGen !== gen) return false;
+    if (!cur.active || cur.routeGen !== gen || cur.claimedGen === gen) return false;
     set({ active: { ...cur.active, route, ...(stops ? { stops } : {}), ...(parking ? { parking } : {}) }, routeGen: gen + 1 });
     return true;
   },

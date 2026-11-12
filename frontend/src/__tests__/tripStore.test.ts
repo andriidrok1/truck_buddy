@@ -48,6 +48,34 @@ describe("tripStore", () => {
     expect(viaOf(useTripStore.getState().active?.stops)).toEqual([[38.55, -121.42]]);
   });
 
+  test("a tapped place holds the route: a re-plan that began after the tap cannot take its generation", () => {
+    const s = useTripStore.getState();
+    s.startRoute(active);
+    const before = useTripStore.getState().routeGen;
+    const gen = s.claimRoute(); // the driver tapped another place; its /route is in flight
+    // an off-route reroute (or the entrance re-plan) starts now, reads the tap's generation and lands first
+    expect(s.applyRoute(useTripStore.getState().routeGen, route("re-plan"))).toBe(false);
+    // one that began before the tap is stale as before
+    expect(s.applyRoute(before, route("older"))).toBe(false);
+    expect(useTripStore.getState().routeGen).toBe(gen); // the tap's route still lands
+    s.startRoute({ ...active, place: place("p2") });
+    expect(useTripStore.getState().active?.place.id).toBe("p2");
+    // the new route is re-planned as usual
+    expect(s.applyRoute(useTripStore.getState().routeGen, route("US-50"))).toBe(true);
+  });
+
+  test("a tapped route that failed gives the route on screen back to its re-plans", () => {
+    const s = useTripStore.getState();
+    s.startRoute(active);
+    const gen = s.claimRoute();
+    s.releaseRoute(gen);
+    expect(s.applyRoute(gen, route("reroute"))).toBe(true);
+    // releasing an old claim does not free a newer one
+    const next = s.claimRoute();
+    s.releaseRoute(gen);
+    expect(s.applyRoute(next, route("stale"))).toBe(false);
+  });
+
   test("applyRoute takes the entry tip phrased for the new route, and keeps the old one when none came", () => {
     const s = useTripStore.getState();
     s.startRoute({ ...active, parking: { verdict: "likely", label: "x", reason: "x", source: "satellite", entry_tip: "On your right, off El Centro Rd", relative: true } as never });
