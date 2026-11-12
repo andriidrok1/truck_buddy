@@ -930,6 +930,8 @@ def test_a_session_ends_for_good_a_year_after_its_sign_in(client, monkeypatch):
     assert _refresh(client, old).status_code == 200
     monkeypatch.setenv("ACCOUNT_SESSION_MAX_DAYS", "a year")
     assert accounts.max_days() == accounts.MAX_DAYS_DEFAULT
+    monkeypatch.setenv("ACCOUNT_SESSION_MAX_DAYS", "-1")
+    assert accounts.max_days() == accounts.MAX_DAYS_DEFAULT
 
 
 def test_an_expired_account_token_gets_no_grace_but_a_device_token_does(client):

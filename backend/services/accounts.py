@@ -257,9 +257,10 @@ def idle(seen_at: datetime) -> bool:
 def max_days() -> int:
     """ACCOUNT_SESSION_MAX_DAYS: how long a session lives from its sign-in, used or not (0 = no limit)."""
     try:
-        return max(0, int(os.environ.get("ACCOUNT_SESSION_MAX_DAYS", "") or MAX_DAYS_DEFAULT))
+        days = int(os.environ.get("ACCOUNT_SESSION_MAX_DAYS", "") or MAX_DAYS_DEFAULT)
     except ValueError:  # a typo must not make every session immortal or dead
         return MAX_DAYS_DEFAULT
+    return days if days >= 0 else MAX_DAYS_DEFAULT  # "-1" is a typo too, not "no limit"
 
 
 def session_end(created_at: datetime) -> Optional[datetime]:
