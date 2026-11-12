@@ -136,7 +136,10 @@ export const useTripStore = create<TripState & TripActions>()((set, get) => ({
     const cur = get();
     if (cur.active && cur.active.place.id === placeId) set({ active: { ...cur.active, parking } });
   },
-  setDriving: (driving, now = Date.now()) => set({ driving, drivingSince: driving ? now : null }),
+  // Already driving: the start time stays ("start driving" said again mid-trip moved it, and the break
+  // reminder that counts from it came hours late).
+  setDriving: (driving, now = Date.now()) =>
+    set((s) => ({ driving, drivingSince: driving ? (s.driving && s.drivingSince !== null ? s.drivingSince : now) : null })),
   endRoute: () => {
     const cur = get();
     set({ active: null, driving: false, drivingSince: null, routeStart: null, restoredId: null, restoredDriving: false, options: [],

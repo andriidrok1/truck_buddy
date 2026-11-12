@@ -50,6 +50,21 @@ export function heardTruckLine(heard: readonly string[], t: TruckInputs, hazmat:
   return parts.join(" · ");
 }
 
+/**
+ * Did the driver's own words carry a truck height? The parser is a language model and its prompt shows
+ * "13 ft 6 in" as an example: asked about "80,000 pounds, no hazmat" it can hand back a height nobody said,
+ * and that must not count as the driver's answer to the bridge question. A number from 10 to 14 that is not
+ * the start of a weight ("14,000"), the same in words, or the word for height. When in doubt the answer is
+ * no: the map then asks once more, which costs a tap; a wrong yes lets Go through on a height never given.
+ */
+export function saidHeight(transcript: string): boolean {
+  return (
+    /(^|[^\d.,])1[0-4](?!\d)(?![,.]\d{3})/.test(transcript) ||
+    /\b(ten|eleven|twelve|thirteen|fourteen|height|tall|high)\b/i.test(transcript) ||
+    /десят|одиннадцат|двенадцат|тринадцат|четырнадцат|высот/i.test(transcript)
+  );
+}
+
 /** Empty = the server's default (null); 3 to 15 mpg = that; anything else = undefined (invalid, Save disabled). */
 export function parseMpg(raw: string): number | null | undefined {
   const v = raw.trim().replace(",", ".");

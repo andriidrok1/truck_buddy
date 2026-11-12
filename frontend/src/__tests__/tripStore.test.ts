@@ -214,3 +214,14 @@ describe("stopsAhead", () => {
     expect(stopsAhead({ geometry, section_starts: undefined }, stops, { lat: 38.58, lng: -121.42 })).toHaveLength(2);
   });
 });
+
+test("setDriving(true) while already driving keeps the start time", () => {
+  useTripStore.getState().reset();
+  const s = useTripStore.getState();
+  s.setDriving(true, 1000);
+  s.setDriving(true, 9000); // "start driving" said again three hours in
+  expect(useTripStore.getState().drivingSince).toBe(1000);
+  s.setDriving(false, 9500);
+  s.setDriving(true, 10000);
+  expect(useTripStore.getState().drivingSince).toBe(10000);
+});

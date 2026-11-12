@@ -82,6 +82,7 @@ export async function touchSavedRoute(now = Date.now()) {
     const saved = decodeSaved(await storage.getItem<Record<string, unknown> | string | null>(ACTIVE_ROUTE_KEY, null));
     if (!saved) return;
     if (!(await storage.setItem(ACTIVE_ROUTE_KEY, { ...saved, savedAt: now } as unknown as Record<string, unknown>))) return;
+    if (savedAt === null) return; // "End route" came in while this waited: its clear is next in the queue
     savedAt = now;
     notify();
   });

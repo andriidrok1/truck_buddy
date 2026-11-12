@@ -19,7 +19,7 @@ import { saveProfile } from "@/src/data/profile";
 import { setOnboarded, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { spacing, useTheme } from "@/src/theme";
-import { heardTruckLine, truckErrors, truckFromInputs } from "@/src/truck/validate";
+import { heardTruckLine, saidHeight, truckErrors, truckFromInputs } from "@/src/truck/validate";
 import { LANGS, setLang, t, UK_READY, useLang, type Lang } from "@/src/i18n";
 import { confirmHeight } from "@/src/truck/heightConfirmed";
 import { markHowToDue } from "@/src/state/howTo";
@@ -219,7 +219,8 @@ export default function Onboarding() {
             return;
           }
           // A height said out loud is an answer, same as Next; "80,000 pounds, no hazmat" alone is not (the map asks).
-          if (s === "truck" && typeof out.updates.height_in === "number") confirmHeight();
+          // The words themselves must carry it: the parser can return a height nobody said (src/truck/validate.ts).
+          if (s === "truck" && typeof out.updates.height_in === "number" && saidHeight(out.transcript)) confirmHeight();
           advance(s);
           return;
         }
