@@ -17,8 +17,9 @@ be mistranslated. A Russian template can shape a value with a filter:
 Entries with "part": true are fragments (", right off {street}", " via {roads}") used only inside {x|part}; they never
 match a whole sentence, so a short generic fragment cannot swallow a line it was not written for.
 
-A sentence no template matches is translated by the model only when the result keeps every number of the source;
-otherwise it stays English. Misses are logged (`i18n miss`) so the catalog can grow from real traffic.
+A sentence no template matches is translated by the model only when the result keeps every number of the source
+and leaves no English common word behind; otherwise it stays English. Misses are logged (`i18n miss`) so the
+catalog can grow from real traffic.
 
 The language is a context variable set once per request (set_lang); everything downstream reads lang().
 """
@@ -354,6 +355,31 @@ def numbers_kept(src: str, dst: str) -> bool:
     return sorted(_NUM.findall(src)) == sorted(_NUM.findall(dst))
 
 
+_LATIN_WORD = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)*")
+
+
+def latin_left(src: str, dst: str) -> list[str]:
+    """Latin words of four letters or more in a model translation that are not names from the source. A name is
+    a word the English has with a capital (West Capitol Avenue, Roady's, Pilot); road numbers and units (I-80,
+    CA-99, ft, mph) are shorter than four letters. "Используй юго-западный подъезд с West Capitol Avenue, рядом
+    с fuel canopy" left two English words in a Russian card (QA 2026-11-11)."""
+    names = {w.lower().replace("’", "'") for w in _LATIN_WORD.findall(src) if w[0].isupper()}
+    return [w for w in _LATIN_WORD.findall(dst) if len(w) >= 4 and w.lower().replace("’", "'") not in names]
+
+
+def _model_ok(src: str, got: str) -> bool:
+    """A model translation is used only when it keeps every number and leaves no English common word behind;
+    otherwise the sentence stays English whole."""
+    if not numbers_kept(src, got):
+        logger.warning("i18n fallback changed numbers, kept English: %r -> %r", src, got)
+        return False
+    left = latin_left(src, got)
+    if left:
+        logger.warning("i18n fallback left English words %s, kept English: %r -> %r", left, src, got)
+        return False
+    return True
+
+
 def _miss(sentence: str, code: str, fallback: Optional[Callable[[str, str], Optional[str]]]) -> str:
     logger.info("i18n miss %s: %s", code, sentence[:200])
     if fallback is None:
@@ -363,10 +389,8 @@ def _miss(sentence: str, code: str, fallback: Optional[Callable[[str, str], Opti
     except Exception as e:  # noqa: BLE001 - English beats silence
         logger.warning("i18n fallback failed: %s", e)
         return sentence
-    if got and numbers_kept(sentence, got):
+    if got and _model_ok(sentence, got):
         return got.strip()
-    if got:
-        logger.warning("i18n fallback changed numbers, kept English: %r -> %r", sentence, got)
     return sentence
 
 
@@ -391,7 +415,7 @@ def fallback_prompt(code: str) -> str:
 
 
 async def localize(text: str, code: Optional[str] = None) -> str:
-    """translate() with the model as the fallback for lines the catalog misses (numbers checked)."""
+    """translate() with the model as the fallback for lines the catalog misses (numbers and leftover English checked)."""
     code = norm(code or lang())
     if code == "en" or not text or not text.strip():
         return text
@@ -409,10 +433,8 @@ async def localize(text: str, code: Optional[str] = None) -> str:
         except Exception as e:  # noqa: BLE001
             logger.warning("i18n fallback failed: %s", e)
             return s, None
-        if got and numbers_kept(s, got):
+        if got and _model_ok(s, got):
             return s, got
-        if got:
-            logger.warning("i18n fallback changed numbers, kept English: %r -> %r", s, got)
         return s, None
 
     async def cached(s: str) -> tuple[str, Optional[str]]:

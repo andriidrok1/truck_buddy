@@ -7,7 +7,7 @@ import re
 import pytest
 from conftest import run
 
-from models import AgentRequest, Incident, Maneuver, RouteInfo
+from models import Incident, Maneuver, RouteInfo
 from services import i18n
 
 SAC = {"lat": 38.5816, "lng": -121.4944}
@@ -162,7 +162,6 @@ def test_break_reminder_hours(en, ru):
     assert not misses and got == ru
 
 
-
 # ---- arrival at "your destination" on a side (item 5) ---------------------------------------------------------
 
 @pytest.mark.parametrize("en,ru", [
@@ -248,3 +247,69 @@ def test_recorded_here_incident_descriptions_all_translate():
     for text in seen:
         _got, misses = _ru(text.rstrip("."))
         assert not misses, text
+
+
+# ---- English words a model translation left behind (item 9) ---------------------------------------------------
+
+TIP = "Use the southwest driveway off West Capitol Avenue, beside fuel canopy"
+
+
+def test_latin_left():
+    left = i18n.latin_left
+    assert left(TIP, "Используй юго-западный подъезд с West Capitol Avenue, рядом с fuel canopy") == ["fuel", "canopy"]
+    assert left(TIP, "Используй юго-западный подъезд с West Capitol Avenue, рядом с навесом у заправки") == []
+    # names, road numbers and brands of the source stay as they are; short units too
+    assert left("Take I-80 E toward Reno, 13 ft 6 in under the bridge at Roady's Truck Stop",
+                "Езжай по I-80 E в сторону Reno, 13 ft 6 in под мостом у Roady's Truck Stop") == []
+    assert left("Park behind the Love’s.", "Паркуйся за Love's.") == []
+    # a capital does not make a word a name when the source does not have it
+    assert left("Park beside the fuel canopy.", "Паркуйся рядом с Fuel Canopy.") == ["Fuel", "Canopy"]
+    assert left("Turn left in 500 feet.", "Через 500 feet налево.") == ["feet"]
+
+
+def _model(monkeypatch, answers: dict):
+    """services.llm.complete stubbed: the translation by source sentence, and the calls made."""
+    from services import llm
+    calls: list[str] = []
+
+    async def complete(system, user):
+        calls.append(user)
+        return answers[user]
+
+    monkeypatch.setattr(llm, "complete", complete)
+    monkeypatch.setattr(i18n, "_model_cache", type(i18n._model_cache)())
+    return calls
+
+
+def _localize_ru(text: str) -> str:
+    async def go():
+        i18n.set_lang("ru")
+        return await i18n.localize(text)
+    return run(go())
+
+
+def test_model_translation_with_english_left_stays_english_whole(monkeypatch):
+    calls = _model(monkeypatch, {TIP: "Используй юго-западный подъезд с West Capitol Avenue, рядом с fuel canopy"})
+    assert _localize_ru(TIP) == TIP  # as for a translation that changed a number: the English, not a mix
+    assert calls == [TIP]
+    assert not i18n._model_cache  # a rejected translation is not kept
+
+
+def test_clean_model_translation_is_used(monkeypatch):
+    good = "Используй юго-западный подъезд с West Capitol Avenue, рядом с навесом у заправки"
+    calls = _model(monkeypatch, {TIP: good})
+    assert _localize_ru(TIP) == good and calls == [TIP]
+    assert _localize_ru(TIP) == good and calls == [TIP]  # and cached
+
+
+def test_only_the_bad_sentence_stays_english(monkeypatch):
+    first, second = "Enter from the north gate on Elm Ave.", "Park beside the fuel canopy."
+    _model(monkeypatch, {first.rstrip("."): "Заезжай через северные ворота с Elm Ave", second.rstrip("."): "Паркуйся рядом с fuel canopy"})
+    assert _localize_ru(f"Alright. {first} {second}") == f"Хорошо. Заезжай через северные ворота с Elm Ave. {second}"
+
+
+def test_sync_fallback_is_checked_the_same_way():
+    out = i18n.translate("Park beside the fuel canopy.", "ru", fallback=lambda s, c: "Паркуйся рядом с fuel canopy.")
+    assert out == "Park beside the fuel canopy."
+    out = i18n.translate("Park beside the fuel canopy.", "ru", fallback=lambda s, c: "Паркуйся рядом с навесом у заправки.")
+    assert out == "Паркуйся рядом с навесом у заправки."
