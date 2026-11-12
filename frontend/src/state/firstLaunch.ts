@@ -7,7 +7,7 @@
 // map packs (tiles, nothing about the driver).
 
 import { api } from "../api";
-import { forgetIdentity, holdToken } from "../auth";
+import { forgetIdentity, getToken, holdToken, identitySub, signedInVia, type SignedInVia } from "../auth";
 import { forgetConsent } from "../consent";
 import { resetProfile } from "../data/profile";
 import { setEldToken } from "../eld";
@@ -23,11 +23,12 @@ import { forgetHeight } from "../truck/heightConfirmed";
 import { removeAllAppKeys, removeIdentityKeys } from "../utils/storage";
 import { IDENTITY_KEYS, markWipePending } from "../utils/storage/pendingWipe";
 import { forgetAccount, setSignInNotice } from "./account";
+import { dropHeldTrip, holdTrip } from "./heldTrip";
 import { forgetHowTo } from "./howTo";
 import { forgetIntro } from "./intro";
 import { clearSavedRoute } from "./routeStore";
 import { forgetSettings } from "./settingsStore";
-import { resetTripStore } from "./tripStore";
+import { resetTripStore, useTripStore } from "./tripStore";
 
 const step = async (f: () => unknown) => {
   try {
@@ -40,13 +41,13 @@ const step = async (f: () => unknown) => {
 /** Everything on the phone that is about the signed-in driver, in memory and on disk: the trip and its lists, the
  *  truck and the change still waiting for the server, what was fetched for them, the trip log, the settings, the
  *  Motive key, the height and how-to flags, the account. Every step runs even if one before it failed. */
-async function clearDriverData(): Promise<void> {
+async function clearDriverData(keepTripLog = false): Promise<void> {
   await step(resetTripStore);
   await step(() => setSim(null));
-  await step(resetProfile); // the default truck in memory and in the query cache, no pending server sync
+  await step(resetProfile); // the default truck in memory and in the query cache, no pending server sync or restore
   await step(() => queryClient.clear()); // conversation memory, the server profile: fetched again for the new identity
   await Promise.all(
-    [forgetTruckProfile, forgetHeight, forgetHowTo, forgetSettings, clearSavedRoute, forgetArrived, () => tripLog.clear(), () => setEldToken(null), forgetAccount].map(step),
+    [forgetTruckProfile, forgetHeight, forgetHowTo, forgetSettings, clearSavedRoute, forgetArrived, () => (keepTripLog ? undefined : tripLog.clear()), () => setEldToken(null), forgetAccount].map(step),
   );
 }
 
@@ -54,6 +55,7 @@ async function clearDriverData(): Promise<void> {
  *  what even that cannot remove is finished on the next cold start (WIPE_PENDING_KEY). Returns the leftovers. */
 export async function resetToFirstLaunch(): Promise<string[]> {
   await markWipePending();
+  await step(dropHeldTrip);
   await clearDriverData();
   setSignInNotice(null);
   await step(forgetThemePref);
@@ -68,6 +70,8 @@ export async function resetToFirstLaunch(): Promise<string[]> {
 
 let signingOut: Promise<string[]> | null = null;
 
+const TRIP_LOG_KEY = "trip_events_pending";
+
 /**
  * The phone stops being this driver's without becoming a fresh install: "Sign out", and a token the server turned
  * down (the account was deleted from another phone, the session was closed). Everything resetToFirstLaunch clears
@@ -76,21 +80,30 @@ let signingOut: Promise<string[]> | null = null;
  * no truck pushed to their account, no trip events sent under their name, no route, no Motive key.
  *
  * `notice`: the sign-in screen says "You were signed out. Sign in again." (the driver did not ask for this).
+ * `keepTripFor`: the forced path only. The account (token `sub`) that was signed in: when it was driving a route,
+ * the route and the pending trip events are set aside for that same account to come back to (heldTrip.ts), so a
+ * session closed mid-drive costs a sign-in, not the trip. The driver's own "Sign out" passes nothing and keeps nothing.
  * Returns the keys that would not go; the next cold start, or the next sign-in, finishes them (pendingWipe.ts).
  */
-export function signedOutReset(opts: { notice?: boolean } = {}): Promise<string[]> {
+export function signedOutReset(opts: { notice?: boolean; keepTripFor?: string | null } = {}): Promise<string[]> {
   if (!signingOut) {
     signingOut = (async () => {
-      await markWipePending(IDENTITY_KEYS);
+      // Before anything is cleared: the route on disk is the one being driven.
+      const sub = opts.keepTripFor ?? null;
+      let held = false;
+      if (sub && useTripStore.getState().driving) held = await holdTrip(sub).catch(() => false);
+      if (!held) await step(dropHeldTrip);
+      const kept = held ? [TRIP_LOG_KEY] : [];
+      await markWipePending(IDENTITY_KEYS.filter((k) => !kept.includes(k)));
       // No new batch goes out from here; what is queued is dropped below. Not awaited: the batch on the wire may be
       // the very request whose 401 started this sign-out, and it finishes only after this function does.
       void tripLog.pause();
       try {
-        await clearDriverData();
+        await clearDriverData(held);
         setSignInNotice(opts.notice ? "signed_out" : null);
         await step(forgetIdentity); // the app's screens unmount here: nothing of theirs logs or saves after this
-        await step(() => tripLog.clear()); // an event logged while the screens were going away
-        return await removeIdentityKeys();
+        if (!held) await step(() => tripLog.clear()); // an event logged while the screens were going away
+        return await removeIdentityKeys(kept);
       } finally {
         tripLog.resume();
       }
@@ -101,8 +114,29 @@ export function signedOutReset(opts: { notice?: boolean } = {}): Promise<string[
   return signingOut;
 }
 
-// The server rejected the token for good (src/net/tokenRenewal.ts after401): the same reset, with the notice.
-setIdentityRejectedHandler(() => signedOutReset({ notice: true }));
+// The server rejected the token for good (src/net/tokenRenewal.ts after401): the same reset, with the notice, and
+// the trip kept for the same account when it was on the road.
+setIdentityRejectedHandler(() => signedOutReset({ notice: true, keepTripFor: identitySub() }));
+
+/**
+ * Sign-in is required since 1.1.0. A phone that still holds the anonymous device token of build 1.0 (`auth_via`
+ * "device") is not signed in to anything a driver could get back: it is treated as signed out, and the token and
+ * what the phone kept under it are cleared like any other sign-out. An access-code sign-in (testers, the stand,
+ * App Review) stays as it is.
+ */
+export const countsAsSignedIn = (via: SignedInVia): boolean => via !== "device";
+
+/** What the root layout feeds rootScreen: a device token is "out". */
+export function effectiveAuth(auth: "loading" | "in" | "out", via: SignedInVia): "loading" | "in" | "out" {
+  return auth === "in" && !countsAsSignedIn(via) ? "out" : auth;
+}
+
+/** Once the stored token is read (root layout): clears a build-1.0 device identity. True when it did. */
+export async function retireDeviceIdentity(): Promise<boolean> {
+  if (!getToken() || countsAsSignedIn(signedInVia())) return false;
+  await signedOutReset();
+  return true;
+}
 
 /** Which screen the root layout shows (app/_layout.tsx): the gates in first-launch order, then the app's stack. */
 export type RootScreen = "language" | "intro" | "signin" | "consent" | "welcome" | "app";

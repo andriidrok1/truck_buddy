@@ -10,7 +10,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ReducedMotionConfig, ReduceMotion } from "react-native-reanimated";
 import { KeyboardProvider } from "@/src/keyboard";
 
-import { useAuthState } from "@/src/auth";
+import { signedInVia, useAuthState } from "@/src/auth";
 import { renewOnStart } from "@/src/net/tokenRenewal";
 import { loadThemePref, useTheme } from "@/src/theme";
 import { ConsentGate } from "@/src/components/ConsentGate";
@@ -25,11 +25,11 @@ import { SignInGate } from "@/src/components/SignInGate";
 import { WelcomeBack } from "@/src/components/WelcomeBack";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { useConsent } from "@/src/consent";
-import { rootScreen } from "@/src/state/firstLaunch";
+import { effectiveAuth, retireDeviceIdentity, rootScreen } from "@/src/state/firstLaunch";
 import { useIntroSeen } from "@/src/state/intro";
 import { IntroGate } from "@/src/components/intro/IntroGate";
 import { loadEldToken } from "@/src/eld";
-import { useProfileSync } from "@/src/data/profile";
+import { useProfileSync, useRestorePending } from "@/src/data/profile";
 import { useWelcomeBack } from "@/src/state/account";
 import { queryClient } from "@/src/query-client";
 import { setContractWarningSink } from "@/src/api/schemas";
@@ -67,7 +67,13 @@ function RootLayout() {
   useEffect(() => {
     loadThemePref().finally(() => setThemeReady(true));
   }, []);
-  const auth = useAuthState();
+  const stored = useAuthState();
+  // Sign-in is required: the anonymous device token of build 1.0 does not count (src/state/firstLaunch.ts). The
+  // root goes to the sign-in screen at once, and the token and what the phone kept under it are cleared.
+  const auth = effectiveAuth(stored, signedInVia());
+  useEffect(() => {
+    if (stored === "in") retireDeviceIdentity().catch(() => {});
+  }, [stored]);
   // Keep the token alive (30-day access token): on start and on every return to the foreground, renew when it
   // is close to expiry or no refresh token is stored yet. Offline it just tries again next time.
   useEffect(() => {
@@ -100,8 +106,10 @@ function RootLayout() {
   // The server copy of the truck (a fleet sets it there; a returning driver's is only there) once the local one is
   // up and the phone is signed in: on a cold start with a token, and right after a sign-in. Offline, the local stands.
   useProfileSync(storageReady && auth === "in");
-  // A returning driver who just signed in sees "Welcome back" once, after consent.
-  const welcomeBack = useWelcomeBack();
+  // A returning driver who just signed in sees "Welcome back" once, after consent; it stays up (also across a
+  // restart) until the server's profile has landed, so nothing is saved over it from the map.
+  const restoring = useRestorePending();
+  const welcomeBack = useWelcomeBack() || restoring === true;
   // GPS from the moment the driver is signed in and consent is in (the consent screen starts it too): the first
   // fix is ready before the map screen mounts instead of 7-9 s after it. Not on the sign-in screen after a sign-out.
   useEffect(() => {
@@ -125,7 +133,7 @@ function RootLayout() {
   });
 
   const screen = rootScreen(langChosen, introSeen === true, consent, auth, welcomeBack);
-  const ready = !((!loaded && !error) || auth === "loading" || consent === "loading" || !themeReady || !storageReady || !langLoaded || introSeen === undefined);
+  const ready = !((!loaded && !error) || auth === "loading" || consent === "loading" || !themeReady || !storageReady || !langLoaded || introSeen === undefined || restoring === undefined);
   // The stack remembers where it was while a gate is up. After the sign-in screen the driver may be someone else
   // (or the same one, signed out from the truck screen): the app comes back on the map, not on the screen the
   // previous sign-in ended on (the map then sends a driver who is not onboarded to onboarding, as on first launch).

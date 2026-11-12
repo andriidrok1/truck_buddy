@@ -15,8 +15,8 @@ import { resetRenewalForTests } from "../net/tokenRenewal";
 import { tripLog } from "../net/tripEvents";
 import { queryClient } from "../query-client";
 import { getAccount, saveAccount, setWelcomeBack, signInNotice, welcomeBackDue } from "../state/account";
-import { prepareSignedIn } from "../state/afterSignIn";
-import { resetToFirstLaunch, rootScreen, signedOutReset } from "../state/firstLaunch";
+import { finishSignedIn, prepareSignedIn } from "../state/afterSignIn";
+import { countsAsSignedIn, effectiveAuth, resetToFirstLaunch, retireDeviceIdentity, rootScreen, signedOutReset } from "../state/firstLaunch";
 import { loadHowTo, markHowToSeen } from "../state/howTo";
 import { loadIntro, markIntroSeen } from "../state/intro";
 import { loadActiveRoute, saveActiveRoute } from "../state/routeStore";
@@ -25,7 +25,7 @@ import { useTripStore } from "../state/tripStore";
 import { loadThemePref, setThemePref, useThemePref } from "../theme";
 import { confirmHeight, isHeightConfirmed } from "../truck/heightConfirmed";
 import { storage } from "../utils/storage";
-import { __resetWipeGate, APP_KEYS, IDENTITY_KEYS, KEPT_ON_SIGN_OUT, SECURE_KEYS, WIPE_PENDING_KEY } from "../utils/storage/pendingWipe";
+import { __resetWipeGate, APP_KEYS, HELD_TRIP_KEY, IDENTITY_KEYS, KEPT_ON_SIGN_OUT, SECURE_KEYS, WIPE_PENDING_KEY } from "../utils/storage/pendingWipe";
 import { SCHEMA_KEY } from "../utils/storageMigrations";
 
 const mockSecure = new Map<string, string>();
@@ -144,9 +144,10 @@ describe("signedOutReset", () => {
 
   test("the lists agree: what stays plus what goes is every key the app writes", () => {
     const all = [...APP_KEYS, ...SECURE_KEYS];
-    expect([...IDENTITY_KEYS, ...KEPT_ON_SIGN_OUT].sort()).toEqual([...all].sort());
+    // The trip set aside for a driver the server signed out is neither: the sign-out pass leaves it, its own code removes it.
+    expect([...IDENTITY_KEYS, ...KEPT_ON_SIGN_OUT, HELD_TRIP_KEY].sort()).toEqual([...all].sort());
     expect([...KEPT_ON_SIGN_OUT].sort()).toEqual(["ai_consent_v2", "intro_seen_v1", "lang_v1", "theme_pref_v1"]);
-    for (const k of ["auth_token", "auth_refresh", "auth_role", "auth_via", "account_v1", "eld_token_v1", "truck_profile_v1", "profile_unsynced_v1", "trip_events_pending", "trip_v2", "settings_v2", "onboarded_v1", "height_confirmed_v1", "how_to_seen_v1"]) {
+    for (const k of ["auth_token", "auth_refresh", "auth_refresh_sent", "auth_role", "auth_via", "account_v1", "profile_restore_v1", "apple_name_pending_v1", "eld_token_v1", "truck_profile_v1", "profile_unsynced_v1", "trip_events_pending", "trip_v2", "settings_v2", "onboarded_v1", "height_confirmed_v1", "how_to_seen_v1"]) {
       expect(IDENTITY_KEYS).toContain(k);
     }
   });
@@ -199,14 +200,63 @@ describe("signedOutReset", () => {
   });
 });
 
+describe("a phone that still holds the anonymous device token of build 1.0", () => {
+  test("it does not count as signed in: the root shows the sign-in screen; an access code and an account do count", () => {
+    expect(countsAsSignedIn("device")).toBe(false);
+    expect(countsAsSignedIn("code")).toBe(true);
+    expect(countsAsSignedIn("account")).toBe(true);
+    expect(effectiveAuth("in", "device")).toBe("out");
+    expect(effectiveAuth("in", "code")).toBe("in");
+    expect(effectiveAuth("in", "account")).toBe("in");
+    expect(effectiveAuth("loading", "device")).toBe("loading");
+    expect(effectiveAuth("out", "device")).toBe("out");
+    expect(rootScreen(true, true, "yes", effectiveAuth("in", "device"))).toBe("signin");
+    expect(rootScreen(true, true, "yes", effectiveAuth("in", "code"))).toBe("app");
+  });
+
+  test("the device token and what the phone kept under it are cleared; the language and consent stay", async () => {
+    setLang("ru");
+    await giveConsent();
+    await setToken("old-device-token", "driver", "device", "old-refresh");
+    await driveAs("Dave");
+    let did = false;
+    await act(async () => {
+      did = await retireDeviceIdentity();
+    });
+    expect(did).toBe(true);
+    expect(getToken()).toBeNull();
+    expect(mockSecure.size).toBe(0);
+    expect(getTruckProfile()).toEqual(DEFAULT_TRUCK);
+    expect(await isOnboarded()).toBe(false);
+    expect(signInNotice()).toBeNull(); // nothing to explain: the sign-in screen is simply the next screen
+    expect(useLangStore.getState()).toMatchObject({ lang: "ru", chosen: true });
+    expect(await storage.getItem("ai_consent_v2", null)).toBe(true);
+  });
+
+  test("an access-code sign-in and an account are left alone", async () => {
+    await setToken("tester-token", "tester", "code", "r");
+    expect(await retireDeviceIdentity()).toBe(false);
+    expect(getToken()).toBe("tester-token");
+    await setToken("acc", "driver", "account", "r");
+    expect(await retireDeviceIdentity()).toBe(false);
+    expect(getToken()).toBe("acc");
+    await setToken(null);
+    expect(await retireDeviceIdentity()).toBe(false);
+  });
+});
+
 describe("driver A leaves, driver B signs in on the same phone, same run", () => {
+  const b64url = (v: string) => Buffer.from(v).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  /** An access token as the server makes it: the account's id in `sub`, good for 30 days. */
+  const jwt = (sub: string) => `${b64url('{"alg":"HS256"}')}.${b64url(JSON.stringify({ sub, sid: "s1", exp: Math.floor(Date.now() / 1000) + 30 * 86400 }))}.sig`;
+  const ACC = { A: jwt("acct-alice"), B: jwt("acct-bob") };
   type Call = { method: string; path: string; auth: string | undefined; motive: string | undefined; body: string };
   let calls: Call[];
   let alive: Set<string>; // the access tokens the server still accepts
   let held: ((r: Response) => void) | null;
   const reply = (status: number, body: unknown = {}) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   const account = (who: "A" | "B", over: Record<string, unknown> = {}) =>
-    reply(200, { access_token: `ACC-${who}`, refresh_token: `REF-${who}`, token_type: "bearer", role: "driver", expires_in: 2592000, new_account: who === "B", has_profile: who === "A", name: who === "A" ? "Alice Smith" : "Bob Jones", email: null, ...over });
+    reply(200, { access_token: ACC[who], refresh_token: `REF-${who}`, token_type: "bearer", role: "driver", expires_in: 2592000, new_account: true, has_profile: false, name: who === "A" ? "Alice Smith" : "Bob Jones", email: null, ...over });
 
   function server() {
     calls = [];
@@ -218,7 +268,7 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
       calls.push(call);
       if (call.path === "/auth/google") {
         const who = JSON.parse(call.body).id_token === "google-token-of-alice" ? "A" : "B";
-        alive.add(`Bearer ACC-${who}`);
+        alive.add(`Bearer ${ACC[who]}`);
         return account(who);
       }
       if (call.path === "/auth/refresh" || call.path === "/auth/renew") return reply(401, { detail: "This device is no longer registered" });
@@ -242,8 +292,8 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
     await markIntroSeen();
 
     // A signs in (a returning driver) and uses the app.
-    await signInGoogle("google-token-of-alice", (r) => prepareSignedIn(r, "google"));
-    expect(getToken()).toBe("ACC-A");
+    await signInGoogle("google-token-of-alice", prepareSignedIn);
+    expect(getToken()).toBe(ACC.A);
     await driveAs("Alice");
     await waitFor(() => calls.some((c) => c.method === "PUT" && c.path === "/me/profile"));
     expect(await AsyncStorage.getItem(UNSYNCED_KEY)).not.toBeNull(); // A's truck is still waiting to be sent
@@ -251,14 +301,14 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
     await waitFor(() => held !== null);
 
     // The server closes A's session (the account was deleted from another phone). The next request finds out.
-    alive.delete("Bearer ACC-A");
+    alive.delete(`Bearer ${ACC.A}`);
     const before = calls.length;
     await act(async () => {
       await expect(api.memory()).rejects.toThrow("401");
     });
     expect(getToken()).toBeNull();
     expect(signInNotice()).toBe("signed_out");
-    expect(calls.slice(before).map((c) => c.path)).toEqual(["/memory", "/auth/refresh", "/auth/renew"]);
+    expect(calls.slice(before).map((c) => c.path)).toEqual(["/memory", "/auth/refresh"]); // the access token was just refused: only the refresh token is left to try
     expect(calls.some((c) => c.path === "/auth/device")).toBe(false);
     const consent = await renderHook(() => useConsent());
     const auth = await renderHook(() => useAuthState());
@@ -268,9 +318,9 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
     // B signs in: a new account.
     const fromB = calls.length;
     await act(async () => {
-      await signInGoogle("google-token-of-bob", (r) => prepareSignedIn(r, "google"));
+      await finishSignedIn(await signInGoogle("google-token-of-bob", prepareSignedIn), "google");
     });
-    expect(getToken()).toBe("ACC-B");
+    expect(getToken()).toBe(ACC.B);
     expect(signInNotice()).toBeNull();
 
     // A's slow request comes back refused only now. It is not sent again with B's token.
@@ -278,7 +328,7 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
       held!(reply(401, { detail: "This device is no longer registered" }));
       expect(await slow).toBe("failed");
     });
-    expect(getToken()).toBe("ACC-B"); // and B is not signed out by A's 401
+    expect(getToken()).toBe(ACC.B); // and B is not signed out by A's 401
 
     // What the app does for whoever is signed in: pull the profile, send the trip log, ask for memory.
     await act(async () => {
@@ -293,8 +343,8 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
     const afterB = calls.slice(fromB);
     expect(afterB.length).toBeGreaterThan(4);
     // Sent: nothing with A's token, and under B's token nothing A wrote.
-    expect(afterB.filter((c) => c.auth?.includes("ACC-A"))).toEqual([]);
-    const underB = afterB.filter((c) => c.auth === "Bearer ACC-B");
+    expect(afterB.filter((c) => c.auth?.includes(ACC.A))).toEqual([]);
+    const underB = afterB.filter((c) => c.auth === `Bearer ${ACC.B}`);
     expect(underB.length).toBeGreaterThan(3);
     for (const c of underB) {
       expect(c.body).not.toMatch(/Alice/);
@@ -320,7 +370,10 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
     expect(queryClient.getQueryData(["memory"])).toBeUndefined();
     expect(eldHeader()).toEqual({});
     for (const k of await AsyncStorage.getAllKeys()) expect(`${k}=${await AsyncStorage.getItem(k)}`).not.toMatch(/Alice/);
-    for (const [k, v] of mockSecure) expect(`${k}=${v}`).not.toMatch(/Alice|ACC-A|REF-A/i);
+    for (const [k, v] of mockSecure) {
+      expect(`${k}=${v}`).not.toMatch(/Alice|REF-A/i);
+      expect(v).not.toContain(ACC.A);
+    }
     // The phone's own choices survived the hand-over.
     expect(useLangStore.getState()).toMatchObject({ lang: "ru", chosen: true });
     await consent.rerender({});
@@ -329,11 +382,11 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
 
   test("A's profile answer arriving after the hand-over does not become B's truck", async () => {
     server();
-    await signInGoogle("google-token-of-alice", (r) => prepareSignedIn(r, "google"));
+    await signInGoogle("google-token-of-alice", prepareSignedIn);
     let answerProfile: (r: Response) => void = () => {};
     const base = global.fetch;
     global.fetch = jest.fn((url: RequestInfo | URL, init?: RequestInit) => {
-      if (String(url).endsWith("/me/profile") && (init?.method ?? "GET") === "GET" && (init?.headers as Record<string, string>).Authorization === "Bearer ACC-A") {
+      if (String(url).endsWith("/me/profile") && (init?.method ?? "GET") === "GET" && (init?.headers as Record<string, string>).Authorization === `Bearer ${ACC.A}`) {
         return new Promise<Response>((resolve) => (answerProfile = resolve));
       }
       return base(url, init);
@@ -342,7 +395,7 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
     await flush();
     await act(async () => {
       await signedOutReset();
-      await signInGoogle("google-token-of-bob", (r) => prepareSignedIn(r, "google"));
+      await signInGoogle("google-token-of-bob", prepareSignedIn);
     });
     await act(async () => {
       answerProfile(reply(200, { ...DEFAULT_TRUCK, height_in: 168, driver_name: "Alice" }));
@@ -351,5 +404,121 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
     expect(getTruckProfile()).toEqual(DEFAULT_TRUCK);
     expect(isHeightConfirmed()).toBe(false);
     expect(await AsyncStorage.getItem("truck_profile_v1")).toBeNull();
+  });
+
+  describe("the server signs a driver out in the middle of a drive", () => {
+    const DRIVING_ROUTE = { place: PLACE, route: ROUTE, trip_id: "trip-alice-1" };
+    async function aliceOnTheRoad() {
+      server();
+      await giveConsent();
+      await signInGoogle("google-token-of-alice", prepareSignedIn);
+      await driveAs("Alice");
+      await saveActiveRoute(DRIVING_ROUTE as never, Date.now(), true);
+      useTripStore.getState().setDriving(true);
+      tripLog.log("turn_late", { text: "Alice missed exit 12" }, "trip-alice-1");
+      await flush();
+    }
+    async function sessionClosed() {
+      alive.delete(`Bearer ${ACC.A}`);
+      await act(async () => {
+        await expect(api.memory()).rejects.toThrow("401");
+      });
+      expect(getToken()).toBeNull();
+    }
+
+    test("the phone still goes to the sign-in screen with the driver's data cleared, but the route and the pending events are set aside", async () => {
+      await aliceOnTheRoad();
+      await sessionClosed();
+      expect(signInNotice()).toBe("signed_out");
+      expect(getTruckProfile()).toEqual(DEFAULT_TRUCK);
+      expect(eldHeader()).toEqual({});
+      expect(useTripStore.getState()).toMatchObject({ active: null, driving: false });
+      expect(await AsyncStorage.getItem("trip_v2")).toBeNull(); // nobody who is not Alice can load it
+      expect(JSON.parse((await AsyncStorage.getItem(HELD_TRIP_KEY)) ?? "null")).toMatchObject({ sub: "acct-alice" });
+      expect(tripLog.size()).toBeGreaterThan(0);
+      expect(await tripLog.flush()).toBe("busy"); // nobody to send them as
+    });
+
+    test("the same account signs in again: the route is back for the map to resume, and the events go out under its token", async () => {
+      await aliceOnTheRoad();
+      await sessionClosed();
+      const from = calls.length;
+      await act(async () => {
+        await signInGoogle("google-token-of-alice", prepareSignedIn);
+      });
+      const saved = await loadActiveRoute();
+      expect(saved?.active.place.name).toBe("Alice's yard");
+      expect(saved?.driving).toBe(true);
+      expect(await AsyncStorage.getItem(HELD_TRIP_KEY)).toBeNull();
+      expect(await tripLog.flush()).toBe("sent");
+      const sent = calls.slice(from).filter((c) => c.path === "/trips/events");
+      expect(sent).toHaveLength(1);
+      expect(sent[0].auth).toBe(`Bearer ${ACC.A}`);
+      expect(sent[0].body).toMatch(/Alice missed exit 12/);
+      expect(sent[0].body).not.toMatch(/_who/); // the stamp stays on the phone
+    });
+
+    test("a different account signs in: the route and the events of the driver before are destroyed, nothing of them is sent", async () => {
+      await aliceOnTheRoad();
+      await sessionClosed();
+      const from = calls.length;
+      await act(async () => {
+        await signInGoogle("google-token-of-bob", prepareSignedIn);
+      });
+      expect(await loadActiveRoute()).toBeNull();
+      expect(await AsyncStorage.getItem(HELD_TRIP_KEY)).toBeNull();
+      expect(await AsyncStorage.getItem("trip_v2")).toBeNull();
+      expect(tripLog.size()).toBe(0);
+      expect(await tripLog.flush()).toBe("empty");
+      expect(calls.slice(from).filter((c) => c.path === "/trips/events")).toEqual([]);
+      for (const k of await AsyncStorage.getAllKeys()) expect(`${k}=${await AsyncStorage.getItem(k)}`).not.toMatch(/Alice/);
+    });
+
+    test("not driving, or the driver's own Sign out: nothing is set aside", async () => {
+      await aliceOnTheRoad();
+      useTripStore.getState().setDriving(false); // a route on the map, the truck parked
+      await sessionClosed();
+      expect(await AsyncStorage.getItem(HELD_TRIP_KEY)).toBeNull();
+      expect(tripLog.size()).toBe(0);
+
+      await act(async () => {
+        await signInGoogle("google-token-of-alice", prepareSignedIn);
+      });
+      await saveActiveRoute(DRIVING_ROUTE as never, Date.now(), true);
+      useTripStore.getState().setDriving(true);
+      await act(async () => {
+        await signedOutReset(); // "Sign out" in the profile
+      });
+      expect(await AsyncStorage.getItem(HELD_TRIP_KEY)).toBeNull();
+      expect(await AsyncStorage.getItem("trip_v2")).toBeNull();
+    });
+  });
+
+  test("an event stamped for one driver is dropped, not sent, when another is signed in at send time", async () => {
+    server();
+    await signInGoogle("google-token-of-alice", prepareSignedIn);
+    tripLog.log("question", { text: "Alice asked" });
+    await setToken(ACC.B, "driver", "account", "REF-B"); // the identity changed under the log, whatever the path
+    alive.add(`Bearer ${ACC.B}`);
+    tripLog.log("question", { text: "Bob asked" });
+    expect(await tripLog.flush()).toBe("sent");
+    const sent = calls.filter((c) => c.path === "/trips/events");
+    expect(sent).toHaveLength(1);
+    expect(sent[0].body).toMatch(/Bob asked/);
+    expect(sent[0].body).not.toMatch(/Alice/);
+    expect(tripLog.size()).toBe(0);
+  });
+
+  test("an answer that arrives after the driver signed out is thrown away before any handler can write it", async () => {
+    server();
+    await signInGoogle("google-token-of-alice", prepareSignedIn);
+    const slow = api.speak("still on the wire"); // held by the server
+    await waitFor(() => held !== null);
+    await act(async () => {
+      await signedOutReset();
+      await signInGoogle("google-token-of-bob", prepareSignedIn);
+    });
+    held!(reply(200, { audio_url: "/a.mp3" })); // a perfectly good answer, for the wrong driver
+    await expect(slow).rejects.toThrow("signed out");
   });
 });

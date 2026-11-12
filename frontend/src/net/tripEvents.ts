@@ -8,6 +8,7 @@
 import { useSyncExternalStore } from "react";
 
 import { ApiError, api } from "../api";
+import { getToken, identitySub } from "../auth";
 import { getLocation } from "../geo/location";
 import { isOnline } from "../hooks/useOnline";
 import { getSim } from "../sim";
@@ -48,6 +49,10 @@ export type TripLogDeps = {
   /** Where the truck is (a real GPS fix only); stamped on every event that does not carry its own, so a
    *  fleet dashboard can show the truck's last position. */
   position?: () => { lat: number; lng: number } | null;
+  /** Whose phone this is right now (the token's sub; null when signed out). Every event is stamped with it when
+   *  it is logged, and an event whose stamp is not the driver signed in at send time is dropped: nothing one
+   *  driver did is ever posted under the next one's token. The stamp stays on the phone. */
+  identity?: () => string | null;
   /** setTimeout/clearTimeout stand-ins, for tests. */
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (id: unknown) => void;
@@ -83,10 +88,22 @@ export function newTripId(now = Date.now(), rand = Math.random): string {
   return `trip-${now.toString(36)}-${tail}`;
 }
 
+type Stamped = TripEvent & { _who?: string };
+
 export function createTripLog(deps: TripLogDeps): TripLog {
   const setTimer = deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
   const clearTimer = deps.clearTimer ?? ((id) => clearTimeout(id as ReturnType<typeof setTimeout>));
-  let pending: TripEvent[] = [];
+  let pending: Stamped[] = [];
+  /** The events of the driver signed in now; the others are dropped (an event from before stamps existed counts
+   *  as theirs). No `identity`: nothing is stamped or dropped. */
+  const mine = (): boolean => {
+    if (!deps.identity) return true;
+    const who = deps.identity();
+    const kept = pending.filter((e) => e._who === undefined || e._who === who);
+    if (kept.length === pending.length) return true;
+    pending = kept;
+    return false;
+  };
   let failures = 0;
   let flushing = false;
   let paused = false;
@@ -111,20 +128,25 @@ export function createTripLog(deps: TripLogDeps): TripLog {
       if (at) data = { ...data, lat: Math.round(at.lat * 1e5) / 1e5, lng: Math.round(at.lng * 1e5) / 1e5 };
       const ev: TripEvent = { t: new Date(deps.now()).toISOString(), kind, data };
       if (tripId) ev.trip_id = tripId;
-      pending.push(ev);
+      pending.push(deps.identity ? { ...ev, _who: deps.identity() ?? "-" } : ev); // "-": logged while signed out, nobody's
       if (pending.length > MAX_PENDING) pending = pending.slice(pending.length - MAX_PENDING);
       persist();
       notify();
       eventListeners.forEach((l) => l(ev));
     },
     async flush() {
+      if (deps.identity && deps.identity() === null) return pending.length ? "busy" : "empty"; // nobody to send as
+      if (!mine()) {
+        persist();
+        notify();
+      }
       if (!pending.length) return "empty";
       if (!deps.online()) return "offline";
       if (flushing || paused) return "busy";
       flushing = true;
       const batch = pending.slice(0, MAX_BATCH);
       try {
-        inflight = deps.post(batch);
+        inflight = deps.post(batch.map(({ _who, ...ev }) => ev));
         await inflight;
         pending = pending.slice(batch.length);
         failures = 0;
@@ -205,6 +227,8 @@ export const tripLog: TripLog = createTripLog({
   isRefused: (e) => e instanceof ApiError && e.status >= 400 && e.status < 500,
   online: isOnline,
   now: Date.now,
+  // The account's id; a token that is not a readable JWT still means "someone is signed in".
+  identity: () => identitySub() ?? (getToken() ? "" : null),
   position: () => {
     const sim = getSim(); // a tester's spot or replayed trace is where the truck is, as useDriverLocation has it
     if (sim) return sim.coords;
