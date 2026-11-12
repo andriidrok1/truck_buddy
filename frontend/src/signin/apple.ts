@@ -7,10 +7,14 @@
 
 import { Platform } from "react-native";
 
+import { storage } from "../utils/storage";
+
 export type AppleModule = typeof import("expo-apple-authentication");
 type CryptoModule = typeof import("expo-crypto");
 
 export type AppleCredential = {
+  /** Apple's id for the person (stable for this app's team): ties a remembered name to the right Apple ID. */
+  user: string;
   identityToken: string;
   rawNonce: string;
   /** For the server to revoke the sign-in when the account is deleted. */
@@ -73,11 +77,45 @@ export async function signInWithApple(): Promise<AppleResult> {
   const name = [credential.fullName?.givenName, credential.fullName?.familyName].filter((p): p is string => !!p?.trim()).join(" ").trim();
   return {
     type: "success",
-    credential: { identityToken: credential.identityToken, rawNonce: nonce.raw, authorizationCode: credential.authorizationCode ?? null, name: name || null },
+    credential: { user: credential.user, identityToken: credential.identityToken, rawNonce: nonce.raw, authorizationCode: credential.authorizationCode ?? null, name: name || null },
   };
+}
+
+// Apple hands the name over on the very first authorization only. If the server call after it fails (no signal),
+// the next tap gets a credential without one, and the account would be made nameless. So the name is kept, in
+// memory and on disk, for the same Apple ID until a sign-in succeeds.
+const NAME_KEY = "apple_name_pending_v1";
+let pendingName: { user: string; name: string } | null | undefined; // undefined = not read yet
+
+async function readPendingName(): Promise<{ user: string; name: string } | null> {
+  if (pendingName === undefined) {
+    const raw = await storage.getItem<Record<string, unknown> | null>(NAME_KEY, null);
+    const ok = raw !== null && typeof raw === "object" && typeof raw.user === "string" && typeof raw.name === "string" && !!raw.name;
+    if (pendingName === undefined) pendingName = ok ? { user: raw.user as string, name: raw.name as string } : null;
+  }
+  return pendingName;
+}
+
+/** The credential with the name Apple gave on an earlier, failed try, when this one has none. A name that did
+ *  arrive is remembered first. */
+export async function withRememberedName(c: AppleCredential): Promise<AppleCredential> {
+  if (c.name) {
+    pendingName = { user: c.user, name: c.name };
+    await storage.setItem(NAME_KEY, pendingName);
+    return c;
+  }
+  const kept = await readPendingName();
+  return kept && kept.user === c.user ? { ...c, name: kept.name } : c;
+}
+
+/** The server has the account (and the name): nothing to remember. */
+export async function forgetRememberedName(): Promise<void> {
+  pendingName = null;
+  await storage.removeItem(NAME_KEY);
 }
 
 /** Tests only. */
 export function resetAppleForTests() {
   cached = undefined;
+  pendingName = undefined;
 }

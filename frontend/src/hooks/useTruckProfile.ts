@@ -33,6 +33,11 @@ export async function setOnboarded() {
   await storage.setItem(ONBOARDED_KEY, true);
 }
 
+/** A new driver on this phone (a sign-in to an account with nothing set up): onboarding runs. */
+export async function clearOnboarded() {
+  await storage.removeItem(ONBOARDED_KEY);
+}
+
 export function truckLabel(t: TruckProfile) {
   return `${Math.floor(t.height_in / 12)}'${t.height_in % 12}" · ${t.trailer_ft}' · ${Math.round(t.weight_lb / 1000)}k lb`;
 }

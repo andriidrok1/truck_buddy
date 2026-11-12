@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ActivityIndicator, Image, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { fetchProfile, PROFILE_KEY } from "../data/profile";
+import { fetchProfile, PROFILE_KEY, serverProfile, useRestorePending } from "../data/profile";
 import { truckLabel, type TruckProfile } from "../hooks/useTruckProfile";
 import { t } from "../i18n";
 import { Text } from "../i18n/Text";
@@ -22,20 +22,26 @@ export function prefsSummary(p: TruckProfile): string[] {
 
 /**
  * A returning driver right after sign-in (Figma f5Uha6gopQHRmcGlMXdCD9, 135:2, screen 4): what came back with
- * the account, and one button to the map. Shown once: the flag lives in memory (src/state/account.ts), so an app
- * killed before the button opens on the map next time.
+ * the account, and one button to the map.
  *
- * The truck comes from the server (the root layout starts the pull the moment the token is in; this reads the
- * same request). Until it lands the card shows a spinner; if it fails, the screen says nothing it cannot back up,
- * and the map takes over (the pull runs again on the next start).
+ * The screen holds the app until the server's profile has landed (src/data/profile.ts, the restore block): on the
+ * map, with the default truck still in place, a tap on the height card would have sent the default over the
+ * driver's real truck. So: a spinner and no button while it is on its way; "Try again" when it could not be
+ * fetched; "Open the map" once it is in. The card shows only what the server returned, never the default truck.
+ * If the server has no profile after all, the driver is new and the root layout moves on to onboarding by itself.
+ *
+ * Shown once: an app killed after the profile landed opens on the map; killed before, it comes back here.
  */
 export function WelcomeBack() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const account = useAccount();
+  const restoring = useRestorePending();
   // The root layout started this pull when the token went in; a minute-old answer is not asked for again.
-  const profile = useQuery({ queryKey: PROFILE_KEY, queryFn: fetchProfile, staleTime: 60_000 });
-  const truck = profile.data;
+  const profile = useQuery({ queryKey: PROFILE_KEY, queryFn: fetchProfile, staleTime: 60_000, retry: 1 });
+  const landed = profile.isSuccess && restoring === false;
+  const failed = profile.isError && !profile.isFetching;
+  const truck = landed ? serverProfile() : null;
   const name = (truck?.driver_name ?? "").trim() || givenName(account?.name);
   const prefs = truck ? prefsSummary(truck) : [];
 
@@ -46,7 +52,12 @@ export function WelcomeBack() {
         <Text testID="welcome-back-title" accessibilityRole="header" style={[styles.title, { color: colors.onSurface }]}>
           {name ? `Welcome back, ${name}` : "Welcome back"}
         </Text>
-        {profile.isPending && <ActivityIndicator testID="welcome-back-loading" color={colors.brandPrimary} style={styles.spinner} />}
+        {!landed && !failed && <ActivityIndicator testID="welcome-back-loading" color={colors.brandPrimary} style={styles.spinner} />}
+        {failed && (
+          <Text testID="welcome-back-error" accessibilityRole="alert" style={[styles.sub, { color: colors.onSurface }]}>
+            {"Couldn't load your truck. Check the connection and try again."}
+          </Text>
+        )}
         {truck && (
           <>
             <Text style={[styles.sub, { color: colors.onSurfaceSecondary }]}>Here is what I brought over.</Text>
@@ -69,15 +80,29 @@ export function WelcomeBack() {
           </>
         )}
       </ScrollView>
-      <PressableScale
-        testID="welcome-back-open-map"
-        accessibilityRole="button"
-        accessibilityLabel={t("Open the map")}
-        onPress={() => setWelcomeBack(false)}
-        style={[styles.button, { backgroundColor: colors.brandPrimary }]}
-      >
-        <Text style={[styles.buttonText, { color: colors.onBrandPrimary }]}>Open the map</Text>
-      </PressableScale>
+      {failed ? (
+        <PressableScale
+          testID="welcome-back-retry"
+          accessibilityRole="button"
+          accessibilityLabel={t("Try again")}
+          onPress={() => profile.refetch()}
+          style={[styles.button, { backgroundColor: colors.brandPrimary }]}
+        >
+          <Text style={[styles.buttonText, { color: colors.onBrandPrimary }]}>Try again</Text>
+        </PressableScale>
+      ) : (
+        <PressableScale
+          testID="welcome-back-open-map"
+          accessibilityRole="button"
+          accessibilityLabel={t("Open the map")}
+          accessibilityState={{ disabled: !landed, busy: !landed }}
+          disabled={!landed}
+          onPress={() => setWelcomeBack(false)}
+          style={[styles.button, { backgroundColor: landed ? colors.brandPrimary : colors.surfaceTertiary }]}
+        >
+          <Text style={[styles.buttonText, { color: landed ? colors.onBrandPrimary : colors.muted }]}>Open the map</Text>
+        </PressableScale>
+      )}
     </View>
   );
 }
