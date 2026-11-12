@@ -801,6 +801,7 @@ export default function MapScreen() {
     const prev = t.active;
     const gen = t.claimRoute(); // the last tap wins over a route still in flight
     turn.cancel(); // a copilot turn in flight gives way to the tap
+    voice.cancelRecording().catch(() => {}); // and so does an open mic: it would hold every guidance line until it timed out
     voice.stopSpeaking();
     setCaption(null);
     setPhase("thinking");
