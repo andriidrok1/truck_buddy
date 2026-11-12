@@ -135,7 +135,7 @@ const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLaye
         {showRadar && props.radar && (
           // A new source id per frame: changing the tiles of a mounted raster source was not reliable.
           <RasterSource key={props.radar.key} id={`radar-${props.radar.key}`} tiles={[props.radar.urlTemplate]} tileSize={256} maxzoom={props.radar.maxNativeZoom}>
-            <Layer id={`radar-layer-${props.radar.key}`} type="raster" source={`radar-${props.radar.key}`} paint={{ "raster-opacity": scheme === "dark" ? RADAR_OPACITY.dark : RADAR_OPACITY.light }} />
+            <Layer id={`radar-layer-${props.radar.key}`} type="raster" source={`radar-${props.radar.key}`} paint={{ "raster-opacity": props.radar.opacity ?? (scheme === "dark" ? RADAR_OPACITY.dark : RADAR_OPACITY.light) }} />
           </RasterSource>
         )}
         {altData && (

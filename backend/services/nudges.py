@@ -10,7 +10,7 @@ import time
 from typing import Optional
 
 from models import Nudge, NudgeRequest, Place
-from services import hos
+from services import hos, weather
 from services.flags import on
 from services.geo import haversine_km, km_to_mi
 
@@ -38,6 +38,16 @@ BREAK_NOW = "Your break is due now. There's a {name} in {mi} miles, want me to a
 PARKING = "About {shift} minutes on the shift. The {name} in {mi} miles{live}, should I route you there?"
 PARKING_LATE = "It's getting late. The {name} in {mi} miles{live}, should I route you there?"
 LIVE = " has {n} spots open right now"
+WEATHER_MAX_MIN = 60  # speak up when the truck is this close in time
+WEATHER = {
+    "ice": "Heads up. Ice risk near {place} in about {min} minutes, {temp} degrees on a wet road. Bridges ice first.",
+    "wind": "Heads up. Gusts to {gust} miles an hour near {place} in about {min} minutes. That's tip-over wind for an empty trailer.",
+    "fog": "Heads up. Fog near {place} in about {min} minutes, visibility under a mile.",
+    "ice_no_temp": "Heads up. Ice risk near {place} in about {min} minutes. Bridges ice first.",
+    "snow_vis": "Heads up. Snow near {place} in about {min} minutes, visibility under a mile.",
+    "snow_gusts": "Heads up. Snow and gusts to {gust} miles an hour near {place} in about {min} minutes.",
+    "alert": "Heads up. {event} near {place} in about {min} minutes.",
+}
 
 
 def break_due_min(h: Optional[hos.Hos], elapsed_min: Optional[int], break_hours: Optional[int]) -> Optional[int]:
@@ -122,6 +132,29 @@ def _offer(sess: dict, intent: str, place: Place) -> None:
     sess["pending"] = {"d": {"intent": intent, "place": place.model_dump()}, "text": f"{intent} {place.name}"}
 
 
+def weather_line(wa) -> Optional[str]:
+    """The spoken heads-up for a point ahead; None when there is nothing worth saying (a plain cloudy point)."""
+    place = (wa.place or "the route ahead").split(",")[0]
+    mins = max(5, round(wa.minutes_ahead / 5) * 5)
+    if wa.kind == "ice":
+        if wa.temp_f is not None:
+            return WEATHER["ice"].format(place=place, min=mins, temp=wa.temp_f)
+        return WEATHER["ice_no_temp"].format(place=place, min=mins)
+    # Snow outranks wind and fog in the chip's icon; the reason it matters is still said (review 2026-11-11: a
+    # snowy, gusty point was silent and held back every hazard after it).
+    if wa.kind == "snow" and "low_visibility" in wa.reasons:
+        return WEATHER["snow_vis"].format(place=place, min=mins)
+    if wa.kind == "snow" and "gusts" in wa.reasons and wa.gust_mph:
+        return WEATHER["snow_gusts"].format(place=place, min=mins, gust=wa.gust_mph)
+    if wa.kind == "wind" and wa.gust_mph:
+        return WEATHER["wind"].format(place=place, min=mins, gust=wa.gust_mph)
+    if wa.kind == "fog":
+        return WEATHER["fog"].format(place=place, min=mins)
+    if wa.event:
+        return WEATHER["alert"].format(place=place, min=mins, event=wa.event)
+    return None
+
+
 async def compute(req: NudgeRequest, sess: dict, motive_key: Optional[str]) -> list[Nudge]:
     if not req.driving:
         return []
@@ -158,6 +191,21 @@ async def compute(req: NudgeRequest, sess: dict, motive_key: Optional[str]) -> l
                 sess["nudge_parking_done"] = True
                 _offer(sess, "go", place)
                 out.append(Nudge(kind="parking", text=text, place=place, offer="go"))
+
+    wa = req.weather_ahead
+    done = sess.setdefault("nudge_weather_done", [])
+    if on("NUDGE_WEATHER") and wa and wa.minutes_ahead <= WEATHER_MAX_MIN and wa.key not in done:
+        text = weather_line(wa)
+        if text:
+            done.append(wa.key)
+            del done[:-20]
+            if wa.event:
+                # The way around, when the router had one that misses the alert (the line ends "Say 'take the other way'").
+                cur = (sess.get("alternatives") or {}).get("current")
+                detour = weather.detour_speech(cur) if cur is not None else ""
+                if detour.startswith(("The way via", "The other way")):
+                    text = f"{text} {detour}"
+            out.append(Nudge(kind="weather", text=text))
 
     cc = req.chain_control_ahead
     if on("NUDGE_CHAINS") and cc and not sess.get("nudge_chains_done") and cc.miles_ahead <= CHAINS_MAX_MI:

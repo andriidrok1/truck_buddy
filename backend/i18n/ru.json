@@ -1326,6 +1326,58 @@
    "ru": "Перестраиваю маршрут."
   },
   {
+   "en": "Here's the weather radar.",
+   "ru": "Вот радар погоды."
+  },
+  {
+   "en": "Satellite view.",
+   "ru": "Вид со спутника."
+  },
+  {
+   "en": "Back to the normal map.",
+   "ru": "Обычная карта."
+  },
+  {
+   "en": "Empty or loaded?",
+   "ru": "Пустой или гружёный?"
+  },
+  {
+   "en": "Got it, running empty. I'll watch the crosswinds for you.",
+   "ru": "Понял, едешь пустой. Буду следить за боковым ветром."
+  },
+  {
+   "en": "Got it, you're loaded.",
+   "ru": "Понял, ты гружёный."
+  },
+  {
+   "en": "Heads up. Ice risk near {place} in about {min} minutes, {temp} degrees on a wet road. Bridges ice first.",
+   "ru": "Внимание. Риск гололёда у {place} примерно через {min|plural:минуту,минуты,минут}, {temp|plural:градус,градуса,градусов} по Фаренгейту на мокрой дороге. Мосты замерзают первыми."
+  },
+  {
+   "en": "Heads up. Gusts to {gust} miles an hour near {place} in about {min} minutes. That's tip-over wind for an empty trailer.",
+   "ru": "Внимание. Порывы до {gust|plural:мили,миль,миль} в час у {place} примерно через {min|plural:минуту,минуты,минут}. Пустой прицеп при таком ветре может опрокинуть."
+  },
+  {
+   "en": "Heads up. Fog near {place} in about {min} minutes, visibility under a mile.",
+   "ru": "Внимание. Туман у {place} примерно через {min|plural:минуту,минуты,минут}, видимость меньше мили."
+  },
+  {
+   "en": "Heads up. Ice risk near {place} in about {min} minutes. Bridges ice first.",
+   "ru": "Внимание. Риск гололёда у {place} примерно через {min|plural:минуту,минуты,минут}. Мосты замерзают первыми."
+  },
+  {
+   "en": "Heads up. Snow near {place} in about {min} minutes, visibility under a mile.",
+   "ru": "Внимание. Снег у {place} примерно через {min|plural:минуту,минуты,минут}, видимость меньше мили."
+  },
+  {
+   "en": "Heads up. Snow and gusts to {gust} miles an hour near {place} in about {min} minutes.",
+   "ru": "Внимание. Снег и порывы до {gust|plural:мили,миль,миль} в час у {place} примерно через {min|plural:минуту,минуты,минут}."
+  },
+  {
+   "en": "Heads up. {event} near {place} in about {min} minutes.",
+   "ru": "Внимание: {event|nom} у {place} примерно через {min|plural:минуту,минуты,минут}."
+  },
+  {
    "en": "Height is now {ft} foot {inch}.",
    "ru": "Высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}."
   },

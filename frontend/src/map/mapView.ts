@@ -22,7 +22,7 @@ export type RadarFrame = {
 
 /** What the map layers draw for the radar: one tile template, and a key that changes with the frame (so the
  *  map's tile layer is remounted instead of showing cached tiles of an old frame). */
-export type RadarOverlay = { urlTemplate: string; key: string; maxNativeZoom: number };
+export type RadarOverlay = { urlTemplate: string; key: string; maxNativeZoom: number; /** Overrides the theme's radar opacity (offline: faint). */ opacity?: number };
 
 export const RADAR_OPACITY = { light: 0.75, dark: 0.6 } as const;
 

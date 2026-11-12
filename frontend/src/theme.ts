@@ -68,11 +68,11 @@ const light = {
   shadow: "#000000",
   scrim: "rgba(0,0,0,0.32)",
 
-  // Driving banner: dark in both themes (in the dark theme a white banner was the brightest thing on a night
-  // screen, UI review 2026-11-05), with its own button colour on top.
-  navBanner: "#1C1C1E",
-  onNavBanner: "#FFFFFF",
-  navButton: "#FFFFFF",
+  // Driving banner: light in the light theme (Andrii 2026-11-11: a black banner on a light screen looked off),
+  // dark in the dark theme (a white banner was the brightest thing on a night screen, UI review 2026-11-05).
+  navBanner: "#FFFFFF",
+  onNavBanner: "#1C1C1E",
+  navButton: "#F2F2F7",
   onNavButton: "#1C1C1E",
 
   // Switches: the off track and the thumb must read on a surfaceSecondary row in both themes.

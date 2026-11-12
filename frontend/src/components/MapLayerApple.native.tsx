@@ -181,7 +181,7 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
           urlTemplate={radar.urlTemplate}
           maximumNativeZ={radar.maxNativeZoom}
           tileSize={256}
-          opacity={scheme === "dark" ? RADAR_OPACITY.dark : RADAR_OPACITY.light}
+          opacity={radar.opacity ?? (scheme === "dark" ? RADAR_OPACITY.dark : RADAR_OPACITY.light)}
           zIndex={0}
         />
       )}
