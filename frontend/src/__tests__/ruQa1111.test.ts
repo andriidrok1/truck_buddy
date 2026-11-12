@@ -1,7 +1,7 @@
 // Russian QA 2026-11-11 (vault: 40-Events/VibeCon-SF-2026/TruckBuddy — QA русской версии, второй проход): what the
 // driver hears. Every Russian line is asserted whole; English must come out exactly as before.
 import { advisoryText, type Advisory } from "../geo/advisories";
-import { announcement, maneuverWords, type StageKey } from "../geo/guidance";
+import { announcement, maneuverFacts, maneuverWords, type StageKey } from "../geo/guidance";
 import { t } from "../i18n";
 
 // What the speech queue does with a line before it is spoken (src/hooks/useSpeechQueue.ts).
@@ -35,14 +35,49 @@ describe("arrival in Russian (the server's instruction is already Russian)", () 
 
 describe("a maneuver the server left in English, in Russian mode", () => {
   const turn = { action: "turn", direction: "left", instruction: "Turn left onto Main St" };
+  const say = (action: string, direction: string | null, instruction: string, stage: StageKey = "now", m = 40) =>
+    spoken(announcement({ action, direction, instruction }, stage, m, "ru"));
 
-  test("said by its action and direction: no English words inside a Russian sentence", () => {
-    expect(spoken(announcement(turn, "near", 152, "ru"))).toBe("Через 500 футов поверни налево."); // was "Через 500 футов turn left onto Main St."
-    expect(spoken(announcement(turn, "far", 1609, "ru"))).toBe("Через милю поверни налево.");
-    expect(spoken(announcement(turn, "now", 40, "ru"))).toBe("Поверни налево."); // was the English line, read by the Russian voice
-    const uturn = { action: "uTurn", direction: "left", instruction: "Make a U-Turn onto West Capitol Ave" };
-    expect(spoken(announcement(uturn, "near", 800, "ru"))).toBe("Через полмили развернись.");
-    expect(spoken(announcement(uturn, "now", 40, "ru"))).toBe("Развернись.");
+  test("said in Russian by its action and direction, with the road it names", () => {
+    expect(spoken(announcement(turn, "near", 152, "ru"))).toBe("Через 500 футов поверни налево на Main St."); // was "Через 500 футов turn left onto Main St."
+    expect(spoken(announcement(turn, "far", 1609, "ru"))).toBe("Через милю поверни налево на Main St.");
+    expect(spoken(announcement(turn, "now", 40, "ru"))).toBe("Поверни налево на Main St."); // was the English line, read by the Russian voice
+    expect(say("uTurn", "left", "Make a U-Turn onto West Capitol Ave", "near", 800)).toBe("Через полмили развернись на West Capitol Ave.");
+    expect(say("turn", "right", "Turn right onto N Virginia St (US-395-BR) toward S Virginia St/Downtown.")).toBe(
+      "Поверни направо на N Virginia St (US-395-BR) в сторону S Virginia St/Downtown.");
+  });
+
+  test("exits keep their number, road and direction: two exits in a row do not sound the same", () => {
+    expect(say("exit", "right", "Take exit 522 toward San Francisco onto I-80 W", "far", 1609)).toBe("Через милю съезд 522 справа, на I-80 W, в сторону San Francisco.");
+    expect(say("exit", "right", "Take exit 12B toward Reno/Sacramento onto I-80 W")).toBe("Съезд 12B справа, на I-80 W, в сторону Reno/Sacramento.");
+    expect(say("exit", "right", "Take exit 14 toward Virginia St/Downtown.", "near", 800)).toBe("Через полмили съезд 14 справа, в сторону Virginia St/Downtown.");
+    expect(say("exit", null, "Take exit 7 for Stockton Blvd")).toBe("Съезд 7, в сторону Stockton Blvd.");
+    expect(say("exit", "left", "Take the left exit onto I-80-BR E (Capital City Fwy).")).toBe("Сворачивай на съезд слева, на I-80-BR E (Capital City Fwy).");
+    expect(say("exit", "right", "Take the exit toward I-80-TOLL/San Francisco onto I-80 W")).toBe("Сворачивай на съезд справа, на I-80 W, в сторону I-80-TOLL/San Francisco.");
+  });
+
+  test("keep, ramp, continue and roundabout", () => {
+    expect(say("keep", "right", "Keep right onto I-80 E toward Reno")).toBe("Держись правее, на I-80 E, в сторону Reno.");
+    expect(say("keep", "right", "Keep right toward Emerald Bay Rd/US-50", "near", 152)).toBe("Через 500 футов держись правее, в сторону Emerald Bay Rd/US-50.");
+    expect(say("keep", "right", "Keep right.")).toBe("Держись правее.");
+    expect(say("ramp", null, "Take ramp onto I-5 N toward Redding")).toBe("Заезжай на съезд, на I-5 N, в сторону Redding.");
+    expect(say("ramp", "left", "Take left ramp onto I-80-BR W toward US-50 W")).toBe("Заезжай на съезд слева, на I-80-BR W, в сторону US-50 W.");
+    expect(say("continue", null, "Continue on CA-89 N toward Truckee")).toBe("Продолжай по CA-89 N, в сторону Truckee.");
+    expect(say("roundaboutExit", "right", "Take the 2nd exit from roundabout onto Luther Pass Rd (CA-89 S) toward Markleeville.", "near", 152)).toBe(
+      "Через 500 футов на круге 2-й съезд, на Luther Pass Rd (CA-89 S), в сторону Markleeville.");
+    expect(say("roundaboutPass", null, "Pass 2 roundabouts and continue on State Route 28")).toBe("Проезжай круг, на State Route 28.");
+  });
+
+  test("the facts are read from the words only: nothing found, nothing added", () => {
+    expect(maneuverFacts("Take exit 522 toward San Francisco onto I-80 W")).toEqual({ exit: "522", nth: null, road: "I-80 W", toward: "San Francisco" });
+    expect(maneuverFacts("Keep right onto I-80 E toward Reno.")).toEqual({ exit: null, nth: null, road: "I-80 E", toward: "Reno" });
+    expect(maneuverFacts("Take the 1st exit from roundabout")).toEqual({ exit: null, nth: "1", road: null, toward: null });
+    expect(maneuverFacts("Keep right")).toEqual({ exit: null, nth: null, road: null, toward: null });
+    expect(maneuverFacts("Your destination is on the left")).toEqual({ exit: null, nth: null, road: null, toward: null });
+    expect(say("turn", "left", "Turn left", "near", 152)).toBe("Через 500 футов поверни налево.");
+    expect(say("ferry", null, "Take the ferry")).toBe("Заезжай на паром.");
+    // An action the table does not know is not dressed up with a road.
+    expect(say("somethingNew", null, "Do a thing onto Main St", "near", 152)).toBe("Через 500 футов следуй по маршруту.");
   });
 
   test("every action and direction the router sends gives a whole Russian sentence at every stage", () => {
@@ -53,7 +88,8 @@ describe("a maneuver the server left in English, in Russian mode", () => {
         const words = maneuverWords(action, direction);
         expect({ words, ru: HAS_LATIN_WORD.test(t(words, undefined, "ru")) }).toEqual({ words, ru: false });
         for (const [stage, m] of stages) {
-          const line = spoken(announcement({ action, direction, instruction: "Take the thing onto Some Rd" }, stage, m, "ru"));
+          // No road or direction in the words: the only Latin left would be an English word that slipped through.
+          const line = spoken(announcement({ action, direction, instruction: "Do the thing" }, stage, m, "ru"));
           expect({ action, direction, stage, latin: HAS_LATIN_WORD.test(line) }).toEqual({ action, direction, stage, latin: false });
           expect(line).toMatch(/^[А-ЯЁ].*\.$/);
         }

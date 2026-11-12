@@ -199,12 +199,55 @@ export function maneuverWords(action: string, direction?: string | null): string
 }
 
 /**
+ * The facts of an English instruction that a driver steers by: the exit number ("exit 522", "exit 12B"), the
+ * roundabout exit ("the 2nd exit"), the road after "onto" / "on" and the direction after "toward" / "for". Names
+ * come back as written; null for what the instruction does not say.
+ */
+export function maneuverFacts(instruction: string): { exit: string | null; nth: string | null; road: string | null; toward: string | null } {
+  const text = instruction.trim().replace(/\.$/, "");
+  const pick = (rx: RegExp) => rx.exec(text)?.[1].trim() || null;
+  return {
+    exit: pick(/\bexit (\d+[A-Z]?)\b/i),
+    nth: pick(/\b(\d+)(?:st|nd|rd|th) exit\b/i),
+    road: pick(/\s(?:onto|on) (?!the (?:left|right)\b)(.+?)(?=\s+(?:toward|for)\s|$)/i),
+    toward: pick(/\s(?:toward|for) (.+?)(?=\s+(?:onto|on)\s|$)/i),
+  };
+}
+
+/**
+ * An English instruction said in Russian: the action and direction from the maneuver, the exit number, road and
+ * direction from its words. "Take exit 522 toward San Francisco onto I-80 W" -> "съезд 522 справа, на I-80 W, в
+ * сторону San Francisco"; "Turn left onto Main St" -> "поверни налево на Main St". Without the facts two exits in
+ * a row sounded the same. Nothing to pull out: the plain phrase of maneuverWords.
+ */
+export function maneuverPhraseRu(next: Pick<Maneuver, "action" | "instruction" | "direction">): string {
+  const ru = (en: string, vars?: Record<string, string>) => t(en, vars, "ru");
+  const words = maneuverWords(next.action, next.direction);
+  if (words === "follow the route") return ru(words); // an action this table does not know: no half-guessed sentence
+  const side = next.direction === "left" || next.direction === "right" ? next.direction : null;
+  const { exit, nth, road, toward } = maneuverFacts(next.instruction);
+  let said = ru(words);
+  let roadSaid = false;
+  if (exit) said = ru(side ? `exit {num} on the ${side}` : "exit {num}", { num: exit });
+  else if (nth && next.action.startsWith("roundabout")) said = ru("roundabout exit {nth}", { nth });
+  else if (words === "continue straight" && road) {
+    said = ru("continue on {road}", { road });
+    roadSaid = true;
+  }
+  // The server's own turns read "Поверни налево на Main St"; after an exit or "держись правее" a pause is clearer.
+  const sep = next.action === "turn" || next.action === "uTurn" ? " " : ", ";
+  if (road && !roadSaid) said += sep + ru("onto {road}", { road });
+  if (toward) said += sep + ru("toward {place}", { place: toward });
+  return said;
+}
+
+/**
  * The Russian sentence for the two cases where gluing "In 500 feet, " to the instruction goes wrong, or null when
  * the usual path is right. Decided by the maneuver's action, never by its words (QA 2026-11-11):
  * - an arrival: the server sends "Ты на месте" or "Прибытие: Pilot", and a mile out that read "Через полмили ты
  *   на месте." Before the end it is one whole sentence; at the end the server's own line.
  * - an instruction the server's catalog left in English: "Через 500 футов turn left onto Main St." was read by
- *   the Russian voice. The action and direction are said in Russian instead, without the road name.
+ *   the Russian voice. It is said in Russian from its action, direction and facts (maneuverPhraseRu).
  */
 function announcementRu(next: Pick<Maneuver, "action" | "instruction" | "direction">, stage: StageKey, toNextM: number): string | null {
   const translated = hasCyrillic(next.instruction);
@@ -214,7 +257,7 @@ function announcementRu(next: Pick<Maneuver, "action" | "instruction" | "directi
     return translated ? null : t("You have arrived.", undefined, "ru");
   }
   if (translated) return null;
-  const what = t(maneuverWords(next.action, next.direction), undefined, "ru");
+  const what = maneuverPhraseRu(next);
   return stage === "now" ? `${what.charAt(0).toUpperCase()}${what.slice(1)}.` : `${lead()} ${what}.`;
 }
 

@@ -34,6 +34,14 @@ export const RU: Record<string, string> = {
   "go through the roundabout": "проезжай круг",
   "take the ferry": "заезжай на паром",
   "follow the route": "следуй по маршруту",
+  // and the facts pulled out of that English instruction (guidance.ts maneuverPhraseRu); names stay as written
+  "exit {num}": "съезд {num}",
+  "exit {num} on the left": "съезд {num} слева",
+  "exit {num} on the right": "съезд {num} справа",
+  "roundabout exit {nth}": "на круге {nth}-й съезд",
+  "continue on {road}": "продолжай по {road}",
+  "onto {road}": "на {road}",
+  "toward {place}": "в сторону {place}",
   "Follow the route": "Следуй по маршруту",
   "Lost signal, can't reroute. The route is {dist} to the {dir}.": "Связь пропала, маршрут не перестроить. До маршрута {dist} на {dir}.",
   // the off-route line's distance (spokenMiles) and direction (offlineGuidance COMPASS)
