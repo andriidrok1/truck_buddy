@@ -476,6 +476,13 @@ async def profile_get(sub: str) -> Optional[TruckProfile]:
     return profile
 
 
+async def has_profile(sub: str) -> bool:
+    """Whether a truck profile is stored for this sub, read from the store and not from this worker's copy: a
+    sign-in right after the profile was saved through another worker must not send the driver to onboarding again."""
+    _profiles.pop(sub, None)
+    return await profile_get(sub) is not None
+
+
 async def profile_put(sub: str, profile: TruckProfile) -> None:
     """The app's profile. A fleet driver's sizes are not written anywhere: they change the trip, which the phone
     carries (decision 2026-11-02, bug 2: one driver's trailer and name were written onto the truck for all of

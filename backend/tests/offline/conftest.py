@@ -282,6 +282,7 @@ def api_client():
     from services import auth
     mp.setattr(auth, "RATE_PER_MIN", 0)
     mp.setattr(auth, "MAX_DEVICES_PER_IP", 0)  # the suite registers more devices than one IP may in 10 min
+    mp.setattr(auth, "MAX_SIGNINS_PER_IP", 0)  # same for Apple/Google sign-ins
     try:
         with TestClient(server.app) as c:
             token = c.post("/api/auth/device").json()["access_token"]
