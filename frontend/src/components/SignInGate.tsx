@@ -1,6 +1,6 @@
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, AppState, Image, Pressable, ScrollView, StyleSheet, View, type AppStateStatus } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SignInError } from "../api";
@@ -98,35 +98,44 @@ export function SignInGate({ env: envProp, signIn = signInWith, timing = TIMING 
     };
   }, [env]);
 
-  // One attempt at a time; `run` tells a late answer of an abandoned attempt from the current one.
-  const run = useRef(0);
+  // `started`: the number of the latest attempt. `holding`: the attempt that holds the screen (buttons off), or
+  // null once it finished or was given up on. A given-up attempt still finishes in the background: if it then fails
+  // and the screen is idle with no newer attempt, its error is shown (the driver otherwise never learns why).
+  const started = useRef(0);
+  const holding = useRef<number | null>(null);
   const stage = useRef<SignInStage | null>(null);
   const giveUp = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const idle = (attempt: number, failed: string | null) => {
-    if (run.current !== attempt) return; // already given up on, or a newer attempt is running
-    run.current++;
-    stage.current = null;
-    if (giveUp.current) clearTimeout(giveUp.current);
-    giveUp.current = null;
-    busyRef.current = false;
-    if (!alive.current) return;
-    setBusy(false);
-    setError(failed);
+  const release = (attempt: number, failed: string | null) => {
+    if (holding.current === attempt) {
+      holding.current = null;
+      stage.current = null;
+      if (giveUp.current) clearTimeout(giveUp.current);
+      giveUp.current = null;
+      busyRef.current = false;
+      if (!alive.current) return;
+      setBusy(false);
+      setError(failed);
+      return;
+    }
+    // A late answer of an attempt the screen stopped waiting for.
+    if (failed && holding.current === null && started.current === attempt && alive.current) setError(failed);
   };
 
   const start = async (provider: Provider) => {
     if (busyRef.current) return;
     busyRef.current = true;
-    const attempt = ++run.current;
+    const attempt = ++started.current;
+    holding.current = attempt;
+    stage.current = null;
     setBusy(true);
     setError(null);
     // The provider's sheet never came back with anything: the buttons work again. If its answer does arrive
     // later the sign-in still completes; it just no longer holds the screen.
-    giveUp.current = setTimeout(() => idle(attempt, stage.current === "server" ? FAILED : null), timing.provider);
+    giveUp.current = setTimeout(() => release(attempt, stage.current === "server" ? FAILED : null), timing.provider);
     let failed: string | null = null;
     try {
       const outcome = await signIn(provider, (s) => {
-        if (run.current === attempt) stage.current = s;
+        if (holding.current === attempt) stage.current = s;
       });
       // Signed in: the root layout has already moved on. Cancelled: back to idle, nothing to say.
       if (outcome === "not_configured") failed = NOT_SET_UP;
@@ -135,20 +144,25 @@ export function SignInGate({ env: envProp, signIn = signInWith, timing = TIMING 
       console.log(`[signin] ${provider} failed: ${String(e)}`);
       failed = signInMessage(e);
     }
-    idle(attempt, failed);
+    release(attempt, failed);
   };
 
-  // The system sheet is gone (the app is active again) and the provider still has not answered: some SDKs never
-  // settle a sheet dismissed by the system. Not while our own server is being asked; that call has its deadline.
+  // The app came back from the BACKGROUND (the driver left the system sheet for the home screen and returned) and
+  // the provider still has not answered: some SDKs never settle a sheet dismissed that way. A return from
+  // "inactive" does not count: iOS goes inactive and active again while Google's web sheet is still up (the
+  // "wants to use google.com to sign in" prompt). Not while our own server is being asked; that call has its deadline.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const sub = AppState.addEventListener("change", (s) => {
+    let last: string | null | undefined = AppState.currentState; // RN types it as a plain string
+    const sub = AppState.addEventListener("change", (s: AppStateStatus) => {
+      const from = last;
+      last = s;
       if (timer) clearTimeout(timer);
       timer = null;
-      if (s !== "active" || !busyRef.current || stage.current !== "provider") return;
-      const attempt = run.current;
+      if (s !== "active" || from !== "background" || holding.current === null || stage.current !== "provider") return;
+      const attempt = holding.current;
       timer = setTimeout(() => {
-        if (stage.current === "provider") idle(attempt, null);
+        if (holding.current === attempt && stage.current === "provider") release(attempt, null);
       }, timing.back);
     });
     return () => {

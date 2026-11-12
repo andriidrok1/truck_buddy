@@ -413,37 +413,106 @@ describe("SignInGate", () => {
     expect(signIn).toHaveBeenCalledTimes(2);
   });
 
-  test("back in the app with the system sheet gone and no answer for 3 s: the buttons come back; not while our server is being asked", async () => {
+  describe("a provider that has not answered when the app is active again", () => {
     let onChange: (s: AppStateStatus) => void = () => {};
     const original = AppState.addEventListener;
-    AppState.addEventListener = ((_type: string, handler: (s: AppStateStatus) => void) => {
-      onChange = handler;
-      return { remove: () => {} };
-    }) as typeof AppState.addEventListener;
-    let stage: (s: "provider" | "server") => void = () => {};
-    const signIn = jest.fn((_p: string, onStage?: (s: "provider" | "server") => void) => {
-      stage = onStage ?? stage;
-      onStage?.("provider");
-      return new Promise<never>(() => {});
+    beforeEach(() => {
+      AppState.addEventListener = ((_type: string, handler: (s: AppStateStatus) => void) => {
+        onChange = handler;
+        return { remove: () => {} };
+      }) as typeof AppState.addEventListener;
     });
-    await render(<SignInGate env={STORE} signIn={signIn} timing={{ provider: 60_000, back: 30 }} />);
-    await settle();
-    await fireEvent.press(screen.getByTestId("signin-google"));
-    await act(async () => {
-      onChange("inactive"); // the sheet came up
-      onChange("active"); // and went, without a word from the SDK
-      await new Promise((r) => setTimeout(r, 70));
+    afterEach(() => {
+      AppState.addEventListener = original;
     });
-    expect(disabled("signin-google")).toBe(false);
+    const wait = (ms: number) =>
+      act(async () => {
+        await new Promise((r) => setTimeout(r, ms));
+      });
 
-    await fireEvent.press(screen.getByTestId("signin-google"));
-    await act(async () => {
-      stage("server"); // the provider answered; POST /auth/google is on the wire
-      onChange("active");
-      await new Promise((r) => setTimeout(r, 70));
+    /** A sign-in whose provider never answers; `stage` moves it on, `fail` ends it with an error. */
+    function stuck() {
+      let stage: (s: "provider" | "server") => void = () => {};
+      let fail: (e: unknown) => void = () => {};
+      const signIn = jest.fn((_p: string, onStage?: (s: "provider" | "server") => void) => {
+        stage = onStage ?? stage;
+        onStage?.("provider");
+        return new Promise<never>((_, reject) => (fail = reject));
+      });
+      return { signIn, stage: (s: "provider" | "server") => stage(s), fail: (e: unknown) => fail(e) };
+    }
+
+    test("back from the background with no answer for 3 s: the buttons come back; not while our server is being asked", async () => {
+      const p = stuck();
+      await render(<SignInGate env={STORE} signIn={p.signIn} timing={{ provider: 60_000, back: 30 }} />);
+      await settle();
+      await fireEvent.press(screen.getByTestId("signin-google"));
+      await act(async () => {
+        onChange("inactive");
+        onChange("background"); // the driver went to the home screen
+        onChange("active"); // and came back, the sheet gone without a word from the SDK
+      });
+      await wait(70);
+      expect(disabled("signin-google")).toBe(false);
+
+      await fireEvent.press(screen.getByTestId("signin-google"));
+      await act(async () => {
+        p.stage("server"); // the provider answered; POST /auth/google is on the wire
+        onChange("background");
+        onChange("active");
+      });
+      await wait(70);
+      expect(disabled("signin-google")).toBe(true);
     });
-    expect(disabled("signin-google")).toBe(true);
-    AppState.addEventListener = original;
+
+    test("inactive and active again (iOS's prompt over Google's web sheet): the buttons stay off", async () => {
+      const p = stuck();
+      await render(<SignInGate env={STORE} signIn={p.signIn} timing={{ provider: 60_000, back: 30 }} />);
+      await settle();
+      await fireEvent.press(screen.getByTestId("signin-google"));
+      await act(async () => {
+        onChange("inactive");
+        onChange("active");
+        onChange("inactive");
+        onChange("active");
+      });
+      await wait(70);
+      expect(disabled("signin-google")).toBe(true);
+      expect(p.signIn).toHaveBeenCalledTimes(1);
+    });
+
+    test("an attempt given up on that later fails shows its error while the screen is idle; not once a newer attempt started", async () => {
+      const first = stuck();
+      await render(<SignInGate env={STORE} signIn={first.signIn} timing={{ provider: 30, back: 10_000 }} />);
+      await settle();
+      await fireEvent.press(screen.getByTestId("signin-google"));
+      await wait(60); // given up on: idle again, no error yet
+      expect(disabled("signin-google")).toBe(false);
+      expect(screen.queryByTestId("signin-error")).toBeNull();
+      await act(async () => {
+        first.fail(new SignInError(401));
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect(screen.getByTestId("signin-error").props.children).toBe("Sign-in was refused. Try again, or use the other button.");
+    });
+
+    test("...and a newer attempt is never interrupted by the old one's failure", async () => {
+      const first = stuck();
+      const second = stuck();
+      let n = 0;
+      const signIn = jest.fn((p: string, s?: (x: "provider" | "server") => void): Promise<never> => (++n === 1 ? first.signIn(p, s) : second.signIn(p, s)));
+      await render(<SignInGate env={STORE} signIn={signIn} timing={{ provider: 30, back: 10_000 }} />);
+      await settle();
+      await fireEvent.press(screen.getByTestId("signin-google"));
+      await wait(60);
+      await fireEvent.press(screen.getByTestId("signin-google")); // the driver tries again
+      await act(async () => {
+        first.fail(new SignInError(0));
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect(screen.queryByTestId("signin-error")).toBeNull();
+      expect(disabled("signin-google")).toBe(true); // still the second attempt's screen
+    });
   });
 
   test("a tester who signed out lands on the code screen in a dev build", async () => {
