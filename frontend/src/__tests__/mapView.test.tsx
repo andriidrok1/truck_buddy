@@ -33,7 +33,9 @@ const FRAME: RadarFrame = {
   enabled: true,
   time: "2026-11-12T00:10:00+00:00",
   live: "n0q-202611120010",
-  forecast: [{ minutes: 60, layer: "hrrr-f060" }],
+  forecast_init: "2026-11-11T22:00:00Z",
+  forecast_step_min: 15,
+  forecast_max_min: 1080,
   max_zoom: 10,
   tile_url: "/api/radar/tiles/{layer}/{z}/{x}/{y}.png?k=abc",
 };

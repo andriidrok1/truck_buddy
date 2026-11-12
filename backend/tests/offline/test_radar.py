@@ -12,6 +12,7 @@ _now = datetime.now(timezone.utc)
 STAMP = (_now - timedelta(minutes=_now.minute % 5 + 5)).strftime("%Y%m%d%H%M")  # a real, recent 5-minute frame
 LIVE = f"n0q-{STAMP}"
 PNG = b"\x89PNG\r\n\x1a\nfake"
+META = {"model_init_utc": "2026-11-11T22:00:00Z", "forecast_minute": 0.0, "model_forecast_utc": "2026-11-11T22:00:00Z"}
 TMS = {"services": [{"id": "ridge_uscomp_n0q", "layername": f"ridge::USCOMP-N0Q-{STAMP}"},
                     {"id": "ridge_uscomp_n0r", "layername": f"ridge::USCOMP-N0R-{STAMP}"}]}
 
@@ -31,7 +32,9 @@ def test_only_known_layers_map_to_iem():
     assert radar.iem_layer(LIVE) == f"ridge::USCOMP-N0Q-{STAMP}"
     assert radar.iem_layer("hrrr-f060") == "hrrr::REFD-F0060-0"
     assert radar.iem_layer("hrrr-f180") == "hrrr::REFD-F0180-0"
-    for bad in ("hrrr-f045", "n0q-2026", "ridge::USCOMP-N0Q-0", "../etc", LIVE + "/../x", ""):
+    assert radar.iem_layer("hrrr-f015") == "hrrr::REFD-F0015-0"
+    assert radar.iem_layer("hrrr-f1080") == "hrrr::REFD-F1080-0"
+    for bad in ("hrrr-f050", "hrrr-f1095", "n0q-2026", "ridge::USCOMP-N0Q-0", "../etc", LIVE + "/../x", ""):
         assert radar.iem_layer(bad) is None
 
 
@@ -123,11 +126,13 @@ def test_lru_bounded_by_bytes():
 
 def test_frame_endpoint_hands_out_a_signed_tile_url(api_client, fake_http):
     fake_http.add(HOST, "/json/tms.json", json=TMS)
+    fake_http.add(HOST, "/data/gis/images/4326/hrrr/", json=META)
     body = api_client.get("/api/radar/frame").json()
     assert body["enabled"] is True
     assert body["live"] == LIVE
     assert body["time"] == radar.frame_time(STAMP).isoformat()
-    assert [f["layer"] for f in body["forecast"]] == ["hrrr-f060", "hrrr-f120", "hrrr-f180"]
+    assert body["forecast_init"] == "2026-11-11T22:00:00Z"
+    assert body["forecast_step_min"] == 15 and body["forecast_max_min"] == 1080
     assert body["tile_url"].startswith("/api/radar/tiles/{layer}/{z}/{x}/{y}.png?k=")
 
 
@@ -138,6 +143,7 @@ def test_frame_needs_a_token(api_client):
 
 def test_tile_endpoint(api_client, fake_http):
     fake_http.add(HOST, "/json/tms.json", json=TMS)
+    fake_http.add(HOST, "/data/gis/images/4326/hrrr/", json=META)
     fake_http.add(HOST, "/c/tile.py", fn=png)
     url = api_client.get("/api/radar/frame").json()["tile_url"]
     tile = url.replace("{layer}", LIVE).replace("{z}/{x}/{y}", "6/10/24")
@@ -150,6 +156,7 @@ def test_tile_endpoint(api_client, fake_http):
 
 def test_tile_endpoint_refuses_bad_key_and_layers(api_client, fake_http):
     fake_http.add(HOST, "/json/tms.json", json=TMS)
+    fake_http.add(HOST, "/data/gis/images/4326/hrrr/", json=META)
     url = api_client.get("/api/radar/frame").json()["tile_url"]
     good = url.replace("{layer}", LIVE).replace("{z}/{x}/{y}", "6/10/24")
     assert api_client.get(good.split("?k=")[0] + "?k=forged.key.x").status_code == 401
@@ -198,3 +205,31 @@ def test_upstream_budget_shared_by_everyone(fake_http, monkeypatch):
 def test_tile_endpoint_bad_key_is_401(api_client):
     r = api_client.get(f"/api/radar/tiles/{LIVE}/6/10/24.png", params={"k": "20261111.YQ.\u00e9"})
     assert r.status_code == 401
+def test_hrrr_run_cached_and_kept_on_failure(fake_http):
+    fake_http.add(HOST, "/data/gis/images/4326/hrrr/", json=META, times=1)
+    fake_http.add(HOST, "/data/gis/images/4326/hrrr/", status=503, text="down")
+    assert run(radar.hrrr_init(now=0.0)) == "2026-11-11T22:00:00Z"
+    assert run(radar.hrrr_init(now=10.0)) == "2026-11-11T22:00:00Z"
+    assert len(fake_http.calls_to(HOST, "/data/")) == 1
+    assert run(radar.hrrr_init(now=1000.0)) == "2026-11-11T22:00:00Z"  # IEM down: the last run we knew
+
+
+def test_forecast_tiles_cached_per_run(fake_http):
+    fake_http.add(HOST, "/cache/tile.py", fn=png)
+    radar._hrrr.update(init="2026-11-11T22:00:00Z")
+    run(radar.fetch_tile("hrrr-f060", 4, 2, 6, now=0.0))
+    run(radar.fetch_tile("hrrr-f060", 4, 2, 6, now=1.0))
+    radar._hrrr.update(init="2026-11-11T23:00:00Z")  # a new run: the same layer name shows other weather
+    run(radar.fetch_tile("hrrr-f060", 4, 2, 6, now=2.0))
+    assert len(fake_http.calls_to(HOST, "/cache/tile.py")) == 2
+
+
+def test_tile_fetch_learns_a_new_run_by_itself(fake_http):
+    """Review 2026-11-11: the run only refreshed on /radar/frame; tiles of a new run were cached under the old one."""
+    fake_http.add(HOST, "/cache/tile.py", fn=png)
+    fake_http.add(HOST, "/data/gis/images/4326/hrrr/", json=META, times=1)
+    fake_http.add(HOST, "/data/gis/images/4326/hrrr/", json={**META, "model_init_utc": "2026-11-11T23:00:00Z"})
+    run(radar.fetch_tile("hrrr-f060", 4, 2, 6, now=0.0))
+    run(radar.fetch_tile("hrrr-f060", 4, 2, 6, now=radar.FRAME_TTL_S + 1))  # the meta is re-read: a new run
+    assert radar._hrrr["init"] == "2026-11-11T23:00:00Z"
+    assert len(fake_http.calls_to(HOST, "/cache/tile.py")) == 2

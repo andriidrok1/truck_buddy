@@ -24,6 +24,8 @@ export function MapViewButton({ bottom, active, onPress }: { bottom: number; act
   );
 }
 
+const FORECAST_DOT = "#AF52DE";
+
 const KEY_ROWS = [
   { label: "Rain", colors: ["#9BE564", "#3CB043", "#F7D433", "#F28C28", "#E5322D"] },
   { label: "Mix", colors: ["#F6AAD7", "#EC80C4"] },
@@ -32,7 +34,7 @@ const KEY_ROWS = [
 
 /** Under the top bar in the weather view: when the radar frame is from, and a Key button that opens the legend
  *  (Figma V2a/V2b). Nothing when the backend has no frame. */
-export function RadarStatus({ top, frame }: { top: number; frame: RadarFrame | null }) {
+export function RadarStatus({ top, frame, forecastAt, beyondForecast }: { top: number; frame: RadarFrame | null; forecastAt?: Date | null; beyondForecast?: boolean }) {
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
   const clock = frameClock(frame?.time);
@@ -40,8 +42,15 @@ export function RadarStatus({ top, frame }: { top: number; frame: RadarFrame | n
   return (
     <View pointerEvents="box-none" style={[styles.status, { top }]}>
       <View testID="radar-time" style={[styles.chip, shadow(colors), { backgroundColor: colors.surface }]}>
-        <View style={[styles.dot, { backgroundColor: colors.success }]} />
-        <Text style={[styles.chipText, { color: colors.onSurface }]}>{t("Radar · {time}", { time: clock })}</Text>
+        {/* A slider moment ahead shows the HRRR model forecast, not radar: said so on the chip (purple dot). */}
+        <View style={[styles.dot, { backgroundColor: forecastAt ? FORECAST_DOT : colors.success }]} />
+        <Text style={[styles.chipText, { color: colors.onSurface }]}>
+          {beyondForecast
+            ? t("No radar forecast this far ahead")
+            : forecastAt
+              ? t("Model forecast · {time}", { time: frameClock(forecastAt.toISOString()) ?? "" })
+              : t("Radar · {time}", { time: clock })}
+        </Text>
       </View>
       <PressableScale
         testID="radar-key-button"

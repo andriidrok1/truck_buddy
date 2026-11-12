@@ -105,6 +105,8 @@ type Props = {
   /** The "Routes" list (AlternativesSheet) while the driver picks a route: it takes the route card's place in the
    *  sheet, so the map above keeps the lines being compared in view (UI review 2026-11-05, N7). */
   routesPanel?: ReactNode;
+  /** The weather time slider (weather view, parked): under the route's first line. */
+  weatherPanel?: ReactNode;
   /** The copilot's answer when the map has no room for the bubble (130 % font, a tall Russian route card): it is
    *  shown at the top of the route card instead, so it is never on screen nowhere (UI review 2026-11-05, N1). */
   replyInSheet?: string | null;
@@ -113,7 +115,7 @@ type Props = {
 };
 
 export function CopilotSheet(props: Props) {
-  const { phase, speaking, micLevel, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel, quiet, routesPanel, replyInSheet, onHowTo } = props;
+  const { phase, speaking, micLevel, onShowOptions, thinkingText, options, parking, onOptionParking, onOptionRoute, active, driving, remaining, onGo, bottomInset, onAvatarPress, onSubmitText, lastReply, lastReplySources, onClose, onEndRoute, onRemoveStop, onShowRoutes, offlineMap, onDownloadMap, onLayout, onPeekHeight, wakePhrase, panel, quiet, routesPanel, replyInSheet, onHowTo, weatherPanel } = props;
   const tr = useT();
   const lang = useLang();
   const routesChip = active && !driving ? routesChipText(active.route) : null;
@@ -415,7 +417,8 @@ export function CopilotSheet(props: Props) {
                 ))}
               </View>
             )}
-            {!driving && <RouteWeatherLine route={active.route} />}
+            {!driving && !weatherPanel && <RouteWeatherLine route={active.route} />}
+            {!driving && weatherPanel}
             {!more && active.place.category !== "service" && <ParkingStatus compact parking={active.parking} place={active.place} />}
             {more && (
               <Reveal>

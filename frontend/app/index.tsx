@@ -16,6 +16,10 @@ import { FollowButton } from "@/src/components/FollowButton";
 import { MapViewSheet } from "@/src/components/MapViewSheet";
 import { MapViewButton, RadarStatus } from "@/src/components/RadarControls";
 import { useRadar } from "@/src/hooks/useRadar";
+import { STEP_MIN as STEP_MIN_SLIDER, TimeSlider } from "@/src/components/TimeSlider";
+import { frameClock, radarOverlay } from "@/src/map/mapView";
+import { chipAt, layerAt, positionAt, shareAt, sliderVisible, trackParts } from "@/src/weather/timeSlider";
+import { nearestIndex } from "@/src/weather/routeWeather";
 import { useRouteWeather } from "@/src/hooks/useRouteWeather";
 import { WeatherPointSheet, spokenLine } from "@/src/components/WeatherPointSheet";
 import { useRouteWeatherStore } from "@/src/state/routeWeatherStore";
@@ -836,6 +840,25 @@ export default function MapScreen() {
   useRouteWeather(active?.route, truck.trailer_empty, coordsRef);
   const wxPoints = useRouteWeatherStore((st) => st.points);
   const wxChips = useMemo(() => (active ? weatherChipsOf(wxPoints, active.route) : []), [wxPoints, active]);
+  // The time slider (Figma V4): weather view, a route set, not driving (FMCSA: no dragging on the move).
+  const sliderOn = sliderVisible({ mapView, hasRoute: !!active, driving, phase });
+  // From where the truck is (a route restored mid-trip starts there, not at the origin): the time still ahead.
+  const sliderFrom = active && sliderOn ? shareAt(active.route.geometry as [number, number][], nearestIndex(active.route.geometry as [number, number][], loc.coords)) : 0;
+  const sliderTotal = active ? Math.max(STEP_MIN_SLIDER, Math.round((active.route.duration_s / 60) * (1 - sliderFrom))) : 0;
+  const [slider, setSlider] = useState<{ key: string; min: number; now: Date }>({ key: "", min: 0, now: new Date() });
+  const sliderKey = active ? `${active.place.id}:${active.route.duration_s}:${mapView}` : "";
+  if (slider.key !== sliderKey) setSlider({ key: sliderKey, min: 0, now: new Date() });
+  const sliderAt = new Date(slider.now.getTime() + slider.min * 60000);
+  const sliderAhead = sliderOn && slider.min > 0;
+  // Past the HRRR horizon there is no picture: no radar at all (never the live one under a future time).
+  const sliderLayer = sliderAhead ? layerAt(radar.frame, sliderAt, slider.now) : null;
+  const sliderOverlay = sliderAhead ? (sliderLayer ? radarOverlay(radar.frame, absoluteUrl(""), sliderLayer) : null) : radar.overlay;
+  const ghostAt = sliderAhead && active ? positionAt(active.route.geometry as [number, number][], sliderFrom + (1 - sliderFrom) * (slider.min / sliderTotal)) : null;
+  const ghost = ghostAt ? { ...ghostAt, label: frameClock(sliderAt.toISOString()) ?? "" } : null;
+  useEffect(() => {
+    if (ghostAt) mapRef.current?.centerOn(ghostAt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slider.min]);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.mapPlaceholder }]} testID="map-screen">
@@ -866,7 +889,8 @@ export default function MapScreen() {
         }}
         onMapTouch={Keyboard.dismiss}
         mapView={mapView}
-        radar={radar.overlay}
+        radar={sliderOverlay}
+        ghost={ghost}
         weatherChips={wxChips}
         onWeatherChipPress={setWxChip}
       />
@@ -908,7 +932,7 @@ export default function MapScreen() {
 
       {/* Hidden when the map window has no room for it under the top bar: it sat on the history button
           (UI review 2026-11-05, third pass, M3). */}
-      {mapView === "weather" && !(driving && active) && <RadarStatus top={topH + spacing.sm} frame={radar.frame} />}
+      {mapView === "weather" && !(driving && active) && <RadarStatus top={topH + spacing.sm} frame={radar.frame} forecastAt={sliderAhead ? sliderAt : null} beyondForecast={sliderAhead && !sliderLayer} />}
       {viewBottom !== null && <MapViewButton bottom={viewBottom} active={mapView !== "map"} onPress={() => setMapViewOpen(true)} />}
       <WeatherPointSheet
         chip={wxChip}
@@ -983,6 +1007,18 @@ export default function MapScreen() {
         wakePhrase={null}
         quiet={showHeightCard || !!micCard}
         panel={providers ? <ProvidersList data={providers} onRoute={(p) => onPlacePress(providerPlace(p))} /> : null}
+        weatherPanel={
+          sliderOn && active ? (
+            <TimeSlider
+              totalMin={sliderTotal}
+              value={Math.min(slider.min, sliderTotal)}
+              onChange={(min) => setSlider((s) => ({ ...s, min }))}
+              parts={trackParts(wxChips, slider.now, sliderTotal)}
+              chip={chipAt(wxChips, sliderAt)}
+              now={slider.now}
+            />
+          ) : null
+        }
         routesPanel={
           routesOpen && active && !driving && !!active.route.alternatives?.length ? (
             <AlternativesSheet primary={active.route} onPick={onPickAlternative} onClose={() => setRoutesOpen(false)} />

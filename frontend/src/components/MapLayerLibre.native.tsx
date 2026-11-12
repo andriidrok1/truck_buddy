@@ -18,7 +18,7 @@ import { entrySpot } from "../utils/entry";
 import type { MapLayerHandle, MapLayerProps } from "./mapTypes";
 import { frameClock, RADAR_OPACITY } from "../map/mapView";
 import { chipMode } from "../weather/routeWeather";
-import { AlertMarkerView, ChainMarkerView, WeatherChipView } from "./WeatherChip";
+import { AlertMarkerView, ChainMarkerView, GhostTruckView, WeatherChipView } from "./WeatherChip";
 import { DestinationLabel, EntryMarker, Pin, UserArrow } from "./Pin";
 
 const lib = loadMapLibre();
@@ -59,7 +59,8 @@ const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLaye
     const z = await map.current?.getZoom();
     if (z != null) camera.current?.zoomTo(Math.min(20, Math.max(3, z + delta)), { duration: 350 });
   };
-  useImperativeHandle(ref, () => ({ recenter, zoomBy }));
+  const centerOn = (p: LatLng) => camera.current?.easeTo({ center: toLngLat(p), duration: 300 });
+  useImperativeHandle(ref, () => ({ recenter, zoomBy, centerOn }));
 
   // A camera command before the style has loaded is dropped; the first fit can come in that window once the
   // GPS fix is in before this mounts, so it waits for the map and runs then.
@@ -213,6 +214,11 @@ const MapLayerLibre = forwardRef<MapLayerHandle, MapLayerProps>(function MapLaye
           </>
         )}
 
+        {props.ghost && (
+          <Marker key="ghost" id="ghost" lngLat={toLngLat(props.ghost)} anchor="bottom">
+            <GhostTruckView label={props.ghost.label} />
+          </Marker>
+        )}
         <Marker key="driver" id="driver" lngLat={toLngLat(driver)} anchor="center">
           <UserArrow heading={follow ? 0 : heading} />
         </Marker>

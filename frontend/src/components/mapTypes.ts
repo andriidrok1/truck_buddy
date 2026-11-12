@@ -37,7 +37,12 @@ export type ParkingSatMapProps = {
   tail: [number, number][];
 };
 
-export type MapLayerHandle = { recenter: () => void; zoomBy: (delta: number) => void };
+export type MapLayerHandle = {
+  recenter: () => void;
+  zoomBy: (delta: number) => void;
+  /** Moves the camera's centre to a point, keeping the zoom (the weather time slider follows the truck). */
+  centerOn: (p: LatLng) => void;
+};
 
 export type MapLayerProps = {
   driver: LatLng;
@@ -68,4 +73,6 @@ export type MapLayerProps = {
   /** Forecast chips along the active route, drawn in the weather view (src/weather/routeWeather.ts). */
   weatherChips?: Chip[];
   onWeatherChipPress?: (c: Chip) => void;
+  /** Where the truck will be at the time slider's time: a truck marker with that clock (null hides it). */
+  ghost?: (LatLng & { label: string }) | null;
 };

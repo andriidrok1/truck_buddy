@@ -22,12 +22,15 @@ async def radar_frame(driver: auth.Principal = Depends(auth.require_driver)):
         return {"enabled": False}
     ts = await radar.latest_frame()
     if not ts:
-        return {"enabled": True, "live": None, "forecast": [], "tile_url": None}
+        return {"enabled": True, "live": None, "forecast_init": None, "tile_url": None}
     return {
         "enabled": True,
         "time": radar.frame_time(ts).isoformat(),
         "live": f"n0q-{ts}",
-        "forecast": [{"minutes": m, "layer": f"hrrr-f{m:03d}"} for m in radar.FORECAST_MIN],
+        # The time slider: layer "hrrr-f{minute:03d}" shows forecast_init + minute (a model forecast, not radar).
+        "forecast_init": await radar.hrrr_init(),
+        "forecast_step_min": radar.FORECAST_STEP_MIN,
+        "forecast_max_min": radar.FORECAST_MAX_MIN,
         "max_zoom": radar.MAX_Z,
         # The app fills {layer}; {z}/{x}/{y} are left for the map's tile layer.
         "tile_url": "/api/radar/tiles/{layer}/{z}/{x}/{y}.png?k=" + radar.key_for(str(driver)),

@@ -475,13 +475,32 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
             name, lat, lng = req.active_place.name.split(",")[0], req.active_place.lat, req.active_place.lng
         else:
             name, lat, lng = "Here", req.lat, req.lng
+        in_s = self._eta_s(req, sess, lat, lng, text) if not d.get("when") else None
         with stage("tools"):
             try:
-                reply = await asyncio.wait_for(weather.forecast_speech(name, lat, lng, d.get("when")), 8.0)
+                reply = await asyncio.wait_for(weather.forecast_speech(name, lat, lng, d.get("when"), in_s=in_s), 8.0)
             except Exception as e:  # noqa: BLE001
                 logger.info("weather answer failed: %s", e)
                 reply = weather.NO_FORECAST.format(place=name)
         return AgentResponse(status="chat", transcript=text, reply=reply, source=self.source)
+
+    @staticmethod
+    def _eta_s(req: AgentRequest, sess: dict, lat: float, lng: float, text: str) -> Optional[float]:
+        """"Weather at Donner when I get there": seconds until the truck is there, from the active route; None
+        when the driver didn't ask about arriving, or the place isn't on the way."""
+        if not weather.WHEN_I_GET.search(text):
+            return None
+        route = (sess.get("alternatives") or {}).get("current")
+        if route is not None and route.geometry:
+            # From where the truck is now along the route (the destination too): the planned duration's share.
+            return weather.seconds_to(route.geometry, (req.lat, req.lng), (lat, lng), route.duration_s)
+        dest = req.active_place
+        if dest and abs(dest.lat - lat) < 1e-4 and abs(dest.lng - lng) < 1e-4 and req.active_distance_mi and req.active_duration_min:
+            # No route in this dialog: the app's numbers for the route are the planned ones; scale by the
+            # straight-line share of the trip still ahead (never longer than the whole trip).
+            left = min(1.0, km_to_mi(haversine_km(req.lat, req.lng, dest.lat, dest.lng)) * 1.2 / req.active_distance_mi)
+            return req.active_duration_min * 60 * left
+        return None
 
     async def _hos(self, req: AgentRequest, text: str) -> AgentResponse:
         """"How many hours do I have?" from the driver's Motive account (the driver's own key per request, or the

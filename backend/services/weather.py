@@ -472,6 +472,38 @@ def eta_at(route: RouteInfo, index: int, now: Optional[datetime] = None) -> date
     return _now(now) + timedelta(seconds=route.duration_s * share)
 
 
+ON_ROUTE_KM = 20.0  # a named place this close to the route line counts as "on the way"
+WHEN_I_GET = re.compile(r"\bwhen (?:i|we) (?:get|arrive|reach|pull)|\bby the time (?:i|we) (?:get|arrive|reach)|"
+                        r"\bwhen i'?m there\b|\bwhen i make it\b|\bкогда (?:я )?(?:доеду|приеду|буду там|доберусь)", re.I)
+
+
+def _nearest(geometry: list[list[float]], lat: float, lng: float) -> tuple[int, float]:
+    best, best_km = 0, float("inf")
+    for i, (a, b) in enumerate(geometry):
+        d = haversine_km(lat, lng, a, b)
+        if d < best_km:
+            best, best_km = i, d
+    return best, best_km
+
+
+def seconds_to(geometry: list[list[float]], driver: tuple[float, float], target: tuple[float, float],
+               duration_s: float) -> Optional[float]:
+    """Seconds until the truck reaches `target` on this route: the route's whole duration times the share of its
+    whole length between the truck and the target (the eta_at rule; the duration the app sends is the planned
+    one, not the time left, so the share is of the whole route). None when off the route or already behind."""
+    if len(geometry) < 2 or duration_s <= 0:
+        return None
+    i0, _ = _nearest(geometry, *driver)
+    i1, off = _nearest(geometry, *target)
+    if off > ON_ROUTE_KM or i1 < i0:
+        return None
+    steps = _steps_km(geometry)
+    total = sum(steps)
+    if total <= 0:
+        return None
+    return duration_s * sum(steps[i0:i1]) / total
+
+
 def _alert_tz(alert: WeatherAlert, now: datetime):
     """The alert's own zone (from its times), so "4 pm" is the driver's clock, not the server's."""
     for s in (alert.ends, alert.onset):
@@ -797,7 +829,8 @@ def _when_label(at: datetime, now: datetime) -> str:
 
 
 async def forecast_speech(place: str, lat: float, lng: float, when_text: Optional[str],
-                          now: Optional[datetime] = None, mono: Optional[float] = None) -> str:
+                          now: Optional[datetime] = None, mono: Optional[float] = None,
+                          in_s: Optional[float] = None) -> str:
     """The spoken hourly forecast at a place and time, plus any truck-relevant alert in effect there."""
     mono = time.monotonic() if mono is None else mono
     try:
@@ -806,7 +839,8 @@ async def forecast_speech(place: str, lat: float, lng: float, when_text: Optiona
             return NO_FORECAST.format(place=place)
         tz = ZoneInfo(props.get("timeZone") or "UTC")
         now = (now or datetime.now(tz)).astimezone(tz)
-        at = resolve_when(when_text, now)
+        # "When I get there": the truck's ETA there (in_s), rounded to the minute, beats any spoken time.
+        at = (now + timedelta(seconds=in_s)).replace(second=0, microsecond=0) if in_s is not None else resolve_when(when_text, now)
         periods = await _hourly_periods(props["forecastHourly"], mono)
         period = pick_period(periods, at)
         if not period:

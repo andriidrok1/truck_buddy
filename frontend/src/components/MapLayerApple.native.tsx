@@ -11,7 +11,7 @@ import { cameraSettled, fitCamera } from "../map/fitCamera";
 import { NIGHT_MAP_STYLE } from "../map/nightStyle";
 import { frameClock, nativeMapType, RADAR_OPACITY, WEATHER_MAP_STYLE } from "../map/mapView";
 import { chipMode, zoomOf } from "../weather/routeWeather";
-import { AlertMarkerView, ChainMarkerView, WeatherChipView } from "./WeatherChip";
+import { AlertMarkerView, ChainMarkerView, GhostTruckView, WeatherChipView } from "./WeatherChip";
 
 const toCoord = (p: LatLng) => ({ latitude: p.lat, longitude: p.lng });
 const FOLLOW_ZOOM = 17;
@@ -82,7 +82,8 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
     else if (cam?.altitude != null) mapRef.current?.animateCamera({ altitude: cam.altitude / 2 ** delta }, { duration: 350 });
   };
 
-  useImperativeHandle(ref, () => ({ recenter, zoomBy }));
+  const centerOn = (p: LatLng) => mapRef.current?.animateCamera({ center: toCoord(p) }, { duration: 300 });
+  useImperativeHandle(ref, () => ({ recenter, zoomBy, centerOn }));
 
   const fitAt = useRef(0);
   const fitCheck = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -266,6 +267,11 @@ const MapLayer = forwardRef<MapLayerHandle, MapLayerProps>(function MapLayer(pro
         </>
       )}
 
+      {props.ghost && (
+        <ViewMarker key="ghost" coordinate={toCoord(props.ghost)} anchor={{ x: 0.5, y: 0.75 }} zIndex={11} redraw={props.ghost.label}>
+          <GhostTruckView label={props.ghost.label} />
+        </ViewMarker>
+      )}
       <ViewMarker key="driver" coordinate={toCoord(driver)} anchor={{ x: 0.5, y: 0.5 }} zIndex={10} redraw={follow ? 0 : Math.round((heading ?? 0) / 10)}>
         <UserArrow heading={follow ? 0 : heading} />
       </ViewMarker>
