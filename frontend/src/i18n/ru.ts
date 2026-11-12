@@ -315,12 +315,10 @@ export const RU: Record<string, string> = {
   "Privacy policy": "Политика конфиденциальности",
   "Terms of use": "Условия использования",
   "Agree and continue": "Согласен, дальше",
-  "Agree and enter an access code": "Согласен, ввести код доступа",
   "Welcome to TruckBuddy": "Добро пожаловать в TruckBuddy",
   "Enter your access code to get started.": "Введи код доступа, чтобы начать.",
   "Access code": "Код доступа",
   "I have an access code": "У меня есть код доступа",
-  "Continue without a code": "Продолжить без кода",
 
   // ---- truck profile and settings ----
   "Your truck": "Твой трак",
@@ -511,4 +509,22 @@ export const RU: Record<string, string> = {
   "Likely fits your truck": "Трак, похоже, встанет",
   "Aerial picture of a truck stop with the truck parking and the way in marked": "Снимок трак-стопа сверху, отмечены парковка для траков и въезд",
   "Page {n} of {total}": "Страница {n} из {total}",
+
+  // ---- sign-in and "Welcome back" (src/components/SignInGate.tsx, WelcomeBack.tsx, AccessGate.tsx) ----
+  // The Apple button is the system's and reads in the phone's language, not the app's.
+  "Keep your truck, places and trips": "Сохрани трак, места и рейсы",
+  "Sign in once. New phone or reinstall, everything is back.": "Войди один раз. Новый телефон или переустановка: всё на месте.",
+  "Signing you in…": "Входим…",
+  "Continue with Google": "Продолжить с Google",
+  "Couldn't sign in. Check the connection and try again.": "Не получилось войти. Проверь связь и попробуй ещё раз.",
+  "Google sign-in isn't set up in this build.": "Вход через Google в этой сборке не настроен.",
+  "Sign-in with Apple or Google needs the installed app.": "Вход через Apple или Google работает только в установленном приложении.",
+  "You were signed out. Sign in again.": "Сеанс завершён. Войди снова.",
+  "By continuing you agree to the Terms and the Privacy Policy. We only get your name and email.":
+    "Продолжая, ты принимаешь Условия и Политику конфиденциальности. Мы получаем только твоё имя и почту.",
+  "Back to sign-in": "Назад ко входу",
+  "Welcome back, {name}": "С возвращением, {name}",
+  "Welcome back": "С возвращением",
+  "Here is what I brought over.": "Вот что уже на месте.",
+  "Open the map": "Открыть карту",
 };

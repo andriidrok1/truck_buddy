@@ -9,8 +9,8 @@ import { fonts, radius, spacing, useTheme } from "../theme";
 import { PressableScale } from "./PressableScale";
 import { t } from "../i18n";
 
-/** The driver enters an access code (tester code, or the shared code when open sign-up is off).
- *  `onSkip` adds a "Continue without a code" link. */
+/** The driver enters an access code (a tester's, or the shared one). Reached from the sign-in screen in Expo Go and
+ *  dev builds only (src/components/SignInGate.tsx). `onSkip` adds the link back to it. */
 export function AccessGate({ onSkip }: { onSkip?: () => void }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -73,8 +73,8 @@ export function AccessGate({ onSkip }: { onSkip?: () => void }) {
         {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={[styles.buttonText, { color: colors.onBrandPrimary }]}>Continue</Text>}
       </PressableScale>
       {onSkip && (
-        <PressableScale testID="access-code-skip" accessibilityRole="button" onPress={onSkip}>
-          <Text style={[styles.skip, { color: colors.info }]}>Continue without a code</Text>
+        <PressableScale testID="access-code-skip" accessibilityRole="button" onPress={onSkip} style={styles.skipHit}>
+          <Text style={[styles.skip, { color: colors.info }]}>Back to sign-in</Text>
         </PressableScale>
       )}
     </KeyboardAwareScrollView>
@@ -102,5 +102,6 @@ const styles = StyleSheet.create({
   buttonWrap: { alignSelf: "stretch" },
   button: { height: 56, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", marginTop: spacing.sm },
   buttonText: { fontFamily: fonts.bold, fontSize: 17 },
-  skip: { fontFamily: fonts.semibold, fontSize: 15, paddingVertical: spacing.md },
+  skipHit: { minHeight: 56, minWidth: 56, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing.sm },
+  skip: { fontFamily: fonts.semibold, fontSize: 15 },
 });

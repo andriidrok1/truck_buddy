@@ -78,6 +78,17 @@ const light = {
   // Switches: the off track and the thumb must read on a surfaceSecondary row in both themes.
   switchTrackOff: "#AEAEB2", // white thumb on #C7C7CC was too pale to read as a switch (UI review 2026-11-05)
   switchThumb: "#FFFFFF",
+
+  // "Continue with Google" (src/components/SignInGate.tsx), by Google's branding rules: a white button with a grey
+  // outline and dark text, the "G" in its four colours. The same in both themes (Google allows the light button on
+  // a dark screen; its near-black variant disappears on our dark surface).
+  googleButton: "#FFFFFF",
+  onGoogleButton: "#1F1F1F",
+  googleButtonBorder: "#747775",
+  googleBlue: "#4285F4",
+  googleRed: "#EA4335",
+  googleYellow: "#FBBC05",
+  googleGreen: "#34A853",
 };
 
 export type ThemeColors = typeof light;
@@ -144,6 +155,15 @@ const dark: ThemeColors = {
 
   switchTrackOff: "#636366",
   switchThumb: "#F2F2F7",
+
+  // The same as in the light theme (see there).
+  googleButton: "#FFFFFF",
+  onGoogleButton: "#1F1F1F",
+  googleButtonBorder: "#747775",
+  googleBlue: "#4285F4",
+  googleRed: "#EA4335",
+  googleYellow: "#FBBC05",
+  googleGreen: "#34A853",
 };
 
 export const themes: { light: ThemeColors; dark: ThemeColors } = { light, dark };
