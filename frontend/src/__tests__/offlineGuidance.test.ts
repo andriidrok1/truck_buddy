@@ -36,6 +36,8 @@ describe("spokenMiles", () => {
     expect(spokenMiles(100)).toBe("350 feet");
     expect(spokenMiles(500)).toBe("0.3 miles");
     expect(spokenMiles(1609.34)).toBe("1 mile");
+    expect(spokenMiles(2 * 1609.34)).toBe("2 miles"); // was "2.0 miles"
+    expect(spokenMiles(5 * 1609.34)).toBe("5 miles");
     expect(spokenMiles(2500)).toBe("1.6 miles");
     expect(spokenMiles(20000)).toBe("12 miles");
   });

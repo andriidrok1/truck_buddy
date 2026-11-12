@@ -197,10 +197,11 @@ export function remainingSeconds(
   return (driving * remainingM) / (totalM || 1) + (stops ? (stopsS / stops) * ahead : 0);
 }
 
-/** "0.4 mi" / "500 ft" for the banner (the same rounding the voice reads). */
+/** "0.4 mi" / "2 mi" / "500 ft" for the banner (the same rounding the voice reads). A whole mile has no ".0":
+ *  Russian showed "1,0 мили" and "5,0 мили" where it should say "1 миля" and "5 миль" (QA 2026-11-11). */
 export function formatDistance(m: number) {
   const { n, unit } = roundedDistance(m);
-  return unit === "ft" ? `${n} ft` : `${n.toFixed(n < 10 ? 1 : 0)} mi`;
+  return `${n} ${unit}`;
 }
 
 /** Beyond this from the line, a resumed route is replanned at once: the off-route tracker waits for the

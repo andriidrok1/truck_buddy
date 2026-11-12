@@ -184,9 +184,19 @@ describe("banner and voice", () => {
       const shown = formatDistance(m);
       const said = spokenDistance(m);
       const n = shown.split(" ")[0];
-      const ok = said.includes(`${n} `) || (n === "0.5" && said === "In half a mile") || (n === "1.0" && said === "In a mile");
+      const ok = said.includes(`${n} `) || (n === "0.5" && said === "In half a mile") || (n === "1" && said === "In a mile");
       expect([m, ok]).toEqual([m, true]);
     }
+  });
+
+  test("whole miles are shown without a trailing .0 (QA 2026-11-11: \"1,0 мили\" in Russian)", () => {
+    expect(formatDistance(1609.34)).toBe("1 mi");
+    expect(formatDistance(2 * 1609.34)).toBe("2 mi");
+    expect(formatDistance(5 * 1609.34)).toBe("5 mi");
+    expect(formatDistance(644)).toBe("0.4 mi");
+    expect(formatDistance(2500)).toBe("1.6 mi");
+    expect(formatDistance(20000)).toBe("12 mi");
+    expect(formatDistance(152)).toBe("500 ft");
   });
 });
 
