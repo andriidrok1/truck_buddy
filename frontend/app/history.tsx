@@ -5,6 +5,8 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, type MemoryTurn } from "@/src/api";
+import { clearConversations } from "@/src/state/accountActions";
+import { signedInWithAccount } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
 import { HistoryEmpty } from "@/src/components/HistoryEmpty";
 import { PressableScale } from "@/src/components/PressableScale";
@@ -25,6 +27,12 @@ const confirm = (msg: string, onYes: () => void) => {
 };
 
 /** Everything the copilot remembers from past conversations, with a "clear" button. */
+
+const CLEAR_MSG = "Your copilot forgets your conversations and what it learned from them. Your truck and trips stay.";
+
+// An access-code sign-in still clears with the older full wipe (src/state/accountActions.ts clearConversations),
+// so it keeps its older text.
+const CODE_CLEAR_MSG = "Your copilot will forget everything you've talked about.";
 
 /** "Today", "Yesterday", else "Oct 28": one separator per day instead of a date under every bubble. */
 function dayLabel(iso: string, lang: Lang): string {
@@ -80,9 +88,9 @@ export default function HistoryScreen() {
   };
 
   const clear = () =>
-    confirm("Your copilot will forget everything you've talked about.", async () => {
+    confirm(signedInWithAccount() ? CLEAR_MSG : CODE_CLEAR_MSG, async () => {
       try {
-        await api.clearMemory();
+        await clearConversations();
         setTurns([]);
       } catch {
         setError(true);
