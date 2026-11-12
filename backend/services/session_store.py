@@ -16,6 +16,7 @@ turn saves it at the end.
 """
 import asyncio
 import contextvars
+import hashlib
 import json
 import logging
 import os
@@ -142,16 +143,44 @@ class DbSessionStore:
             logger.info("dialog session sweep skipped: %s", e)
 
     async def drop_prefix(self, prefix: str) -> int:
+        # LIKE reads `_` and `%` in the prefix as wildcards, and every driver id has one ("drv_..."): unescaped, one
+        # driver's delete could take the dialogs of an id that differs only at that position.
+        like = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         if db.store() == "sqlite":
             return await db._sq_run(lambda con: con.execute(
-                "DELETE FROM dialog_sessions WHERE session_id LIKE ? || '%'", (prefix,)).rowcount)
+                "DELETE FROM dialog_sessions WHERE session_id LIKE ? ESCAPE '\\'", (like,)).rowcount)
         pool = await db._db()
-        status = await pool.execute("DELETE FROM dialog_sessions WHERE session_id LIKE $1 || '%'", prefix)
+        status = await pool.execute("DELETE FROM dialog_sessions WHERE session_id LIKE $1 ESCAPE '\\'", like)
         return int(status.split()[-1])
 
 
 _memory = MemorySessionStore()
 _db_store = DbSessionStore()
+
+
+KEY_MAX = 64  # a dialog key is at most this long
+
+
+def dialog_key(driver: str, app_id: Optional[str]) -> str:
+    """The key a dialog is stored under: the driver's sub in front, so no driver can name another's dialog, then the
+    app's own id for the dialog ("solo" when it sent none).
+
+    A phone signed in to an account (`driver.sid`, services/auth.py) gets its session between the two:
+    "{sub}:{sid8}:{id}". Two phones of one account share the sub, and both would otherwise talk into one "…:solo"
+    dialog. A device token has no session and keeps the key it always had.
+
+    The sub and the session leave 18 characters and the app's ids are longer ("dlg-<ms>-<6 chars>"), so an id that
+    does not fit is replaced by a hash of the whole of it: cutting it would keep the timestamp's head and put every
+    dialog of the phone under one key."""
+    app_id = app_id or "solo"
+    sid = getattr(driver, "sid", None)
+    if not sid:
+        return f"{driver}:{app_id}"[:KEY_MAX]
+    head = f"{driver}:{sid.rsplit('_', 1)[-1][:8]}:"
+    room = max(KEY_MAX - len(head), 16)
+    if len(app_id) > room:
+        app_id = hashlib.sha256(app_id.encode()).hexdigest()[:room]
+    return head + app_id
 
 
 def kind() -> str:

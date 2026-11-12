@@ -195,10 +195,7 @@ async def nudges_endpoint(req: NudgeRequest, request: Request, driver: str = Dep
     req.lang = i18n.use_lang(req.lang)
     req.motive_key, req.motive_user = await motive_auth(request, driver)
     req.truck_profile = await tenancy.effective_profile(driver, req.truck_profile)
-    if req.session_id:
-        req.session_id = f"{driver}:{req.session_id}"[:64]
-    else:
-        req.session_id = f"{driver}:solo"[:64]
+    req.session_id = session_store.dialog_key(driver, req.session_id)
     store = session_store.get_store()
     state = await store.load(req.session_id)
     token = session_store.enter(req.session_id, state)
@@ -297,7 +294,7 @@ async def satellite(lat: float = Query(..., ge=-90, le=90), lng: float = Query(.
 
 async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = None) -> AgentResponse:
     if driver and req.session_id:
-        req.session_id = f"{driver}:{req.session_id}"[:64]  # sessions can't be shared across drivers
+        req.session_id = session_store.dialog_key(driver, req.session_id)  # sessions can't be shared across drivers
     role = getattr(driver, "role", "driver")
     if not spend.turns_open(role):
         # The day's money is spent (services/spend.py, stage no_ai): no model call, a stored line.

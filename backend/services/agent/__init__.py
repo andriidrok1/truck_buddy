@@ -203,7 +203,7 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
 
     async def handle(self, req: AgentRequest, driver: Optional[str] = None) -> AgentResponse:
         if driver and not req.session_id:
-            req.session_id = f"{driver}:solo"[:64]  # typed turns outside a dialog still use memory
+            req.session_id = session_store.dialog_key(driver, None)  # typed turns outside a dialog still use memory
         sid = req.session_id
         store = session_store.get_store()
         state = await store.load(sid) if sid else DialogState()
