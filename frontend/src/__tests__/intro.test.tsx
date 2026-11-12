@@ -5,7 +5,7 @@ import { act, fireEvent, render, renderHook, screen } from "@testing-library/rea
 import { BackHandler, StyleSheet } from "react-native";
 
 import { IntroGate } from "../components/intro/IntroGate";
-import { CARD_BELOW_FONT_SCALE } from "../components/intro/IntroLot";
+import { CARD_BELOW_FONT_SCALE, LOT_ROWS, LOT_STEPS } from "../components/intro/IntroLot";
 import { giveConsent, forgetConsent } from "../consent";
 import { setOnboarded } from "../hooks/useTruckProfile";
 import { t, useLangStore } from "../i18n";
@@ -97,7 +97,7 @@ describe("IntroGate", () => {
       "I check the lot first",
       "Truck parking",
       "Way in",
-      "Sacramento 49er Travel Plaza",
+      "49er Travel Plaza",
       "Likely fits your truck",
     ]) {
       expect(screen.getByText(line, ALL)).toBeTruthy();
@@ -116,7 +116,7 @@ describe("IntroGate", () => {
     await swipeTo(2);
     expect(screen.getByText("I check the lot first")).toBeTruthy();
     expect(screen.getByLabelText("Aerial picture of a truck stop with the truck parking and the way in marked")).toBeTruthy();
-    expect(screen.getByText("Sacramento 49er Travel Plaza")).toBeTruthy();
+    expect(screen.getByText("49er Travel Plaza")).toBeTruthy();
     expect(screen.getByText("Likely fits your truck")).toBeTruthy();
     expect(screen.queryByText("Truck parking")).toBeNull();
     expect(screen.queryByText("Way in")).toBeNull();
@@ -337,6 +337,33 @@ describe("IntroGate", () => {
     });
   });
 
+  describe("the answer card", () => {
+    const flat = (id: string) => StyleSheet.flatten(screen.getByTestId(id, ALL).props.style);
+
+    test.each([
+      ["en", "parking looks good", "4 miles"],
+      ["ru", "с парковкой порядок", "4 мили"],
+    ] as const)("%s: the whole verdict is drawn, free to wrap, in all the room left of the row", async (lang, verdict, distance) => {
+      useLangStore.setState({ lang });
+      await render(<IntroGate />);
+      const text = screen.getByText(verdict, ALL);
+      expect(text.props.testID).toBe("intro-ask-verdict");
+      expect(text.props.numberOfLines).toBeUndefined();
+      expect(text.props.ellipsizeMode).toBeUndefined();
+      // Not a box of exactly the text's width (that is what lost "порядок"): it takes the rest of a plain row.
+      expect(flat("intro-ask-verdict")).toMatchObject({ flex: 1, minWidth: 0 });
+      const row = flat("intro-ask-meta");
+      expect(row.flexDirection).toBe("row");
+      expect(row.flexWrap).toBeUndefined();
+      expect(row.overflow).toBeUndefined();
+      // The distance keeps its own width and is not squeezed by a long verdict.
+      const dist = StyleSheet.flatten(screen.getByText(distance, ALL).props.style);
+      expect(dist.flex).toBeUndefined();
+      expect(dist.flexShrink).toBeUndefined();
+      expect(screen.getByText(distance, ALL).props.numberOfLines).toBeUndefined();
+    });
+  });
+
   describe("the picture screen", () => {
     const flat = (id: string) => StyleSheet.flatten(screen.getByTestId(id, ALL).props.style);
     const dims = jest.requireActual<typeof import("react-native")>("react-native");
@@ -373,10 +400,40 @@ describe("IntroGate", () => {
       expect(wayIn.top).toBeGreaterThan(0);
     });
 
+    test("the long Russian tag at font scale 1.5 stays above every marked area and right of the arrow", async () => {
+      useLangStore.setState({ lang: "ru" });
+      withWindow({ width: 400, height: 800, fontScale: 1.5 });
+      await render(<IntroGate />);
+      expect(screen.getByText("Парковка для траков", ALL).props.numberOfLines).toBeUndefined();
+      const box = flat("intro-lot-picture");
+      const tag = flat("intro-lot-tag-parking");
+      // Held by its bottom and right edges only: text of any length or size grows it up and to the left.
+      expect(tag.top).toBeUndefined();
+      expect(tag.left).toBeUndefined();
+      const tagBottomY = box.height - tag.bottom; // where the tag ends, from the top of the picture
+      for (const r of [...LOT_STEPS, ...LOT_ROWS]) expect(tagBottomY).toBeLessThan(Math.round(r.y * box.height));
+      // Its right edge is the big lot's; it may reach left as far as the arrow and wraps inside itself from there.
+      const lotRight = Math.round((LOT_STEPS[0].x + LOT_STEPS[0].w) * box.width);
+      expect(tag.right).toBe(box.width - lotRight);
+      const arrowRight = Math.round(0.09 * box.width) + 18;
+      expect(lotRight - tag.maxWidth).toBeGreaterThan(arrowRight);
+      expect(tag.maxWidth).toBeGreaterThan(box.width / 2);
+    });
+
+    test("the steps of the big lot make one shape: same right edge, each starts where the one above ends", () => {
+      LOT_STEPS.forEach((s, i) => {
+        expect(s.x + s.w).toBeCloseTo(LOT_STEPS[0].x + LOT_STEPS[0].w, 6);
+        if (i > 0) {
+          expect(s.y).toBeCloseTo(LOT_STEPS[i - 1].y + LOT_STEPS[i - 1].h, 6);
+          expect(s.x).toBeGreaterThan(LOT_STEPS[i - 1].x);
+        }
+      });
+    });
+
     test("the card is two lines, cut rather than wrapped; with a very large font it sits under the picture", async () => {
       withWindow({ width: 400, height: 800, fontScale: CARD_BELOW_FONT_SCALE });
       const view = await render(<IntroGate />);
-      expect(screen.getByText("Sacramento 49er Travel Plaza", ALL).props.numberOfLines).toBe(1);
+      expect(screen.getByText("49er Travel Plaza", ALL).props.numberOfLines).toBe(2); // short enough for one; never an ellipsis at 1.3
       expect(screen.getByText("Likely fits your truck", ALL).props.numberOfLines).toBe(1);
       expect(flat("intro-lot-card").position).toBe("absolute");
       await view.unmount();
