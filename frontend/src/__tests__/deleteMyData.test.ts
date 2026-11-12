@@ -83,7 +83,7 @@ test("Delete my data: storage holds no app key, every store is back to a fresh i
   expect(useLangStore.getState().chosen).toBe(false);
   expect(useLangStore.getState().lang).toBe("en"); // the phone's language under jest
   const theme = await renderHook(() => useThemePref());
-  expect(theme.result.current).toBe("light");
+  expect(theme.result.current).toBe("system"); // Auto, the fresh-install default
   expect(isHeightConfirmed()).toBe(false);
   expect(await isOnboarded()).toBe(false);
   expect(await loadHowTo()).toBeNull(); // the next onboarding shows "How to use" again
