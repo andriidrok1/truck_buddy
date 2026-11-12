@@ -1,6 +1,5 @@
 import { Image, ScrollView, StyleSheet, View } from "react-native";
 
-import { useT } from "../../i18n";
 import { Text } from "../../i18n/Text";
 import { fonts, radius, spacing, useTheme } from "../../theme";
 import { Icon } from "../Icon";
@@ -24,7 +23,6 @@ function Wave({ mirrored }: { mirrored?: boolean }) {
 /** Intro, screen 2 (Figma B2): one request top to bottom. What the driver says, the copilot hearing it, the answer. */
 export function IntroAsk() {
   const { colors } = useTheme();
-  const tr = useT();
   return (
     <ScrollView contentContainerStyle={[introStyles.scroll, introStyles.centered]} showsVerticalScrollIndicator={false}>
       <Text style={[styles.label, { color: colors.onSurfaceSecondary }]}>You say</Text>
@@ -45,11 +43,15 @@ export function IntroAsk() {
         </View>
         <View style={styles.flex}>
           <Text style={[styles.place, { color: colors.onSurface }]}>Roady’s Truck Stop</Text>
-          <Text style={[styles.meta, { color: colors.onSurfaceSecondary }]}>
-            {tr("4 miles")}
-            {" · "}
-            <Text style={[styles.good, { color: colors.success }]}>parking looks good</Text>
-          </Text>
+          {/* Two pieces in a row that wraps: when they do not fit (a large system font), the verdict goes to its own
+              line whole instead of breaking in the middle. The green is a dot: as text it is 2:1 on this card. */}
+          <View style={styles.meta}>
+            <Text style={[styles.metaText, { color: colors.onSurfaceSecondary }]}>4 miles</Text>
+            <View style={styles.verdict}>
+              <View testID="intro-ask-dot" importantForAccessibility="no" style={[styles.dot, { backgroundColor: colors.success }]} />
+              <Text style={[styles.metaText, styles.good, { color: colors.onSurface }]}>parking looks good</Text>
+            </View>
+          </View>
         </View>
       </View>
 
@@ -73,7 +75,10 @@ const styles = StyleSheet.create({
   pin: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
   flex: { flex: 1 },
   place: { fontFamily: fonts.bold, fontSize: 20 },
-  meta: { fontFamily: fonts.semibold, fontSize: 16, lineHeight: 22 },
-  good: { fontFamily: fonts.bold },
+  meta: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: spacing.md },
+  metaText: { fontFamily: fonts.semibold, fontSize: 16, lineHeight: 22 },
+  verdict: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexShrink: 1 },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  good: { fontFamily: fonts.bold, flexShrink: 1 },
   title: { marginTop: spacing.xl },
 });

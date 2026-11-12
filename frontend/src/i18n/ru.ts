@@ -508,7 +508,7 @@ export const RU: Record<string, string> = {
   "No typing, no menus. Hands stay on the wheel.": "Без набора и меню. Руки остаются на руле.",
   "I check the lot first": "Сначала проверяю стоянку",
   "Way in": "Въезд",
-  "Likely fits your truck": "Твой трак, скорее всего, встанет",
+  "Likely fits your truck": "Трак, похоже, встанет",
   "Aerial picture of a truck stop with the truck parking and the way in marked": "Снимок трак-стопа сверху, отмечены парковка для траков и въезд",
   "Page {n} of {total}": "Страница {n} из {total}",
 };

@@ -2,8 +2,10 @@
 // once-only flag, the Russian side, and the rule that an install from before the intro never sees it.
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { act, fireEvent, render, renderHook, screen } from "@testing-library/react-native";
+import { BackHandler, StyleSheet } from "react-native";
 
 import { IntroGate } from "../components/intro/IntroGate";
+import { CARD_BELOW_FONT_SCALE } from "../components/intro/IntroLot";
 import { giveConsent, forgetConsent } from "../consent";
 import { setOnboarded } from "../hooks/useTruckProfile";
 import { t, useLangStore } from "../i18n";
@@ -36,6 +38,25 @@ const swipeTo = (page: number) =>
   fireEvent.scroll(screen.getByTestId("intro-pager"), {
     nativeEvent: { contentOffset: { x: page * WIDTH, y: 0 }, contentSize: { width: 3 * WIDTH, height: 1000 }, layoutMeasurement: { width: WIDTH, height: 1000 } },
   });
+// What a scroll started by a button looks like from the pager: offsets on the way from one screen to the next,
+// the first ones still nearer the old screen, then the target itself, then the momentum end.
+const scrollAt = (x: number, type = "scroll") =>
+  fireEvent(screen.getByTestId("intro-pager"), type, {
+    nativeEvent: { contentOffset: { x, y: 0 }, contentSize: { width: 3 * WIDTH, height: 1000 }, layoutMeasurement: { width: WIDTH, height: 1000 } },
+  });
+const animate = async (from: number, to: number, check?: () => void) => {
+  for (const f of [0.05, 0.2, 0.45, 0.55, 0.8, 0.97]) {
+    await scrollAt((from + (to - from) * f) * WIDTH);
+    check?.();
+  }
+  await scrollAt(to * WIDTH);
+  await scrollAt(to * WIDTH, "momentumScrollEnd");
+};
+/** Press the button and let the scroll it starts run to the end. */
+const pressNext = async (from: number) => {
+  await fireEvent.press(screen.getByTestId("intro-next"));
+  await animate(from, from + 1);
+};
 const dotsLabel = () => screen.getByTestId("intro-dots").props.accessibilityLabel;
 // RNTL leaves out what a screen reader does not get (the screens out of view, the decoration) unless asked.
 const ALL = { includeHiddenElements: true };
@@ -69,6 +90,7 @@ describe("IntroGate", () => {
       "“Where can I park tonight?”",
       "I answer",
       "Roady’s Truck Stop",
+      "4 miles",
       "parking looks good",
       "Just ask",
       "No typing, no menus. Hands stay on the wheel.",
@@ -80,7 +102,6 @@ describe("IntroGate", () => {
     ]) {
       expect(screen.getByText(line, ALL)).toBeTruthy();
     }
-    expect(screen.getByText(/^4 miles · /, ALL)).toBeTruthy();
     expect(screen.getByLabelText("Aerial picture of a truck stop with the truck parking and the way in marked", ALL)).toBeTruthy();
   });
 
@@ -107,14 +128,14 @@ describe("IntroGate", () => {
     const write = jest.spyOn(storage, "setItem");
     await render(<IntroGate onDone={onDone} />);
 
-    await fireEvent.press(screen.getByTestId("intro-next"));
+    await pressNext(0);
     expect(dotsLabel()).toBe("Page 2 of 3");
     expect(screen.getByTestId("intro-skip")).toBeTruthy();
     expect(screen.getByText("Next")).toBeTruthy();
     expect(hidden(1)).toBe(true);
     expect(hidden(2)).toBe(false);
 
-    await fireEvent.press(screen.getByTestId("intro-next"));
+    await pressNext(1);
     expect(dotsLabel()).toBe("Page 3 of 3");
     expect(screen.getByText("Continue")).toBeTruthy();
     expect(screen.queryByText("Next")).toBeNull();
@@ -134,7 +155,7 @@ describe("IntroGate", () => {
     const onDone = jest.fn();
     const write = jest.spyOn(storage, "setItem");
     await render(<IntroGate onDone={onDone} />);
-    await fireEvent.press(screen.getByTestId("intro-next"));
+    await pressNext(0);
     await fireEvent.press(screen.getByTestId("intro-skip"));
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(write.mock.calls.filter(([k]) => k === INTRO_KEY)).toEqual([[INTRO_KEY, "seen"]]);
@@ -175,12 +196,12 @@ describe("IntroGate", () => {
       "Сначала проверяю стоянку",
       "Парковка для траков",
       "Въезд",
-      "Твой трак, скорее всего, встанет",
+      "Трак, похоже, встанет",
+      "4 мили",
       "Дальше",
     ]) {
       expect(screen.getByText(line, ALL)).toBeTruthy();
     }
-    expect(screen.getByText(/^4 мили · /, ALL)).toBeTruthy();
     expect(dotsLabel()).toBe("Страница 1 из 3");
     expect(screen.getByTestId("intro-next").props.accessibilityLabel).toBe("Дальше");
     await swipeTo(2);
@@ -188,6 +209,185 @@ describe("IntroGate", () => {
     expect(screen.getByText("Продолжить")).toBeTruthy();
     expect(screen.getByTestId("intro-skip").props.accessibilityLabel).toBe("Пропустить");
     expect(screen.getByText("Пропустить")).toBeTruthy();
+  });
+
+  test("a button's scroll in flight: the dots, Skip and the label go to the next screen at once and do not flicker back", async () => {
+    await render(<IntroGate />);
+    await fireEvent.press(screen.getByTestId("intro-next"));
+    const onSecond = () => {
+      expect(dotsLabel()).toBe("Page 2 of 3");
+      expect(screen.getByTestId("intro-skip")).toBeTruthy();
+      expect(hidden(1)).toBe(true);
+      expect(hidden(2)).toBe(false);
+    };
+    onSecond();
+    await animate(0, 1, onSecond); // the first offsets still round to screen 1
+    onSecond();
+    // Landed: the pager listens to the driver's finger again.
+    await swipeTo(0);
+    expect(dotsLabel()).toBe("Page 1 of 3");
+  });
+
+  test("a fast double tap on the second screen shows the third, it does not finish the intro behind it", async () => {
+    const onDone = jest.fn();
+    await render(<IntroGate onDone={onDone} />);
+    await pressNext(0);
+    await fireEvent.press(screen.getByTestId("intro-next"));
+    await scrollAt(1.1 * WIDTH); // the scroll to screen 3 has only started
+    await fireEvent.press(screen.getByTestId("intro-next"));
+    await fireEvent.press(screen.getByTestId("intro-next"));
+    expect(onDone).not.toHaveBeenCalled();
+    expect(dotsLabel()).toBe("Page 3 of 3");
+    expect(await storage.getItem(INTRO_KEY, null)).toBeNull();
+    await animate(1.1, 2);
+    await fireEvent.press(screen.getByTestId("intro-next"));
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  test("a double tap on the first screen moves one screen, not two", async () => {
+    await render(<IntroGate />);
+    await fireEvent.press(screen.getByTestId("intro-next"));
+    await fireEvent.press(screen.getByTestId("intro-next"));
+    await animate(0, 1);
+    expect(dotsLabel()).toBe("Page 2 of 3");
+  });
+
+  test("a scroll that never reports its end (animations off) frees the button after a moment", async () => {
+    const onDone = jest.fn();
+    await render(<IntroGate onDone={onDone} />);
+    await fireEvent.press(screen.getByTestId("intro-next"));
+    await act(() => new Promise((r) => setTimeout(r, 700)));
+    await fireEvent.press(screen.getByTestId("intro-next"));
+    expect(dotsLabel()).toBe("Page 3 of 3");
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  test("the driver's finger takes over from a button's scroll", async () => {
+    await render(<IntroGate />);
+    await fireEvent.press(screen.getByTestId("intro-next"));
+    await scrollAt(0.3 * WIDTH);
+    await scrollAt(0.3 * WIDTH, "scrollBeginDrag");
+    await scrollAt(0.1 * WIDTH);
+    await scrollAt(0, "momentumScrollEnd");
+    expect(dotsLabel()).toBe("Page 1 of 3");
+    expect(screen.queryByTestId("intro-skip")).toBeNull();
+  });
+
+  describe("Android Back", () => {
+    type Handler = Parameters<typeof BackHandler.addEventListener>[1];
+    let handlers: Handler[];
+    let removed: number;
+    let spy: jest.SpyInstance;
+    beforeEach(() => {
+      handlers = [];
+      removed = 0;
+      spy = jest.spyOn(BackHandler, "addEventListener").mockImplementation((_event, handler) => {
+        handlers.push(handler);
+        return {
+          remove: () => {
+            removed++;
+            handlers = handlers.filter((h) => h !== handler);
+          },
+        };
+      });
+    });
+    afterEach(() => spy.mockRestore());
+    /** The system asks the newest listener first; true = handled, the app stays. */
+    const pressBack = async () => {
+      const answers: unknown[] = [];
+      await act(async () => {
+        answers.push((handlers[handlers.length - 1] as unknown as () => unknown)());
+      });
+      return answers[0] === true;
+    };
+
+    test("on the first screen the system has it", async () => {
+      await render(<IntroGate />);
+      expect(await pressBack()).toBe(false);
+      expect(dotsLabel()).toBe("Page 1 of 3");
+    });
+
+    test("from the third screen back to the second, then the first, then out to the system; nothing is marked seen", async () => {
+      const onDone = jest.fn();
+      await render(<IntroGate onDone={onDone} />);
+      await swipeTo(2);
+      expect(await pressBack()).toBe(true);
+      expect(dotsLabel()).toBe("Page 2 of 3");
+      // Still on the way back: a second press is swallowed, the app does not close and no screen is skipped.
+      expect(await pressBack()).toBe(true);
+      expect(dotsLabel()).toBe("Page 2 of 3");
+      await animate(2, 1);
+      expect(await pressBack()).toBe(true);
+      await animate(1, 0);
+      expect(dotsLabel()).toBe("Page 1 of 3");
+      expect(screen.queryByTestId("intro-skip")).toBeNull();
+      expect(await pressBack()).toBe(false);
+      expect(onDone).not.toHaveBeenCalled();
+      expect(await storage.getItem(INTRO_KEY, null)).toBeNull();
+    });
+
+    test("one listener at a time, none left after the intro is gone", async () => {
+      const view = await render(<IntroGate />);
+      await swipeTo(1);
+      await swipeTo(2);
+      expect(handlers).toHaveLength(1);
+      await view.unmount();
+      expect(handlers).toHaveLength(0);
+      expect(removed).toBe(spy.mock.calls.length);
+    });
+  });
+
+  describe("the picture screen", () => {
+    const flat = (id: string) => StyleSheet.flatten(screen.getByTestId(id, ALL).props.style);
+    const dims = jest.requireActual<typeof import("react-native")>("react-native");
+    const withWindow = (w: { width: number; height: number; fontScale: number }) =>
+      jest.spyOn(dims, "useWindowDimensions").mockReturnValue({ ...w, scale: 2 });
+    afterEach(() => jest.restoreAllMocks());
+
+    test("the picture is as wide as the button and keeps its 4:5 shape; the card lies on it", async () => {
+      withWindow({ width: 400, height: 800, fontScale: 1 });
+      await render(<IntroGate />);
+      const box = flat("intro-lot-picture");
+      expect(box.width).toBe(400 - 2 * 24); // the button's side margins
+      expect(box.height).toBe(Math.floor(((400 - 48) * 5) / 4));
+      expect(flat("intro-lot-card").position).toBe("absolute");
+    });
+
+    test("a short room under the heading makes the picture smaller, not cut", async () => {
+      withWindow({ width: 400, height: 600, fontScale: 1 });
+      await render(<IntroGate />);
+      await fireEvent(screen.getByTestId("intro-lot-picture", ALL).parent!, "layout", { nativeEvent: { layout: { x: 0, y: 0, width: 352, height: 300 } } });
+      const box = flat("intro-lot-picture");
+      expect(box.height).toBe(300);
+      expect(box.width).toBe(240);
+    });
+
+    test("the tags hold on to the area and the arrow by the edge that faces them, whatever the font size", async () => {
+      withWindow({ width: 400, height: 800, fontScale: 1.3 });
+      await render(<IntroGate />);
+      const parking = flat("intro-lot-tag-parking");
+      expect(parking.top).toBeUndefined();
+      expect(parking.bottom).toBeGreaterThan(0); // grows upwards, away from the outline
+      const wayIn = flat("intro-lot-tag-way-in");
+      expect(wayIn.bottom).toBeUndefined();
+      expect(wayIn.top).toBeGreaterThan(0);
+    });
+
+    test("the card is two lines, cut rather than wrapped; with a very large font it sits under the picture", async () => {
+      withWindow({ width: 400, height: 800, fontScale: CARD_BELOW_FONT_SCALE });
+      const view = await render(<IntroGate />);
+      expect(screen.getByText("Sacramento 49er Travel Plaza", ALL).props.numberOfLines).toBe(1);
+      expect(screen.getByText("Likely fits your truck", ALL).props.numberOfLines).toBe(1);
+      expect(flat("intro-lot-card").position).toBe("absolute");
+      await view.unmount();
+
+      jest.restoreAllMocks();
+      withWindow({ width: 400, height: 800, fontScale: 1.5 });
+      await render(<IntroGate />);
+      const card = flat("intro-lot-card");
+      expect(card.position).toBeUndefined();
+      expect(card.width).toBe(flat("intro-lot-picture").width);
+    });
   });
 
   test("the Russian side: informal, and no English left in it", () => {
