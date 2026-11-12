@@ -220,6 +220,7 @@ class TruckProfile(BaseModel):
     favorite_chains: List[str] = Field(default_factory=list, max_length=8)
     break_hours: Optional[int] = Field(None, ge=1, le=14)
     chains_on_board: Optional[bool] = None  # None = never asked; drives the chain-control question
+    trailer_empty: Optional[bool] = None  # empty / light trailer this trip (crosswind risk); None = not said
     mpg: Optional[float] = Field(None, ge=3, le=15)  # the truck's fuel economy; None = route_cost.DEFAULT_MPG
     # "owner" = owner-operator (their own truck: pays the fuel, keeps the money), "company" = drives for a carrier.
     # Asked in onboarding; None = never asked. Decides what the driver's ledger and reminders are about.
@@ -256,6 +257,10 @@ class TruckProfile(BaseModel):
             p.append("carries tire chains")
         elif self.chains_on_board is False:
             p.append("no tire chains on board")
+        if self.trailer_empty is True:
+            p.append("running empty this trip")
+        elif self.trailer_empty is False:
+            p.append("loaded this trip")
         return "; ".join(p) or "none"
 
 

@@ -16,6 +16,10 @@ import { FollowButton } from "@/src/components/FollowButton";
 import { MapViewSheet } from "@/src/components/MapViewSheet";
 import { MapViewButton, RadarStatus } from "@/src/components/RadarControls";
 import { useRadar } from "@/src/hooks/useRadar";
+import { useRouteWeather } from "@/src/hooks/useRouteWeather";
+import { WeatherPointSheet, spokenLine } from "@/src/components/WeatherPointSheet";
+import { useRouteWeatherStore } from "@/src/state/routeWeatherStore";
+import { chips as weatherChipsOf, type Chip } from "@/src/weather/routeWeather";
 import { MAP_PROVIDER } from "@/src/map/provider";
 import MapLayer from "@/src/components/MapLayer";
 import type { MapLayerHandle } from "@/src/components/mapTypes";
@@ -106,6 +110,7 @@ export default function MapScreen() {
   const mapView = storedView === "satellite" && !satelliteOk ? "map" : storedView;
   const [mapViewOpen, setMapViewOpen] = useState(false);
   const radar = useRadar(mapView === "weather");
+  const [wxChip, setWxChip] = useState<Chip | null>(null);
   const [sheetH, setSheetH] = useState(260);
   const { height: windowH } = useWindowDimensions();
   // The sheet's peek height while the driver has pulled it down; the map keeps sheetH as its inset
@@ -827,6 +832,11 @@ export default function MapScreen() {
     }
   };
 
+  // Weather along the active route at the truck's ETA (Figma "Weather v2"): chips on the map, a line in the card.
+  useRouteWeather(active?.route, truck.trailer_empty);
+  const wxPoints = useRouteWeatherStore((st) => st.points);
+  const wxChips = useMemo(() => (active ? weatherChipsOf(wxPoints, active.route) : []), [wxPoints, active]);
+
   return (
     <View style={[styles.root, { backgroundColor: colors.mapPlaceholder }]} testID="map-screen">
       <MapLayer
@@ -857,6 +867,8 @@ export default function MapScreen() {
         onMapTouch={Keyboard.dismiss}
         mapView={mapView}
         radar={radar.overlay}
+        weatherChips={wxChips}
+        onWeatherChipPress={setWxChip}
       />
 
       {driving && active ? (
@@ -898,6 +910,11 @@ export default function MapScreen() {
           (UI review 2026-11-05, third pass, M3). */}
       {mapView === "weather" && !(driving && active) && <RadarStatus top={topH + spacing.sm} frame={radar.frame} />}
       {viewBottom !== null && <MapViewButton bottom={viewBottom} active={mapView !== "map"} onPress={() => setMapViewOpen(true)} />}
+      <WeatherPointSheet
+        chip={wxChip}
+        onClose={() => setWxChip(null)}
+        onRead={(c) => say(spokenLine(c), { priority: PRIORITY.WEATHER, kind: "system", key: `wx-${c.index}`, ttlMs: 30000 })}
+      />
       <MapViewSheet
         visible={mapViewOpen}
         value={mapView}

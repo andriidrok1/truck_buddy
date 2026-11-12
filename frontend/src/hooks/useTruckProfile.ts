@@ -15,6 +15,8 @@ export type TruckProfile = {
   break_hours?: number | null;
   /** Tire chains on the truck; null = never asked (the copilot asks when a chain control is ahead). */
   chains_on_board?: boolean | null;
+  /** Running empty this trip (crosswinds can tip an empty trailer); null = not said. */
+  trailer_empty?: boolean | null;
   /** Fuel economy in miles per gallon for route cost estimates; null = the server's default (6.5). */
   mpg?: number | null;
   /** "owner" = owner-operator (own truck), "company" = drives for a carrier; null = never asked. */

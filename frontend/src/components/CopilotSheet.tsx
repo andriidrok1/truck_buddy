@@ -15,6 +15,7 @@ import { MapsSources } from "./MapsSources";
 import { OptionsList } from "./OptionsList";
 import { OfflineMapButton } from "./OfflineMapButton";
 import { ParkingLiveBadge } from "./ParkingLiveBadge";
+import { RouteWeatherLine, WeatherOnTheWay } from "./RouteWeather";
 import { ParkingStatus } from "./ParkingStatus";
 import { haptic, PressableScale } from "./PressableScale";
 import { ReviewsGist } from "./ReviewsGist";
@@ -414,6 +415,7 @@ export function CopilotSheet(props: Props) {
                 ))}
               </View>
             )}
+            {!driving && <RouteWeatherLine route={active.route} />}
             {!more && active.place.category !== "service" && <ParkingStatus compact parking={active.parking} place={active.place} />}
             {more && (
               <Reveal>
@@ -421,6 +423,7 @@ export function CopilotSheet(props: Props) {
                 <ParkingLiveBadge place={active.place} />
                 {active.place.category !== "service" && <ParkingStatus parking={active.parking} place={active.place} route={active.route.geometry} />}
                 {offlineMap && <OfflineMapButton state={offlineMap} onPress={onDownloadMap} />}
+                <WeatherOnTheWay route={active.route} />
               </Reveal>
             )}
           </View>

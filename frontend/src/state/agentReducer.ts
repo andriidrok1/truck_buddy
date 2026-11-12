@@ -141,6 +141,9 @@ export function reduceActions(actions: AppAction[], ctx: AgentContext): Effect[]
       case "set_chains_on_board":
         truckPatch.chains_on_board = value === true;
         break;
+      case "set_trailer_empty":
+        truckPatch.trailer_empty = value === true;
+        break;
       case "reroute":
         // Save first so the new route uses the new profile.
         effects.push({ type: "reroute", patch: truckPatch });

@@ -108,6 +108,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Renew
+         * @description A fresh access token and refresh token for the device behind the Bearer token (valid, or expired inside the
+         *     grace window). For app builds that never stored a refresh token: they trade the token they have for both.
+         */
+        post: operations["auth_renew_api_auth_renew_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/breakdown/{rid}": {
         parameters: {
             query?: never;
@@ -449,6 +470,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/radar/frame": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Radar Frame */
+        get: operations["radar_frame_api_radar_frame_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/radar/tiles/{layer}/{z}/{x}/{y}.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Radar Tile */
+        get: operations["radar_tile_api_radar_tiles__layer___z___x___y__png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reroute": {
         parameters: {
             query?: never;
@@ -676,6 +731,23 @@ export interface paths {
          *     At most once per driver per WARM_EVERY_S; the answer is always ok (the app ignores it).
          */
         post: operations["warm_api_warm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/weather/points": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Weather Points */
+        post: operations["weather_points_api_weather_points_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1214,6 +1286,27 @@ export interface components {
             /** Widened */
             widened: boolean;
         };
+        /** PointRequest */
+        PointRequest: {
+            /**
+             * Eta
+             * Format: date-time
+             */
+            eta: string;
+            /** Index */
+            index: number;
+            /** Lat */
+            lat: number;
+            /** Lng */
+            lng: number;
+        };
+        /** PointsRequest */
+        PointsRequest: {
+            /** Points */
+            points: components["schemas"]["PointRequest"][];
+            /** Trailer Empty */
+            trailer_empty?: boolean | null;
+        };
         /** Provider */
         Provider: {
             /** Address */
@@ -1419,6 +1512,51 @@ export interface components {
             /** Weather Later */
             weather_later?: components["schemas"]["WeatherAlert"][];
         };
+        /** RoutePoint */
+        RoutePoint: {
+            /**
+             * Eta
+             * Format: date-time
+             */
+            eta: string;
+            /** Gust Mph */
+            gust_mph?: number | null;
+            /** Ice In */
+            ice_in?: number | null;
+            /**
+             * Ice Risk
+             * @default false
+             */
+            ice_risk: boolean;
+            /** Index */
+            index: number;
+            /**
+             * Kind
+             * @default clear
+             */
+            kind: string;
+            /** Lat */
+            lat: number;
+            /** Lng */
+            lng: number;
+            /** Place */
+            place?: string | null;
+            /** Reasons */
+            reasons?: string[];
+            /**
+             * Severity
+             * @default info
+             */
+            severity: string;
+            /** Snow In */
+            snow_in?: number | null;
+            /** Temp F */
+            temp_f?: number | null;
+            /** Vis Mi */
+            vis_mi?: number | null;
+            /** Wind Mph */
+            wind_mph?: number | null;
+        };
         /** RouteRequest */
         RouteRequest: {
             /** Lat */
@@ -1529,6 +1667,8 @@ export interface components {
             mpg?: number | null;
             /** Operator */
             operator?: ("company" | "owner") | null;
+            /** Trailer Empty */
+            trailer_empty?: boolean | null;
             /**
              * Trailer Ft
              * @default 53
@@ -1780,6 +1920,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_renew_api_auth_renew_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -2358,6 +2518,62 @@ export interface operations {
             };
         };
     };
+    radar_frame_api_radar_frame_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    radar_tile_api_radar_tiles__layer___z___x___y__png_get: {
+        parameters: {
+            query: {
+                k: string;
+            };
+            header?: never;
+            path: {
+                layer: string;
+                x: number;
+                y: number;
+                z: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     reroute_api_reroute_post: {
         parameters: {
             query?: never;
@@ -2733,6 +2949,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    weather_points_api_weather_points_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PointsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["RoutePoint"][];
+                    };
                 };
             };
             /** @description Validation Error */

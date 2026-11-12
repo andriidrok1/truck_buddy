@@ -112,6 +112,9 @@ export type WeatherAlert = {
   area: string;
   index: number;
   ends?: string | null;
+  onset?: string | null;
+  /** Geometry index of the last vertex inside the alert; null = unknown (treat as the route end). */
+  index_end?: number | null;
 };
 
 export type ChainControl = {
