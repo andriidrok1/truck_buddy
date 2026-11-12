@@ -72,3 +72,14 @@ export const WEATHER_MAP_STYLE: MapStyleElement[] = [
   { featureType: "transit", stylers: [{ visibility: "off" }] },
   { featureType: "water", elementType: "geometry", stylers: [{ color: "#d6dde5" }] },
 ];
+
+/** Near the stop the plain map turns satellite on its own (Figma V9): you see the lot, the gate, the docks. */
+export const AUTO_SATELLITE_M = 1609;
+
+/** The look the map actually shows: the driver's pick, except a plain map within a mile of the stop while
+ *  driving, which turns satellite unless the driver said "Map" for this stop. */
+export function shownMapView(o: { stored: MapView; satelliteOk: boolean; driving: boolean; remainingM: number | null; optedOut: boolean }): MapView {
+  const view = o.stored === "satellite" && !o.satelliteOk ? "map" : o.stored;
+  if (view === "map" && o.satelliteOk && o.driving && !o.optedOut && o.remainingM != null && o.remainingM <= AUTO_SATELLITE_M) return "satellite";
+  return view;
+}

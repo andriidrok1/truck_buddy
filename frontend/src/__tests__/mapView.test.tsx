@@ -94,3 +94,22 @@ describe("MapViewSheet", () => {
 });
 
 void View;
+
+describe("satellite near the stop", () => {
+  const { shownMapView, AUTO_SATELLITE_M } = jest.requireActual<typeof import("../map/mapView")>("../map/mapView");
+  const base = { stored: "map" as const, satelliteOk: true, driving: true, remainingM: 800, optedOut: false };
+  it("a plain map turns satellite within a mile while driving", () => {
+    expect(shownMapView(base)).toBe("satellite");
+    expect(shownMapView({ ...base, remainingM: AUTO_SATELLITE_M + 1 })).toBe("map");
+  });
+  it("never over the driver's choice", () => {
+    expect(shownMapView({ ...base, optedOut: true })).toBe("map");
+    expect(shownMapView({ ...base, stored: "weather" })).toBe("weather");
+    expect(shownMapView({ ...base, driving: false })).toBe("map");
+    expect(shownMapView({ ...base, satelliteOk: false })).toBe("map");
+    expect(shownMapView({ ...base, remainingM: null })).toBe("map");
+  });
+  it("no satellite in the MapLibre build", () => {
+    expect(shownMapView({ ...base, stored: "satellite", satelliteOk: false, driving: false })).toBe("map");
+  });
+});

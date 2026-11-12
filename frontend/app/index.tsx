@@ -14,10 +14,10 @@ import { AlternativesSheet } from "@/src/components/AlternativesSheet";
 import { CopilotSheet } from "@/src/components/CopilotSheet";
 import { FollowButton } from "@/src/components/FollowButton";
 import { MapViewSheet } from "@/src/components/MapViewSheet";
-import { MapViewButton, RadarStatus } from "@/src/components/RadarControls";
+import { AutoSatelliteChip, MapViewButton, RadarStatus } from "@/src/components/RadarControls";
 import { useRadar } from "@/src/hooks/useRadar";
 import { STEP_MIN as STEP_MIN_SLIDER, TimeSlider } from "@/src/components/TimeSlider";
-import { frameClock, radarOverlay } from "@/src/map/mapView";
+import { frameClock, radarOverlay, shownMapView } from "@/src/map/mapView";
 import { chipAt, layerAt, positionAt, shareAt, sliderVisible, trackParts } from "@/src/weather/timeSlider";
 import { nearestIndex } from "@/src/weather/routeWeather";
 import { useRouteWeather } from "@/src/hooks/useRouteWeather";
@@ -112,10 +112,13 @@ export default function MapScreen() {
   const satelliteOk = MAP_PROVIDER !== "maplibre";
   const storedView = useMapView();
   const autoWeather = useRouteWeatherStore((st) => st.autoWeather);
-  const mapView0 = storedView === "satellite" && !satelliteOk ? "map" : storedView;
-  const mapView = autoWeather && mapView0 === "map" ? "weather" : mapView0;
+  // "Map" tapped on the auto-satellite chip: this stop stays a plain map.
+  const [autoSatOff, setAutoSatOff] = useState<string | null>(null);
+  const storedOk = storedView === "satellite" && !satelliteOk ? "map" : storedView;
+  // The copilot's heads-up shows the weather over a plain map for now (not stored: routeWeatherStore.autoWeather).
+  const pickedView = autoWeather && storedOk === "map" ? "weather" : storedOk;
   const [mapViewOpen, setMapViewOpen] = useState(false);
-  const radar = useRadar(mapView === "weather");
+  const radar = useRadar(pickedView === "weather");
   const [wxChip, setWxChip] = useState<Chip | null>(null);
   const [sheetH, setSheetH] = useState(260);
   const { height: windowH } = useWindowDimensions();
@@ -838,6 +841,11 @@ export default function MapScreen() {
     }
   };
 
+  // What the map shows: the pick, or satellite on its own within a mile of the stop (Figma V9).
+  const autoSatKey = active?.place.id ?? null;
+  const mapView = shownMapView({ stored: pickedView, satelliteOk, driving, remainingM: active ? guidance.remainingM : null, optedOut: autoSatOff === autoSatKey });
+  const autoSatellite = mapView === "satellite" && pickedView === "map";
+
   // Weather along the active route at the truck's ETA (Figma "Weather v2"): chips on the map, a line in the card.
   useRouteWeather(active?.route, truck.trailer_empty, coordsRef);
   const wxPoints = useRouteWeatherStore((st) => st.points);
@@ -937,6 +945,7 @@ export default function MapScreen() {
       {/* Hidden when the map window has no room for it under the top bar: it sat on the history button
           (UI review 2026-11-05, third pass, M3). */}
       {mapView === "weather" && !(driving && active) && <RadarStatus top={topH + spacing.sm} frame={radar.frame} forecastAt={sliderAhead ? sliderAt : null} beyondForecast={sliderAhead && !sliderLayer} offlineSince={online ? null : wxFetchedAt} />}
+      {autoSatellite && <AutoSatelliteChip top={topH + spacing.sm} onMap={() => setAutoSatOff(autoSatKey)} />}
       {viewBottom !== null && <MapViewButton bottom={viewBottom} active={mapView !== "map"} onPress={() => setMapViewOpen(true)} />}
       <WeatherPointSheet
         chip={wxChip}
@@ -945,7 +954,7 @@ export default function MapScreen() {
       />
       <MapViewSheet
         visible={mapViewOpen}
-        value={mapView}
+        value={pickedView}
         satellite={satelliteOk}
         onPick={(v) => {
           setMapView(v);
