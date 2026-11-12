@@ -25,6 +25,8 @@ import { DeviceGate } from "@/src/components/DeviceGate";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { useConsent } from "@/src/consent";
 import { rootScreen } from "@/src/state/firstLaunch";
+import { useIntroSeen } from "@/src/state/intro";
+import { IntroGate } from "@/src/components/intro/IntroGate";
 import { loadEldToken } from "@/src/eld";
 import { fetchProfile, PROFILE_KEY } from "@/src/data/profile";
 import { queryClient } from "@/src/query-client";
@@ -77,6 +79,8 @@ function RootLayout() {
   const consent = useConsent();
   const langLoaded = useLangStore((s) => s.loaded);
   const langChosen = useLangStore((s) => s.chosen);
+  // Read with the rest of the startup state: the consent screen must not flash before the intro on a fresh install.
+  const introSeen = useIntroSeen();
   // The Motive key is read alongside the auth token so the first copilot request already carries it.
   useEffect(() => {
     loadEldToken();
@@ -117,8 +121,8 @@ function RootLayout() {
     "Manrope-ExtraBold": require("../assets/fonts/Manrope-ExtraBold.ttf"),
   });
 
-  const screen = rootScreen(langChosen, consent, auth);
-  if ((!loaded && !error) || auth === "loading" || consent === "loading" || !themeReady || !storageReady || !langLoaded) return null;
+  const screen = rootScreen(langChosen, introSeen === true, consent, auth);
+  if ((!loaded && !error) || auth === "loading" || consent === "loading" || !themeReady || !storageReady || !langLoaded || introSeen === undefined) return null;
 
   // One app level ErrorBoundary; a render crash shows a reload screen
   // instead of a blank app. GestureHandlerRootView must wrap the whole tree
@@ -138,6 +142,8 @@ function RootLayout() {
             <StatusBar style={scheme === "dark" ? "light" : "dark"} />
             {screen === "language" ? (
               <LanguageGate />
+            ) : screen === "intro" ? (
+              <IntroGate />
             ) : screen === "consent" ? (
               <ConsentGate />
             ) : screen === "device" ? (
