@@ -52,8 +52,8 @@ class SignInResponse(BaseModel):
     role: str
     refresh_token: str
     expires_in: int
-    new_account: bool  # this sign-in created the account
-    has_profile: bool  # a truck profile is stored for it: the app skips onboarding
+    new_account: bool  # the account's first time through: nothing was ever set up for it
+    has_profile: bool  # the driver finished setup before (own profile, a fleet truck, or a name): the app skips onboarding
     name: Optional[str] = None
     email: Optional[str] = None
 
@@ -97,10 +97,11 @@ async def _sign_in(provider: identity.Provider, request: Request, verify, name: 
         raise _not_configured(provider)
     if db.store() == "off":
         raise _unavailable()  # an account is a row: there is nowhere to keep one
-    auth.signin_attempt(request)
+    auth.signin_allowed(request)
     try:
         who = await verify()
     except identity.Invalid as e:
+        auth.signin_failed(request)
         logger.info("%s sign-in refused: %s", provider.name, e)  # the reason stays here; the client learns nothing
         raise HTTPException(status_code=401, detail="Sign-in failed")
     except identity.Unavailable:
@@ -108,9 +109,8 @@ async def _sign_in(provider: identity.Provider, request: Request, verify, name: 
     except identity.NotConfigured:  # the variable was emptied between the check above and the verification
         raise _not_configured(provider)
     try:
-        account, new = await accounts.find_or_create(who.provider, who.sub, auth.new_sub(), who.email, who.name or name)
-        sid = await accounts.session_open(account.sub, platform)
-        out = await auth.issue(account.sub, "driver", sid)
+        account = await accounts.find_or_create(who.provider, who.sub, auth.new_sub(), who.email, who.name or name)
+        out, new = await auth.open_session(account.sub, platform)
         has_profile = await tenancy.has_profile(account.sub)
     except HTTPException:
         raise
@@ -134,14 +134,14 @@ async def auth_google(req: GoogleSignInRequest, request: Request):
 
 
 @public.post("/auth/logout")
-async def auth_logout(claims: dict = Depends(auth.token_claims)):
-    """Signs this phone out: its session and refresh token go, the account's other phones stay signed in. Answers
-    the same when the session is already gone, or for a device token (which has no session), so the app can always
-    finish signing out."""
+async def auth_logout(claims: dict = Depends(auth.logout_claims)):
+    """Signs this phone out: its session and refresh token go, the account's other phones stay signed in. Any token
+    this server signed will do, expired or not. Answers the same when the session is already gone, or for a device
+    token (which has no session), so the app can always finish signing out."""
     sid = claims.get("sid")
     if sid and db.store() != "off":
         try:
-            await accounts.session_close(sid)
+            await accounts.session_close(str(sid))
         except Exception as e:  # noqa: BLE001
             logger.warning("logout failed: %s", e)
             raise _unavailable()
@@ -164,6 +164,19 @@ async def auth_renew(principal: auth.Principal = Depends(auth.require_driver)):
         raise
     except Exception as e:  # noqa: BLE001
         logger.warning("renew failed: %s", e)
+        raise _unavailable()
+
+
+@api.post("/auth/logout-all")
+async def auth_logout_all(principal: auth.Principal = Depends(auth.require_driver)):
+    """Signs every phone of this account out, this one included (a phone was lost or stolen). The other phones are
+    refused within a minute. A device token has no account: nothing to close."""
+    if not principal.sid or db.store() == "off":
+        return {"ok": True, "closed": 0}
+    try:
+        return {"ok": True, "closed": await accounts.close_all(principal.sub)}
+    except Exception as e:  # noqa: BLE001
+        logger.warning("logout-all failed: %s", e)
         raise _unavailable()
 
 

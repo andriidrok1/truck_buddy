@@ -8,17 +8,19 @@ import hmac
 import json
 import logging
 import os
+import asyncio
 import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from services import accounts, auth, db, identity, memory, tenancy
 
@@ -89,6 +91,7 @@ def client(store, jwks, monkeypatch):
     tenancy.reset_caches()
     accounts.reset_caches()
     auth._signins.clear()
+    auth._logouts.clear()
     with TestClient(server.app) as c:
         c.store = store
         yield c
@@ -146,6 +149,20 @@ def _rows(c, sql: str, *args) -> list[tuple]:
             pg_sql = pg_sql.replace("?", f"${i + 1}", 1)
         return [tuple(r) for r in await (await db._db()).fetch(pg_sql, *args)]
     return c.portal.call(q)
+
+
+def _expired(body: dict, days_ago: float, **over) -> dict:
+    """The same access token, issued so that it expired `days_ago` days ago."""
+    claims = jwt.decode(body["access_token"], auth._secret(), algorithms=["HS256"])
+    now = datetime.now(timezone.utc)
+    claims.update(iat=now - timedelta(days=auth.JWT_DAYS + days_ago), exp=now - timedelta(days=days_ago), **over)
+    return {"access_token": jwt.encode(claims, auth._secret(), algorithm="HS256")}
+
+
+def _jwks_later(seconds: float, provider=identity.APPLE) -> None:
+    """Move this provider's key cache `seconds` into the past (as if that much time went by)."""
+    c = identity._jwks[provider.jwks_url]
+    c.tried, c.at = c.tried - seconds, (c.at - seconds if c.at is not None else None)
 
 
 def _hs256(claims: dict, secret: bytes, kid="k1") -> str:
@@ -223,6 +240,15 @@ def _bad_apple_tokens(who: str) -> dict[str, str]:
         "HS256 keyed with the public key": _hs256(good, _public_pem()),
         "signed by a stranger under our kid": _sign(good, key=STRANGER),
         "no kid": jwt.encode(good, KEY, algorithm="RS256"),
+        "ES256 under our kid": jwt.encode(good, ec.generate_private_key(ec.SECP256R1()), algorithm="ES256", headers={"kid": "k1"}),
+        "not valid yet (nbf)": _sign({**good, "nbf": int(time.time()) + 3600}),
+        "issued in the future (iat)": _sign({**good, "iat": int(time.time()) + 3600}),
+        "no sub": _sign({k: v for k, v in good.items() if k != "sub"}),
+        "empty sub": _sign({**good, "sub": ""}),
+        "sub is a number": _sign({**good, "sub": 12345}),
+        "sub is a list": _sign({**good, "sub": [who]}),
+        "nonce with non-ASCII characters": _sign({**good, "nonce": "\u00e9" * 10}),
+        "nonce is not a string": _sign({**good, "nonce": 7}),
         "not a JWT": "x" * 40,
     }
 
@@ -235,6 +261,7 @@ def test_a_bad_apple_token_is_401_without_details(client, case, caplog):
         r = _apple(client, who, token)
     assert r.status_code == 401 and r.json() == {"detail": "Sign-in failed"}, case
     assert _rows(client, "SELECT 1 FROM accounts WHERE provider_sub = ?", who) == []
+    assert _rows(client, "SELECT 1 FROM accounts WHERE provider = 'apple' AND provider_sub IN ('', '12345')") == []
     refused = [rec.getMessage() for rec in caplog.records if "sign-in refused" in rec.getMessage()]
     assert len(refused) == 1 and token not in caplog.text  # the reason is logged, the token never
 
@@ -245,8 +272,27 @@ def test_a_wrong_nonce_from_the_phone_is_401(client):
     assert r.status_code == 401 and r.json() == {"detail": "Sign-in failed"}
 
 
+def test_a_nonce_that_cannot_be_encoded_is_a_refusal_not_a_crash():
+    """A lone surrogate. Over HTTP pydantic turns it away before the endpoint runs; this is the function itself."""
+    async def check():
+        async def claims(provider, token):
+            return _apple_claims("u-1")
+        orig, identity._verify = identity._verify, claims
+        try:
+            with pytest.raises(identity.Invalid):
+                await identity.verify_apple("token", "\ud800" + "a" * 10)
+        finally:
+            identity._verify = orig
+    asyncio.run(check())
+
+
+EVIL = "evil.apps.googleusercontent.com"
+
+
 @pytest.mark.parametrize("over", [{"email_verified": False}, {"email_verified": "false"}, {"aud": "other.apps.googleusercontent.com"},
-                                  {"iss": "https://appleid.apple.com"}, {"exp": 1}])
+                                  {"iss": "https://appleid.apple.com"}, {"exp": 1}, {"sub": ""}, {"sub": 12345}, {"sub": None},
+                                  {"azp": EVIL}, {"aud": [GOOGLE_IOS, EVIL], "azp": EVIL}, {"aud": [GOOGLE_IOS, EVIL]},
+                                  {"nbf": int(time.time()) + 3600}, {"iat": int(time.time()) + 3600}])
 def test_a_bad_google_token_is_401(client, over):
     who = _person()
     r = _google(client, who, _sign(_google_claims(who, **over)))
@@ -258,6 +304,19 @@ def test_google_without_email_verified_is_401(client):
     who = _person()
     claims = {k: v for k, v in _google_claims(who).items() if k != "email_verified"}
     assert _google(client, who, _sign(claims)).status_code == 401
+
+
+def test_google_azp_of_our_own_clients_passes(client):
+    """Android: the audience is the web client, the token was issued to the Android one. Both are in the list."""
+    who = _person()
+    assert _google(client, who, _sign(_google_claims(who, aud=GOOGLE_WEB, azp=GOOGLE_IOS))).status_code == 200
+    assert _google(client, who, _sign(_google_claims(who, aud=[GOOGLE_WEB, GOOGLE_IOS], azp=GOOGLE_IOS))).status_code == 200
+
+
+def test_odd_email_and_name_claims_are_dropped_not_stored(client):
+    who = _person()
+    body = _google(client, who, _sign(_google_claims(who, email=["a@b.c"], name={"x": 1}))).json()
+    assert body["email"] is None and body["name"] is None
 
 
 def test_an_apple_token_does_not_sign_in_at_google(client):
@@ -288,11 +347,13 @@ def test_the_keys_are_fetched_once_and_cached(client, jwks):
 def test_an_unknown_kid_refetches_once_and_then_signs_in(client, jwks):
     assert _apple(client, _person()).status_code == 200 and jwks.fetches() == 1
     jwks.keys = {"k2": ROTATED}  # the provider rotated
+    _jwks_later(identity.REFETCH_MIN_S + 1)
     who = _person()
     assert _apple(client, who, _sign(_apple_claims(who), key=ROTATED, kid="k2")).status_code == 200
     assert jwks.fetches() == 2
     assert _apple(client, who, _sign(_apple_claims(who), key=ROTATED, kid="k2")).status_code == 200
     assert jwks.fetches() == 2  # k2 is cached now
+    _jwks_later(identity.REFETCH_MIN_S + 1)
     assert _apple(client, who, _sign(_apple_claims(who))).status_code == 401  # k1 is retired: one fruitless refetch
     assert jwks.fetches() == 3
 
@@ -302,28 +363,70 @@ def test_a_made_up_kid_does_not_refetch_in_a_loop(client, jwks):
     who = _person()
     for _ in range(5):
         assert _apple(client, who, _sign(_apple_claims(who), kid="made-up")).status_code == 401
-    assert jwks.fetches() == 2  # asked once; not again within the minute
+    assert jwks.fetches() == 1  # the keys were fetched within the last minute: not asked again
+    _jwks_later(identity.REFETCH_MIN_S + 1)
+    for _ in range(5):
+        assert _apple(client, who, _sign(_apple_claims(who), kid=f"made-up-{_}")).status_code == 401
+    assert jwks.fetches() == 2  # one refetch a minute, however many unknown kids arrive
     assert _apple(client, who).status_code == 200  # known kids are not affected
-    identity._jwks[identity.APPLE.jwks_url].missed -= identity.REFETCH_MIN_S + 1  # a minute later
-    assert _apple(client, who, _sign(_apple_claims(who), kid="made-up")).status_code == 401
-    assert jwks.fetches() == 3
 
 
 def test_the_keys_are_refetched_after_six_hours(client, jwks):
     assert _apple(client, _person()).status_code == 200
-    identity._jwks[identity.APPLE.jwks_url].at -= identity.JWKS_TTL_S + 1
+    _jwks_later(identity.JWKS_TTL_S - 60)
+    assert _apple(client, _person()).status_code == 200 and jwks.fetches() == 1
+    _jwks_later(120)
     assert _apple(client, _person()).status_code == 200 and jwks.fetches() == 2
 
 
 def test_provider_keys_down(client, jwks):
     jwks.down = True
-    r = _apple(client, _person())
-    assert r.status_code == 503 and r.json() == {"detail": "Sign-in is unavailable right now"}  # nothing to check against
+    for _ in range(10):
+        r = _apple(client, _person())
+        assert r.status_code == 503 and r.json() == {"detail": "Sign-in is unavailable right now"}  # nothing to check against
+    assert jwks.fetches() == 1  # one attempt per throttle window; the rest are answered at once
     jwks.down = False
-    assert _apple(client, _person()).status_code == 200  # a failed fetch is retried by the next sign-in
+    assert _apple(client, _person()).status_code == 503  # still inside the window
+    _jwks_later(identity.REFETCH_MIN_S + 1)
+    assert _apple(client, _person()).status_code == 200 and jwks.fetches() == 2
+    # the keys go stale while the provider is down: the old ones keep signing people in, one attempt a minute
     jwks.down = True
-    identity._jwks[identity.APPLE.jwks_url].at -= identity.JWKS_TTL_S + 1
-    assert _apple(client, _person()).status_code == 200  # old keys beat no sign-in while the provider is down
+    _jwks_later(identity.JWKS_TTL_S + 1)
+    for _ in range(10):
+        assert _apple(client, _person()).status_code == 200
+    assert jwks.fetches() == 3
+    who = _person()  # a kid we cannot ask about is "unavailable", not "invalid": the token was not judged
+    assert _apple(client, who, _sign(_apple_claims(who), key=ROTATED, kid="k2")).status_code == 503
+    assert jwks.fetches() == 3
+    assert not any(auth._signins.values())  # and none of it counted as a failed sign-in
+
+
+def test_concurrent_sign_ins_share_one_key_fetch(client, monkeypatch):
+    fetches = []
+
+    async def slow(url):
+        fetches.append(url)
+        await asyncio.sleep(0.05)
+        return {"k1": KEY.public_key()}
+    monkeypatch.setattr(identity, "_fetch", slow)
+
+    async def flood(kids):
+        return await asyncio.gather(*[identity._key(identity.APPLE, k) for k in kids], return_exceptions=True)
+    got = client.portal.call(flood, ["k1"] * 10 + [f"made-up-{i}" for i in range(10)])  # cold cache
+    assert len(fetches) == 1
+    assert [type(g).__name__ for g in got] == ["RSAPublicKey"] * 10 + ["Invalid"] * 10
+    client.portal.call(flood, [f"another-{i}" for i in range(20)])
+    assert len(fetches) == 1  # and the throttle holds under concurrency
+
+    async def down(url):
+        fetches.append(url)
+        await asyncio.sleep(0.05)
+        raise RuntimeError("down")
+    monkeypatch.setattr(identity, "_fetch", down)
+    identity.reset()
+    fetches.clear()
+    got = client.portal.call(flood, [f"kid-{i}" for i in range(20)])
+    assert len(fetches) == 1 and {type(g).__name__ for g in got} == {"Unavailable"}
 
 
 @pytest.mark.parametrize("value", [None, "", " , "])
@@ -381,6 +484,58 @@ def test_has_profile_reads_the_store_not_this_workers_copy(client):
     assert _google(client, who).json()["has_profile"] is True and sub
 
 
+def _fleet_code(client) -> str:
+    async def fleet():
+        org = await tenancy.create_org("Acme")
+        return await tenancy.create_fleet_code(org, await tenancy.create_vehicle(org, "Truck 7"))
+    return client.portal.call(fleet)
+
+
+def test_has_profile_means_setup_is_done(client):
+    """Three ways to be done: an own profile (above), a fleet truck, or a stored name."""
+    # a fleet driver on a fleet truck: the sizes are the fleet's, profile_put stores nothing of theirs but the name
+    who = _person()
+    a = _apple(client, who).json()
+    bound = client.post("/api/auth/fleet-code", json={"code": _fleet_code(client)}, headers=_h(a)).json()
+    assert _apple(client, who).json()["has_profile"] is True
+    assert client.put("/api/me/profile", json={**PROFILE, "driver_name": "Sam"}, headers=_h(bound)).status_code == 200
+    again = _apple(client, who).json()
+    assert again["has_profile"] is True and again["new_account"] is False
+    # a name alone
+    who = _person()
+    b = _apple(client, who).json()
+    assert _apple(client, who).json()["has_profile"] is False
+    _rows(client, "UPDATE drivers SET display_name = ? WHERE id = ?", "Sam", _claims(b["access_token"])["driver_id"])
+    assert _apple(client, who).json()["has_profile"] is True
+    _rows(client, "UPDATE drivers SET display_name = ? WHERE id = ?", "", _claims(b["access_token"])["driver_id"])
+    assert _apple(client, who).json()["has_profile"] is False  # an empty name is no name
+
+
+def test_a_first_sign_in_that_fails_halfway_leaves_no_session_and_is_still_first(client, monkeypatch):
+    who = _person()
+    real = tenancy.ensure_solo_org
+
+    async def boom(sub, role="driver"):
+        raise RuntimeError("db hiccup")
+    monkeypatch.setattr(tenancy, "ensure_solo_org", boom)
+    r = _apple(client, who, name="Sam")
+    assert r.status_code == 503 and r.json() == {"detail": "Sign-in is unavailable right now"}
+    assert _rows(client, "SELECT 1 FROM account_sessions s JOIN accounts a ON a.sub = s.sub WHERE a.provider_sub = ?", who) == []
+    monkeypatch.setattr(tenancy, "ensure_solo_org", real)
+    body = _apple(client, who).json()
+    assert body["new_account"] is True and body["has_profile"] is False and body["name"] == "Sam"
+    sub = _claims(body["access_token"])["sub"]
+    assert len(_rows(client, "SELECT 1 FROM account_sessions WHERE sub = ?", sub)) == 1
+    assert _apple(client, who).json()["new_account"] is False
+
+
+def test_no_session_ever_holds_a_placeholder_hash(client):
+    who = _person()
+    body = _apple(client, who).json()
+    (stored,), = _rows(client, "SELECT refresh_hash FROM account_sessions WHERE id = ?", _claims(body["access_token"])["sid"])
+    assert stored == hashlib.sha256(body["refresh_token"].encode()).hexdigest()
+
+
 def test_the_first_name_is_kept_and_the_email_follows_the_provider(client):
     who = _person()
     assert _apple(client, who, name="Sam").json()["name"] == "Sam"
@@ -411,7 +566,7 @@ def test_two_first_sign_ins_at_once_make_one_account(client):
         got = list(pool.map(sign_in, range(n)))
     assert [r.status_code for r in got] == [200] * n
     assert len({_claims(r.json()["access_token"])["sub"] for r in got}) == 1
-    assert sum(r.json()["new_account"] for r in got) == 1  # exactly one of them made it
+    assert any(r.json()["new_account"] for r in got)  # whoever got in before the device row existed
     assert len({_claims(r.json()["access_token"])["sid"] for r in got}) == n  # but each is a session of its own
     sub = _claims(got[0].json()["access_token"])["sub"]
     assert _rows(client, "SELECT sub FROM accounts WHERE provider_sub = ?", who) == [(sub,)]
@@ -427,7 +582,7 @@ def test_find_or_create_under_a_race_hands_everyone_the_winners_sub(client):
     async def race():
         return await asyncio.gather(*[accounts.find_or_create("apple", who, auth.new_sub(), None, None) for _ in range(10)])
     got = client.portal.call(race)
-    assert len({acc.sub for acc, _ in got}) == 1 and sum(new for _, new in got) == 1
+    assert len({acc.sub for acc in got}) == 1
     assert len(_rows(client, "SELECT 1 FROM accounts WHERE provider_sub = ?", who)) == 1
 
 
@@ -477,7 +632,7 @@ def test_logout_needs_a_token_this_server_signed(client):
     assert client.post("/api/auth/logout", headers={"Authorization": "Bearer nonsense"}).status_code == 401
 
 
-def test_a_session_closed_by_another_worker_is_refused_within_the_cache_minute(client):
+def test_a_session_closed_by_another_worker_is_refused_within_the_cache_minute(client, monkeypatch):
     who = _person()
     a = _apple(client, who).json()
     assert client.get("/api/auth/check", headers=_h(a)).status_code == 200
@@ -485,9 +640,220 @@ def test_a_session_closed_by_another_worker_is_refused_within_the_cache_minute(c
     assert client.get("/api/auth/check", headers=_h(a)).status_code == 200  # this worker's copy, up to a minute old
     r = client.post("/api/auth/renew", headers=_h(a))  # but no new token is minted for a session that is gone
     assert r.status_code == 401 and r.json() == {"detail": GONE}
-    accounts.reset_caches()  # the minute passed
+    clock = {"now": time.monotonic()}
+    monkeypatch.setattr(accounts, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
+    clock["now"] += accounts.SESSION_TTL_S - 2
+    assert client.get("/api/auth/check", headers=_h(a)).status_code == 200
+    clock["now"] += 3  # the minute passed: the row is read again
     r = client.get("/api/auth/check", headers=_h(a))
     assert r.status_code == 401 and r.json() == {"detail": GONE}
+
+
+def test_a_store_error_in_the_session_check_lets_the_request_through(client, monkeypatch):
+    """Deliberate: a database hiccup must not sign every driver out (the app drops its token on this 401). The
+    price is that a closed session keeps working on this worker while the store is down. Change it knowingly."""
+    who = _person()
+    a = _apple(client, who).json()
+    accounts.reset_caches()
+
+    async def down(sid, sub):
+        raise RuntimeError("store is down")
+    monkeypatch.setattr(accounts, "session_alive", down)
+    assert client.get("/api/auth/check", headers=_h(a)).status_code == 200
+
+
+def test_a_dead_token_does_not_spend_the_accounts_request_budget(client, monkeypatch):
+    from services import settings
+    monkeypatch.setenv("RATE_PER_10MIN", "20")
+    monkeypatch.setattr(settings, "_settings", None)  # read the limit again, and again after the test
+    who = _person()
+    a, b = _apple(client, who).json(), _apple(client, who).json()
+    sub = _claims(a["access_token"])["sub"]
+    client.post("/api/auth/logout", headers=_h(a))
+    before = len(auth._calls[sub][0])
+    assert {client.get("/api/auth/check", headers=_h(a)).status_code for _ in range(40)} == {401}
+    assert len(auth._calls[sub][0]) == before  # nothing was counted against the account
+    assert client.get("/api/auth/check", headers=_h(b)).status_code == 200  # the live phone is not run into a 429
+    # the same for a device whose row is gone
+    d = client.post("/api/auth/device").json()
+    dsub = _claims(d["access_token"])["sub"]
+    assert client.get("/api/auth/check", headers=_h(d)).status_code == 200
+    _rows(client, "DELETE FROM devices WHERE sub = ?", dsub)
+    tenancy.reset_caches()
+    before = len(auth._calls[dsub][0])
+    assert {client.get("/api/auth/check", headers=_h(d)).status_code for _ in range(5)} == {401}
+    assert len(auth._calls[dsub][0]) == before
+
+
+# ---- refresh tokens: single use, theft, idle sessions ------------------------------------------------------------
+
+def _session_row(client, body) -> list[tuple]:
+    return _rows(client, "SELECT 1 FROM account_sessions WHERE id = ?", _claims(body["access_token"])["sid"])
+
+
+def _age_session(client, body, column: str, by: timedelta) -> None:
+    at = datetime.now(timezone.utc) - by
+    _rows(client, f"UPDATE account_sessions SET {column} = ? WHERE id = ?", db.iso(at) if client.store == "sqlite" else at,
+          _claims(body["access_token"])["sid"])
+
+
+def test_a_spent_refresh_token_used_later_closes_the_session(client, caplog):
+    """Somebody copied the refresh token. Whoever uses it second shows that two parties hold it: both are out."""
+    who = _person()
+    victim = _apple(client, who).json()
+    other_phone = _apple(client, who).json()
+    thief = _refresh(client, victim).json()  # the thief trades the stolen token in first
+    assert client.get("/api/auth/check", headers=_h(thief)).status_code == 200
+    _age_session(client, victim, "rotated_at", timedelta(seconds=auth.REUSE_RACE_S + 5))
+    with caplog.at_level(logging.WARNING, logger="truckbuddy.auth"):
+        r = _refresh(client, victim)  # the victim's phone comes later with the token it still has
+    assert r.status_code == 401 and r.json() == {"detail": "Invalid or expired refresh token"}
+    assert _session_row(client, victim) == [] and "spent refresh token reused" in caplog.text
+    assert victim["refresh_token"] not in caplog.text and thief["refresh_token"] not in caplog.text
+    assert _refresh(client, thief).status_code == 401  # the thief's pair died with the session
+    assert client.get("/api/auth/check", headers=_h(thief)).json() == {"detail": GONE}
+    assert _refresh(client, other_phone).status_code == 200  # the account's other phone is not touched
+    assert _apple(client, who).json()["new_account"] is False  # and the victim signs in again
+
+
+def test_a_spent_refresh_token_right_after_the_rotation_is_a_race_not_a_theft(client):
+    who = _person()
+    a = _apple(client, who).json()
+    fresh = _refresh(client, a)
+    assert fresh.status_code == 200
+    assert _refresh(client, a).status_code == 401  # the same phone's second request, a moment later
+    assert _session_row(client, a) != []  # the session stays
+    assert _refresh(client, fresh.json()).status_code == 200  # and the pair the first request got works
+
+
+def test_a_token_two_rotations_old_is_just_invalid(client):
+    who = _person()
+    a = _apple(client, who).json()
+    b = _refresh(client, a).json()
+    _refresh(client, b)
+    _age_session(client, a, "rotated_at", timedelta(minutes=5))
+    assert _refresh(client, a).status_code == 401 and _session_row(client, a) != []
+
+
+def test_concurrent_refreshes_have_exactly_one_winner(client):
+    who = _person()
+    a = _apple(client, who).json()
+
+    async def all_at_once():
+        return await asyncio.gather(*[auth.refresh(a["refresh_token"]) for _ in range(6)], return_exceptions=True)
+    got = client.portal.call(all_at_once)
+    won = [g for g in got if isinstance(g, dict)]
+    lost = [g for g in got if not isinstance(g, dict)]
+    assert len(won) == 1 and len(lost) == 5
+    assert {(e.status_code, e.detail) for e in lost} == {(401, "Invalid or expired refresh token")}
+    assert _session_row(client, a) != []  # nobody was signed out
+    assert client.get("/api/auth/check", headers=_h(won[0])).status_code == 200
+    assert _refresh(client, won[0]).status_code == 200  # the one pair handed out is the live one
+
+
+def test_renew_makes_the_old_refresh_token_a_spent_one(client):
+    who = _person()
+    a = _apple(client, who).json()
+    renewed = client.post("/api/auth/renew", headers=_h(a)).json()
+    _age_session(client, a, "rotated_at", timedelta(minutes=1))
+    assert _refresh(client, a).status_code == 401 and _session_row(client, a) == []
+    assert _refresh(client, renewed).status_code == 401
+
+
+def test_an_idle_session_is_refused_and_deleted(client, monkeypatch):
+    who = _person()
+    a, b, c = (_apple(client, who).json() for _ in range(3))
+    for body in (a, b):
+        _age_session(client, body, "seen_at", timedelta(days=181))
+    _age_session(client, c, "seen_at", timedelta(days=179))
+    # on refresh
+    assert _refresh(client, a).status_code == 401 and _session_row(client, a) == []
+    # on the session check
+    r = client.get("/api/auth/check", headers=_h(b))
+    assert r.status_code == 401 and r.json() == {"detail": GONE} and _session_row(client, b) == []
+    # one day short of the limit is fine, and using it moves seen_at
+    assert client.get("/api/auth/check", headers=_h(c)).status_code == 200 and _refresh(client, c).status_code == 200
+    # ACCOUNT_SESSION_IDLE_DAYS sets the limit; 0 turns the expiry off
+    d = _apple(client, who).json()
+    _age_session(client, d, "seen_at", timedelta(days=40))
+    monkeypatch.setenv("ACCOUNT_SESSION_IDLE_DAYS", "0")
+    assert _refresh(client, d).status_code == 200
+    e = _apple(client, who).json()
+    _age_session(client, e, "seen_at", timedelta(days=40))
+    monkeypatch.setenv("ACCOUNT_SESSION_IDLE_DAYS", "30")
+    assert _refresh(client, e).status_code == 401
+    monkeypatch.setenv("ACCOUNT_SESSION_IDLE_DAYS", "soon")  # a typo falls back to the default
+    assert accounts.idle_days() == 180
+
+
+def test_an_expired_account_token_gets_no_grace_but_a_device_token_does(client):
+    who = _person()
+    a = _apple(client, who).json()
+    for days in (0.01, 1, 100):
+        r = client.get("/api/auth/check", headers=_h(_expired(a, days)))
+        assert r.status_code == 401 and r.json() == {"detail": "Invalid or expired token"}
+        assert client.post("/api/auth/renew", headers=_h(_expired(a, days))).status_code == 401
+    assert _refresh(client, a).status_code == 200  # what the app does instead
+    d = client.post("/api/auth/device").json()  # build 2 never refreshes: its expired token rides the grace
+    assert client.get("/api/auth/check", headers=_h(_expired(d, 100))).status_code == 200
+    assert client.post("/api/auth/renew", headers=_h(_expired(d, 100))).status_code == 200
+    assert client.get("/api/auth/check", headers=_h(_expired(d, 400))).status_code == 401
+
+
+def test_sessions_past_the_cap_drop_the_least_recently_used(client, monkeypatch):
+    monkeypatch.setattr(accounts, "MAX_SESSIONS", 3)
+    who = _person()
+    phones = [_apple(client, who).json() for _ in range(3)]
+    _age_session(client, phones[1], "seen_at", timedelta(days=2))  # the one nobody has used lately
+    newest = _apple(client, who).json()
+    sub = _claims(newest["access_token"])["sub"]
+    left = {r[0] for r in _rows(client, "SELECT id FROM account_sessions WHERE sub = ?", sub)}
+    assert left == {_claims(p["access_token"])["sid"] for p in (phones[0], phones[2], newest)}
+    assert _refresh(client, phones[1]).status_code == 401 and _refresh(client, phones[0]).status_code == 200
+
+
+def test_logout_all_signs_every_phone_out(client):
+    who, somebody_else = _person(), _person()
+    a, b, c = (_apple(client, who).json() for _ in range(3))
+    other = _apple(client, somebody_else).json()
+    r = client.post("/api/auth/logout-all", headers=_h(a))
+    assert r.status_code == 200 and r.json() == {"ok": True, "closed": 3}
+    for body in (a, b, c):
+        assert client.get("/api/auth/check", headers=_h(body)).json() == {"detail": GONE}
+        assert _refresh(client, body).status_code == 401
+    assert client.post("/api/auth/logout-all", headers=_h(a)).status_code == 401  # it needs a live session
+    assert client.post("/api/auth/logout-all").status_code == 401
+    assert client.get("/api/auth/check", headers=_h(other)).status_code == 200  # another account is untouched
+    back = _apple(client, who).json()
+    assert back["new_account"] is False and client.get("/api/auth/check", headers=_h(back)).status_code == 200
+    # a device token has no account: nothing to close, and it keeps working
+    d = client.post("/api/auth/device").json()
+    assert client.post("/api/auth/logout-all", headers=_h(d)).json() == {"ok": True, "closed": 0}
+    assert client.get("/api/auth/check", headers=_h(d)).status_code == 200
+
+
+def test_logout_works_with_any_token_this_server_signed(client):
+    """However long expired and whatever its role: it only ever closes the session named in the token."""
+    who = _person()
+    for over in ({}, {"role": "owner"}, {"role": "tester"}):
+        a = _apple(client, who).json()
+        old = _expired(a, 400, **over)
+        assert client.get("/api/auth/check", headers=_h(old)).status_code in (401, 403)
+        assert client.post("/api/auth/logout", headers=_h(old)).json() == {"ok": True}
+        assert _session_row(client, a) == []
+        assert client.get("/api/auth/check", headers=_h(a)).json() == {"detail": GONE}
+    forged = jwt.encode({"sub": "x", "sid": "ses_x", "exp": int(time.time()) + 60}, "another-secret-another-secret-123", algorithm="HS256")
+    assert client.post("/api/auth/logout", headers={"Authorization": f"Bearer {forged}"}).status_code == 401
+
+
+def test_logout_is_limited_per_ip(client, monkeypatch):
+    monkeypatch.setattr(auth, "MAX_SIGNINS_PER_IP", 3)
+    a = _apple(client, _person()).json()
+    codes = [client.post("/api/auth/logout", headers=_h(a)).status_code for _ in range(2)]
+    codes.append(client.post("/api/auth/logout", headers={"Authorization": "Bearer nonsense"}).status_code)
+    codes.append(client.post("/api/auth/logout", headers=_h(a)).status_code)
+    assert codes == [200, 200, 401, 429]
+    assert client.post("/api/auth/logout", headers={**_h(a), "X-Forwarded-For": "203.0.113.9"}).status_code == 200
 
 
 def test_a_session_does_not_vouch_for_another_sub(client):
@@ -510,11 +876,7 @@ def test_renew_keeps_the_account_and_the_session(client):
 def test_a_fleet_code_keeps_the_session_in_the_new_token(client):
     who = _person()
     a = _apple(client, who).json()
-
-    async def fleet():
-        org = await tenancy.create_org("Acme")
-        return await tenancy.create_fleet_code(org, await tenancy.create_vehicle(org, "Truck 7"))
-    r = client.post("/api/auth/fleet-code", json={"code": client.portal.call(fleet)}, headers=_h(a))
+    r = client.post("/api/auth/fleet-code", json={"code": _fleet_code(client)}, headers=_h(a))
     assert r.status_code == 200, r.text
     bound = _claims(r.json()["access_token"])
     assert bound["sid"] == _claims(a["access_token"])["sid"] and bound["vehicle_id"] == r.json()["vehicle_id"]
@@ -526,29 +888,33 @@ def test_seen_at_moves_at_most_once_an_hour(client):
     who = _person()
     a = _apple(client, who).json()
     sid = _claims(a["access_token"])["sid"]
-    old = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    old = datetime.now(timezone.utc) - timedelta(days=30)
 
     def age():
         _rows(client, "UPDATE account_sessions SET seen_at = ? WHERE id = ?", db.iso(old) if client.store == "sqlite" else old, sid)
 
     def seen() -> str:
         return str(_rows(client, "SELECT seen_at FROM account_sessions WHERE id = ?", sid)[0][0])
+    today = datetime.now(timezone.utc).date().isoformat()
     age()
     assert client.get("/api/auth/check", headers=_h(a)).status_code == 200
-    assert seen() > "2026"
+    assert seen().startswith(today)
     age()
     assert client.get("/api/auth/check", headers=_h(a)).status_code == 200
-    assert seen().startswith("2025")  # written a moment ago: not again for an hour
+    assert not seen().startswith(today)  # written a moment ago: not again for an hour
 
 
 # ---- the per-IP limit -------------------------------------------------------------------------------------------
 
-def test_sign_ins_are_limited_per_ip(client, monkeypatch):
+def test_failed_sign_ins_are_limited_per_ip(client, monkeypatch):
     monkeypatch.setattr(auth, "MAX_SIGNINS_PER_IP", 3)
     who = _person()
-    assert _apple(client, who).status_code == 200
-    assert _apple(client, who, _sign(_apple_claims(who, aud="other"))).status_code == 401  # failures count too
-    assert _google(client, who).status_code == 200  # and both providers share the window
+    for _ in range(10):  # sign-ins that succeed are not counted: drivers behind one NAT do not lock each other out
+        assert _apple(client, who).status_code == 200
+    assert _apple(client, who, _sign(_apple_claims(who, aud="other"))).status_code == 401
+    assert _google(client, who, "x" * 40).status_code == 401  # both providers share the window
+    assert _apple(client, who).status_code == 200  # a success does not wipe the failures either
+    assert _google(client, who, _sign(_google_claims(who, email_verified=False))).status_code == 401
     r = _apple(client, who)
     assert r.status_code == 429 and r.json() == {"detail": "Too many attempts. Try again in a few minutes."}
     assert _google(client, who).status_code == 429

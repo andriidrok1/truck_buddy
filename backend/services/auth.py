@@ -65,12 +65,17 @@ MAX_ATTEMPTS, WINDOW_S = 5, 600
 # many fresh installs from a few Apple IPs, and a 429 on first launch reads as a broken app.
 # Per process: with N workers the real cap is up to N times this (the lenient direction). 0 = no limit.
 MAX_DEVICES_PER_IP = _env_int("DEVICES_PER_IP_PER_10MIN", 20)
-# Apple/Google sign-ins per IP per WINDOW_S, counted whether they succeed or not. Each one costs a signature check
-# and a few writes, and a failed one may be somebody trying tokens. Drivers behind one carrier NAT or one truck-stop
-# Wi-Fi share an IP, hence well above MAX_ATTEMPTS. Per process, like the limit above. 0 = no limit.
+# Failed Apple/Google sign-ins per IP per WINDOW_S (somebody trying tokens). A sign-in that succeeds is not counted:
+# drivers behind one carrier NAT or one truck-stop Wi-Fi share an IP and must not lock each other out. The same
+# number caps calls to /auth/logout per IP, in a window of its own. Per process, like the limit above. 0 = no limit.
 MAX_SIGNINS_PER_IP = _env_int("SIGNINS_PER_IP_PER_10MIN", 30)
+# A refresh token that was already traded in, arriving this soon after the trade, is the same phone having fired two
+# refreshes at once (two screens waking up together), not a thief: it gets a 401 and the session stays. Later than
+# this, a spent token means somebody else holds a copy, and the session is closed for both of them.
+REUSE_RACE_S = 10.0
 _attempts: "defaultdict[str, deque]" = defaultdict(deque)
 _signins: "defaultdict[str, deque]" = defaultdict(deque)
+_logouts: "defaultdict[str, deque]" = defaultdict(deque)
 _signups: "defaultdict[str, deque]" = defaultdict(deque)
 _calls: "defaultdict[str, tuple[deque, deque]]" = defaultdict(lambda: (deque(), deque()))
 _bearer = HTTPBearer(auto_error=False)
@@ -129,14 +134,12 @@ def _unregistered() -> HTTPException:
     return HTTPException(status_code=401, detail="This device is no longer registered")
 
 
-async def issue(sub: str, role: str, sid: Optional[str] = None) -> dict:
-    """Access token with the device's tenancy claims plus a fresh refresh token (stored hashed; the previous one
-    stops working). Without a store the access token alone comes back, as before.
+def _bad_refresh() -> HTTPException:
+    return HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
-    With `sid` (an account session) the token carries it and the refresh token is kept on that session, so each
-    phone of the account rotates its own; 401 when the session was closed in the meantime. Every token for an
-    account must be issued with its sid: one without it would outlive a sign-out."""
-    dev = await tenancy.ensure_solo_org(sub, role)
+
+def _access(sub: str, role: str, dev: Optional[tenancy.Device], sid: Optional[str] = None) -> dict:
+    """The access token with the device's tenancy claims and, for an account, its session id."""
     claims = {}
     if dev is not None:
         claims = {"org_id": dev.org_id, "driver_id": dev.driver_id}
@@ -145,30 +148,68 @@ async def issue(sub: str, role: str, sid: Optional[str] = None) -> dict:
         role = dev.role or role
     if sid:
         claims["sid"] = sid
-    out = {"access_token": _token(role, sub, claims), "token_type": "bearer", "role": role}
-    if dev is not None:
-        refresh = _secrets.token_urlsafe(32)
-        if not sid:
-            await tenancy.set_refresh(sub, _hash(refresh))
-        elif not await accounts.session_rotate(sid, _hash(refresh)):
-            raise _unregistered()
-        out["refresh_token"] = refresh
-        out["expires_in"] = JWT_DAYS * 86400
-    return out
+    return {"access_token": _token(role, sub, claims), "token_type": "bearer", "role": role}
+
+
+async def issue(sub: str, role: str, sid: Optional[str] = None, spent: Optional[str] = None) -> dict:
+    """Access token with the device's tenancy claims plus a fresh refresh token (stored hashed; the previous one
+    stops working). Without a store the access token alone comes back, as before.
+
+    With `sid` (an account session) the token carries it and the refresh token is kept on that session, so each
+    phone of the account rotates its own; 401 when the session was closed in the meantime. `spent` is the hash of
+    the refresh token being traded in: the new pair is handed out only if that token was still the current one
+    (see accounts.session_rotate). Every token for an account must be issued with its sid: one without it would
+    outlive a sign-out."""
+    dev = await tenancy.ensure_solo_org(sub, role)
+    out = _access(sub, role, dev, sid)
+    if dev is None:
+        return out
+    refresh = _secrets.token_urlsafe(32)
+    if not sid:
+        await tenancy.set_refresh(sub, _hash(refresh))
+    elif not await accounts.session_rotate(sid, _hash(refresh), spent):
+        raise _bad_refresh() if spent else _unregistered()
+    return {**out, "refresh_token": refresh, "expires_in": JWT_DAYS * 86400}
+
+
+async def open_session(sub: str, platform: Optional[str] = None) -> tuple[dict, bool]:
+    """Signs an account in on one phone: a token pair on a new session. Also says whether this is the account's
+    first time through (no device row existed for the sub), which is when the app runs onboarding. The tenancy rows
+    come first and the session last, so a failure on the way leaves no session behind and the retry is still a
+    first time."""
+    first = await tenancy.device_of(sub) is None
+    dev = await tenancy.ensure_solo_org(sub, "driver")
+    if dev is None:
+        raise RuntimeError("store is off")
+    refresh = _secrets.token_urlsafe(32)
+    sid = await accounts.session_open(sub, _hash(refresh), platform)
+    return {**_access(sub, "driver", dev, sid), "refresh_token": refresh, "expires_in": JWT_DAYS * 86400}, first
 
 
 async def refresh(refresh_token: str) -> dict:
     """A new access token (and a new refresh token) for the account session, or else the device, whose refresh
     token this is."""
     if db.store() == "off":
-        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+        raise _bad_refresh()
     hashed = _hash(refresh_token)
     session = await accounts.session_by_refresh(hashed)
-    sid, sub = session or (None, await tenancy.sub_by_refresh(hashed))
-    if not sub:
-        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
-    dev = await tenancy.device_of(sub)
-    return await issue(sub, dev.role if dev else "driver", sid)
+    if session is None:
+        sub = await tenancy.sub_by_refresh(hashed)
+        if not sub:
+            raise _bad_refresh()
+        dev = await tenancy.device_of(sub)
+        return await issue(sub, dev.role if dev else "driver")
+    if not session.current:  # already traded in once: see REUSE_RACE_S
+        since = (db.utcnow() - session.rotated_at).total_seconds() if session.rotated_at else None
+        if since is None or since > REUSE_RACE_S:
+            logging.getLogger("truckbuddy.auth").warning("spent refresh token reused for %s: session %s closed", session.sub, session.sid)
+            await accounts.session_close(session.sid)
+        raise _bad_refresh()
+    if accounts.idle(session.seen_at):
+        await accounts.session_close(session.sid)
+        raise _bad_refresh()
+    dev = await tenancy.device_of(session.sub)
+    return await issue(session.sub, dev.role if dev else "driver", session.sid, spent=hashed)
 
 
 def open_access() -> bool:
@@ -186,13 +227,17 @@ def register_device(request: Request) -> str:
     return _token("driver")
 
 
-def signin_attempt(request: Request) -> None:
-    """Counts one Apple/Google sign-in against the caller's IP; 429 past MAX_SIGNINS_PER_IP per 10 min."""
-    now = time.monotonic()
-    q = _window(_signins, _client_ip(request), WINDOW_S, now)
+def signin_allowed(request: Request) -> None:
+    """429 for an IP with MAX_SIGNINS_PER_IP failed Apple/Google sign-ins in the last 10 min."""
+    q = _window(_signins, _client_ip(request), WINDOW_S, time.monotonic())
     if MAX_SIGNINS_PER_IP > 0 and len(q) >= MAX_SIGNINS_PER_IP:
         raise HTTPException(status_code=429, detail="Too many attempts. Try again in a few minutes.")
-    q.append(now)
+
+
+def signin_failed(request: Request) -> None:
+    """Counts a provider token that did not verify against the caller's IP."""
+    now = time.monotonic()
+    _window(_signins, _client_ip(request), WINDOW_S, now).append(now)
 
 
 def redeem(code: str, request: Request) -> tuple[str, str]:
@@ -280,8 +325,10 @@ def _claims(credentials: HTTPAuthorizationCredentials | None) -> dict:
     except jwt.PyJWTError:
         raise _expired()
     days = grace_days()
-    if days <= 0 or claims.get("role") != "driver":
-        raise _expired()  # testers and fleet owners/dispatchers sign in again, as before
+    if days <= 0 or claims.get("role") != "driver" or claims.get("sid"):
+        # Testers and fleet owners/dispatchers sign in again, as before. An account token (sid) gets no grace
+        # either: the build that signs in with Apple/Google always holds a refresh token.
+        raise _expired()
     now = datetime.now(timezone.utc)
     try:
         exp = datetime.fromtimestamp(int(claims["exp"]), timezone.utc)
@@ -381,16 +428,30 @@ async def require_driver(credentials: HTTPAuthorizationCredentials | None = Depe
     missing or invalid."""
     claims = _claims(credentials)
     await _grace(claims)
+    # Before the budget: a token whose session or device is gone gets its 401 without spending the sub's calls, or
+    # a signed-out phone could run the account's other phones into a 429.
+    principal = await _principal(claims)
     if claims.get("role") != "tester":
         _limit(claims["sub"])
     spend.exempt_role(str(claims.get("role") or "driver"))  # a tester's calls are not counted (services/spend.py)
-    return await _principal(claims)
+    return principal
 
 
-def token_claims(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> dict:
-    """The claims of a token this server signed, without asking the store whether its device or session is still
-    there. For signing out, which must also work for a session that is already gone."""
-    return _claims(credentials)
+def logout_claims(request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> dict:
+    """The claims of a token this server signed, for signing out: the signature is all that is checked. Not the
+    exp, the role or the store, so a phone can always close its own session, however old its token and even when
+    the session is already gone. At most MAX_SIGNINS_PER_IP calls per IP per 10 min."""
+    now = time.monotonic()
+    q = _window(_logouts, _client_ip(request), WINDOW_S, now)
+    if MAX_SIGNINS_PER_IP > 0 and len(q) >= MAX_SIGNINS_PER_IP:
+        raise HTTPException(status_code=429, detail="Too many attempts. Try again in a few minutes.")
+    q.append(now)
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Access code required")
+    try:
+        return jwt.decode(credentials.credentials, _secret(), algorithms=["HS256"], options={"verify_exp": False, "require": ["sub"]})
+    except jwt.PyJWTError:
+        raise _expired()
 
 
 async def require_tester(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> Principal:
