@@ -196,8 +196,9 @@ def test_deleting_a_fleet_drivers_account_leaves_the_fleet_whole(client, db_dial
     fleet, truck = bound["org_id"], bound["vehicle_id"]
     assert fleet != solo_org
     _rows(client, "UPDATE vehicles SET profile = ? WHERE id = ?", json.dumps(PROFILE), truck)
-    needles = {**_fill(client, bound, name="Fleet Sam"), "solo_org": solo_org, "provider_sub": who,
-               "email": f"{who}@gmail.com", "name": "Fleet Sam"}
+    name = f"Sam {who[-12:]}"  # the store may be a Postgres other runs left rows in: every needle is this test's own
+    needles = {**_fill(client, bound, name=name), "solo_org": solo_org, "provider_sub": who,
+               "email": f"{who}@gmail.com", "name": name}
     # a colleague on the same truck, to be left alone
     other = client.post("/api/auth/device").json()
     code2 = client.portal.call(tenancy.create_fleet_code, fleet, truck)
