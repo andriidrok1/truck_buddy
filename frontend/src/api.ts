@@ -325,27 +325,45 @@ async function deleteAccount(): Promise<AccountDeleted> {
   }
 }
 
-/** Our 401 for a token whose sub has no driver any more (backend services/auth.py). It is also what a phone hears
- *  after its account was deleted from another phone, so it never proves on its own that *this* request deleted
- *  anything. */
+/** Our 401 for a token whose sub has no driver any more (backend services/auth.py). A server from before #171's
+ *  `code` on 401s says it also for a session that was only closed (logout-all from another phone, a refresh token
+ *  reused, an idle session), so on its own it never proves that the account is gone. */
 export const isNoLongerRegistered = (detail: string | null | undefined): boolean => typeof detail === "string" && /no longer registered/i.test(detail);
 
 /**
- * What GET /api/auth/check says about `token`, after a call that got no answer (a DELETE /api/account, a POST
- * /api/auth/logout-all). The token is set by hand because the caller may hold every other request (authHeader()
- * leaves the token out meanwhile) and because a 401 here must not start a renewal.
- * "alive": a 200. "gone": our 401 "no longer registered". "refused": our 401 for another reason (an expired access
- * token, a closed session). "unknown": anything else (offline, a timeout, a 5xx, a 429, a page that is not ours).
+ * What our 401 says about the identity behind the token. The server (#171) puts a `code` next to `detail`:
+ * "account_gone": the account (the token's sub) was deleted. "session_closed": only this session ended, the account
+ * is alive. Without a code (an older server), "unregistered" is the "no longer registered" text that can mean
+ * either, and "refused" is any other 401 (an expired access token: a renewal may fix it).
  */
-export async function tokenState(token: string): Promise<"alive" | "gone" | "refused" | "unknown"> {
+export type Why401 = "account_gone" | "session_closed" | "unregistered" | "refused";
+export function why401(detail: string | null | undefined, code: string | null | undefined): Why401 {
+  if (code === "account_gone" || code === "session_closed") return code;
+  return isNoLongerRegistered(detail) ? "unregistered" : "refused";
+}
+
+/** No answer to a call that changes something on the server: it may have finished all the same (a timeout, a dead
+ *  zone, the edge's 502/504, a 503 page from the proxy during a deploy, which has no JSON `detail`). A 503 with our
+ *  `detail` is the backend saying it did not (review of #173, M4). */
+export const isNoAnswer = (e: unknown): boolean =>
+  !(e instanceof ApiError) || e.status === 502 || e.status === 504 || (e.status === 503 && e.detail === null);
+
+/**
+ * What GET /api/auth/check says about `token`, after a call that got no answer (a DELETE /api/account, a DELETE
+ * /api/memory, a POST /api/auth/logout-all). The token is set by hand because the caller may hold every other
+ * request (authHeader() leaves the token out meanwhile) and because a 401 here must not start a renewal.
+ * "alive": a 200. A 401 of ours: what why401 makes of it. "unknown": anything else (offline, a timeout, a 5xx, a 429,
+ * a page that is not ours).
+ */
+export async function tokenState(token: string): Promise<"alive" | Why401 | "unknown"> {
   const d = deadline(10000);
   try {
     const res = await fetchTracked(`${BASE}/auth/check`, { signal: d.signal, headers: { Authorization: `Bearer ${token}`, "X-Lang": "en" } });
     if (res.ok) return "alive";
     if (res.status !== 401) return "unknown";
-    const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
+    const body = (await res.json().catch(() => null)) as { detail?: unknown; code?: unknown } | null;
     if (typeof body?.detail !== "string") return "unknown";
-    return isNoLongerRegistered(body.detail) ? "gone" : "refused";
+    return why401(body.detail, typeof body.code === "string" ? body.code : null);
   } catch {
     return "unknown";
   } finally {

@@ -133,16 +133,39 @@ describe("Sign out of all phones", () => {
   });
 
   describe("no answer: GET /api/auth/check with the same token (review of #173, M2)", () => {
-    test("our 401: the sessions are closed, this phone signs out as the driver asked (no notice)", async () => {
+    test.each([
+      ["session_closed", { detail: "This device is no longer registered", code: "session_closed" }],
+      ["no code, no longer registered (a server from before the codes)", { detail: "This device is no longer registered" }],
+    ])("our 401 %s: the sessions are closed, this phone signs out as the driver asked (no notice)", async (_, body) => {
       await signedIn();
       answers[key("POST", "/auth/logout-all")] = "offline";
-      answers[key("GET", "/auth/check")] = reply(401, { detail: "This session was signed out" });
+      answers[key("GET", "/auth/check")] = reply(401, body);
       expect(await signOutEverywhere()).toBe("done");
       expect(calls.map((c) => c.path)).toEqual(["/auth/logout-all", "/auth/check"]);
       expect(calls[1].auth).toBe("Bearer ACC");
       expect(getToken()).toBeNull();
       expect(signInNotice()).toBeNull();
       expect(useLangStore.getState().chosen).toBe(true);
+    });
+
+    test("any other 401 without session_closed (an expired token): unconfirmed, still signed in (re-review, M-2)", async () => {
+      await signedIn();
+      answers[key("POST", "/auth/logout-all")] = "offline";
+      answers[key("GET", "/auth/check")] = reply(401, { detail: "Invalid or expired token" });
+      expect(await signOutEverywhere()).toBe("unconfirmed");
+      await stillMike();
+    });
+
+    test("request() renewed the token before the call got no answer: the check carries the new token (re-review, M-2)", async () => {
+      await signedIn();
+      const call = jest.fn(async () => {
+        await setToken("ACC2", "driver", "account", "REF2"); // what request() does on an expired token
+        throw new TypeError("Network request failed");
+      });
+      answers[key("GET", "/auth/check")] = reply(200, { ok: true });
+      expect(await signOutEverywhere(call)).toBe("failed");
+      expect(calls).toEqual([{ path: "/auth/check", method: "GET", auth: "Bearer ACC2" }]);
+      expect(getToken()).toBe("ACC2");
     });
 
     test("200: nothing closed, still signed in everywhere", async () => {

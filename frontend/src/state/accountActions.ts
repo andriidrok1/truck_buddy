@@ -2,15 +2,9 @@
 // out of every phone, delete the account. An access-code sign-in keeps its own "Sign out" and "Delete my data"
 // (src/state/firstLaunch.ts); none of these is offered to it.
 
-import { api, ApiError, isNoLongerRegistered, logout, tokenState, type AccountDeleted, type RefusalCode } from "../api";
+import { api, ApiError, isNoAnswer, isNoLongerRegistered, logout, tokenState, type AccountDeleted, type RefusalCode } from "../api";
 import { getToken, signedInWithAccount } from "../auth";
 import { serverThenReset, signedOutReset, type Nav } from "./firstLaunch";
-
-/** No answer to a DELETE /api/account or a POST /api/auth/logout-all: the server may have finished all the same (a
- *  timeout, a dead zone, the edge's 502/504, a 503 page from the proxy during a deploy, which has no JSON `detail`).
- *  A 503 with our `detail` is the backend saying it did not (review of #173, M4). */
-const noAnswer = (e: unknown) =>
-  !(e instanceof ApiError) || e.status === 502 || e.status === 504 || (e.status === 503 && e.detail === null);
 
 /** How long "Sign out" waits for the server to close this phone's session before signing out anyway. */
 export const LOGOUT_WAIT_MS = 3000;
@@ -38,20 +32,22 @@ export type EverywhereOutcome = "done" | "failed" | "unconfirmed";
  * phone forgets the driver. When the server cannot be reached the phone stays signed in, because signing out here
  * alone would leave a lost phone signed in while the driver thinks it is not.
  *
- * No answer (review of #173, M2): the request may have gone through. GET /api/auth/check with the token it carried
- * says which: our 401 means the session is closed, and this phone signs out as on a 200 (the driver asked for it:
- * no notice, no route kept); a 200 means nothing closed; no answer is "unconfirmed".
+ * No answer (review of #173, M2): the request may have gone through. GET /api/auth/check says which, with the token
+ * the phone holds after the failure: request() renews an expired token on the way, and the old one would only say
+ * "expired" (re-review, M-2). A 401 that says this session is over (`session_closed`, or a server without codes
+ * saying "no longer registered", or `account_gone`) signs this phone out as on a 200 (the driver asked for it: no
+ * notice, no route kept). A 200 means nothing closed. Any other 401, or no answer, is "unconfirmed".
  */
 export async function signOutEverywhere(call: () => Promise<unknown> = api.logoutAll): Promise<EverywhereOutcome> {
-  const sent = getToken();
   try {
     await call();
   } catch (e) {
-    if (!getToken()) return "done"; // our 401 on the request itself, and the renewal signed the phone out already
-    if (!sent || !noAnswer(e)) return "failed";
-    const state = await tokenState(sent);
+    const now = getToken(); // after the failure: the one request() may have renewed
+    if (!now) return "done"; // our 401 on the request itself, and the renewal signed the phone out already
+    if (!isNoAnswer(e)) return "failed";
+    const state = await tokenState(now);
     if (state === "alive") return "failed";
-    if (state === "unknown") return "unconfirmed";
+    if (state === "refused" || state === "unknown") return "unconfirmed";
   }
   await signedOutReset();
   return "done";
@@ -100,10 +96,10 @@ export async function deleteAccount(router: Nav, call: () => Promise<AccountDele
       return await call(); // reads its header in this same tick (serverThenReset relies on it)
     } catch (e) {
       if (e instanceof ApiError && e.status === 401 && isNoLongerRegistered(e.detail)) return GONE;
-      if (!sent || !noAnswer(e)) throw e;
+      if (!sent || !isNoAnswer(e)) throw e;
       const state = await tokenState(sent);
-      if (state === "gone") return GONE;
-      if (state === "refused") throw new ApiError(401, "/auth/check", "refused");
+      if (state === "account_gone" || state === "unregistered") return GONE;
+      if (state === "refused" || state === "session_closed") throw new ApiError(401, "/auth/check", "refused");
       throw new Unconfirmed();
     }
   };
