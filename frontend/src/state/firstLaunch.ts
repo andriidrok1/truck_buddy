@@ -71,6 +71,8 @@ export async function resetToFirstLaunch(): Promise<string[]> {
 }
 
 let signingOut: Promise<string[]> | null = null;
+/** The sign-out under way came with a notice or a trip kept (the server turned the token down). */
+let signingOutForced = false;
 
 const TRIP_LOG_KEY = "trip_events_pending";
 
@@ -88,7 +90,19 @@ const TRIP_LOG_KEY = "trip_events_pending";
  * Returns the keys that would not go; the next cold start, or the next sign-in, finishes them (pendingWipe.ts).
  */
 export function signedOutReset(opts: { notice?: boolean; keepTripFor?: string | null } = {}): Promise<string[]> {
+  const explicit = !opts.notice && !opts.keepTripFor;
+  if (signingOut && explicit && signingOutForced) {
+    // The driver's own "Sign out" while a forced one runs (review of #173, L3): it waits for that one, then takes
+    // back what only the forced path keeps. No "You were signed out", no route set aside, no trip events left.
+    return signingOut.then(async (left) => {
+      setSignInNotice(null);
+      await step(dropHeldTrip);
+      await step(() => tripLog.clear());
+      return left;
+    });
+  }
   if (!signingOut) {
+    signingOutForced = !explicit;
     signingOut = (async () => {
       // Before anything is cleared: the route on disk is the one being driven.
       const sub = opts.keepTripFor ?? null;

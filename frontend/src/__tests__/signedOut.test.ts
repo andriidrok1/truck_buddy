@@ -513,6 +513,22 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
       expect(await tripLog.flush()).not.toBe("sent"); // nobody to send them as
     });
 
+    test("the driver taps Sign out while the forced sign-out runs: no notice, no route set aside, no events left (L3)", async () => {
+      await aliceOnTheRoad();
+      let forced: string[] = [];
+      let own: string[] = [];
+      await act(async () => {
+        [forced, own] = await Promise.all([signedOutReset({ notice: true, keepTripFor: "acct-alice" }), signedOutReset()]);
+      });
+      expect(Array.isArray(forced) && Array.isArray(own)).toBe(true);
+      expect(getToken()).toBeNull();
+      expect(signInNotice()).toBeNull();
+      expect(await AsyncStorage.getItem(HELD_TRIP_KEY)).toBeNull();
+      expect(await AsyncStorage.getItem("trip_v2")).toBeNull();
+      expect(JSON.parse((await AsyncStorage.getItem("trip_events_pending")) ?? "[]")).toEqual([]);
+      expect(tripLog.size()).toBe(0);
+    });
+
     test("the same account signs in again: the route is back for the map to resume, and the events go out under its token", async () => {
       await aliceOnTheRoad();
       await sessionClosed();
