@@ -1,4 +1,4 @@
-import { createOffRouteTracker, createRerouteGate, thresholdM, type OffRouteFix, type OffRouteVerdict } from "../geo/offroute";
+import { atRouteEnd, createOffRouteTracker, createRerouteGate, thresholdM, type OffRouteFix, type OffRouteVerdict } from "../geo/offroute";
 
 const T0 = 1_700_000_000_000;
 
@@ -150,5 +150,30 @@ describe("createRerouteGate", () => {
     expect(gate.allow(11000)).toBe(false); // the new line's own tracker fired 6 s after it landed
     expect(gate.allow(34999)).toBe(false);
     expect(gate.allow(35000)).toBe(true);
+  });
+});
+
+describe("atRouteEnd", () => {
+  const DEG_PER_M = 1 / 111195;
+  /** A point `m` metres north of the destination. */
+  const north = (m: number) => ({ lat: 38.5 + m * DEG_PER_M, lng: -121.5 });
+  const destination = north(0);
+
+  test("around the lot of the destination: no reroute", () => {
+    expect(atRouteEnd(north(0), destination, null)).toBe(true);
+    expect(atRouteEnd(north(120), destination, null)).toBe(true); // the far row of the lot
+    expect(atRouteEnd(north(199), destination, null)).toBe(true);
+  });
+
+  test("the line ends at the entrance, away from the place's own pin", () => {
+    const entrance = north(350);
+    expect(atRouteEnd(north(300), destination, entrance)).toBe(true);
+    expect(atRouteEnd(north(300), destination, null)).toBe(false);
+  });
+
+  test("a truck that drove past the end still gets its way back", () => {
+    // projected onto the line it has 0 m left, but it is half a kilometre down the road
+    expect(atRouteEnd(north(500), destination, north(20))).toBe(false);
+    expect(atRouteEnd(north(201), destination, north(0))).toBe(false);
   });
 });

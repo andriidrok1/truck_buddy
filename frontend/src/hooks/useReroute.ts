@@ -1,7 +1,7 @@
 import { useRef, type RefObject } from "react";
 
 import { api, isNoTruckRoute } from "../api";
-import { createRerouteGate } from "../geo/offroute";
+import { atRouteEnd, createRerouteGate } from "../geo/offroute";
 import { tripLog } from "../net/tripEvents";
 import { stopsAhead, useTripStore, viaOf } from "../state/tripStore";
 import type { LatLng, Place, RouteInfo } from "../types";
@@ -49,12 +49,19 @@ export function useReroute(
    * The tracker says the truck left the route: ask the engine to resume the plan from here
    * (/reroute with the handle, section and metres into it), or plan afresh when that fails.
    * One at a time; the new route only lands if the destination is still the same.
-   * Not for a tester parked on a fake spot (no trace = nothing moves) and not before "Go".
+   * Not for a tester parked on a fake spot (no trace = nothing moves), not before "Go", and not at the
+   * destination: a truck circling the lot has arrived, a new plan to where it already is helps nobody.
    */
   const rerouteOffRoute = async (g: Guidance) => {
     const cur = trip().active;
     if (!cur || rerouting.current || !trip().driving) return;
     if (loc.sim && !loc.sim.trace) return;
+    const end = cur.route.geometry[cur.route.geometry.length - 1];
+    if (atRouteEnd(loc.coords, cur.place, end ? { lat: end[0], lng: end[1] } : null)) {
+      // The tracker's 30 s cooldown is dropped: a truck that leaves the lot off the line is picked up at once.
+      g.resetOffRoute();
+      return;
+    }
     if (!rerouteGate.allow(Date.now())) return;
     // No signal: no /reroute. Point the driver back at the loaded line instead; the reroute
     // runs as soon as the signal is back (useOfflineGuidance calls this again).

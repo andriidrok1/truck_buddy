@@ -1,6 +1,9 @@
 // Off-route detection on top of projectOnRoute's perpendicular distance. Pure: no React, no timers,
 // every rule takes the fix's own timestamp so a replayed trace behaves like live GPS.
 
+import { haversineM } from "./guidance";
+import type { LatLng } from "../types";
+
 /**
  * How far from the route line counts as "off". Highways get 50 m: the match can sit on the wrong
  * carriageway of a divided road, and 40 m is a normal GPS error at 70 mph. Otherwise 30 m (a city
@@ -138,4 +141,18 @@ export function createRerouteGate(minGapMs = 30000) {
       lastEnd = now;
     },
   };
+}
+
+/** Closer than this to the destination or to the end of the line, the trip is over as far as rerouting goes. */
+export const ROUTE_END_M = 200;
+
+/**
+ * True when the truck is at the destination or at the end of the route line: no off-route reroute from here.
+ * A truck looking for a spot in the truck-stop lot moves faster than "parked" and further than 30 m from where
+ * the line ends, and was told "Rerouting." with a new plan every 30 s. Straight-line distances on purpose: the
+ * remaining distance along the route is also zero for a truck that drove past the end, and that one still
+ * needs the way back. `routeEnd` is the last point of the line (the entrance, when the route was led to it).
+ */
+export function atRouteEnd(fix: LatLng, destination: LatLng, routeEnd: LatLng | null, withinM = ROUTE_END_M): boolean {
+  return haversineM(fix, destination) <= withinM || (routeEnd !== null && haversineM(fix, routeEnd) <= withinM);
 }
