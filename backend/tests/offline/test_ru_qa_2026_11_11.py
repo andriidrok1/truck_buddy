@@ -7,7 +7,7 @@ import re
 import pytest
 from conftest import run
 
-from models import Incident, Maneuver, RouteInfo
+from models import AgentRequest, Incident, Maneuver, RouteInfo
 from services import i18n
 
 SAC = {"lat": 38.5816, "lng": -121.4944}
@@ -313,3 +313,32 @@ def test_sync_fallback_is_checked_the_same_way():
     assert out == "Park beside the fuel canopy."
     out = i18n.translate("Park beside the fuel canopy.", "ru", fallback=lambda s, c: "Паркуйся рядом с навесом у заправки.")
     assert out == "Паркуйся рядом с навесом у заправки."
+
+
+# ---- "где встать на ночь" is a truck stop (item 4) -------------------------------------------------------------
+
+def test_prompt_sends_overnight_parking_to_a_truck_stop():
+    from services.agent import PROMPT_CACHE_KEY, PROMPT_VERSION, SYSTEM_STATIC
+    truck_stop = re.search(r"truck_stop = (.*?);", SYSTEM_STATIC, re.S).group(1)
+    hotel = re.search(r"hotel = (.*?);\n\s+rest_area", SYSTEM_STATIC, re.S).group(1)
+    assert "park the truck for the night" in truck_stop and "где встать на ночь" in truck_stop
+    assert not re.search(r"hotel = [^(]*overnight", SYSTEM_STATIC)  # "overnight" no longer lists under hotel
+    assert "means parking the truck, not a hotel" in hotel and "motel" in hotel
+    assert PROMPT_VERSION == 6 and PROMPT_CACHE_KEY == "agent-v6"  # a changed prompt gets a new cache key
+
+
+@pytest.mark.parametrize("said", ["где встать на ночь", "где припарковать трак на ночь", "нужна стоянка на ночь",
+                                  "где тут переночевать", "Где можно постоять ночью"])
+def test_russian_parking_filed_as_hotel_becomes_a_truck_stop(agent_sandbox, fake_http, said):
+    """The guard behind the prompt (tests/offline/test_park_not_hotel.py), for the Russian words."""
+    agent_sandbox.llm.default = {"intent": "find", "category": "hotel"}
+    res = run(agent_sandbox.provider().handle(AgentRequest(text=said, session_id="ru-park", lang="ru", **SAC), None))
+    assert res.category == "truck_stop" and res.status in ("route_set", "no_results")
+
+
+@pytest.mark.parametrize("said", ["нужен мотель на ночь", "хочу поспать в номере", "найди отель со стоянкой для трака",
+                                  "я устал, хочу спать"])
+def test_a_russian_ask_for_a_bed_stays_a_hotel(agent_sandbox, fake_http, said):
+    agent_sandbox.llm.default = {"intent": "find", "category": "hotel"}
+    res = run(agent_sandbox.provider().handle(AgentRequest(text=said, session_id="ru-bed", lang="ru", **SAC), None))
+    assert res.category == "hotel"

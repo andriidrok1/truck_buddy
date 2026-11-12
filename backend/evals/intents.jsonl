@@ -14,7 +14,18 @@
 {"id": "h_find_motel", "text": "I need a motel for the night", "context_preset": "idle", "expected": {"intent": "find", "category": "hotel"}, "tags": ["core"], "source": "hand"}
 {"id": "h_find_room", "text": "find me a room", "context_preset": "idle", "expected": {"intent": "find", "category": "hotel"}, "tags": [], "source": "hand"}
 {"id": "h_find_bed", "text": "I'm beat, I need a bed", "context_preset": "idle", "expected": {"intent": "find", "category": "hotel"}, "tags": [], "source": "hand"}
-{"id": "h_find_overnight", "text": "where can I stay overnight", "context_preset": "idle", "expected": {"intent": "find", "category": "hotel"}, "tags": [], "source": "hand"}
+{"id": "h_find_overnight", "text": "where can I stay overnight", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": ["ambiguous"], "source": "hand"}
+{"id": "h_find_park_for_the_night", "text": "where can I park for the night", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
+{"id": "h_find_overnight_parking", "text": "I need overnight parking", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
+{"id": "h_find_park_tonight", "text": "where can I park tonight", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
+{"id": "h_find_shut_down_night", "text": "I need somewhere to shut down for the night", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
+{"id": "h_find_motel_parking", "text": "find me a motel with truck parking", "context_preset": "idle", "expected": {"intent": "find", "category": "hotel"}, "tags": [], "source": "hand"}
+{"id": "h_find_ru_vstat_na_noch", "text": "где встать на ночь", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
+{"id": "h_find_ru_park_truck_night", "text": "где припарковать трак на ночь", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
+{"id": "h_find_ru_stoyanka_noch", "text": "нужна стоянка на ночь", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
+{"id": "h_find_ru_perenochevat", "text": "где тут переночевать с траком", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": ["ambiguous"], "source": "hand"}
+{"id": "h_find_ru_motel", "text": "нужен мотель на ночь", "context_preset": "idle", "expected": {"intent": "find", "category": "hotel"}, "tags": [], "source": "hand"}
+{"id": "h_find_ru_room", "text": "хочу поспать в номере", "context_preset": "idle", "expected": {"intent": "find", "category": "hotel"}, "tags": [], "source": "hand"}
 {"id": "h_find_rest_area", "text": "find a rest area", "context_preset": "idle", "expected": {"intent": "find", "category": "rest_area"}, "tags": ["core"], "source": "hand"}
 {"id": "h_find_restroom", "text": "I need a restroom quick", "context_preset": "idle", "expected": {"intent": "find", "category": "rest_area"}, "tags": ["core"], "source": "hand"}
 {"id": "h_find_nap", "text": "I need a short nap", "context_preset": "idle", "expected": {"intent": "find", "category": "rest_area"}, "tags": [], "source": "hand"}

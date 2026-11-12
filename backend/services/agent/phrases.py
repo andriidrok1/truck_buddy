@@ -40,6 +40,9 @@ def control_phrase(text: str) -> Optional[dict]:
 
 PARK_WORDS = re.compile(r"\b(park|parking|overnight|shut ?down|lay ?over|sleep in (?:the|my) (?:truck|cab|sleeper))\b", re.I)
 BED_WORDS = re.compile(r"\b(hotel|motel|room|bed|shower|inn|lodge)\b", re.I)
+# The same pair in Russian: "где встать на ночь" is where to put the truck, and it went to a motel (QA 2026-11-11).
+PARK_WORDS_RU = re.compile(r"\b(?:в?стать|встану|(?:по)?стоять|стоянк\w*|парков\w*|припарков\w*|ноч[её]вк\w*|(?:пере|за)ночевать)\b", re.I)
+BED_WORDS_RU = re.compile(r"\b(?:отел\w*|мотел\w*|гостиниц\w*|хостел\w*|номер\w*|кроват\w*|койк\w*|душ)\b", re.I)
 
 _STREET_ONLY = re.compile(r"^\s*\d+[a-z]?\s+[\w .'-]+$", re.I)  # "2828 El Centro Rd" (no town after a comma)
 _ZIP_COUNTRY = re.compile(r"^\s*(?:[A-Z]{2}(?:\s+\d{5}(?:-\d{4})?)?|\d{5}|United States|USA)\s*$")
