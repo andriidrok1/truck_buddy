@@ -109,3 +109,38 @@ def test_the_route_line_from_the_report():
     assert not misses
     assert got == ("Хорошо. Маршрут до Reno готов, 2 часа 49 минут, около 132 миль. Внимание, угроза зимнего шторма в "
                    "районе Lassen Volcanic National Park начнётся в пятницу в 10:00; в таком темпе проедешь там к 23:30.")
+
+
+# ---- the accusative after «через» (item 11) -------------------------------------------------------------------
+
+@pytest.mark.parametrize("mi,want", [("1", "1 милю"), ("2", "2 мили"), ("5", "5 миль"), ("11", "11 миль"), ("21", "21 милю"),
+                                     ("22", "22 мили"), ("101", "101 милю"), ("0.5", "0,5 мили"), ("1.5", "1,5 мили")])
+def test_miles_after_cherez(mi, want):
+    lines = {
+        f"Your break is due in 21 minutes. There's a Pilot in {mi} miles, want me to add it?":
+            f"Перерыв через 21 минуту. Через {want} есть Pilot, добавить?",
+        f"Your break is due now. There's a Pilot in {mi} miles, want me to add it?":
+            f"Пора на перерыв. Через {want} есть Pilot, добавить?",
+        f"There's a Pilot in {mi} miles, want me to add it?": f"Через {want} есть Pilot, добавить?",
+        f"It's getting late. The Pilot in {mi} miles, should I route you there?": f"Уже поздно. Pilot через {want}, проложить туда?",
+        f"About 40 minutes on the shift. The Pilot in {mi} miles, should I route you there?":
+            f"На смене осталось около 40 минут. Pilot через {want}, проложить туда?",
+        f"The Pilot in {mi} miles, should I route you there?": f"Pilot через {want}, проложить туда?",
+        f"Pilot Travel Center is about {mi} miles ahead.": f"Pilot Travel Center примерно через {want}.",
+        f"Pilot Travel Center is about {mi} miles ahead, just up Elm Ave.": f"Pilot Travel Center примерно через {want}, дальше по Elm Ave.",
+        f"Nearest CAT scale is at Pilot, about {mi} miles ahead.": f"Ближайший кэт-скейл на Pilot, примерно через {want}.",
+        f"The last truck stop before the control is Pilot, {mi} miles ahead, want me to add it?":
+            f"Последний трак-стоп до участка с цепями: Pilot, через {want}, добавить?",
+        f"The last truck stop before it is Pilot, {mi} miles ahead, want me to add it?":
+            f"Последний трак-стоп перед этим: Pilot, через {want}, добавить?",
+    }
+    for en, ru in lines.items():
+        got, misses = _ru(en)
+        assert not misses and got == ru, en
+
+
+def test_no_template_puts_a_nominative_after_cherez():
+    tpls, _words = i18n.catalog("ru")
+    bad = [t.target for t in tpls if re.search(r"через \{\w+\|plural:(?:миля|минута|фут,|час,)", t.target, re.I)]
+    assert not bad, bad
+    assert sum(1 for t in tpls if re.search(r"через \{mi\|plural:милю,мили,миль\}", t.target, re.I)) == 15

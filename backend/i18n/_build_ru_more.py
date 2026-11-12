@@ -1,6 +1,7 @@
 # flake8: noqa  (a data list executed by i18n/build_ru.py, which supplies t, T, MI and the rest)
 MI = "{mi|plural:миля,мили,миль}"
 MI_GEN = "{mi|plural:мили,миль,миль}"
+MI_ACC = "{mi|plural:милю,мили,миль}"  # после «через»: через 1 милю, 21 милю, 2 мили, 0,5 мили
 MI_PREP = "{mi|plural:миле,милях,милях,мили}"
 T2 = []
 def t(en, ru, part=False):
@@ -48,27 +49,27 @@ t("I can't check chain controls on your route right now.", "Сейчас не м
 t("Chains required ahead on {route} near {location}. Do you have chains on board?", "Впереди на {route} у {location} нужны цепи. Цепи у тебя есть?")
 t("Chains required ahead on {route} near {location}.", "Впереди на {route} у {location} нужны цепи.")
 t("Do you have chains on board?", "Цепи у тебя есть?")
-t("Got it, no chains on board. The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?", "Понял, цепей нет. Последний трак-стоп до участка с цепями: {name}, через " + MI + ", добавить?")
-t("The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?", "Последний трак-стоп до участка с цепями: {name}, через " + MI + ", добавить?")
+t("Got it, no chains on board. The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?", "Понял, цепей нет. Последний трак-стоп до участка с цепями: {name}, через " + MI_ACC + ", добавить?")
+t("The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?", "Последний трак-стоп до участка с цепями: {name}, через " + MI_ACC + ", добавить?")
 t("Got it, no chains on board. I couldn't find a truck stop before the control, keep an eye out for a safe spot.", "Понял, цепей нет. Трак-стоп до участка с цепями не нашёл, присматривай безопасное место.")
 t("I couldn't find a truck stop before the control, keep an eye out for a safe spot.", "Трак-стоп до участка с цепями не нашёл, присматривай безопасное место.")
-t("Chains required ahead on {route} near {location}, and you've got no chains on board. The last truck stop before it is {name}, {mi} miles ahead, want me to add it?", "Впереди на {route} у {location} нужны цепи, а у тебя их нет. Последний трак-стоп перед этим: {name}, через " + MI + ", добавить?")
+t("Chains required ahead on {route} near {location}, and you've got no chains on board. The last truck stop before it is {name}, {mi} miles ahead, want me to add it?", "Впереди на {route} у {location} нужны цепи, а у тебя их нет. Последний трак-стоп перед этим: {name}, через " + MI_ACC + ", добавить?")
 t("Chains required ahead on {route} near {location}, and you've got no chains on board.", "Впереди на {route} у {location} нужны цепи, а у тебя их нет.")
-t("The last truck stop before it is {name}, {mi} miles ahead, want me to add it?", "Последний трак-стоп перед этим: {name}, через " + MI + ", добавить?")
+t("The last truck stop before it is {name}, {mi} miles ahead, want me to add it?", "Последний трак-стоп перед этим: {name}, через " + MI_ACC + ", добавить?")
 t("Got it, chains on board.", "Понял, цепи есть.")
 t("Got it, no chains on board.", "Понял, цепей нет.")
 
 # --- nudges / HOS ---
-t("Your break is due in {due} minutes. There's a {name} in {mi} miles, want me to add it?", "Перерыв через {due|plural:минуту,минуты,минут}. Через " + MI + " есть {name}, добавить?")
+t("Your break is due in {due} minutes. There's a {name} in {mi} miles, want me to add it?", "Перерыв через {due|plural:минуту,минуты,минут}. Через " + MI_ACC + " есть {name}, добавить?")
 t("Your break is due in {due} minutes.", "Перерыв через {due|plural:минуту,минуты,минут}.")
-t("Your break is due now. There's a {name} in {mi} miles, want me to add it?", "Пора на перерыв. Через " + MI + " есть {name}, добавить?")
+t("Your break is due now. There's a {name} in {mi} miles, want me to add it?", "Пора на перерыв. Через " + MI_ACC + " есть {name}, добавить?")
 t("Your break is due now.", "Пора на перерыв.")
-t("There's a {name} in {mi} miles, want me to add it?", "Через " + MI + " есть {name}, добавить?")
-t("About {shift} minutes on the shift. The {name} in {mi} miles{live}, should I route you there?", "На смене осталось около {shift|plural:минуты,минут,минут}. {name} через " + MI + "{live|part}, проложить туда?")
+t("There's a {name} in {mi} miles, want me to add it?", "Через " + MI_ACC + " есть {name}, добавить?")
+t("About {shift} minutes on the shift. The {name} in {mi} miles{live}, should I route you there?", "На смене осталось около {shift|plural:минуты,минут,минут}. {name} через " + MI_ACC + "{live|part}, проложить туда?")
 t("About {shift} minutes on the shift.", "На смене осталось около {shift|plural:минуты,минут,минут}.")
-t("It's getting late. The {name} in {mi} miles{live}, should I route you there?", "Уже поздно. {name} через " + MI + "{live|part}, проложить туда?")
+t("It's getting late. The {name} in {mi} miles{live}, should I route you there?", "Уже поздно. {name} через " + MI_ACC + "{live|part}, проложить туда?")
 t("It's getting late.", "Уже поздно.")
-t("The {name} in {mi} miles{live}, should I route you there?", "{name} через " + MI + "{live|part}, проложить туда?")
+t("The {name} in {mi} miles{live}, should I route you there?", "{name} через " + MI_ACC + "{live|part}, проложить туда?")
 t("Connect Motive in settings and I'll keep track of your hours.", "Подключи Motive в настройках, и я буду следить за твоими часами.")
 t("Motive didn't accept the key. Check it in settings.", "Motive не принял ключ. Проверь его в настройках.")
 t("Motive didn't accept the key.", "Motive не принял ключ.")

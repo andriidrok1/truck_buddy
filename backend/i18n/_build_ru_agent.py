@@ -1,6 +1,7 @@
 # flake8: noqa  (a data list executed by i18n/build_ru.py, which supplies t, T, MI and the rest)
 MI = "{mi|plural:миля,мили,миль}"
 MI_GEN = "{mi|plural:мили,миль,миль}"  # после «около»
+MI_ACC = "{mi|plural:милю,мили,миль}"  # после «через»: через 1 милю, 21 милю, 2 мили, 0,5 мили
 MI_PREP = "{mi|plural:миле,милях,милях,мили}"  # после «в»
 T = []
 def t(en, ru, part=False):
@@ -9,7 +10,7 @@ def t(en, ru, part=False):
 # --- fragments (parts) ---
 t(", right off {street}", ", рядом с {street}", True)
 t(", just up {street}", ", дальше по {street}", True)
-t(", about {mi} miles ahead", ", примерно через " + MI, True)
+t(", about {mi} miles ahead", ", примерно через " + MI_ACC, True)
 t(", counting {minutes} minutes at {each}", ", с учётом {minutes|plural:минуты,минут,минут} на {each|part}", True)
 t("the stop", "остановку", True)
 t("each stop", "каждую остановку", True)
@@ -42,20 +43,20 @@ t("Okay, we're headed to {dest}.", "Хорошо, едем в {dest}.")
 
 # --- place bodies ---
 t("{name}{off}, about {mi} miles out.", "{name}{off|part}, примерно в " + MI_PREP + ".")
-t("{name} is about {mi} miles ahead{up}.", "{name} примерно через " + MI + "{up|part}.")
+t("{name} is about {mi} miles ahead{up}.", "{name} примерно через " + MI_ACC + "{up|part}.")
 t("{name}{off}, {mi} miles away.", "{name}{off|part}, в " + MI_PREP + ".")
 t("{name}{up}, about {mi} miles.", "{name}{up|part}, около " + MI_GEN + ".")
 t("Route to {dest} is set, {time}, about {mi} miles.", "Маршрут до {dest|tr} готов, {time|time}, около " + MI_GEN + ".")
 t("That's {time}, {mi} miles.", "Это {time|time}, " + MI + ".")
 t("{dest} it is, {time} and {mi} miles.", "Едем в {dest}, {time|time} и " + MI + ".")
 t("{name}{off}, about {mi} miles out. Big lot, but overnight is up to the store manager.", "{name}{off|part}, примерно в " + MI_PREP + ". Парковка большая, но ночёвку разрешает менеджер магазина.")
-t("{name} is about {mi} miles ahead{up}. Ask inside before you stay the night.", "{name} примерно через " + MI + "{up|part}. Перед ночёвкой спроси в магазине.")
+t("{name} is about {mi} miles ahead{up}. Ask inside before you stay the night.", "{name} примерно через " + MI_ACC + "{up|part}. Перед ночёвкой спроси в магазине.")
 t("{name}{off}, {mi} miles away. Check with the store about parking overnight.", "{name}{off|part}, в " + MI_PREP + ". Про ночную парковку уточни в магазине.")
 t("CAT scale at {name}{off}, about {mi} miles out.", "Кэт-скейл на {name}{off|part}, примерно в " + MI_PREP + ".")
-t("Nearest CAT scale is at {name}, about {mi} miles ahead{up}.", "Ближайший кэт-скейл на {name}, примерно через " + MI + "{up|part}.")
+t("Nearest CAT scale is at {name}, about {mi} miles ahead{up}.", "Ближайший кэт-скейл на {name}, примерно через " + MI_ACC + "{up|part}.")
 t("CAT scale at {name}{off}, {mi} miles away.", "Кэт-скейл на {name}{off|part}, в " + MI_PREP + ".")
 t("{name}{off}, about {mi} miles out. Open or closed, watch the sign.", "{name}{off|part}, примерно в " + MI_PREP + ". Открыта или нет, смотри по табло.")
-t("{name} is about {mi} miles ahead{up}. I can't see if it's open.", "{name} примерно через " + MI + "{up|part}. Открыта ли, я не вижу.")
+t("{name} is about {mi} miles ahead{up}. I can't see if it's open.", "{name} примерно через " + MI_ACC + "{up|part}. Открыта ли, я не вижу.")
 t("{name}{off}, {mi} miles away. Check the sign for open or closed.", "{name}{off|part}, в " + MI_PREP + ". Открыта или закрыта, смотри по табло.")
 t("{name}{off}, about {mi} miles out, might be tight for a rig.", "{name}{off|part}, примерно в " + MI_PREP + ", для трака может быть тесно.")
 t("{name}, {d} miles from your delivery, {mi} miles from you.", "{name}, {d|plural:миля,мили,миль} от разгрузки, " + MI + " от тебя.")

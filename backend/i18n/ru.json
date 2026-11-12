@@ -12,7 +12,7 @@
   },
   {
    "en": ", about {mi} miles ahead",
-   "ru": ", примерно через {mi|plural:миля,мили,миль}",
+   "ru": ", примерно через {mi|plural:милю,мили,миль}",
    "part": true
   },
   {
@@ -189,7 +189,7 @@
   },
   {
    "en": "{name} is about {mi} miles ahead{up}.",
-   "ru": "{name} примерно через {mi|plural:миля,мили,миль}{up|part}."
+   "ru": "{name} примерно через {mi|plural:милю,мили,миль}{up|part}."
   },
   {
    "en": "{name}{off}, {mi} miles away.",
@@ -217,7 +217,7 @@
   },
   {
    "en": "{name} is about {mi} miles ahead{up}. Ask inside before you stay the night.",
-   "ru": "{name} примерно через {mi|plural:миля,мили,миль}{up|part}. Перед ночёвкой спроси в магазине."
+   "ru": "{name} примерно через {mi|plural:милю,мили,миль}{up|part}. Перед ночёвкой спроси в магазине."
   },
   {
    "en": "{name}{off}, {mi} miles away. Check with the store about parking overnight.",
@@ -229,7 +229,7 @@
   },
   {
    "en": "Nearest CAT scale is at {name}, about {mi} miles ahead{up}.",
-   "ru": "Ближайший кэт-скейл на {name}, примерно через {mi|plural:миля,мили,миль}{up|part}."
+   "ru": "Ближайший кэт-скейл на {name}, примерно через {mi|plural:милю,мили,миль}{up|part}."
   },
   {
    "en": "CAT scale at {name}{off}, {mi} miles away.",
@@ -241,7 +241,7 @@
   },
   {
    "en": "{name} is about {mi} miles ahead{up}. I can't see if it's open.",
-   "ru": "{name} примерно через {mi|plural:миля,мили,миль}{up|part}. Открыта ли, я не вижу."
+   "ru": "{name} примерно через {mi|plural:милю,мили,миль}{up|part}. Открыта ли, я не вижу."
   },
   {
    "en": "{name}{off}, {mi} miles away. Check the sign for open or closed.",
@@ -867,11 +867,11 @@
   },
   {
    "en": "Got it, no chains on board. The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?",
-   "ru": "Понял, цепей нет. Последний трак-стоп до участка с цепями: {name}, через {mi|plural:миля,мили,миль}, добавить?"
+   "ru": "Понял, цепей нет. Последний трак-стоп до участка с цепями: {name}, через {mi|plural:милю,мили,миль}, добавить?"
   },
   {
    "en": "The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?",
-   "ru": "Последний трак-стоп до участка с цепями: {name}, через {mi|plural:миля,мили,миль}, добавить?"
+   "ru": "Последний трак-стоп до участка с цепями: {name}, через {mi|plural:милю,мили,миль}, добавить?"
   },
   {
    "en": "Got it, no chains on board. I couldn't find a truck stop before the control, keep an eye out for a safe spot.",
@@ -883,7 +883,7 @@
   },
   {
    "en": "Chains required ahead on {route} near {location}, and you've got no chains on board. The last truck stop before it is {name}, {mi} miles ahead, want me to add it?",
-   "ru": "Впереди на {route} у {location} нужны цепи, а у тебя их нет. Последний трак-стоп перед этим: {name}, через {mi|plural:миля,мили,миль}, добавить?"
+   "ru": "Впереди на {route} у {location} нужны цепи, а у тебя их нет. Последний трак-стоп перед этим: {name}, через {mi|plural:милю,мили,миль}, добавить?"
   },
   {
    "en": "Chains required ahead on {route} near {location}, and you've got no chains on board.",
@@ -891,7 +891,7 @@
   },
   {
    "en": "The last truck stop before it is {name}, {mi} miles ahead, want me to add it?",
-   "ru": "Последний трак-стоп перед этим: {name}, через {mi|plural:миля,мили,миль}, добавить?"
+   "ru": "Последний трак-стоп перед этим: {name}, через {mi|plural:милю,мили,миль}, добавить?"
   },
   {
    "en": "Got it, chains on board.",
@@ -903,7 +903,7 @@
   },
   {
    "en": "Your break is due in {due} minutes. There's a {name} in {mi} miles, want me to add it?",
-   "ru": "Перерыв через {due|plural:минуту,минуты,минут}. Через {mi|plural:миля,мили,миль} есть {name}, добавить?"
+   "ru": "Перерыв через {due|plural:минуту,минуты,минут}. Через {mi|plural:милю,мили,миль} есть {name}, добавить?"
   },
   {
    "en": "Your break is due in {due} minutes.",
@@ -911,7 +911,7 @@
   },
   {
    "en": "Your break is due now. There's a {name} in {mi} miles, want me to add it?",
-   "ru": "Пора на перерыв. Через {mi|plural:миля,мили,миль} есть {name}, добавить?"
+   "ru": "Пора на перерыв. Через {mi|plural:милю,мили,миль} есть {name}, добавить?"
   },
   {
    "en": "Your break is due now.",
@@ -919,11 +919,11 @@
   },
   {
    "en": "There's a {name} in {mi} miles, want me to add it?",
-   "ru": "Через {mi|plural:миля,мили,миль} есть {name}, добавить?"
+   "ru": "Через {mi|plural:милю,мили,миль} есть {name}, добавить?"
   },
   {
    "en": "About {shift} minutes on the shift. The {name} in {mi} miles{live}, should I route you there?",
-   "ru": "На смене осталось около {shift|plural:минуты,минут,минут}. {name} через {mi|plural:миля,мили,миль}{live|part}, проложить туда?"
+   "ru": "На смене осталось около {shift|plural:минуты,минут,минут}. {name} через {mi|plural:милю,мили,миль}{live|part}, проложить туда?"
   },
   {
    "en": "About {shift} minutes on the shift.",
@@ -931,7 +931,7 @@
   },
   {
    "en": "It's getting late. The {name} in {mi} miles{live}, should I route you there?",
-   "ru": "Уже поздно. {name} через {mi|plural:миля,мили,миль}{live|part}, проложить туда?"
+   "ru": "Уже поздно. {name} через {mi|plural:милю,мили,миль}{live|part}, проложить туда?"
   },
   {
    "en": "It's getting late.",
@@ -939,7 +939,7 @@
   },
   {
    "en": "The {name} in {mi} miles{live}, should I route you there?",
-   "ru": "{name} через {mi|plural:миля,мили,миль}{live|part}, проложить туда?"
+   "ru": "{name} через {mi|plural:милю,мили,миль}{live|part}, проложить туда?"
   },
   {
    "en": "Connect Motive in settings and I'll keep track of your hours.",
