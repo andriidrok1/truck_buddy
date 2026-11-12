@@ -39,11 +39,25 @@ _LIVE = re.compile(r"^n0q-(\d{12})$")  # a timestamped NEXRAD composite frame, U
 _FCST = re.compile(r"^hrrr-f(\d{3,4})$")  # HRRR simulated reflectivity, minutes ahead of the latest run
 
 
-def iem_layer(layer: str) -> Optional[str]:
-    """The IEM layer for one of our ids, None for anything else (the proxy never fetches arbitrary layers)."""
+LIVE_BACK_MIN = 180  # live frames older than this aren't served (the app only asks for the latest)
+
+
+def _live_ok(stamp: str, now: Optional[datetime]) -> bool:
+    """A real NEXRAD frame time: on the 5-minute grid, within the last few hours, not in the future."""
+    try:
+        at = datetime.strptime(stamp, "%Y%m%d%H%M").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return False
+    now = now or datetime.now(timezone.utc)
+    return at.minute % 5 == 0 and now - timedelta(minutes=LIVE_BACK_MIN) <= at <= now + timedelta(minutes=10)
+
+
+def iem_layer(layer: str, now: Optional[datetime] = None) -> Optional[str]:
+    """The IEM layer for one of our ids, None for anything else (the proxy never fetches arbitrary layers, and a
+    made-up frame time would be a fresh upstream fetch per tile)."""
     m = _LIVE.match(layer)
     if m:
-        return f"ridge::USCOMP-N0Q-{m.group(1)}"
+        return f"ridge::USCOMP-N0Q-{m.group(1)}" if _live_ok(m.group(1), now) else None
     m = _FCST.match(layer)
     if m and int(m.group(1)) in FORECAST_MIN:
         return f"hrrr::REFD-F{int(m.group(1)):04d}-0"
@@ -83,8 +97,8 @@ def driver_of(key: str, now: Optional[datetime] = None) -> Optional[str]:
     except Exception:
         return None
     now = now or datetime.now(timezone.utc)
-    if day not in (_day(now), _day(now - timedelta(days=1))):
-        return None
+    if day not in (_day(now), _day(now - timedelta(days=1))) or not sig.isascii():
+        return None  # compare_digest raises on non-ASCII text: a junk key is a 401, not a 500
     return sub if hmac.compare_digest(sig, _sig(day, sub)) else None
 
 
@@ -166,6 +180,22 @@ class TileUnavailable(Exception):
     pass
 
 
+UPSTREAM_PER_MIN = 900  # fetches to IEM per process per minute, all drivers together (one key can't flood them)
+FAIL_TTL_S = 60  # a tile IEM failed on is not asked again for this long
+_upstream = {"tokens": float(UPSTREAM_PER_MIN), "at": 0.0}
+_failed: dict[str, float] = {}
+
+
+def _take_upstream(now: float) -> bool:
+    t = min(float(UPSTREAM_PER_MIN), _upstream["tokens"] + (now - _upstream["at"]) * UPSTREAM_PER_MIN / 60.0)
+    _upstream["at"] = now
+    if t < 1.0:
+        _upstream["tokens"] = t
+        return False
+    _upstream["tokens"] = t - 1.0
+    return True
+
+
 async def fetch_tile(layer: str, z: int, x: int, y: int, now: Optional[float] = None) -> bytes:
     """PNG bytes for one of our layers. Raises ValueError for a layer or tile we don't serve, TileUnavailable
     when IEM fails (the app keeps the tiles it has)."""
@@ -179,6 +209,8 @@ async def fetch_tile(layer: str, z: int, x: int, y: int, now: Optional[float] = 
     hit = _tiles.get(key, now)
     if hit is not None:
         return hit
+    if _failed.get(key, 0.0) > now or not _take_upstream(now):
+        raise TileUnavailable()
     # /c/ is IEM's long-cache endpoint, for timestamped frames; HRRR "-0" moves, so it goes through /cache/.
     path = "cache" if forecast else "c"
     url = f"{IEM}/{path}/tile.py/1.0.0/{name}/{z}/{x}/{y}.png"
@@ -187,11 +219,19 @@ async def fetch_tile(layer: str, z: int, x: int, y: int, now: Optional[float] = 
         r.raise_for_status()
     except Exception as e:
         logger.warning("radar tile %s failed: %s", url, e)
+        _fail(key, now)
         raise TileUnavailable() from e
     if not r.headers.get("content-type", "").startswith("image/"):
+        _fail(key, now)
         raise TileUnavailable()
     _tiles.put(key, r.content, now + (FORECAST_TTL_S if forecast else LIVE_TTL_S))
     return r.content
+
+
+def _fail(key: str, now: float) -> None:
+    if len(_failed) > 5000:
+        _failed.clear()
+    _failed[key] = now + FAIL_TTL_S
 
 
 def enabled() -> bool:
@@ -202,3 +242,5 @@ def reset_for_tests() -> None:
     global _tiles
     _tiles = _Lru(CACHE_MAX_BYTES)
     _frame.update(at=0.0, ts=None)
+    _failed.clear()
+    _upstream.update(tokens=float(UPSTREAM_PER_MIN), at=0.0)

@@ -20,14 +20,37 @@ _CONTROL_PHRASES: list[tuple[re.Pattern, dict]] = [
     (re.compile(r"\bturn\s+(?:the\s+)?directions\s+on\b|\bturn\s+on\s+(?:the\s+)?directions\b", re.I),
      {"type": "voice_guidance", "value": True}),
     (re.compile(r"\bre-?center\b", re.I), {"type": "recenter"}),
-    # The map's look (Figma "Weather v2"). "What's the weather" stays the weather intent: these need a show/map word.
-    (re.compile(r"\b(?:hide|turn\s+off|close)\s+(?:the\s+)?(?:weather|radar)\b|\b(?:normal|regular|plain|standard|usual)\s+map\b|"
-                r"\bобычн\w*\s+карт\w*|\bубери\s+(?:погоду|радар)", re.I), {"type": "map_view", "value": "map"}),
-    (re.compile(r"\b(?:show|open|put\s+up|turn\s+on|switch\s+to)\s+(?:me\s+)?(?:the\s+)?(?:weather|radar)(?:\s+(?:map|view|layer|radar))?\b|"
-                r"\b(?:weather|radar)\s+(?:map|view|layer)\b|\bпокажи\s+(?:мне\s+)?(?:погоду|радар)\b", re.I),
-     {"type": "map_view", "value": "weather"}),
-    (re.compile(r"\bsatellite(?:\s+(?:view|map|mode))?\b|\bспутник\w*", re.I), {"type": "map_view", "value": "satellite"}),
 ]
+
+
+# The map's look (Figma "Weather v2"). Only ever matched against what the driver said (never the model's reply:
+# "Checking the satellite." must not switch the map), the whole utterance, so "show me the weather tomorrow" or
+# "weather in Reno" stays a forecast question and "Satellite Beach" stays a place.
+_END = r"(?:\s+(?:please|now))?\s*[.!?]*\s*$"
+_VIEW_PHRASES: list[tuple[re.Pattern, dict]] = [
+    (re.compile(r"^\s*(?:(?:hide|turn\s+off|close)\s+(?:the\s+)?(?:weather|radar)(?:\s+(?:map|view|layer))?|"
+                r"(?:back\s+to\s+(?:the\s+)?|go\s+to\s+(?:the\s+)?|switch\s+to\s+(?:the\s+)?|show\s+(?:me\s+)?(?:the\s+)?)?"
+                r"(?:normal|regular|plain|standard|usual)\s+map|"
+                r"(?:верни\s+)?обычн\w*\s+карт\w*|убери\s+(?:погоду|радар)(?:\s+с\s+карты)?)" + _END, re.I),
+     {"type": "map_view", "value": "map"}),
+    (re.compile(r"^\s*(?:(?:show|open|put\s+up|turn\s+on|switch\s+to)\s+(?:me\s+)?(?:the\s+)?(?:weather|radar)"
+                r"(?:\s+(?:map|view|layer|radar))?(?:\s+on\s+the\s+map)?|(?:the\s+)?(?:weather|radar)\s+(?:map|view|layer)|"
+                r"покажи\s+(?:мне\s+)?(?:погоду|радар)(?:\s+на\s+карте)?)" + _END, re.I),
+     {"type": "map_view", "value": "weather"}),
+    (re.compile(r"^\s*(?:(?:show|open|switch\s+to|go\s+to|turn\s+on)\s+(?:me\s+)?(?:the\s+)?satellite(?:\s+(?:view|map|mode))?|"
+                r"(?:the\s+)?satellite\s+(?:view|map|mode)|(?:покажи\s+|включи\s+)?(?:вид\s+со\s+)?спутник\w*)" + _END, re.I),
+     {"type": "map_view", "value": "satellite"}),
+]
+
+
+def view_phrase(text: str) -> Optional[dict]:
+    """The map look the driver's own words ask for, or None (see _VIEW_PHRASES)."""
+    if not text:
+        return None
+    for rx, action in _VIEW_PHRASES:
+        if rx.search(text):
+            return action
+    return None
 
 
 def control_phrase(text: str) -> Optional[dict]:

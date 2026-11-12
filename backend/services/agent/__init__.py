@@ -31,7 +31,7 @@ from services.timing import stage
 from services.agent.prompt import (  # noqa: F401
     SYSTEM, SYSTEM_STATIC, PROMPT_VERSION, PROMPT_CACHE_KEY, prompt_messages)
 from services.agent.phrases import (  # noqa: F401
-    _CONTROL_PHRASES, control_phrase, PARK_WORDS, BED_WORDS, _STREET_ONLY, _ZIP_COUNTRY, with_city, city_of, GOODBYE,
+    _CONTROL_PHRASES, control_phrase, view_phrase, PARK_WORDS, BED_WORDS, _STREET_ONLY, _ZIP_COUNTRY, with_city, city_of, GOODBYE,
     CHAIN_QUESTION, YES_RU_UK, NO_RU_UK, DEST_YES, VIA_FAR_YES, YES_PATTERNS, YES, NO, ANSWER_FILLER, bare_answer,
     PRICE_WORDS, CHEAPEST, FUEL_WORDS, CHEAPEST_ASK, ELSEWHERE, NOT_ELSEWHERE, CHEAPEST_NEAR_MI, asks_cheapest,
     list_is_near, ON_THE_WAY, STOP_CATEGORIES, REJECT_PLACE, DROP_ORDER, TAKE_OFF, NOT_A_STOP_OBJECT, ALL_STOPS,
@@ -988,10 +988,10 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         # A control phrase dressed up as a destination (or echoed only as a reply): run the control.
         ctl = (control_phrase(str(d.get("query") or "")) if intent == "go" else None) or \
             (control_phrase(reply) or control_phrase(text) if intent == "chat" else None)
-        if not ctl and intent == "weather":
-            # "Show the weather" / "radar map" is the map's weather view, not a spoken forecast.
-            m = control_phrase(text)
-            ctl = m if m and m.get("type") == "map_view" else None
+        if not ctl and intent in ("weather", "chat", "go", "unclear"):
+            # "Show the weather" / "radar map" / "satellite view" is the map's look, not a forecast or a place;
+            # matched on the driver's words only (phrases._VIEW_PHRASES).
+            ctl = view_phrase(text)
         if ctl:
             logger.info("agent control phrase %r -> %s", d.get("query") or reply, ctl)
             intent, d = "control", {**d, "intent": "control", "actions": [ctl]}

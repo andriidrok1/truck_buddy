@@ -8,9 +8,12 @@ from conftest import run
 from services import radar
 
 HOST = "mesonet.agron.iastate.edu"
+_now = datetime.now(timezone.utc)
+STAMP = (_now - timedelta(minutes=_now.minute % 5 + 5)).strftime("%Y%m%d%H%M")  # a real, recent 5-minute frame
+LIVE = f"n0q-{STAMP}"
 PNG = b"\x89PNG\r\n\x1a\nfake"
-TMS = {"services": [{"id": "ridge_uscomp_n0q", "layername": "ridge::USCOMP-N0Q-202611120010"},
-                    {"id": "ridge_uscomp_n0r", "layername": "ridge::USCOMP-N0R-202611120010"}]}
+TMS = {"services": [{"id": "ridge_uscomp_n0q", "layername": f"ridge::USCOMP-N0Q-{STAMP}"},
+                    {"id": "ridge_uscomp_n0r", "layername": f"ridge::USCOMP-N0R-{STAMP}"}]}
 
 
 @pytest.fixture(autouse=True)
@@ -25,10 +28,10 @@ def png(request: httpx.Request) -> httpx.Response:
 
 
 def test_only_known_layers_map_to_iem():
-    assert radar.iem_layer("n0q-202611120010") == "ridge::USCOMP-N0Q-202611120010"
+    assert radar.iem_layer(LIVE) == f"ridge::USCOMP-N0Q-{STAMP}"
     assert radar.iem_layer("hrrr-f060") == "hrrr::REFD-F0060-0"
     assert radar.iem_layer("hrrr-f180") == "hrrr::REFD-F0180-0"
-    for bad in ("hrrr-f045", "n0q-2026", "ridge::USCOMP-N0Q-0", "../etc", "n0q-202611120010/../x", ""):
+    for bad in ("hrrr-f045", "n0q-2026", "ridge::USCOMP-N0Q-0", "../etc", LIVE + "/../x", ""):
         assert radar.iem_layer(bad) is None
 
 
@@ -55,25 +58,25 @@ def test_key_round_trip_and_expiry():
 
 def test_latest_frame_parsed_and_cached(fake_http):
     fake_http.add(HOST, "/json/tms.json", json=TMS)
-    assert run(radar.latest_frame(now=1000.0)) == "202611120010"
-    assert run(radar.latest_frame(now=1050.0)) == "202611120010"
+    assert run(radar.latest_frame(now=1000.0)) == STAMP
+    assert run(radar.latest_frame(now=1050.0)) == STAMP
     assert len(fake_http.calls_to(HOST, "/json")) == 1
 
 
 def test_frame_failure_keeps_the_last_one(fake_http):
     fake_http.add(HOST, "/json/tms.json", json=TMS, times=1)
     fake_http.add(HOST, "/json/tms.json", status=503, text="down")
-    assert run(radar.latest_frame(now=0.0)) == "202611120010"
-    assert run(radar.latest_frame(now=1000.0)) == "202611120010"
+    assert run(radar.latest_frame(now=0.0)) == STAMP
+    assert run(radar.latest_frame(now=1000.0)) == STAMP
 
 
 def test_tile_fetched_once_then_cached(fake_http):
     fake_http.add(HOST, "/c/tile.py", fn=png)
-    assert run(radar.fetch_tile("n0q-202611120010", 6, 10, 24, now=0.0)) == PNG
-    assert run(radar.fetch_tile("n0q-202611120010", 6, 10, 24, now=10.0)) == PNG
+    assert run(radar.fetch_tile(LIVE, 6, 10, 24, now=0.0)) == PNG
+    assert run(radar.fetch_tile(LIVE, 6, 10, 24, now=10.0)) == PNG
     calls = fake_http.calls_to(HOST, "/c/tile.py")
     assert len(calls) == 1
-    assert calls[0].url.path == "/c/tile.py/1.0.0/ridge::USCOMP-N0Q-202611120010/6/10/24.png"
+    assert calls[0].url.path == f"/c/tile.py/1.0.0/ridge::USCOMP-N0Q-{STAMP}/6/10/24.png"
 
 
 def test_forecast_goes_through_short_cache_endpoint(fake_http):
@@ -84,8 +87,8 @@ def test_forecast_goes_through_short_cache_endpoint(fake_http):
 
 def test_tile_expires(fake_http):
     fake_http.add(HOST, "/c/tile.py", fn=png)
-    run(radar.fetch_tile("n0q-202611120010", 4, 2, 6, now=0.0))
-    run(radar.fetch_tile("n0q-202611120010", 4, 2, 6, now=radar.LIVE_TTL_S + 1))
+    run(radar.fetch_tile(LIVE, 4, 2, 6, now=0.0))
+    run(radar.fetch_tile(LIVE, 4, 2, 6, now=radar.LIVE_TTL_S + 1))
     assert len(fake_http.calls_to(HOST, "/c/tile.py")) == 2
 
 
@@ -93,18 +96,18 @@ def test_bad_layer_never_reaches_iem(fake_http):
     with pytest.raises(ValueError):
         run(radar.fetch_tile("hrrr-f999", 5, 5, 12))
     with pytest.raises(ValueError):
-        run(radar.fetch_tile("n0q-202611120010", 12, 0, 0))
+        run(radar.fetch_tile(LIVE, 12, 0, 0))
     assert fake_http.calls == []
 
 
 def test_iem_error_is_tile_unavailable(fake_http):
     fake_http.add(HOST, "/c/tile.py", status=503, text="busy")
     with pytest.raises(radar.TileUnavailable):
-        run(radar.fetch_tile("n0q-202611120010", 6, 10, 24))
+        run(radar.fetch_tile(LIVE, 6, 10, 24))
     fake_http.add(HOST, "/c/tile.py", text="<html>error</html>")  # 200 but not an image
     radar.reset_for_tests()
     with pytest.raises(radar.TileUnavailable):
-        run(radar.fetch_tile("n0q-202611120010", 6, 10, 25))
+        run(radar.fetch_tile(LIVE, 6, 10, 25))
 
 
 def test_lru_bounded_by_bytes():
@@ -122,8 +125,8 @@ def test_frame_endpoint_hands_out_a_signed_tile_url(api_client, fake_http):
     fake_http.add(HOST, "/json/tms.json", json=TMS)
     body = api_client.get("/api/radar/frame").json()
     assert body["enabled"] is True
-    assert body["live"] == "n0q-202611120010"
-    assert body["time"].startswith("2026-11-12T00:10")
+    assert body["live"] == LIVE
+    assert body["time"] == radar.frame_time(STAMP).isoformat()
     assert [f["layer"] for f in body["forecast"]] == ["hrrr-f060", "hrrr-f120", "hrrr-f180"]
     assert body["tile_url"].startswith("/api/radar/tiles/{layer}/{z}/{x}/{y}.png?k=")
 
@@ -137,7 +140,7 @@ def test_tile_endpoint(api_client, fake_http):
     fake_http.add(HOST, "/json/tms.json", json=TMS)
     fake_http.add(HOST, "/c/tile.py", fn=png)
     url = api_client.get("/api/radar/frame").json()["tile_url"]
-    tile = url.replace("{layer}", "n0q-202611120010").replace("{z}/{x}/{y}", "6/10/24")
+    tile = url.replace("{layer}", LIVE).replace("{z}/{x}/{y}", "6/10/24")
     r = api_client.get(tile, headers={"Authorization": ""})  # the map's tile layer sends no header
     assert r.status_code == 200
     assert r.content == PNG
@@ -148,7 +151,7 @@ def test_tile_endpoint(api_client, fake_http):
 def test_tile_endpoint_refuses_bad_key_and_layers(api_client, fake_http):
     fake_http.add(HOST, "/json/tms.json", json=TMS)
     url = api_client.get("/api/radar/frame").json()["tile_url"]
-    good = url.replace("{layer}", "n0q-202611120010").replace("{z}/{x}/{y}", "6/10/24")
+    good = url.replace("{layer}", LIVE).replace("{z}/{x}/{y}", "6/10/24")
     assert api_client.get(good.split("?k=")[0] + "?k=forged.key.x").status_code == 401
     assert api_client.get(good.replace("6/10/24", "13/0/0")).status_code == 404
     assert api_client.get(url.replace("{layer}", "nexrad-n0q").replace("{z}/{x}/{y}", "6/10/24")).status_code == 404
@@ -158,3 +161,40 @@ def test_tile_endpoint_refuses_bad_key_and_layers(api_client, fake_http):
 def test_radar_flag_off(api_client, monkeypatch):
     monkeypatch.setenv("RADAR", "0")
     assert api_client.get("/api/radar/frame").json() == {"enabled": False}
+
+
+def test_made_up_frame_times_are_refused():
+    now = datetime(2026, 11, 12, 1, 0, tzinfo=timezone.utc)
+    assert radar.iem_layer("n0q-202611120055", now)  # five minutes ago
+    assert radar.iem_layer("n0q-202611120053", now) is None  # off the 5-minute grid
+    assert radar.iem_layer("n0q-202611111200", now) is None  # 13 h old
+    assert radar.iem_layer("n0q-999912312355", now) is None  # the future
+    assert radar.iem_layer("n0q-202613450000", now) is None  # not a date
+
+
+def test_non_ascii_key_is_refused_not_a_crash():
+    assert radar.driver_of("20261111.YQ.\u00e9") is None
+
+
+def test_failed_tile_not_refetched_for_a_minute(fake_http):
+    fake_http.add(HOST, "/c/tile.py", status=503, text="busy")
+    for t in (0.0, 30.0):
+        with pytest.raises(radar.TileUnavailable):
+            run(radar.fetch_tile(LIVE, 6, 10, 24, now=t))
+    assert len(fake_http.calls_to(HOST, "/c/tile.py")) == 1
+
+
+def test_upstream_budget_shared_by_everyone(fake_http, monkeypatch):
+    fake_http.add(HOST, "/c/tile.py", fn=png)
+    monkeypatch.setattr(radar, "UPSTREAM_PER_MIN", 3)
+    radar._upstream.update(tokens=3.0, at=0.0)
+    for y in range(3):
+        run(radar.fetch_tile(LIVE, 6, 10, y, now=0.0))
+    with pytest.raises(radar.TileUnavailable):
+        run(radar.fetch_tile(LIVE, 6, 10, 9, now=0.0))
+    run(radar.fetch_tile(LIVE, 6, 10, 0, now=0.0))  # a cached tile still comes back
+
+
+def test_tile_endpoint_bad_key_is_401(api_client):
+    r = api_client.get(f"/api/radar/tiles/{LIVE}/6/10/24.png", params={"k": "20261111.YQ.\u00e9"})
+    assert r.status_code == 401

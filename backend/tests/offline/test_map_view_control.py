@@ -3,7 +3,7 @@ import pytest
 
 from conftest import run
 from models import AgentRequest
-from services.agent.phrases import control_phrase
+from services.agent.phrases import control_phrase, view_phrase
 from services.controls import apply_actions
 
 
@@ -19,18 +19,36 @@ def _req(text):
     ("покажи погоду", "weather"),
     ("satellite view", "satellite"),
     ("switch to satellite", "satellite"),
+    ("show the weather please", "weather"),
+    ("back to the normal map", "map"),
     ("спутник", "satellite"),
     ("normal map", "map"),
     ("hide the radar", "map"),
     ("обычная карта", "map"),
 ])
 def test_phrases(text, view):
-    assert control_phrase(text) == {"type": "map_view", "value": view}
+    assert view_phrase(text) == {"type": "map_view", "value": view}
 
 
-@pytest.mark.parametrize("text", ["what's the weather", "weather in Reno", "show me the weather in Reno", "is it snowing"])
-def test_forecast_questions_are_not_map_controls(text):
-    assert control_phrase(text) is None
+@pytest.mark.parametrize("text", [
+    "what's the weather", "weather in Reno", "show me the weather in Reno", "show me the weather in reno", "is it snowing",
+    "show me the weather tomorrow", "show the weather for tomorrow", "turn on the weather alerts",
+    "Satellite Beach", "take me to Satellite Beach", "satellite parking check", "No satellite check yet.",
+    "Checking the satellite.", "покажи погоду в Рино",
+])
+def test_forecast_questions_and_places_are_not_map_controls(text):
+    assert view_phrase(text) is None
+    assert control_phrase(text) is None  # the model's reply never carries a map switch
+
+
+def test_a_chat_reply_mentioning_satellite_is_said_not_obeyed(agent_sandbox):
+    agent_sandbox.llm.on(r"how does the parking check work", {"intent": "chat", "reply": "Checking the satellite."})
+    res = run(agent_sandbox.provider().handle(_req("how does the parking check work"), None))
+    assert res.actions == [] and res.reply.startswith("Checking the satellite")
+
+
+def test_a_place_called_satellite_is_still_a_place():
+    assert view_phrase("Satellite Beach, FL") is None
 
 
 def test_apply_validates_the_value():
