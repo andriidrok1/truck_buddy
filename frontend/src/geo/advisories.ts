@@ -2,7 +2,7 @@
 // controls). Pure: no React, no timers; the hook (useRouteAdvisories) feeds it the match and
 // the clock.
 
-import { getLang, t, type Lang } from "../i18n";
+import { getLang, hasCyrillic, t, type Lang } from "../i18n";
 import type { RouteInfo, SpeedLimit } from "../types";
 
 /**
@@ -177,20 +177,37 @@ export function chipAhead(m: number) {
 
 /** The spoken line for an advisory, in the driver's language: built from whole templates with every piece
  *  translated, so Russian never comes out as "Внимание: дорога закрыта in half a mile. Accident." (QA 2026-11-09,
- *  S10). The server translates the descriptions and weather events themselves. */
+ *  S10). The server translates the descriptions and weather events themselves; what its catalog misses stays
+ *  English, and in Russian such a piece is left out or replaced by a general word instead of being read by the
+ *  Russian voice: "Внимание: авария примерно через 4 мили." (QA 2026-11-11). English is unchanged. */
 export function advisoryText(a: Advisory, lang: Lang = getLang()): string {
   const where = t(spokenAhead(a.aheadM), undefined, lang);
+  const ru = lang === "ru";
+  const english = (s: string) => ru && !hasCyrillic(s);
   switch (a.kind) {
     case "incident": {
-      if (a.severity === 3) return t("Heads up: road closed {where}. {what}.", { where, what: a.text.replace(/^Road closed: /, "") }, lang);
+      if (a.severity === 3) {
+        const what = a.text.replace(/^Road closed: /, "");
+        return english(what) ? t("Heads up: road closed {where}.", { where }, lang) : t("Heads up: road closed {where}. {what}.", { where, what }, lang);
+      }
       const cut = a.text.indexOf(": ");
-      // HERE's "other" kind says nothing: the description alone.
-      if (a.text.startsWith("Other: ")) return t("Heads up: {what} {where}.", { what: a.text.slice(7), where }, lang);
-      if (cut < 0) return t("Heads up: {what} {where}.", { what: t(a.text, undefined, lang), where }, lang);
-      return t("Heads up: {what} {where}: {detail}.", { what: t(a.text.slice(0, cut), undefined, lang), where, detail: a.text.slice(cut + 2) }, lang);
+      const detail = cut < 0 ? "" : a.text.slice(cut + 2);
+      // The kind, in the middle of a Russian sentence: lower case (the server sends "Авария"), and a kind with
+      // no Russian at all is just "происшествие".
+      const kind = t(cut < 0 ? a.text : a.text.slice(0, cut), undefined, lang);
+      const what = !ru ? kind : english(kind) ? t("incident", undefined, lang) : `${kind.charAt(0).toLowerCase()}${kind.slice(1)}`;
+      // HERE's "other" kind says nothing: the description alone. This is the kind as HERE names it; in Russian
+      // the server has already replaced it with its own word, which then reads as any other kind.
+      if (a.text.startsWith("Other: ")) return t("Heads up: {what} {where}.", { what: english(detail) ? t("incident", undefined, lang) : detail, where }, lang);
+      if (cut < 0 || english(detail)) return t("Heads up: {what} {where}.", { what, where }, lang);
+      return t("Heads up: {what} {where}: {detail}.", { what, where, detail }, lang);
     }
-    case "weather":
-      return `${t(a.text, undefined, lang)} ${where}.`;
+    case "weather": {
+      const event = t(a.text, undefined, lang);
+      if (english(event)) return t("Heads up: weather alert {where}.", { where }, lang);
+      // The server's Russian event starts in lower case ("предупреждение о ветре"); here it opens the sentence.
+      return `${ru ? `${event.charAt(0).toUpperCase()}${event.slice(1)}` : event} ${where}.`;
+    }
     case "chain":
       // "Chains R-2 on US-50, Twin Bridges": English says "chains R-2 on …", Russian "Нужны цепи …: R-2 на US-50, …".
       return t("Chain control {where}: {what}.", { where, what: lang === "ru" ? a.text.replace(/^Chains (.+?) on /, "$1 на ") : a.text.replace(/^Chains /, "chains ") }, lang);

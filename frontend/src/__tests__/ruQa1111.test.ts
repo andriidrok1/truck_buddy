@@ -1,5 +1,6 @@
 // Russian QA 2026-11-11 (vault: 40-Events/VibeCon-SF-2026/TruckBuddy — QA русской версии, второй проход): what the
 // driver hears. Every Russian line is asserted whole; English must come out exactly as before.
+import { advisoryText, type Advisory } from "../geo/advisories";
 import { announcement, maneuverWords, type StageKey } from "../geo/guidance";
 import { t } from "../i18n";
 
@@ -78,5 +79,41 @@ describe("English and Ukrainian are untouched", () => {
     expect(announcement(arrive, "now", 40, lang)).toBe("Arrive at Pilot Travel Center on the right.");
     // and t() leaves them alone, so a Ukrainian phone never hears Russian
     expect(t(announcement(arrive, "far", 1500, lang), undefined, lang)).toBe("In 0.9 miles, you'll arrive at Pilot Travel Center on the right.");
+  });
+});
+
+describe("what lies ahead, spoken (advisoryText)", () => {
+  const adv = (over: Partial<Advisory>): Advisory => ({ id: "x", kind: "incident", text: "", severity: 2, aheadM: 6400, index: 5, ...over });
+
+  test("an English description is not read by the Russian voice: the kind and the distance only", () => {
+    // The server sends the kind in Russian with a capital letter; inside the sentence it is lower case.
+    expect(advisoryText(adv({ text: "Авария: Multi-vehicle accident on I-80" }), "ru")).toBe("Внимание: авария примерно через 4 мили.");
+    expect(advisoryText(adv({ text: "Ремонт дороги: Road construction. Roadway reduced to two lanes", aheadM: 800 }), "ru")).toBe("Внимание: ремонт дороги через полмили.");
+    expect(advisoryText(adv({ text: "Происшествие: Major event", aheadM: 800 }), "ru")).toBe("Внимание: происшествие через полмили.");
+    // The kind left in English too: the app's own word for it, or a general one.
+    expect(advisoryText(adv({ text: "Accident: crash on I-80" }), "ru")).toBe("Внимание: авария примерно через 4 мили.");
+    expect(advisoryText(adv({ text: "Other: Major event" }), "ru")).toBe("Внимание: происшествие примерно через 4 мили.");
+    expect(advisoryText(adv({ text: "Road works: Major event" }), "ru")).toBe("Внимание: происшествие примерно через 4 мили.");
+    expect(advisoryText(adv({ severity: 3, text: "Road closed: US-50 closed at Echo Summit" }), "ru")).toBe("Внимание: дорога закрыта примерно через 4 мили.");
+  });
+
+  test("a description the server translated is said whole", () => {
+    expect(advisoryText(adv({ text: "Авария: столкновение на I-80" }), "ru")).toBe("Внимание: авария примерно через 4 мили: столкновение на I-80.");
+    expect(advisoryText(adv({ severity: 3, text: "Road closed: US-50 закрыта у Echo Summit", aheadM: 800 }), "ru")).toBe("Внимание: дорога закрыта через полмили. US-50 закрыта у Echo Summit.");
+  });
+
+  test("weather: a translated event opens the sentence, an untranslated one becomes a general warning", () => {
+    expect(advisoryText(adv({ kind: "weather", text: "предупреждение о зимнем шторме" }), "ru")).toBe("Предупреждение о зимнем шторме примерно через 4 мили.");
+    // was "Winter Weather Advisory через полмили."
+    expect(advisoryText(adv({ kind: "weather", text: "Winter Weather Advisory", aheadM: 800 }), "ru")).toBe("Внимание: погодное предупреждение через полмили.");
+  });
+
+  test("English and Ukrainian: the same lines as before", () => {
+    for (const lang of ["en", "uk"] as const) {
+      expect(advisoryText(adv({ text: "Accident: Multi-vehicle accident on I-80" }), lang)).toBe("Heads up: Accident in about 4 miles: Multi-vehicle accident on I-80.");
+      expect(advisoryText(adv({ text: "Other: Major event", aheadM: 800 }), lang)).toBe("Heads up: Major event in half a mile.");
+      expect(advisoryText(adv({ severity: 3, text: "Road closed: US-50 closed at Echo Summit" }), lang)).toBe("Heads up: road closed in about 4 miles. US-50 closed at Echo Summit.");
+      expect(advisoryText(adv({ kind: "weather", text: "Winter Weather Advisory", aheadM: 800 }), lang)).toBe("Winter Weather Advisory in half a mile.");
+    }
   });
 });

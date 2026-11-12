@@ -78,6 +78,10 @@ export const RU: Record<string, string> = {
   "Sorry, I couldn't get the satellite view right now. Ask me again in a minute.": "Извини, спутниковый снимок сейчас не получить. Спроси через минуту.",
   "Heads up, the new route isn't cleared for your truck. {line} Watch the signs.": "Внимание, новый маршрут не проверен для твоего трака. {line} Смотри на знаки.",
   "Heads up: road closed {where}. {what}.": "Внимание: дорога закрыта {where}. {what}.",
+  // the same lines when the server left the description, the kind or the weather event in English (advisoryText)
+  "Heads up: road closed {where}.": "Внимание: дорога закрыта {where}.",
+  "Heads up: weather alert {where}.": "Внимание: погодное предупреждение {where}.",
+  "incident": "происшествие",
   "Heads up: {line}.": "Внимание: {line}.",
   "Heads up: {line}": "Внимание: {line}",
   "Switched to the {name} route.": "Переключил на маршрут {name}.",

@@ -1,7 +1,7 @@
 // Pure turn-by-turn maths, extracted from hooks/useGuidance.ts so it can be unit-tested
 // (and so off-route detection can build on the same route match). No React in here.
 
-import { getLang, t, type Lang } from "../i18n";
+import { getLang, hasCyrillic, t, type Lang } from "../i18n";
 import type { LatLng, Maneuver, RouteInfo } from "../types";
 
 const R = 6371000;
@@ -166,9 +166,6 @@ export function spokenDistance(m: number) {
   return `In ${n} miles`;
 }
 
-/** Has a Cyrillic letter: the server translated the instruction (a line its catalog misses stays English whole). */
-const CYRILLIC = /[а-яё]/i;
-
 /**
  * The router's action and direction as a short phrase ("turn left", "take the exit on the right"), for when its own
  * sentence can't be used. English here; src/i18n/ru.ts has the Russian side of every phrase this can return.
@@ -210,7 +207,7 @@ export function maneuverWords(action: string, direction?: string | null): string
  *   the Russian voice. The action and direction are said in Russian instead, without the road name.
  */
 function announcementRu(next: Pick<Maneuver, "action" | "instruction" | "direction">, stage: StageKey, toNextM: number): string | null {
-  const translated = CYRILLIC.test(next.instruction);
+  const translated = hasCyrillic(next.instruction);
   const lead = () => t(spokenDistance(toNextM), undefined, "ru");
   if (next.action === "arrive") {
     if (stage !== "now") return t("{lead}, you'll arrive.", { lead: lead() }, "ru");
