@@ -143,8 +143,11 @@ export function CopilotSheet(props: Props) {
   const dragStart = useSharedValue(0);
   const [bodyMeasure, setBodyMeasure] = useState({ visible: 0, content: 0 });
   const clipped = bodyMeasure.content > bodyMeasure.visible + 1;
-  // Remembered with the phase it was reached in: a new phase swaps the content and starts in auto.
+  // A new phase swaps the content and starts in auto: the snap state here, the pin in the effect below. The
+  // state used to be remembered per phase and never reset, while the pin was: back on a list that had been
+  // collapsed, the sheet was at its auto height but still counted as peeked, and the list did not scroll.
   const [snap, setSnap] = useState<{ phase: Phase; state: SnapState }>({ phase, state: "auto" });
+  if (snap.phase !== phase) setSnap({ phase, state: "auto" });
   const state: SnapState = snap.phase === phase ? snap.state : "auto";
   // A clipped body scrolls on its own; a pan over it would steal that scroll (the grabber still drags).
   const bodyDraggable = !clipped;

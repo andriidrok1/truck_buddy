@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react-native";
+import { cloneElement } from "react";
 import { Keyboard, StyleSheet } from "react-native";
 
 import { CopilotSheet } from "../components/CopilotSheet";
@@ -17,10 +18,12 @@ jest.mock("react-native-reanimated", () => {
     FadeOut: anim,
     ZoomIn: anim,
     withTiming: (v: unknown) => v,
-    useSharedValue: (v: unknown) => {
-      const sv = { value: v, get: () => sv.value, set: (n: unknown) => void (sv.value = n) };
-      return sv;
-    },
+    // One value per component instance, like the real hook: the pinned height must survive a re-render.
+    useSharedValue: (v: unknown) =>
+      jest.requireActual<typeof import("react")>("react").useState(() => {
+        const sv = { value: v, get: () => sv.value, set: (n: unknown) => void (sv.value = n) };
+        return sv;
+      })[0],
     useAnimatedStyle: (f: () => object) => f(),
     withSpring: (v: unknown) => v,
     runOnJS: (f: (...a: unknown[]) => void) => f,
@@ -127,6 +130,22 @@ describe("CopilotSheet text mode", () => {
     await fireEvent(body, "contentSizeChange", 390, 200);
     expect(screen.getByTestId("sheet-body").props.scrollEnabled).toBe(false);
     await fireEvent(body, "contentSizeChange", 390, 640);
+    expect(screen.getByTestId("sheet-body").props.scrollEnabled).toBe(true);
+  });
+
+  test("a collapsed sheet starts over in auto when its content comes back: the list scrolls, the grabber says Hide", async () => {
+    const view = await render(sheet());
+    const layout = (h: number) => ({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height: h } } });
+    await fireEvent(screen.getByTestId("copilot-sheet"), "layout", layout(400));
+    await fireEvent(screen.getByTestId("sheet-body"), "layout", layout(200));
+    await fireEvent(screen.getByTestId("sheet-body"), "contentSizeChange", 390, 640);
+    await fireEvent.press(screen.getByTestId("sheet-grabber")); // collapse to peek
+    expect(screen.getByTestId("sheet-grabber").props.accessibilityLabel).toBe("Show details");
+    expect(screen.getByTestId("sheet-body").props.scrollEnabled).toBe(false);
+    // the driver asks something else and comes back to the same content
+    await view.rerender(cloneElement(sheet(), { phase: "thinking" }));
+    await view.rerender(sheet());
+    expect(screen.getByTestId("sheet-grabber").props.accessibilityLabel).toBe("Hide details");
     expect(screen.getByTestId("sheet-body").props.scrollEnabled).toBe(true);
   });
 });
