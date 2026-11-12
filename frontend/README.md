@@ -11,7 +11,9 @@ Three ways the app runs, and only the first two are the real binary:
   for the pilot fleets, the store for the rest.
 - Expo Go: works for quick UI checks only; nothing background, no MapLibre, a different binary from drivers'.
 
-OTA: `runtimeVersion` follows the app version, so every build of 1.0.0 is one runtime. A JS-only change ships
+OTA: `runtimeVersion` follows the app version, so every build of one version is one runtime (1.0.0 was the first
+store build; 1.1.0 adds the sign-in modules and is a new runtime: an update published for 1.1.0 never reaches a
+1.0.0 install). A JS-only change ships
 with `eas update --branch staging` (or `production`) and is picked up on the next app open; a native change
 (new module, config plugin) needs a new build and a version bump. Publish with `eas update --branch <channel> --environment <env>`: `eas update` ignores the `env` in `eas.json`, so a local `.env.local` (an emulator backend URL) would ship to drivers. Keep `EXPO_PUBLIC_MAP_PROVIDER` the same as the build's, or the map screen crashes.
 
@@ -21,6 +23,54 @@ Events carry the `trip_id` tag so a crash sits next to the trip log on the backe
 One-time owner steps: `npx eas-cli login` (project `@andrylik/truckbuddy` is already set in `app.config.ts`),
 Sentry project (DSN, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` as EAS secrets), `EXPO_TOKEN` as a
 GitHub secret for the manual `eas-build-dev` workflow job.
+
+## Sign-in (Apple and Google)
+
+Since 1.1.0 the app opens with language → intro → sign-in → consent → the app. Sign-in is required: the truck,
+the places and the trips belong to the account and come back on a new phone. The code is in `src/signin/` (the
+providers), `src/components/SignInGate.tsx` (the screen), `src/state/afterSignIn.ts` (what happens next) and
+`src/state/firstLaunch.ts` (`signedOutReset`, when the phone changes hands). The backend side is
+`POST /api/auth/apple`, `/api/auth/google`, `/api/auth/logout` (root README, `APPLE_AUDIENCES`, `GOOGLE_CLIENT_IDS`).
+
+Native modules, so a build made before them cannot run it and nothing here ships over the air:
+`expo-apple-authentication` (entitlement `com.apple.developer.applesignin`, set by `ios.usesAppleSignIn` and the
+plugin), `@react-native-google-signin/google-signin` (its plugin adds the iOS URL scheme) and `expo-crypto`.
+
+| Variable | What it is |
+| --- | --- |
+| `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | OAuth client of type **Web application**. The id token is issued for it on both platforms. Required for Google sign-in |
+| `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | OAuth client of type **iOS** (bundle id `io.truckbuddy.ios`). Required on iOS |
+| `EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME` | The iOS client id reversed: `com.googleusercontent.apps.<the part before .apps.googleusercontent.com>`. Read at build time by `app.config.ts`; left out, it is worked out from the iOS client id |
+
+None of them is a secret. They are read at build time (`EXPO_PUBLIC_*` is baked into the bundle, the URL scheme
+into Info.plist), so set them for every EAS environment the builds use (`npx eas-cli env:set production --name
+EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID --value <id> --visibility plaintext`, the same for every other environment)
+or in `eas.json` `env`, and in `.env.local` for a local run. Without them the config still evaluates (the Google
+plugin is left out), the app starts, and the Google button answers "Google sign-in isn't set up in this build."
+Check: `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=<id> npx expo config --type introspect` shows the scheme under
+`ios.infoPlist.CFBundleURLTypes` and `com.apple.developer.applesignin` under `ios.entitlements`.
+
+One-time owner steps:
+
+1. Apple Developer → Identifiers → `io.truckbuddy.ios` → enable **Sign in with Apple**. EAS regenerates the
+   provisioning profile on the next build. (The key for revoking a sign-in on account deletion is a backend matter.)
+2. Google Cloud console → OAuth consent screen (app name, support e-mail; scopes `email` and `profile` only), then
+   three OAuth clients in the same project:
+   - **iOS**, bundle id `io.truckbuddy.ios`;
+   - **Android**, package `io.truckbuddy.app` plus the SHA-1 of the signing certificate: one client per keystore
+     (`npx eas-cli credentials --platform android` prints the SHA-1 of each build profile's keystore; a build
+     installed from Google Play is re-signed, so add the Play **App signing** SHA-1 too). The Android client id is
+     never put in the app: Google matches the package and the SHA-1, and a mismatch shows as `DEVELOPER_ERROR`;
+   - **Web application**, no redirect URIs needed.
+3. Put all three client ids into the backend's `GOOGLE_CLIENT_IDS` and the bundle id into `APPLE_AUDIENCES`.
+
+Expo Go has neither provider (no Google module; Apple's token there is issued for Expo Go itself). In Expo Go and
+in dev builds the sign-in screen has "I have an access code" (the emulator stand signs in with `TESTER_CODE` or
+`ACCESS_CODE` from `backend/.env`); a staging or production build never shows it.
+
+Nothing about the real providers runs under jest: their native modules are mocked. Before a release, on a phone:
+both buttons, a cancelled sheet, a second sign-in after a reinstall (the truck is back, "Welcome back" shows once),
+sign-out and a sign-in as someone else.
 
 ## Running on a phone
 
