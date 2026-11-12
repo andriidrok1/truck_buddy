@@ -143,12 +143,14 @@ export function CopilotSheet(props: Props) {
   const dragStart = useSharedValue(0);
   const [bodyMeasure, setBodyMeasure] = useState({ visible: 0, content: 0 });
   const clipped = bodyMeasure.content > bodyMeasure.visible + 1;
-  // A new phase swaps the content and starts in auto: the snap state here, the pin in the effect below. The
-  // state used to be remembered per phase and never reset, while the pin was: back on a list that had been
+  // What the sheet is showing. A change of it (a new phase, Go, another destination, More / Less, the routes
+  // list) swaps the content, so the sheet starts over in auto: the snap state here, the pin in the effect below.
+  // The state used to be remembered per phase and never reset, while the pin was: back on a list that had been
   // collapsed, the sheet was at its auto height but still counted as peeked, and the list did not scroll.
-  const [snap, setSnap] = useState<{ phase: Phase; state: SnapState }>({ phase, state: "auto" });
-  if (snap.phase !== phase) setSnap({ phase, state: "auto" });
-  const state: SnapState = snap.phase === phase ? snap.state : "auto";
+  const contentKey = `${phase}:${driving}:${active?.place.id ?? ""}:${more}:${!!routesPanel}`;
+  const [snap, setSnap] = useState<{ key: string; state: SnapState }>({ key: contentKey, state: "auto" });
+  if (snap.key !== contentKey) setSnap({ key: contentKey, state: "auto" });
+  const state: SnapState = snap.key === contentKey ? snap.state : "auto";
   // A clipped body scrolls on its own; a pan over it would steal that scroll (the grabber still drags).
   const bodyDraggable = !clipped;
 
@@ -160,7 +162,7 @@ export function CopilotSheet(props: Props) {
     return sheetHeights({ peek: a - hidden, auto: a, content: a - visible + bodyContentH.get(), window: windowH });
   };
   const markSnap = (s: SnapState, peekH: number) => {
-    setSnap({ phase, state: s });
+    setSnap({ key: contentKey, state: s });
     onPeekHeight?.(s === "peek" ? peekH : null);
   };
   const settle = (target: SnapState, h: SheetHeights) => {
@@ -208,12 +210,18 @@ export function CopilotSheet(props: Props) {
   // sheet's height bounds it instead.
   const bodyStyle = useAnimatedStyle(() => ({ maxHeight: pinnedH.get() > 0 ? AUTO_MAX_HEIGHT : windowH * AUTO_BODY_SHARE }));
 
-  // A new phase swaps the content: unpin, forget the old first line, and the map gets its inset back.
+  // A new phase swaps the content: forget the old first line (the swaps inside a phase mount their own first
+  // line, which reports itself, or keep the one that is there).
+  useEffect(() => {
+    firstLineBottom.set(0);
+  }, [phase, firstLineBottom]);
+  // New content: unpin, so the sheet is as tall as what it shows now, and the map gets its inset back (the
+  // layout that follows is measured again). Go keeps the phase, and a route card dragged to full height stayed
+  // a tall, almost empty sheet over the map in driving mode; the same after Less or a new destination.
   useEffect(() => {
     pinnedH.set(0);
-    firstLineBottom.set(0);
     onPeekHeight?.(null);
-  }, [phase, pinnedH, firstLineBottom, onPeekHeight]);
+  }, [contentKey, pinnedH, onPeekHeight]);
 
   const resting = () => pinnedH.get() === 0;
   const onSheetLayout = (h: number) => {

@@ -274,6 +274,32 @@ describe("CopilotSheet route preview", () => {
     expect(screen.queryByTestId("routes-chip")).toBeNull();
   });
 
+  test("Go and More release a dragged sheet: it is measured again and the map gets the new inset", async () => {
+    const onLayout = jest.fn();
+    const onPeekHeight = jest.fn();
+    const layout = (h: number) => ({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height: h } } });
+    const view = await render(cloneElement(preview(false), { onLayout, onPeekHeight }));
+    await fireEvent(screen.getByTestId("copilot-sheet"), "layout", layout(300));
+    await fireEvent(screen.getByTestId("sheet-body"), "layout", layout(150));
+    expect(onLayout).toHaveBeenLastCalledWith(300);
+    await fireEvent.press(screen.getByTestId("sheet-grabber")); // pinned at peek
+    expect(onPeekHeight).toHaveBeenLastCalledWith(150);
+    await fireEvent(screen.getByTestId("copilot-sheet"), "layout", layout(150));
+    expect(onLayout).toHaveBeenLastCalledWith(300); // a pinned height is not the map's inset
+    // More swaps the content: the pin goes, the next layout counts
+    await fireEvent.press(screen.getByTestId("more-button"));
+    expect(onPeekHeight).toHaveBeenLastCalledWith(null);
+    expect(screen.getByTestId("sheet-grabber").props.accessibilityLabel).toBe("Hide details");
+    await fireEvent(screen.getByTestId("copilot-sheet"), "layout", layout(420));
+    expect(onLayout).toHaveBeenLastCalledWith(420);
+    // pinned again, then Go: the phase stays "navigating", the sheet must still let go
+    await fireEvent.press(screen.getByTestId("sheet-grabber"));
+    await view.rerender(cloneElement(preview(true), { onLayout, onPeekHeight }));
+    expect(onPeekHeight).toHaveBeenLastCalledWith(null);
+    await fireEvent(screen.getByTestId("copilot-sheet"), "layout", layout(180));
+    expect(onLayout).toHaveBeenLastCalledWith(180);
+  });
+
   test("driving: End route is there, Cancel is gone", async () => {
     await render(preview(true));
     expect(screen.getByTestId("end-route-button")).toBeTruthy();
