@@ -134,7 +134,19 @@ export function signedOutReset(opts: { notice?: boolean; keepTripFor?: string | 
 
 // The server rejected the token for good (src/net/tokenRenewal.ts after401): the same reset, with the notice, and
 // the trip kept for the same account when it was on the road.
-setIdentityRejectedHandler(() => signedOutReset({ notice: true, keepTripFor: identitySub() }));
+//
+// During a server wipe (re-review of #173, L-3) another request may hear the 401 first: the account was just
+// deleted, or the session closed under the DELETE. Then the wipe decides: the handler waits for it, and when it
+// left the phone without a token (a fresh install, or its own sign-out) there is nothing more to do, so no trip is
+// set aside for an account that is gone and no "You were signed out" lands on the fresh-install screens. Only once
+// the DELETE is on the wire: before that the wipe still waits for the trip batch that may be this very request.
+setIdentityRejectedHandler(async () => {
+  if (wiping && wipeOnWire) {
+    await wiping.result.catch(() => undefined);
+    if (!getToken()) return [];
+  }
+  return signedOutReset({ notice: true, keepTripFor: identitySub() });
+});
 
 /**
  * Sign-in is required since 1.1.0. A phone that still holds the anonymous device token of build 1.0 (`auth_via`
@@ -195,6 +207,8 @@ export class WipeBusy extends Error {}
  *  nothing claims that anything was deleted (re-review of #173, M-1). */
 export class SignedOutByServer extends Error {}
 let wiping: { kind: WipeKind; result: Promise<WipeResult<unknown>> } | null = null;
+/** The wipe under way is past its wait for the trip batch on the wire, and sends (or has sent) its DELETE. */
+let wipeOnWire = false;
 const wipeListeners = new Set<() => void>();
 const wipeChanged = () => wipeListeners.forEach((l) => l());
 
@@ -228,6 +242,7 @@ export function serverThenReset<T>(router: Nav, clearServer: () => Promise<T>, k
   if (!wiping) {
     const result = wipeOnce(router, clearServer).finally(() => {
       wiping = null;
+      wipeOnWire = false;
       wipeChanged();
     });
     wiping = { kind, result };
@@ -242,7 +257,14 @@ async function wipeOnce<T>(router: Nav, clearServer: () => Promise<T>): Promise<
   // the wire lands first, before the DELETE), the DELETE takes the token with it, and every other request waits for
   // the DELETE to settle: on failure they go out with the same token as before, on success after the wipe, without
   // one. None goes out tokenless meanwhile, so no 401 can sign the phone out behind the dialog (re-review of #129).
+  const signedIn = getToken() !== null;
   await tripLog.pause();
+  if (signedIn && !getToken()) {
+    // The batch it waited for heard the token turned down, and the phone signed out meanwhile: nothing to send.
+    tripLog.resume();
+    return { ok: false, error: new SignedOutByServer() };
+  }
+  wipeOnWire = true;
   let release: () => void = () => {};
   let value!: T;
   const underHold = async () => {

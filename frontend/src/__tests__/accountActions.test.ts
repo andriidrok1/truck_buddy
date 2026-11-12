@@ -8,14 +8,16 @@ import { CONSENT_KEY, giveConsent } from "../consent";
 import { saveProfile } from "../data/profile";
 import { DEFAULT_TRUCK, getTruckProfile } from "../hooks/useTruckProfile";
 import { loadLang, setLang, useLangStore } from "../i18n";
-import { resetRenewalForTests } from "../net/tokenRenewal";
+import { after401, resetRenewalForTests } from "../net/tokenRenewal";
 import { queryClient } from "../query-client";
 import { getAccount, saveAccount, setSignInNotice, signInNotice } from "../state/account";
 import { clearConversations, deleteAccount, LOGOUT_WAIT_MS, signOut, signOutEverywhere } from "../state/accountActions";
 import { deleteMyData, signedOutReset, wipeRunning } from "../state/firstLaunch";
 import { markIntroSeen } from "../state/intro";
+import { saveActiveRoute } from "../state/routeStore";
+import { useTripStore } from "../state/tripStore";
 import { storage } from "../utils/storage";
-import { __resetWipeGate } from "../utils/storage/pendingWipe";
+import { __resetWipeGate, HELD_TRIP_KEY } from "../utils/storage/pendingWipe";
 
 const mockSecure = new Map<string, string>();
 jest.mock("expo-secure-store", () => ({
@@ -555,6 +557,43 @@ describe("Delete my data with no answer (review of #173, L-4)", () => {
     answers[key("DELETE", "/memory")] = reply(500, { detail: "Internal Server Error" });
     expect(await deleteMyData(router())).toBe("failed");
     expect(calls.map((c) => c.path)).toEqual(["/memory"]);
+  });
+});
+
+describe("a rejected token while the DELETE is on the wire (re-review of #173, L-3)", () => {
+  const b64url = (v: string) => Buffer.from(v).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const JWT = `${b64url('{"alg":"HS256"}')}.${b64url(JSON.stringify({ sub: "acct-mike", sid: "s1", exp: Math.floor(Date.now() / 1000) + 3600 }))}.sig`;
+  const PLACE = { id: "p1", name: "Pilot", category: "truck_stop", lat: 38.55, lng: -121.42, tags: [] };
+  const ROUTE = { geometry: [[38.58, -121.49]], distance_m: 1, duration_s: 1, distance_mi: 0, duration_min: 0, summary: "", source: "here" };
+
+  test("the wipe decides: no trip set aside, no notice, no sign-out under the DELETE, and a fresh install after it", async () => {
+    await signedIn();
+    await setToken(JWT, "driver", "account", "REF");
+    await saveActiveRoute({ place: PLACE, route: ROUTE, trip_id: "t1" } as never, Date.now(), true);
+    useTripStore.getState().setDriving(true);
+    calls = [];
+    // A renewal already under way when the driver confirmed the delete; the server turns it down mid-DELETE.
+    let refuse: (r: Response) => void = () => {};
+    answers[key("POST", "/auth/refresh")] = new Promise<Response>((res) => (refuse = res));
+    const renewal = after401(JWT);
+    await new Promise((r) => setTimeout(r, 0));
+    let answer: (r: Response) => void = () => {};
+    answers[key("DELETE", "/account")] = new Promise<Response>((res) => (answer = res));
+    const deleting = deleteAccount(router());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toContain("DELETE /account");
+    refuse(reply(401, { detail: "Invalid or expired refresh token" }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(getToken()).toBe(JWT); // nothing signed the phone out under the DELETE
+    expect(signInNotice()).toBeNull();
+    expect(await AsyncStorage.getItem(HELD_TRIP_KEY)).toBeNull();
+    answer(reply(200, { ...DELETED }));
+    expect((await deleting).ok).toBe(true);
+    expect(await renewal).toBe(false);
+    expect(getToken()).toBeNull();
+    expect(signInNotice()).toBeNull();
+    expect(await AsyncStorage.getItem(HELD_TRIP_KEY)).toBeNull();
+    expect(useLangStore.getState().chosen).toBe(false);
   });
 });
 
