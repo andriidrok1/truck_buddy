@@ -352,8 +352,9 @@ async def account_delete(principal: auth.Principal = Depends(auth.require_driver
 
     Every row goes in one transaction (services/accounts.py erase), the account row last, so a deletion that failed
     (503) left everything as it was and is repeated with the same token; the stored Apple token is still there for
-    the retry. Before it only what cannot be in a transaction: waiting for the saves and the Apple exchange in flight,
-    the revoke, and stopping this worker's research for the driver.
+    the retry. Before it only what cannot be in a transaction and must come first: waiting for the saves and the Apple
+    exchange in flight, and the revoke. Stopping this worker's research and memory reads for the driver comes after
+    the commit, so a refusal leaves them running.
 
     409 for the only owner of a fleet that still has drivers, other phones or a stored key (nobody could manage it
     afterwards). A fleet with nobody else in it goes with its owner."""
@@ -373,8 +374,6 @@ async def account_delete(principal: auth.Principal = Depends(auth.require_driver
         if account and account[0] == "apple":
             revoked_sealed = account[1]
             revoked = await apple.revoke(revoked_sealed, driver)
-        breakdown.forget(driver)
-        agent.forget_past(f"{driver}:")
         erased, sealed = await asyncio.wait_for(accounts.erase_account(driver), MEMORY_WAIT_S)
     except accounts.LastOwner:
         # Somebody joined the fleet after the check. Nothing was deleted; only the Apple token may be revoked, and
@@ -385,6 +384,11 @@ async def account_delete(principal: auth.Principal = Depends(auth.require_driver
     except Exception as e:  # noqa: BLE001
         logger.warning("account deletion failed for %s: %s", driver, e)
         raise HTTPException(status_code=503, detail="The account could not be deleted right now. Try again.")
+    # Only now that the deletion holds: a refused or failed one must not have stopped the driver's breakdown search.
+    # A research of this worker that finishes in the moment between the commit and this line can still write its
+    # jobs row; that is the same late write the other workers can make (Known limits in PR #171).
+    breakdown.forget(driver)
+    agent.forget_past(f"{driver}:")
     if sealed and sealed != revoked_sealed:
         # An exchange that outlived apple.settled stored its token between the revoke above and the deletion: the
         # deletion read it under the account's lock, and nothing else will ever revoke it.

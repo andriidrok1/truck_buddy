@@ -1353,6 +1353,39 @@ def test_a_refused_deletion_has_wiped_nothing(client, monkeypatch, apple_api, db
     assert len(apple_api.exchanges) == 2 and _sealed(client, sub)
 
 
+def test_a_refused_deletion_leaves_the_breakdown_search_running(client, monkeypatch):
+    """The 409 came from inside the transaction: nothing was deleted, so the driver's help search goes on."""
+    fleet = _fleet(client)
+    owner = _join(client, fleet, _google(client, _person()).json(), "owner")
+    sub = _claims(owner["access_token"])["sub"]
+    real = accounts.check_may_delete
+
+    async def passes_then_somebody_joins(s):
+        await real(s)
+        dev = await tenancy.ensure_solo_org(auth.new_sub())
+        await tenancy.bind_fleet_code(dev.sub, await tenancy.create_fleet_code(fleet.org, fleet.truck))
+    monkeypatch.setattr(accounts, "check_may_delete", passes_then_somebody_joins)
+
+    async def start():
+        task = asyncio.create_task(asyncio.sleep(60))
+        breakdown._JOBS["rid-mine"], breakdown._OWNERS["rid-mine"] = task, sub
+        return task
+    task = client.portal.call(start)
+    try:
+        r = client.delete("/api/account", headers=_h(owner))
+        assert r.status_code == 409 and r.json()["code"] == "last_owner"
+        assert breakdown._OWNERS == {"rid-mine": sub} and not client.portal.call(_done, task)
+    finally:
+        client.portal.call(task.cancel)
+        breakdown._JOBS.clear()
+        breakdown._OWNERS.clear()
+
+
+async def _done(task) -> bool:
+    await asyncio.sleep(0)
+    return task.done()
+
+
 def test_a_fleet_join_waits_for_its_owners_deletion(client, monkeypatch):
     """Postgres: the owner's deletion counted nobody else in the fleet and is about to delete it. A bind into the
     fleet in that moment waits on the fleet's row and then finds the fleet gone; without the lock it would join, and
