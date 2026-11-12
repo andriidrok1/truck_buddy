@@ -23,6 +23,7 @@ export const APP_KEYS = [
   "trip_v2",
   "trip_arrived_v1",
   "trip_events_pending",
+  "account_v1",
 ] as const;
 
 /** Keychain keys (AsyncStorage on web). */
@@ -40,6 +41,13 @@ async function tryRemove(remove: Remove, key: string): Promise<boolean> {
 }
 
 const ALL_KEYS: string[] = [...APP_KEYS, ...SECURE_KEYS];
+
+/** What stays on the phone when the driver signs out or the server turns the token down: choices about the phone,
+ *  not about the driver (src/state/firstLaunch.ts signedOutReset). "Delete my data" removes these too. */
+export const KEPT_ON_SIGN_OUT = ["lang_v1", "ai_consent_v2", "intro_seen_v1", "theme_pref_v1"] as const;
+/** Everything that belongs to the signed-in driver: the token and how it was got (auth_via), the account, the
+ *  truck, the trip, the settings, the Motive key. The next driver on this phone must find none of it. */
+export const IDENTITY_KEYS: string[] = ALL_KEYS.filter((k) => !(KEPT_ON_SIGN_OUT as readonly string[]).includes(k));
 const isSecure = (k: string) => (SECURE_KEYS as readonly string[]).includes(k);
 
 /** The flag holds what is still to remove: "*" while a wipe runs (a crash midway leaves everything to do), then
@@ -89,9 +97,11 @@ const writtenSinceWipe = new Set<string>();
 /** Called by the storage helpers on every write. */
 export const noteWrite = (key: string) => writtenSinceWipe.add(key);
 
-export async function markWipePending(): Promise<void> {
+/** `keys`: what this wipe is about to remove (a sign-out names the driver's keys); none = everything. A crash
+ *  midway leaves exactly those to the next cold start. */
+export async function markWipePending(keys?: string[]): Promise<void> {
   writtenSinceWipe.clear();
-  await setFlag("*");
+  await setFlag(keys ?? "*");
 }
 
 /**

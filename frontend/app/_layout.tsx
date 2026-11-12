@@ -1,10 +1,10 @@
 import * as Sentry from "@sentry/react-native";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
+import { Stack, usePathname, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppState, LogBox, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ReducedMotionConfig, ReduceMotion } from "react-native-reanimated";
@@ -21,14 +21,16 @@ import "@/src/geo/driveTracking"; // defines the background location task at sta
 import { ensureTruckProfile } from "@/src/hooks/useTruckProfile";
 import { ensureSettings } from "@/src/state/settingsStore";
 import { migrateStorage } from "@/src/utils/storageMigrations";
-import { DeviceGate } from "@/src/components/DeviceGate";
+import { SignInGate } from "@/src/components/SignInGate";
+import { WelcomeBack } from "@/src/components/WelcomeBack";
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { useConsent } from "@/src/consent";
 import { rootScreen } from "@/src/state/firstLaunch";
 import { useIntroSeen } from "@/src/state/intro";
 import { IntroGate } from "@/src/components/intro/IntroGate";
 import { loadEldToken } from "@/src/eld";
-import { fetchProfile, PROFILE_KEY } from "@/src/data/profile";
+import { useProfileSync } from "@/src/data/profile";
+import { useWelcomeBack } from "@/src/state/account";
 import { queryClient } from "@/src/query-client";
 import { setContractWarningSink } from "@/src/api/schemas";
 
@@ -66,7 +68,7 @@ function RootLayout() {
     loadThemePref().finally(() => setThemeReady(true));
   }, []);
   const auth = useAuthState();
-  // Keep the device token alive (30-day access token): on start and on every return to the foreground, renew when it
+  // Keep the token alive (30-day access token): on start and on every return to the foreground, renew when it
   // is close to expiry or no refresh token is stored yet. Offline it just tries again next time.
   useEffect(() => {
     if (auth !== "in") return;
@@ -93,17 +95,18 @@ function RootLayout() {
   useEffect(() => {
     migrateStorage()
       .then(() => Promise.all([ensureTruckProfile(), ensureSettings()]))
-      .finally(() => {
-        setStorageReady(true);
-        // The server copy (a fleet sets the truck there) after the local one is up; offline, the local stands.
-        queryClient.prefetchQuery({ queryKey: PROFILE_KEY, queryFn: fetchProfile });
-      });
+      .finally(() => setStorageReady(true));
   }, []);
-  // GPS from the moment consent is in (the consent screen starts it too): the first fix is ready before the
-  // map screen mounts instead of 7-9 s after it.
+  // The server copy of the truck (a fleet sets it there; a returning driver's is only there) once the local one is
+  // up and the phone is signed in: on a cold start with a token, and right after a sign-in. Offline, the local stands.
+  useProfileSync(storageReady && auth === "in");
+  // A returning driver who just signed in sees "Welcome back" once, after consent.
+  const welcomeBack = useWelcomeBack();
+  // GPS from the moment the driver is signed in and consent is in (the consent screen starts it too): the first
+  // fix is ready before the map screen mounts instead of 7-9 s after it. Not on the sign-in screen after a sign-out.
   useEffect(() => {
-    if (consent === "yes") startLocation({ ask: false });
-  }, [consent]);
+    if (consent === "yes" && auth === "in") startLocation({ ask: false });
+  }, [consent, auth]);
   // Pre-load the icon font (prevents blank icons in Expo Go) and app fonts.
   const [loaded, error] = useFonts({
     MaterialDesignIcons: require("@react-native-vector-icons/material-design-icons/fonts/MaterialDesignIcons.ttf"),
@@ -121,8 +124,26 @@ function RootLayout() {
     "Manrope-ExtraBold": require("../assets/fonts/Manrope-ExtraBold.ttf"),
   });
 
-  const screen = rootScreen(langChosen, introSeen === true, consent, auth);
-  if ((!loaded && !error) || auth === "loading" || consent === "loading" || !themeReady || !storageReady || !langLoaded || introSeen === undefined) return null;
+  const screen = rootScreen(langChosen, introSeen === true, consent, auth, welcomeBack);
+  const ready = !((!loaded && !error) || auth === "loading" || consent === "loading" || !themeReady || !storageReady || !langLoaded || introSeen === undefined);
+  // The stack remembers where it was while a gate is up. After the sign-in screen the driver may be someone else
+  // (or the same one, signed out from the truck screen): the app comes back on the map, not on the screen the
+  // previous sign-in ended on (the map then sends a driver who is not onboarded to onboarding, as on first launch).
+  const router = useRouter();
+  const pathname = usePathname();
+  const signedInAnew = useRef(false);
+  useEffect(() => {
+    if (!ready) return;
+    if (screen === "signin") signedInAnew.current = true;
+    else if (screen === "app" && signedInAnew.current) {
+      signedInAnew.current = false;
+      if (pathname !== "/") {
+        if (router.canDismiss()) router.dismissAll();
+        router.replace("/");
+      }
+    }
+  }, [screen, ready, router, pathname]);
+  if (!ready) return null;
 
   // One app level ErrorBoundary; a render crash shows a reload screen
   // instead of a blank app. GestureHandlerRootView must wrap the whole tree
@@ -144,10 +165,12 @@ function RootLayout() {
               <LanguageGate />
             ) : screen === "intro" ? (
               <IntroGate />
+            ) : screen === "signin" ? (
+              <SignInGate />
             ) : screen === "consent" ? (
               <ConsentGate />
-            ) : screen === "device" ? (
-              <DeviceGate />
+            ) : screen === "welcome" ? (
+              <WelcomeBack />
             ) : (
               <Stack screenOptions={{ headerShown: false }} />
             )}

@@ -6,7 +6,6 @@ import { Text } from "../i18n/Text";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PRIVACY_URL, TERMS_URL } from "../constants";
-import { requestCode } from "../auth";
 import { giveConsent } from "../consent";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import { startLocation } from "../geo/location";
@@ -37,16 +36,15 @@ const ITEMS: { icon: string; title: string; body: string }[] = [
   },
 ];
 
-/** Shown after the language choice and before the access code (again after "Delete my data" or a new consent
- * version, src/consent.ts): the driver agrees to sharing voice and location with third-party services. */
+/** Shown once the driver has signed in, before the app (again after "Delete my data" or a new consent version,
+ * src/consent.ts): the driver agrees to sharing voice and location with third-party services. */
 export function ConsentGate() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
 
-  const agree = async (withCode = false) => {
+  const agree = async () => {
     setBusy(true);
-    if (withCode) requestCode();
     // The screen just explained what the location is for: ask for it here, once, instead of the
     // onboarding opening with a system dialog on top of its first question (U1).
     if (Platform.OS !== "web") await Location.requestForegroundPermissionsAsync().catch(() => null);
@@ -88,9 +86,6 @@ export function ConsentGate() {
           style={[styles.button, { backgroundColor: colors.brandPrimary }]}
         >
           {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={[styles.buttonText, { color: colors.onBrandPrimary }]}>Agree and continue</Text>}
-        </PressableScale>
-        <PressableScale testID="consent-agree-code" accessibilityRole="button" onPress={() => agree(true)} disabled={busy} style={styles.linkHit}>
-          <Text style={[styles.link, styles.center, { color: colors.info }]}>Agree and enter an access code</Text>
         </PressableScale>
       </View>
     </View>

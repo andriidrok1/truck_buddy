@@ -226,3 +226,7 @@ export async function restoreSavedTrip(now = Date.now()): Promise<{ restored: Ac
   skipSave = restored;
   return { restored, saved };
 }
+
+/** A different driver from here on (sign-out, "Delete my data"): no route, no lists, no breakdown providers.
+ *  `routeGen` moves on, so a route answer still in flight for the previous driver is dropped. */
+export const resetTripStore = () => useTripStore.setState((s) => ({ ...INITIAL, routeGen: s.routeGen + 1 }));

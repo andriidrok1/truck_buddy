@@ -12,6 +12,7 @@ import { DEFAULT_TRUCK, getTruckProfile, isOnboarded, setOnboarded } from "../ho
 import { loadLang, setLang, useLangStore } from "../i18n";
 import { tripLog } from "../net/tripEvents";
 import { deleteMyData, resetToFirstLaunch, rootScreen } from "../state/firstLaunch";
+import { getAccount, saveAccount } from "../state/account";
 import { loadHowTo, markHowToSeen } from "../state/howTo";
 import { loadIntro, markIntroSeen } from "../state/intro";
 import { saveActiveRoute } from "../state/routeStore";
@@ -38,6 +39,7 @@ async function fillTheAppUp() {
   await giveConsent();
   await setToken("old-device-token", "driver");
   await setEldToken("motive-key");
+  await saveAccount({ name: "Mike Johnson", email: "mike@example.com", provider: "google" });
   setThemePref("dark");
   await setOnboarded();
   await confirmHeight();
@@ -93,6 +95,7 @@ test("Delete my data: storage holds no app key, every store is back to a fresh i
   expect(getTruckProfile()).toEqual(DEFAULT_TRUCK);
   expect(useSettings.getState().speedAlerts).toBe(false);
   expect(tripLog.size()).toBe(0);
+  expect(getAccount()).toBeNull();
 
   await consent.rerender({});
   await auth.rerender({});
@@ -101,20 +104,7 @@ test("Delete my data: storage holds no app key, every store is back to a fresh i
   expect(rootScreen(useLangStore.getState().chosen, await loadIntro(), consent.result.current, auth.result.current)).toBe("language");
 });
 
-test("the gates come in first-launch order: language, the intro, consent, a new anonymous sign-in, then the app", () => {
-  expect(rootScreen(false, false, "no", "out")).toBe("language");
-  expect(rootScreen(true, false, "no", "out")).toBe("intro");
-  expect(rootScreen(true, true, "no", "out")).toBe("consent");
-  expect(rootScreen(true, true, "yes", "out")).toBe("device");
-  expect(rootScreen(true, true, "yes", "in")).toBe("app");
-  // The language screen comes first even when the intro was seen (a wipe that left the intro key behind).
-  expect(rootScreen(false, true, "no", "out")).toBe("language");
-});
-
-test("a driver who agreed to the consent screen before the intro existed never gets it", () => {
-  expect(rootScreen(true, false, "yes", "out")).toBe("device");
-  expect(rootScreen(true, false, "yes", "in")).toBe("app");
-});
+// The order of the gates has its own file: rootScreen.test.ts.
 
 test("no server, nothing deleted: the phone keeps its data and the driver gets the error", async () => {
   await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
