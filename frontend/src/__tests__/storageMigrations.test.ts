@@ -16,7 +16,7 @@ test("a fresh install only gets the version stamp", async () => {
   expect(await migrateStorage()).toBe(CURRENT_SCHEMA);
   expect(JSON.parse((await AsyncStorage.getItem(SCHEMA_KEY)) ?? "0")).toBe(CURRENT_SCHEMA);
   expect(await AsyncStorage.getItem(ACTIVE_ROUTE_KEY)).toBeNull();
-  expect(parseSettings(JSON.parse((await AsyncStorage.getItem(SETTINGS_KEY)) ?? "null"))).toEqual({ handsFree: true, nudges: true, speedAlerts: false, voiceGuidance: true });
+  expect(parseSettings(JSON.parse((await AsyncStorage.getItem(SETTINGS_KEY)) ?? "null"))).toEqual({ handsFree: true, nudges: true, speedAlerts: false, voiceGuidance: true, mapView: "map" });
 });
 
 test("v1 -> v2: the route moves key and learns `driving`, the three profile encodings become one object, four booleans become one document", async () => {
@@ -31,7 +31,7 @@ test("v1 -> v2: the route moves key and learns `driving`, the three profile enco
   expect(trip?.driving).toBe(false);
   expect(await AsyncStorage.getItem("active_route_v1")).toBeNull();
   expect(JSON.parse((await AsyncStorage.getItem("truck_profile_v1")) ?? "null")).toEqual(profile);
-  expect(JSON.parse((await AsyncStorage.getItem(SETTINGS_KEY)) ?? "null")).toEqual({ handsFree: false, nudges: true, speedAlerts: true, voiceGuidance: true });
+  expect(JSON.parse((await AsyncStorage.getItem(SETTINGS_KEY)) ?? "null")).toEqual({ handsFree: false, nudges: true, speedAlerts: true, voiceGuidance: true, mapView: "map" });
   expect(await AsyncStorage.getItem("hands_free_v1")).toBeNull();
   // running again is a no-op
   await AsyncStorage.setItem("active_route_v1", JSON.stringify(saved));
@@ -50,7 +50,7 @@ test("the single- and plain-encoded profiles migrate too, a corrupt one is left 
 });
 
 test("settingsFromV1 keeps defaults for missing or odd flags", () => {
-  expect(settingsFromV1({ handsFree: false, nudges: "yes", speedAlerts: undefined })).toEqual({ handsFree: false, nudges: true, speedAlerts: false, voiceGuidance: true });
+  expect(settingsFromV1({ handsFree: false, nudges: "yes", speedAlerts: undefined })).toEqual({ handsFree: false, nudges: true, speedAlerts: false, voiceGuidance: true, mapView: "map" });
 });
 
 test("a write that fails keeps the old keys and the old version, so the next start tries again", async () => {

@@ -12,6 +12,7 @@ from models import AgentRequest, AppAction
 PROMPT = """- control: the driver wants the app to DO something or CHANGE a setting. actions = list of {"type": ..., "value": ...}:
   start_navigation (start the ride / "let's go" / "start driving" with a route already set), end_route, show_options (other places found),
   recenter (map back on the truck), overview (show the whole route), zoom_in, zoom_out,
+  map_view value=map|satellite|weather (how the map looks: "show the weather/radar on the map" = weather, "satellite view" = satellite, "normal map" / "hide the radar" = map; "what's the weather" is the weather intent, not this),
   voice_guidance value=true|false (spoken turn directions), wake_word value=true|false (hands-free wake-word listening), stop_talking (be quiet now),
   set_height_in value=total inches (13 ft 6 in = 162), set_trailer_ft value=feet, set_weight_lb value=pounds (70k = 70000), set_hazmat value=true|false,
   set_driver_name value=name, avoid_tolls value=true|false, avoid_ferries_tunnels value=true|false,
@@ -21,6 +22,7 @@ PROMPT = """- control: the driver wants the app to DO something or CHANGE a sett
 
 ROUTE_FIELDS = {"set_height_in", "set_trailer_ft", "set_weight_lb", "set_hazmat", "avoid_tolls", "avoid_ferries_tunnels"}
 MAX_CHAINS = 8
+MAP_VIEWS = {"weather": "Here's the weather radar", "satellite": "Satellite view", "map": "Back to the normal map"}
 
 
 def _bool(v: Any) -> Optional[bool]:
@@ -87,6 +89,8 @@ def apply_actions(raw: Any, req: AgentRequest) -> Tuple[List[AppAction], str, bo
             ok(kind, say="Here's the whole route") if active else said.append("There's no route to show yet.")
         elif kind in ("recenter", "zoom_in", "zoom_out"):
             ok(kind, say={"recenter": "Back on you", "zoom_in": "Zooming in", "zoom_out": "Zooming out"}[kind])
+        elif kind == "map_view" and v in MAP_VIEWS:
+            ok(kind, v, MAP_VIEWS[v])
         elif kind == "voice_guidance" and b is not None:
             ok(kind, b, "Okay, I'll call out the turns" if b else "Okay, turn directions are muted")
         elif kind == "wake_word" and b is not None:

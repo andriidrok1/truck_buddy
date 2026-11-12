@@ -53,7 +53,7 @@ no markdown, at most 2 short sentences, never repeat yourself.
 # (0.1x input price on the cached prefix, faster first token). Everything that varies, the truck, the
 # preferences and the conversation context, travels in the user message, in that order.
 SYSTEM_STATIC = SYSTEM.format(controls=controls.PROMPT, parking=approach.PROMPT, breakdown=breakdown.PROMPT)
-PROMPT_VERSION = 5  # bump when SYSTEM changes, so the cache key and the eval baseline move together
+PROMPT_VERSION = 6  # bump when SYSTEM changes, so the cache key and the eval baseline move together
 PROMPT_CACHE_KEY = f"agent-v{PROMPT_VERSION}"
 
 

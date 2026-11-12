@@ -17,9 +17,14 @@ export type Settings = {
   speedAlerts: boolean;
   /** Spoken turn-by-turn (on by default). */
   voiceGuidance: boolean;
+  /** The map's look: plain map, satellite imagery, or weather (radar over a muted map). Kept between launches. */
+  mapView: MapView;
 };
 
-export const DEFAULT_SETTINGS: Settings = { handsFree: true, nudges: true, speedAlerts: false, voiceGuidance: true };
+export type MapView = "map" | "satellite" | "weather";
+export const MAP_VIEWS: readonly MapView[] = ["map", "satellite", "weather"];
+
+export const DEFAULT_SETTINGS: Settings = { handsFree: true, nudges: true, speedAlerts: false, voiceGuidance: true, mapView: "map" };
 
 type SettingsState = Settings & {
   loaded: boolean;
@@ -36,10 +41,11 @@ type SettingsState = Settings & {
 export function parseSettings(raw: unknown): Settings {
   const out = { ...DEFAULT_SETTINGS };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
-  for (const k of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
-    const v = (raw as Record<string, unknown>)[k];
-    if (typeof v === "boolean") out[k] = v;
+  const r = raw as Record<string, unknown>;
+  for (const k of ["handsFree", "nudges", "speedAlerts", "voiceGuidance"] as const) {
+    if (typeof r[k] === "boolean") out[k] = r[k] as boolean;
   }
+  if (MAP_VIEWS.includes(r.mapView as MapView)) out.mapView = r.mapView as MapView;
   return out;
 }
 
@@ -50,8 +56,7 @@ export const useSettings = create<SettingsState>()((set, get) => ({
   set: (patch) => {
     for (const k of Object.keys(patch) as (keyof Settings)[]) touched.add(k);
     set(patch);
-    const { handsFree, nudges, speedAlerts, voiceGuidance } = { ...get(), ...patch };
-    storage.setItem(SETTINGS_KEY, { handsFree, nudges, speedAlerts, voiceGuidance });
+    storage.setItem(SETTINGS_KEY, pick({ ...get(), ...patch }));
   },
   requestTruckReroute: () => set({ rerouteRequested: true }),
   takeTruckReroute: () => {
@@ -75,7 +80,7 @@ export function ensureSettings(): Promise<Settings> {
         const parsed = parseSettings(raw);
         const patch: Partial<Settings> = {};
         for (const k of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
-          if (!touched.has(k)) patch[k] = parsed[k];
+          if (!touched.has(k)) (patch as Record<string, unknown>)[k] = parsed[k];
         }
         useSettings.setState({ ...patch, loaded: true });
       })
@@ -83,16 +88,19 @@ export function ensureSettings(): Promise<Settings> {
         useSettings.setState({ loaded: true });
       });
   }
-  return loading.then(() => {
-    const { handsFree, nudges, speedAlerts, voiceGuidance } = useSettings.getState();
-    return { handsFree, nudges, speedAlerts, voiceGuidance };
-  });
+  return loading.then(() => pick(useSettings.getState()));
+}
+
+function pick(s: Settings): Settings {
+  const { handsFree, nudges, speedAlerts, voiceGuidance, mapView } = s;
+  return { handsFree, nudges, speedAlerts, voiceGuidance, mapView };
 }
 
 export const setHandsFree = (v: boolean) => useSettings.getState().set({ handsFree: v });
 export const setNudgesEnabled = (v: boolean) => useSettings.getState().set({ nudges: v });
 export const setSpeedAlerts = (v: boolean) => useSettings.getState().set({ speedAlerts: v });
 export const setVoiceGuidance = (v: boolean) => useSettings.getState().set({ voiceGuidance: v });
+export const setMapView = (v: MapView) => useSettings.getState().set({ mapView: v });
 export const requestTruckReroute = () => useSettings.getState().requestTruckReroute();
 export const takeTruckReroute = () => useSettings.getState().takeTruckReroute();
 
@@ -100,6 +108,7 @@ export const useHandsFree = () => useSettings((s) => s.handsFree);
 export const useNudgesEnabled = () => useSettings((s) => s.nudges);
 export const useSpeedAlerts = () => useSettings((s) => s.speedAlerts);
 export const useVoiceGuidance = () => useSettings((s) => s.voiceGuidance);
+export const useMapView = () => useSettings((s) => s.mapView);
 
 /** "Delete my data": the defaults, nothing on disk. */
 export async function forgetSettings(): Promise<void> {

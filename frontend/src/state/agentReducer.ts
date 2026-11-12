@@ -7,6 +7,7 @@
 // so it gets the spoken promise (possibly wrapped by `parkingFollowup`).
 
 import { MESSAGES } from "../constants";
+import { MAP_VIEWS, type MapView } from "./settingsStore";
 import type { TruckProfile } from "../hooks/useTruckProfile";
 import type { AgentResponse, AppAction, Approach, ParkingCheck, ParkingState, Phase, Place, RouteInfo } from "../types";
 
@@ -46,6 +47,7 @@ export type Effect =
   | { type: "setHandsFree"; on: boolean }
   /** Nudges while driving (break, chains, parking offers) on or off. */
   | { type: "setNudges"; on: boolean }
+  | { type: "setMapView"; view: MapView }
   | { type: "saveProfile"; patch: Partial<TruckProfile> }
   /** Save the patch, then re-plan the active route with it. */
   | { type: "reroute"; patch: Partial<TruckProfile> }
@@ -99,6 +101,9 @@ export function reduceActions(actions: AppAction[], ctx: AgentContext): Effect[]
         break;
       case "stop_talking":
         effects.push({ type: "pauseDialog" });
+        break;
+      case "map_view":
+        if (MAP_VIEWS.includes(value as MapView)) effects.push({ type: "setMapView", view: value as MapView });
         break;
       case "set_nudges":
         effects.push({ type: "setNudges", on: value === true });

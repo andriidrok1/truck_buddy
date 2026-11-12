@@ -23,6 +23,36 @@ _CONTROL_PHRASES: list[tuple[re.Pattern, dict]] = [
 ]
 
 
+# The map's look (Figma "Weather v2"). Only ever matched against what the driver said (never the model's reply:
+# "Checking the satellite." must not switch the map), the whole utterance, so "show me the weather tomorrow" or
+# "weather in Reno" stays a forecast question and "Satellite Beach" stays a place.
+_END = r"(?:\s+(?:please|now))?\s*[.!?]*\s*$"
+_VIEW_PHRASES: list[tuple[re.Pattern, dict]] = [
+    (re.compile(r"^\s*(?:(?:hide|turn\s+off|close)\s+(?:the\s+)?(?:weather|radar)(?:\s+(?:map|view|layer))?|"
+                r"(?:back\s+to\s+(?:the\s+)?|go\s+to\s+(?:the\s+)?|switch\s+to\s+(?:the\s+)?|show\s+(?:me\s+)?(?:the\s+)?)?"
+                r"(?:normal|regular|plain|standard|usual)\s+map|"
+                r"(?:верни\s+)?обычн\w*\s+карт\w*|убери\s+(?:погоду|радар)(?:\s+с\s+карты)?)" + _END, re.I),
+     {"type": "map_view", "value": "map"}),
+    (re.compile(r"^\s*(?:(?:show|open|put\s+up|turn\s+on|switch\s+to)\s+(?:me\s+)?(?:the\s+)?(?:weather|radar)"
+                r"(?:\s+(?:map|view|layer|radar))?(?:\s+on\s+the\s+map)?|(?:the\s+)?(?:weather|radar)\s+(?:map|view|layer)|"
+                r"покажи\s+(?:мне\s+)?(?:погоду|радар)(?:\s+на\s+карте)?)" + _END, re.I),
+     {"type": "map_view", "value": "weather"}),
+    (re.compile(r"^\s*(?:(?:show|open|switch\s+to|go\s+to|turn\s+on)\s+(?:me\s+)?(?:the\s+)?satellite(?:\s+(?:view|map|mode))?|"
+                r"(?:the\s+)?satellite\s+(?:view|map|mode)|(?:покажи\s+|включи\s+)?(?:вид\s+со\s+)?спутник\w*)" + _END, re.I),
+     {"type": "map_view", "value": "satellite"}),
+]
+
+
+def view_phrase(text: str) -> Optional[dict]:
+    """The map look the driver's own words ask for, or None (see _VIEW_PHRASES)."""
+    if not text:
+        return None
+    for rx, action in _VIEW_PHRASES:
+        if rx.search(text):
+            return action
+    return None
+
+
 def control_phrase(text: str) -> Optional[dict]:
     """The control a phrase asks for, if it is only a control (no digits, no place-like proper nouns)."""
     if not text or re.search(r"\d", text):
