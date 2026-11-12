@@ -4,7 +4,7 @@
 import { useEffect, type RefObject } from "react";
 
 import { api } from "../api";
-import { routeKeyOf, useRouteWeatherStore } from "../state/routeWeatherStore";
+import { restoreRouteWeather, routeKeyOf, useRouteWeatherStore } from "../state/routeWeatherStore";
 import type { LatLng, RouteInfo } from "../types";
 import { nearestIndex, samplePoints } from "../weather/routeWeather";
 
@@ -17,7 +17,10 @@ export function useRouteWeather(route: RouteInfo | null | undefined, trailerEmpt
       useRouteWeatherStore.getState().clear();
       return;
     }
-    if (useRouteWeatherStore.getState().routeKey !== key) useRouteWeatherStore.getState().clear();
+    if (useRouteWeatherStore.getState().routeKey !== key) {
+      useRouteWeatherStore.getState().clear();
+      restoreRouteWeather(key).catch(() => {});
+    }
     let ctl: AbortController | null = null;
     const load = () => {
       ctl?.abort();

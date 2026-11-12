@@ -839,6 +839,7 @@ export default function MapScreen() {
   // Weather along the active route at the truck's ETA (Figma "Weather v2"): chips on the map, a line in the card.
   useRouteWeather(active?.route, truck.trailer_empty, coordsRef);
   const wxPoints = useRouteWeatherStore((st) => st.points);
+  const wxFetchedAt = useRouteWeatherStore((st) => st.fetchedAt);
   const wxChips = useMemo(() => (active ? weatherChipsOf(wxPoints, active.route) : []), [wxPoints, active]);
   // The time slider (Figma V4): weather view, a route set, not driving (FMCSA: no dragging on the move).
   const sliderOn = sliderVisible({ mapView, hasRoute: !!active, driving, phase });
@@ -889,7 +890,8 @@ export default function MapScreen() {
         }}
         onMapTouch={Keyboard.dismiss}
         mapView={mapView}
-        radar={sliderOverlay}
+        // Offline the tiles can't load and the cached ones are old: the radar is drawn faint (Figma V8).
+        radar={online ? sliderOverlay : sliderOverlay && { ...sliderOverlay, opacity: 0.35 }}
         ghost={ghost}
         weatherChips={wxChips}
         onWeatherChipPress={setWxChip}
@@ -932,7 +934,7 @@ export default function MapScreen() {
 
       {/* Hidden when the map window has no room for it under the top bar: it sat on the history button
           (UI review 2026-11-05, third pass, M3). */}
-      {mapView === "weather" && !(driving && active) && <RadarStatus top={topH + spacing.sm} frame={radar.frame} forecastAt={sliderAhead ? sliderAt : null} beyondForecast={sliderAhead && !sliderLayer} />}
+      {mapView === "weather" && !(driving && active) && <RadarStatus top={topH + spacing.sm} frame={radar.frame} forecastAt={sliderAhead ? sliderAt : null} beyondForecast={sliderAhead && !sliderLayer} offlineSince={online ? null : wxFetchedAt} />}
       {viewBottom !== null && <MapViewButton bottom={viewBottom} active={mapView !== "map"} onPress={() => setMapViewOpen(true)} />}
       <WeatherPointSheet
         chip={wxChip}

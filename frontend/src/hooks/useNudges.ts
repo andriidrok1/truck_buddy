@@ -3,7 +3,9 @@ import { useEffect, type RefObject } from "react";
 import { api } from "../api";
 import { newSessionId, type CopilotTurnController } from "../dialog/useCopilotTurn";
 import { chainControlAhead, routePointsAhead } from "../geo/ahead";
-import { useNudgesEnabled } from "../state/settingsStore";
+import { setMapView, useNudgesEnabled, useSettings } from "../state/settingsStore";
+import { useRouteWeatherStore } from "../state/routeWeatherStore";
+import { chips, weatherAhead } from "../weather/routeWeather";
 import { useTripStore } from "../state/tripStore";
 import type { LatLng } from "../types";
 import { PRIORITY } from "../voice/queue";
@@ -55,6 +57,7 @@ export function useNudges(
             active_place: cur.place,
             ahead: routePointsAhead(cur.route.geometry, g.cum, g.matchedIndex, g.alongM),
             chain_control_ahead: chainControlAhead(cur.route.chain_controls, g.cum, g.matchedIndex, g.alongM) ?? undefined,
+            weather_ahead: weatherAhead(chips(useRouteWeatherStore.getState().points, cur.route), cur.route, g.cum, g.matchedIndex, g.alongM) ?? undefined,
             drive_elapsed_min: since === null ? null : Math.min(24 * 60, Math.max(0, Math.round((Date.now() - since) / 60000))),
             local_hour: new Date().getHours(),
             session_id: sessionId,
@@ -63,6 +66,9 @@ export function useNudges(
         );
         if (ctrl.signal.aborted || !nudges.length) return;
         turn.adoptSession(sessionId); // the answer must not start a fresh session
+        // The copilot speaks up about the weather ahead: the map shows it too (Figma V1). A plain map switches to the
+        // weather view; satellite stays (the driver chose it).
+        if (nudges.some((n) => n.kind === "weather") && useSettings.getState().mapView === "map") setMapView("weather");
         for (const n of nudges) {
           say(n.text, { priority: PRIORITY.WEATHER, kind: "ambient", key: `${NUDGE_KEY_PREFIX}${n.kind}`, ttlMs: NUDGE_EVERY_MS });
         }

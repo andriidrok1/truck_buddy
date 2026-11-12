@@ -157,6 +157,20 @@ for en, ru in [("There's no route yet. Where do you want to go?", "Маршру�
                ("I'll speak up with suggestions again.", "Снова буду подсказывать."), ("Okay, I'll stop suggesting things.", "Хорошо, больше не буду ничего предлагать."),
                ("Rerouting for that.", "Перестраиваю маршрут.")]:
     t(en, ru)
+# --- map view, empty trailer, weather heads-up (weather plan) ---
+for en, ru in [("Here's the weather radar.", "Вот радар погоды."), ("Satellite view.", "Вид со спутника."),
+               ("Back to the normal map.", "Обычная карта."), ("Empty or loaded?", "Пустой или гружёный?"),
+               ("Got it, running empty. I'll watch the crosswinds for you.", "Понял, едешь пустой. Буду следить за боковым ветром."),
+               ("Got it, you're loaded.", "Понял, ты гружёный.")]:
+    t(en, ru)
+t("Heads up. Ice risk near {place} in about {min} minutes, {temp} degrees on a wet road. Bridges ice first.",
+  "Внимание. Риск гололёда у {place} примерно через {min|plural:минуту,минуты,минут}, {temp|plural:градус,градуса,градусов} по Фаренгейту на мокрой дороге. Мосты замерзают первыми.")
+t("Heads up. Gusts to {gust} miles an hour near {place} in about {min} minutes. That's tip-over wind for an empty trailer.",
+  "Внимание. Порывы до {gust|plural:мили,миль,миль} в час у {place} примерно через {min|plural:минуту,минуты,минут}. Пустой прицеп при таком ветре может опрокинуть.")
+t("Heads up. Fog near {place} in about {min} minutes, visibility under a mile.",
+  "Внимание. Туман у {place} примерно через {min|plural:минуту,минуты,минут}, видимость меньше мили.")
+t("Heads up. {event} near {place} in about {min} minutes.",
+  "Внимание: {event|nom} у {place} примерно через {min|plural:минуту,минуты,минут}.")
 t("Height is now {ft} foot {inch}.", "Высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}.")
 t("Height is now {ft} feet.", "Высота теперь {ft|plural:фут,фута,футов}.")
 t("Trailer is now {n} feet.", "Трейлер теперь {n|plural:фут,фута,футов}.")

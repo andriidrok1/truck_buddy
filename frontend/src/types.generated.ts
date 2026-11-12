@@ -1098,7 +1098,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "break" | "parking" | "chains";
+            kind: "break" | "parking" | "chains" | "weather";
             /** Offer */
             offer?: ("add_stop" | "go" | "chains_answer") | null;
             place?: components["schemas"]["Place"] | null;
@@ -1141,6 +1141,7 @@ export interface components {
             /** Session Id */
             session_id?: string | null;
             truck_profile?: components["schemas"]["TruckProfile"];
+            weather_ahead?: components["schemas"]["WeatherAhead"] | null;
         };
         /** NudgeResponse */
         NudgeResponse: {
@@ -1716,6 +1717,31 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /**
+         * WeatherAhead
+         * @description The first point ahead the weather view marks as a warning: ice risk, gusts, low visibility or an alert.
+         */
+        WeatherAhead: {
+            /** Event */
+            event?: string | null;
+            /** Gust Mph */
+            gust_mph?: number | null;
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "ice" | "snow" | "wind" | "fog" | "rain" | "cloud" | "clear";
+            /** Minutes Ahead */
+            minutes_ahead: number;
+            /** Place */
+            place?: string | null;
+            /** Temp F */
+            temp_f?: number | null;
+            /** Vis Mi */
+            vis_mi?: number | null;
         };
         /**
          * WeatherAlert

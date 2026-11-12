@@ -293,6 +293,7 @@ class NudgeRequest(BaseModel):
     session_id: Optional[str] = Field(None, max_length=64)
     truck_profile: TruckProfile = Field(default_factory=TruckProfile)
     chain_control_ahead: Optional["ChainAhead"] = None  # first active Caltrans control on the route ahead
+    weather_ahead: Optional["WeatherAhead"] = None  # first point ahead that matters (POST /api/weather/points)
     motive_key: Optional[str] = Field(None, max_length=200, exclude=True, repr=False)
     motive_user: Optional[str] = Field(None, max_length=40, exclude=True, repr=False)  # with a fleet's key
 
@@ -304,8 +305,20 @@ class ChainAhead(BaseModel):
     miles_ahead: float = Field(ge=0, le=500)
 
 
+class WeatherAhead(BaseModel):
+    """The first point ahead the weather view marks as a warning: ice risk, gusts, low visibility or an alert."""
+    key: str = Field(max_length=80)  # the app's id for the point (kind + route index): said once per route
+    kind: Literal["ice", "snow", "wind", "fog", "rain", "cloud", "clear"]
+    place: Optional[str] = Field(None, max_length=80)
+    minutes_ahead: int = Field(ge=0, le=24 * 60)
+    temp_f: Optional[int] = Field(None, ge=-80, le=140)
+    gust_mph: Optional[int] = Field(None, ge=0, le=250)
+    vis_mi: Optional[float] = Field(None, ge=0, le=100)
+    event: Optional[str] = Field(None, max_length=80)  # the NWS alert covering it, if any
+
+
 class Nudge(BaseModel):
-    kind: Literal["break", "parking", "chains"]
+    kind: Literal["break", "parking", "chains", "weather"]
     text: str  # spoken as an ambient line
     priority: int = 2
     place: Optional[Place] = None

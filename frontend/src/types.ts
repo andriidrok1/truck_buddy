@@ -278,10 +278,12 @@ export type NudgeRequest = {
   session_id?: string | null;
   /** Left out when no active control is ahead or its position is unknown (see geo/ahead.ts). */
   chain_control_ahead?: ChainControlAhead;
+  /** First point ahead that matters in the route's weather (src/weather/routeWeather.ts weatherAhead). */
+  weather_ahead?: import("./weather/routeWeather").WeatherAhead;
 };
 
 export type Nudge = {
-  kind: "break" | "parking" | "chains";
+  kind: "break" | "parking" | "chains" | "weather";
   text: string;
   priority: number;
   place?: Place | null;

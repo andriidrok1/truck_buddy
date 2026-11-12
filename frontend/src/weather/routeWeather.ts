@@ -142,3 +142,34 @@ export function detail(c: Chip): string {
   if (c.alert) parts.push(c.alert.event);
   return parts.join(" · ");
 }
+
+export type WeatherAhead = {
+  key: string;
+  kind: string;
+  place?: string | null;
+  minutes_ahead: number;
+  temp_f?: number | null;
+  gust_mph?: number | null;
+  vis_mi?: number | null;
+  event?: string | null;
+};
+
+/** The first point ahead of the truck that matters, for the copilot's heads-up (POST /api/nudges). Minutes by
+ *  the distance still to go at the route's average speed: ETAs from when the route was set drift with traffic. */
+export function weatherAhead(list: readonly Chip[], route: Pick<RouteInfo, "distance_m" | "duration_s">, cum: readonly number[], matchedIndex: number, alongM: number): WeatherAhead | null {
+  if (matchedIndex < 0 || !cum.length || route.duration_s <= 0) return null;
+  const mps = route.distance_m / route.duration_s;
+  const c = list.find((x) => x.warn && x.index > matchedIndex && x.index < cum.length);
+  if (!c || mps <= 0) return null;
+  const minutes = Math.max(0, Math.round((cum[c.index] - alongM) / mps / 60));
+  return {
+    key: `${c.kind}-${c.index}`,
+    kind: c.kind,
+    place: c.place ?? null,
+    minutes_ahead: Math.min(24 * 60, minutes),
+    temp_f: c.temp_f ?? null,
+    gust_mph: c.gust_mph ?? null,
+    vis_mi: c.vis_mi ?? null,
+    event: c.alert?.event ?? null,
+  };
+}

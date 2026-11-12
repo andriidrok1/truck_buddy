@@ -3,6 +3,8 @@
 
 import { create } from "zustand";
 
+import { storage } from "../utils/storage";
+
 import type { RoutePoint } from "../weather/routeWeather";
 
 type State = {
@@ -18,9 +20,26 @@ export const useRouteWeatherStore = create<State>()((set) => ({
   routeKey: null,
   points: [],
   fetchedAt: null,
-  set: (routeKey, points, fetchedAt) => set({ routeKey, points, fetchedAt }),
+  set: (routeKey, points, fetchedAt) => {
+    set({ routeKey, points, fetchedAt });
+    // On disk too: an app restarted on a pass with no signal still has the route's forecast (Figma V8).
+    storage.setItem(ROUTE_WEATHER_KEY, { routeKey, points, fetchedAt });
+  },
   clear: () => set({ routeKey: null, points: [], fetchedAt: null }),
 }));
+
+export const ROUTE_WEATHER_KEY = "route_weather_v1";
+/** A saved forecast older than this is not shown. */
+export const SAVED_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
+/** The saved forecast for this route, into the store; false when there is none (or it is for another route). */
+export async function restoreRouteWeather(routeKey: string, now = Date.now()): Promise<boolean> {
+  const saved = await storage.getItem<{ routeKey?: string; points?: RoutePoint[]; fetchedAt?: number } | null>(ROUTE_WEATHER_KEY, null);
+  if (!saved || saved.routeKey !== routeKey || !Array.isArray(saved.points) || !saved.fetchedAt || now - saved.fetchedAt > SAVED_MAX_AGE_MS) return false;
+  if (useRouteWeatherStore.getState().routeKey === routeKey) return true; // a fresh answer came first
+  useRouteWeatherStore.setState({ routeKey, points: saved.points, fetchedAt: saved.fetchedAt });
+  return true;
+}
 
 /** A cheap identity for a route: its length, ends and duration. */
 export function routeKeyOf(geometry: [number, number][], durationS: number): string {

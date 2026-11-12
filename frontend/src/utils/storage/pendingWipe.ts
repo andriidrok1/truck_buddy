@@ -22,6 +22,7 @@ export const APP_KEYS = [
   "trip_v2",
   "trip_arrived_v1",
   "trip_events_pending",
+  "route_weather_v1",
 ] as const;
 
 /** Keychain keys (AsyncStorage on web). */

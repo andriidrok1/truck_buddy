@@ -34,10 +34,23 @@ const KEY_ROWS = [
 
 /** Under the top bar in the weather view: when the radar frame is from, and a Key button that opens the legend
  *  (Figma V2a/V2b). Nothing when the backend has no frame. */
-export function RadarStatus({ top, frame, forecastAt, beyondForecast }: { top: number; frame: RadarFrame | null; forecastAt?: Date | null; beyondForecast?: boolean }) {
+export function RadarStatus({ top, frame, forecastAt, beyondForecast, offlineSince }: { top: number; frame: RadarFrame | null; forecastAt?: Date | null; beyondForecast?: boolean; offlineSince?: number | null }) {
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
   const clock = frameClock(frame?.time);
+  if (offlineSince !== undefined && offlineSince !== null) {
+    // No signal (a mountain pass): the radar is old, the route's forecast was saved before (Figma V8).
+    return (
+      <View pointerEvents="none" style={[styles.status, { top }]}>
+        <View testID="radar-offline" style={[styles.chip, shadow(colors), { backgroundColor: colors.surfaceInverse }]}>
+          <Icon name="signal-off" size={18} color={colors.onSurfaceInverse} />
+          <Text style={[styles.chipText, { color: colors.onSurfaceInverse }]}>
+            {t("No signal · forecast from {time}", { time: frameClock(new Date(offlineSince).toISOString()) ?? "" })}
+          </Text>
+        </View>
+      </View>
+    );
+  }
   if (!frame?.enabled || !clock) return null;
   return (
     <View pointerEvents="box-none" style={[styles.status, { top }]}>
