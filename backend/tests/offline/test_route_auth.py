@@ -14,6 +14,13 @@ PUBLIC = {
     ("POST", "/api/auth/refresh"),
     ("GET", "/api/voice/audio/{audio_id}"),
 }
+# Apple/Google sign-in and logout (the refresh token in the body is the credential) arrive with the accounts
+# PR (#170); public when present, so this test stays green on main before it and after it.
+PUBLIC_WHEN_PRESENT = {
+    ("POST", "/api/auth/apple"),
+    ("POST", "/api/auth/google"),
+    ("POST", "/api/auth/logout"),
+}
 
 
 def _calls(dependant) -> set:
@@ -35,7 +42,8 @@ def _routes():
 
 def test_every_non_public_route_needs_the_driver_token():
     open_routes = sorted((m, p) for m, p, r in _routes()
-                         if (m, p) not in PUBLIC and auth.require_driver not in _calls(r.dependant))
+                         if (m, p) not in PUBLIC | PUBLIC_WHEN_PRESENT
+                         and auth.require_driver not in _calls(r.dependant))
     assert open_routes == []
 
 
