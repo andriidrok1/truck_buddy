@@ -13,7 +13,7 @@ type Fix = { coords: LatLng; isDemo: boolean; resolved: boolean };
 const nearSpot = (spot: LatLng | null, at: LatLng) => !!spot && Math.hypot(spot.lat - at.lat, (spot.lng - at.lng) * 0.8) < 0.045;
 
 /**
- * Warm Places + parking caches around the driver: app on screen, no active route,
+ * Warm the Places cache around the driver (no satellite parking check): app on screen, no active route,
  * real GPS fix (or demo after location resolved), then again after moving ~5 km.
  */
 export function useWarmCaches(loc: Fix, appActive: boolean, active: ActiveRoute | null) {

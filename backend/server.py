@@ -467,27 +467,25 @@ def _bg(coro) -> None:
 
 
 _BG: set = set()
-WARM_TOP = 1  # satellite check only for the first place of each category
-WARM_EVERY_S = 600  # per driver: a warm-up is 3 Places searches + up to 3 vision calls
+WARM_EVERY_S = 600  # per driver: a warm-up is 3 Places searches (each cached ~10 min on a ~1 km grid)
 _WARM_LAST: dict[str, float] = {}
 
 
 async def _warm(lat: float, lng: float) -> None:
+    """Places only. No satellite check here: a vision call costs ~$0.06 and the driver asked nothing yet;
+    the parking check runs when he asks about a place or picks one (agent, /parking, /route)."""
     async def one(cat: str):
         try:
-            res = await get_places_provider().search(cat, lat, lng)
+            await get_places_provider().search(cat, lat, lng)
         except Exception as e:  # noqa: BLE001
             logger.warning("warm %s failed: %s", cat, e)
-            return
-        for p in res.places[:WARM_TOP]:
-            _bg(check_parking(p))
     await asyncio.gather(*(one(c) for c in ("truck_stop", "hotel", "rest_area")))
 
 
 @api.post("/warm")
 async def warm(lat: float = Query(..., ge=-90, le=90), lng: float = Query(..., ge=-180, le=180),
                driver: str = Depends(auth.require_driver)):
-    """Pre-fetch Places for all categories (+ satellite check for the top place) around the driver.
+    """Pre-fetch Places for truck stops, hotels and rest areas around the driver (no satellite check).
     At most once per driver per WARM_EVERY_S; the answer is always ok (the app ignores it)."""
     now = asyncio.get_running_loop().time()
     if len(_WARM_LAST) > 10_000:

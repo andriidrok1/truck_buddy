@@ -290,7 +290,7 @@ export const api = {
       body: JSON.stringify({ text, lat: at.lat, lng: at.lng, truck_profile: await ensureTruckProfile() }),
     }),
   speak: (text: string) => request<{ audio_url: string }>(`/speak`, { method: "POST", body: JSON.stringify({ text }) }),
-  /** Pre-fetch nearby places (+ parking checks) so the next voice turn hits warm caches. */
+  /** Pre-fetch nearby places so the next voice turn hits a warm cache. No parking check: that waits for the driver. */
   warm: (at: LatLng) => request<{ ok: boolean }>(`/warm?lat=${at.lat}&lng=${at.lng}`, { method: "POST" }),
   /**
    * Voice turn step 1: speech -> text, shown to the driver right away. `stt_ms` is the server's

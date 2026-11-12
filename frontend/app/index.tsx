@@ -286,7 +286,7 @@ export default function MapScreen() {
 
   const fillers = useFillers(voice.playAndWait);
 
-  // Warm Places + parking caches around the driver; the truck stops around him as pins on an empty map.
+  // Warm the Places cache around the driver (parking is checked only when he asks or picks a place); the truck stops around him as pins on an empty map.
   const appActive = useAppActive();
   useWarmCaches(loc, appActive, active);
   useStartPins(loc, { active, phase, optionsCount: options.length, providers, placesCount: places.length }, phaseRef, setFit);
