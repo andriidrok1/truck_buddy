@@ -56,7 +56,9 @@ async function adopt(res: Response, from: string): Promise<boolean> {
   if (typeof data?.access_token !== "string" || !data.access_token) return false;
   if (getToken() !== from) return true; // signed out or replaced meanwhile: leave the new state alone
   const role = data.role === "tester" || (data.role === undefined && isTester()) ? "tester" : "driver";
-  const rt = typeof data.refresh_token === "string" && data.refresh_token ? data.refresh_token : null;
+  // /auth/renew for an account session (a token with `sid`) sends a new access token only: the server keeps the
+  // refresh token's hash, and the stored refresh token stays good. An answer without one keeps it.
+  const rt = typeof data.refresh_token === "string" && data.refresh_token ? data.refresh_token : getRefreshToken();
   await setToken(data.access_token, role, signedInVia(), rt);
   return true;
 }

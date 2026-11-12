@@ -206,6 +206,18 @@ describe("an account session: the refresh token is single-use on the server", ()
     expect(stored("auth_via")).toBe("account"); // still an account sign-in after the trade
   });
 
+  test("/auth/renew answers a session token with a new access token only: the stored refresh token stays (#171)", async () => {
+    const a1 = jwtExp(RENEW_BEFORE_MS / 2);
+    const a2 = jwtExp(30 * 86400_000, "a2");
+    await setToken(a1, "driver", "account", "R1");
+    mockFetch({ "/auth/renew": { status: 200, body: { access_token: a2, role: "driver" } } });
+    expect(await renewOnStart()).toBe("renewed");
+    expect(getToken()).toBe(a2);
+    expect(getRefreshToken()).toBe("R1");
+    expect(stored("auth_refresh")).toBe("R1");
+    expect(await renewOnStart()).toBeNull(); // nothing due: no renewal loop for want of a refresh token
+  });
+
   test("two callers at once make one network call", async () => {
     await setToken(jwtExp(RENEW_BEFORE_MS / 2), "driver", "account", "R1");
     const answer = heldFetch();
