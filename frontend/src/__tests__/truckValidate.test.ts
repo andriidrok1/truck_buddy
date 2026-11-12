@@ -1,4 +1,4 @@
-import { truckErrors, truckFromInputs } from "../truck/validate";
+import { heardTruckLine, truckErrors, truckFromInputs } from "../truck/validate";
 
 const ok = { feet: "13", inches: "6", trailer: "53", weight: "80000" };
 
@@ -15,4 +15,12 @@ test("each field says what is wrong with it and its own limits", () => {
   expect(truckErrors({ ...ok, inches: "14" }).height).toBeDefined();
   expect(Object.keys(truckErrors({ feet: "", inches: "", trailer: "", weight: "" })).sort()).toEqual(["height", "trailer", "weight"]);
   expect(truckFromInputs({ ...ok, trailer: "80" })).toBeNull();
+});
+
+test("the heard line shows only what the driver said, never a prefilled default", () => {
+  expect(heardTruckLine(["height_in", "trailer_ft", "weight_lb", "hazmat"], { ...ok, feet: "14", inches: "0" }, true)).toBe("14 ft 0 in · 53 ft trailer · 80,000 lb · HAZMAT");
+  expect(heardTruckLine(["weight_lb"], { ...ok, weight: "72000" }, false)).toBe("72,000 lb");
+  expect(heardTruckLine(["height_in", "hazmat"], ok, false)).toBe("13 ft 6 in"); // "no hazmat" adds nothing
+  expect(heardTruckLine(["hazmat"], ok, false)).toBe("");
+  expect(heardTruckLine([], ok, true)).toBe("");
 });

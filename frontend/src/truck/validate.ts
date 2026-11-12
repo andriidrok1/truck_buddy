@@ -36,6 +36,20 @@ export function truckFromInputs(t: TruckInputs): { height_in: number; trailer_ft
   return { height_in: toInt(t.feet) * 12 + (t.inches.trim() ? toInt(t.inches) : 0), trailer_ft: toInt(t.trailer), weight_lb: toInt(t.weight) };
 }
 
+/**
+ * The truck facts the driver said by voice in onboarding, as one line. `heard` is the keys of the parsed answer:
+ * a size that was not mentioned is still the prefilled default (13 ft 6 in, 53 ft, 80,000 lb) and is left out, so
+ * the line never shows a default as if the driver had said it. Empty when nothing worth showing was heard.
+ */
+export function heardTruckLine(heard: readonly string[], t: TruckInputs, hazmat: boolean): string {
+  const parts: string[] = [];
+  if (heard.includes("height_in")) parts.push(`${t.feet} ft ${t.inches} in`);
+  if (heard.includes("trailer_ft")) parts.push(`${t.trailer} ft trailer`);
+  if (heard.includes("weight_lb")) parts.push(lb(toInt(t.weight) || 0));
+  if (heard.includes("hazmat") && hazmat) parts.push("HAZMAT");
+  return parts.join(" · ");
+}
+
 /** Empty = the server's default (null); 3 to 15 mpg = that; anything else = undefined (invalid, Save disabled). */
 export function parseMpg(raw: string): number | null | undefined {
   const v = raw.trim().replace(",", ".");
