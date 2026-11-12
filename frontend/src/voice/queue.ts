@@ -36,6 +36,9 @@ export type QueuedSpeech = SpeechItem & {
   seq: number;
 };
 
+/** Too old to say. `take` checks it, and the hook again once the audio is there (the fetch takes time too). */
+export const isExpired = (q: Pick<QueuedSpeech, "at" | "ttlMs">, now: number) => q.ttlMs !== undefined && now - q.at >= q.ttlMs;
+
 export type DropReason = "expired" | "replaced" | "cleared";
 
 export type SpeechQueueOptions = {
@@ -59,6 +62,8 @@ export class SpeechQueue {
   private items: QueuedSpeech[] = [];
   private seq = 0;
   private lastAmbientAt = -Infinity;
+  /** `lastAmbientAt` before the last take, for a line that is handed back. */
+  private ambientBefore = -Infinity;
   private readonly ambientGapMs: number;
   private readonly onDrop?: SpeechQueueOptions["onDrop"];
 
@@ -89,10 +94,17 @@ export class SpeechQueue {
     for (const q of order) {
       if (isAmbient(q.priority) && now - this.lastAmbientAt < this.ambientGapMs) continue;
       this.items.splice(this.items.indexOf(q), 1);
+      this.ambientBefore = this.lastAmbientAt;
       if (isAmbient(q.priority)) this.lastAmbientAt = now;
       return q;
     }
     return null;
+  }
+
+  /** A line `take` handed out that went stale while its audio was fetched: reported like one that expired waiting. */
+  dropTaken(q: QueuedSpeech) {
+    this.untake(q);
+    this.onDrop?.(q, "expired");
   }
 
   clear() {
@@ -106,10 +118,15 @@ export class SpeechQueue {
     return this.items.length;
   }
 
+  /** An ambient line that was taken but never said has not used up the minute. */
+  private untake(q: QueuedSpeech) {
+    if (isAmbient(q.priority)) this.lastAmbientAt = this.ambientBefore;
+  }
+
   private expire(now: number) {
     const keep: QueuedSpeech[] = [];
     for (const q of this.items) {
-      if (q.ttlMs !== undefined && now - q.at >= q.ttlMs) this.onDrop?.(q, "expired");
+      if (isExpired(q, now)) this.onDrop?.(q, "expired");
       else keep.push(q);
     }
     this.items = keep;

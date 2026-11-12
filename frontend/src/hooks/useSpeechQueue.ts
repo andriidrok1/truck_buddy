@@ -4,7 +4,7 @@ import { absoluteUrl, api } from "../api";
 import { logAnnouncement, type AnnouncementKind } from "../dev/announcements";
 import { t } from "../i18n";
 import { speakLocal, stopLocal } from "../voice/localTts";
-import { preempts, SpeechQueue, type DropReason, type QueuedSpeech, type SpeechItem } from "../voice/queue";
+import { isExpired, preempts, SpeechQueue, type DropReason, type QueuedSpeech, type SpeechItem } from "../voice/queue";
 import { isOnline } from "./useOnline";
 import type { useVoice } from "./useVoice";
 
@@ -14,6 +14,13 @@ export type SayOptions = Omit<SpeechItem, "text">;
 
 /** Idle poll while something waits (the copilot is talking, or the ambient minute has not passed). */
 const POLL_MS = 500;
+/**
+ * How long a line waits for the cloud voice before the phone's own voice says it. The default API deadline
+ * is 30 s and nothing else is said meanwhile: on a stalled link the driver passed the turn in silence and
+ * heard the call afterwards. A maneuver gets less: it is worth nothing late.
+ */
+export const SPEAK_DEADLINE_MS = 4000;
+export const MANEUVER_SPEAK_DEADLINE_MS = 2500;
 const LOG_KIND: Record<SpeechItem["kind"], AnnouncementKind> = { maneuver: "maneuver", ambient: "advisory", system: "system" };
 
 /**
@@ -23,8 +30,9 @@ const LOG_KIND: Record<SpeechItem["kind"], AnnouncementKind> = { maneuver: "mane
  * (that flips the audio mode twice per clip and clicks on iOS); the hold is released as soon as
  * the queue is empty. `onPlay` fires as each line starts (captions); `onDone` once it has played
  * to the end (not when it was cut off), so a line that asks a question can open the mic. Offline
- * (NetInfo or a failed API call), or when /api/speak fails, the line goes through the phone's own
- * voice instead (src/voice/localTts.ts): the guidance must stay audible in a dead zone.
+ * (NetInfo or a failed API call), or when /api/speak fails or is slower than its deadline, the line
+ * goes through the phone's own voice instead (src/voice/localTts.ts): the guidance must stay audible
+ * in a dead zone, and on time on a stalled link.
  */
 export function useSpeechQueue(
   voice: Voice,
@@ -75,19 +83,26 @@ export function useSpeechQueue(
         if (!item) break;
         holdPlayback(true);
         playing.current = item;
-        if (__DEV__) logAnnouncement(item.text, LOG_KIND[item.kind]);
-        onPlayRef.current?.(item);
         const maxMs = Math.min(15000, 1500 + item.text.length * 65);
         let cloud: string | null = null;
         if (isOnline()) {
           try {
-            cloud = absoluteUrl((await api.speak(item.text)).audio_url);
+            const deadline = item.kind === "maneuver" ? MANEUVER_SPEAK_DEADLINE_MS : SPEAK_DEADLINE_MS;
+            cloud = absoluteUrl((await api.speak(item.text, deadline)).audio_url);
           } catch (e) {
             console.log(`[speech] "${item.text}" cloud voice failed (${String(e)}), using the local voice`);
           }
         }
         // Cut off (preempted) while the audio was being made: play the newer line instead.
         if (playing.current !== item) continue;
+        // The audio took its time and the line is stale now ("Turn right." after the turn): not said at all.
+        if (isExpired(item, Date.now())) {
+          playing.current = null;
+          q.dropTaken(item);
+          continue;
+        }
+        if (__DEV__) logAnnouncement(item.text, LOG_KIND[item.kind]);
+        onPlayRef.current?.(item);
         try {
           if (cloud) await playAndWait(cloud, maxMs);
           else {
