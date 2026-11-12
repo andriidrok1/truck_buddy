@@ -111,18 +111,20 @@ const chainSeverity = (status: string): 1 | 2 | 3 => {
 
 /**
  * Everything on the route ahead of the matched segment within `aheadMaxM`, nearest first.
- * Distances are vertex to vertex (cum[index] - cum[matchedIndex]): good to a segment, which is
- * all a "4 mi" chip or a "heads up" needs.
+ * Distances are from the truck (`alongM`, its projected position on the line) to the item's vertex.
+ * They used to be from the start vertex of the matched segment: the backend simplifies the line, one
+ * segment of a straight interstate is kilometres long, and "Road closed in about 4 miles" was said
+ * 2 miles before it while the chip stood still. An item at the segment's start vertex is behind.
  */
 export function upcomingAdvisories(
   route: Pick<RouteInfo, "incidents" | "weather" | "chain_controls">,
   matchedIndex: number,
   cum: readonly number[],
+  alongM: number,
   aheadMaxM = AHEAD_MAX_M,
 ): Advisory[] {
   if (matchedIndex < 0 || !cum.length) return [];
-  const here = cum[Math.min(matchedIndex, cum.length - 1)];
-  const ahead = (index: number) => cum[Math.min(Math.max(0, index), cum.length - 1)] - here;
+  const ahead = (index: number) => cum[Math.min(Math.max(0, index), cum.length - 1)] - alongM;
   const out: Advisory[] = [];
   const push = (a: Advisory) => {
     if (a.index > matchedIndex && a.aheadM >= 0 && a.aheadM <= aheadMaxM) out.push(a);
