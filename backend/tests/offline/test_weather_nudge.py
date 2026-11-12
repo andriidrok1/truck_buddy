@@ -65,3 +65,17 @@ def test_no_alert_no_detour_claim():
     wa = WeatherAhead(key="fog-2", kind="fog", place="Lodi", minutes_ahead=15, vis_mi=0.4)
     [n] = run(nudges.compute(_req(wa), sess, None))
     assert n.text == "Heads up. Fog near Lodi in about 15 minutes, visibility under a mile."
+
+
+def test_every_warning_kind_has_a_line():
+    """Review 2026-11-11: a warn point with no line was silent and held back the ones after it."""
+    cases = [
+        WeatherAhead(key="a", kind="ice", place="Truckee", minutes_ahead=30),  # no temperature
+        WeatherAhead(key="b", kind="snow", place="Truckee", minutes_ahead=30, reasons=["low_visibility"]),
+        WeatherAhead(key="c", kind="snow", place="Truckee", minutes_ahead=30, reasons=["gusts"], gust_mph=58),
+        WeatherAhead(key="d", kind="fog", place="Lodi", minutes_ahead=30, reasons=["low_visibility"]),
+        WeatherAhead(key="e", kind="wind", place="Reno", minutes_ahead=30, reasons=["gusts"], gust_mph=60),
+        WeatherAhead(key="f", kind="cloud", place="Reno", minutes_ahead=30, event="High Wind Warning"),
+    ]
+    for wa in cases:
+        assert nudges.weather_line(wa), wa.key

@@ -111,7 +111,9 @@ export default function MapScreen() {
   // Map / Satellite / Weather (Figma "Weather v2"). The MapLibre build has no imagery: there satellite falls back to the map.
   const satelliteOk = MAP_PROVIDER !== "maplibre";
   const storedView = useMapView();
-  const mapView = storedView === "satellite" && !satelliteOk ? "map" : storedView;
+  const autoWeather = useRouteWeatherStore((st) => st.autoWeather);
+  const mapView0 = storedView === "satellite" && !satelliteOk ? "map" : storedView;
+  const mapView = autoWeather && mapView0 === "map" ? "weather" : mapView0;
   const [mapViewOpen, setMapViewOpen] = useState(false);
   const radar = useRadar(mapView === "weather");
   const [wxChip, setWxChip] = useState<Chip | null>(null);

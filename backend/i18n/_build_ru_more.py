@@ -169,6 +169,12 @@ t("Heads up. Gusts to {gust} miles an hour near {place} in about {min} minutes. 
   "Внимание. Порывы до {gust|plural:мили,миль,миль} в час у {place} примерно через {min|plural:минуту,минуты,минут}. Пустой прицеп при таком ветре может опрокинуть.")
 t("Heads up. Fog near {place} in about {min} minutes, visibility under a mile.",
   "Внимание. Туман у {place} примерно через {min|plural:минуту,минуты,минут}, видимость меньше мили.")
+t("Heads up. Ice risk near {place} in about {min} minutes. Bridges ice first.",
+  "Внимание. Риск гололёда у {place} примерно через {min|plural:минуту,минуты,минут}. Мосты замерзают первыми.")
+t("Heads up. Snow near {place} in about {min} minutes, visibility under a mile.",
+  "Внимание. Снег у {place} примерно через {min|plural:минуту,минуты,минут}, видимость меньше мили.")
+t("Heads up. Snow and gusts to {gust} miles an hour near {place} in about {min} minutes.",
+  "Внимание. Снег и порывы до {gust|plural:мили,миль,миль} в час у {place} примерно через {min|plural:минуту,минуты,минут}.")
 t("Heads up. {event} near {place} in about {min} minutes.",
   "Внимание: {event|nom} у {place} примерно через {min|plural:минуту,минуты,минут}.")
 t("Height is now {ft} foot {inch}.", "Высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}.")

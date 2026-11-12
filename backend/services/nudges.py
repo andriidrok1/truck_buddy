@@ -43,6 +43,9 @@ WEATHER = {
     "ice": "Heads up. Ice risk near {place} in about {min} minutes, {temp} degrees on a wet road. Bridges ice first.",
     "wind": "Heads up. Gusts to {gust} miles an hour near {place} in about {min} minutes. That's tip-over wind for an empty trailer.",
     "fog": "Heads up. Fog near {place} in about {min} minutes, visibility under a mile.",
+    "ice_no_temp": "Heads up. Ice risk near {place} in about {min} minutes. Bridges ice first.",
+    "snow_vis": "Heads up. Snow near {place} in about {min} minutes, visibility under a mile.",
+    "snow_gusts": "Heads up. Snow and gusts to {gust} miles an hour near {place} in about {min} minutes.",
     "alert": "Heads up. {event} near {place} in about {min} minutes.",
 }
 
@@ -133,8 +136,16 @@ def weather_line(wa) -> Optional[str]:
     """The spoken heads-up for a point ahead; None when there is nothing worth saying (a plain cloudy point)."""
     place = (wa.place or "the route ahead").split(",")[0]
     mins = max(5, round(wa.minutes_ahead / 5) * 5)
-    if wa.kind == "ice" and wa.temp_f is not None:
-        return WEATHER["ice"].format(place=place, min=mins, temp=wa.temp_f)
+    if wa.kind == "ice":
+        if wa.temp_f is not None:
+            return WEATHER["ice"].format(place=place, min=mins, temp=wa.temp_f)
+        return WEATHER["ice_no_temp"].format(place=place, min=mins)
+    # Snow outranks wind and fog in the chip's icon; the reason it matters is still said (review 2026-11-11: a
+    # snowy, gusty point was silent and held back every hazard after it).
+    if wa.kind == "snow" and "low_visibility" in wa.reasons:
+        return WEATHER["snow_vis"].format(place=place, min=mins)
+    if wa.kind == "snow" and "gusts" in wa.reasons and wa.gust_mph:
+        return WEATHER["snow_gusts"].format(place=place, min=mins, gust=wa.gust_mph)
     if wa.kind == "wind" and wa.gust_mph:
         return WEATHER["wind"].format(place=place, min=mins, gust=wa.gust_mph)
     if wa.kind == "fog":

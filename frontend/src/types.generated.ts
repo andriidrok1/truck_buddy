@@ -1738,6 +1738,8 @@ export interface components {
             minutes_ahead: number;
             /** Place */
             place?: string | null;
+            /** Reasons */
+            reasons?: string[];
             /** Temp F */
             temp_f?: number | null;
             /** Vis Mi */

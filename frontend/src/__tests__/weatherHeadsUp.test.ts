@@ -24,7 +24,7 @@ describe("weatherAhead", () => {
 
   it("the first point that matters ahead of the truck, minutes by distance", () => {
     expect(weatherAhead(list, ROUTE, CUM, 1, 15000)).toEqual({
-      key: "ice-4", kind: "ice", place: "Truckee, CA", minutes_ahead: 25, temp_f: 31, gust_mph: null, vis_mi: null, event: null,
+      key: "ice-4", kind: "ice", place: "Truckee, CA", minutes_ahead: 25, temp_f: 31, gust_mph: null, vis_mi: null, event: null, reasons: ["ice"],
     });
   });
 
@@ -60,4 +60,15 @@ test("the turn banner is light in the light theme", () => {
   expect(themes.light.navBanner).toBe("#FFFFFF");
   expect(themes.dark.navBanner).toBe("#2C2C2E");
   expect(themes.light.onNavBanner).toBe("#1C1C1E");
+});
+
+test("the copilot's weather view is temporary: the driver's own pick ends it and nothing is stored", async () => {
+  const { setMapView, useSettings } = jest.requireActual<typeof import("../state/settingsStore")>("../state/settingsStore");
+  useRouteWeatherStore.getState().setAutoWeather(true);
+  expect(useSettings.getState().mapView).toBe("map");
+  setMapView("satellite");
+  expect(useRouteWeatherStore.getState().autoWeather).toBe(false);
+  useRouteWeatherStore.getState().setAutoWeather(true);
+  useRouteWeatherStore.getState().clear(); // the route ended
+  expect(useRouteWeatherStore.getState().autoWeather).toBe(false);
 });

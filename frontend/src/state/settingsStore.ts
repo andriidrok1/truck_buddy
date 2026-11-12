@@ -5,6 +5,7 @@
 import { create } from "zustand";
 
 import { storage } from "../utils/storage";
+import { useRouteWeatherStore } from "./routeWeatherStore";
 
 export const SETTINGS_KEY = "settings_v2";
 
@@ -100,7 +101,11 @@ export const setHandsFree = (v: boolean) => useSettings.getState().set({ handsFr
 export const setNudgesEnabled = (v: boolean) => useSettings.getState().set({ nudges: v });
 export const setSpeedAlerts = (v: boolean) => useSettings.getState().set({ speedAlerts: v });
 export const setVoiceGuidance = (v: boolean) => useSettings.getState().set({ voiceGuidance: v });
-export const setMapView = (v: MapView) => useSettings.getState().set({ mapView: v });
+/** The driver's own pick (the sheet, or by voice) also ends a look the copilot switched on by itself. */
+export const setMapView = (v: MapView) => {
+  useRouteWeatherStore.getState().setAutoWeather(false);
+  useSettings.getState().set({ mapView: v });
+};
 export const requestTruckReroute = () => useSettings.getState().requestTruckReroute();
 export const takeTruckReroute = () => useSettings.getState().takeTruckReroute();
 

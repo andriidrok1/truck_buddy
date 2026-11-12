@@ -1362,6 +1362,18 @@
    "ru": "Внимание. Туман у {place} примерно через {min|plural:минуту,минуты,минут}, видимость меньше мили."
   },
   {
+   "en": "Heads up. Ice risk near {place} in about {min} minutes. Bridges ice first.",
+   "ru": "Внимание. Риск гололёда у {place} примерно через {min|plural:минуту,минуты,минут}. Мосты замерзают первыми."
+  },
+  {
+   "en": "Heads up. Snow near {place} in about {min} minutes, visibility under a mile.",
+   "ru": "Внимание. Снег у {place} примерно через {min|plural:минуту,минуты,минут}, видимость меньше мили."
+  },
+  {
+   "en": "Heads up. Snow and gusts to {gust} miles an hour near {place} in about {min} minutes.",
+   "ru": "Внимание. Снег и порывы до {gust|plural:мили,миль,миль} в час у {place} примерно через {min|plural:минуту,минуты,минут}."
+  },
+  {
    "en": "Heads up. {event} near {place} in about {min} minutes.",
    "ru": "Внимание: {event|nom} у {place} примерно через {min|plural:минуту,минуты,минут}."
   },

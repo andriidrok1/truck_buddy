@@ -152,6 +152,7 @@ export type WeatherAhead = {
   gust_mph?: number | null;
   vis_mi?: number | null;
   event?: string | null;
+  reasons?: string[];
 };
 
 /** The first point ahead of the truck that matters, for the copilot's heads-up (POST /api/nudges). Minutes by
@@ -171,5 +172,6 @@ export function weatherAhead(list: readonly Chip[], route: Pick<RouteInfo, "dist
     gust_mph: c.gust_mph ?? null,
     vis_mi: c.vis_mi ?? null,
     event: c.alert?.event ?? null,
+    reasons: c.reasons ?? [],
   };
 }

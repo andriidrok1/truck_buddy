@@ -315,6 +315,7 @@ class WeatherAhead(BaseModel):
     gust_mph: Optional[int] = Field(None, ge=0, le=250)
     vis_mi: Optional[float] = Field(None, ge=0, le=100)
     event: Optional[str] = Field(None, max_length=80)  # the NWS alert covering it, if any
+    reasons: List[str] = Field(default_factory=list, max_length=5)  # ice | gusts | low_visibility (route_weather)
 
 
 class Nudge(BaseModel):

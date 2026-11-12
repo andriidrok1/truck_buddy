@@ -12,6 +12,10 @@ type State = {
   points: RoutePoint[];
   /** When the points were fetched (ms); shown as "forecast from …" when there is no signal. */
   fetchedAt: number | null;
+  /** The copilot turned the weather view on for a heads-up (Figma V1): shown over a plain map until the route
+   *  ends or the driver picks a view; never written into the driver's stored setting. */
+  autoWeather: boolean;
+  setAutoWeather: (on: boolean) => void;
   set: (routeKey: string, points: RoutePoint[], at: number) => void;
   clear: () => void;
 };
@@ -20,12 +24,14 @@ export const useRouteWeatherStore = create<State>()((set) => ({
   routeKey: null,
   points: [],
   fetchedAt: null,
+  autoWeather: false,
+  setAutoWeather: (autoWeather) => set({ autoWeather }),
   set: (routeKey, points, fetchedAt) => {
     set({ routeKey, points, fetchedAt });
     // On disk too: an app restarted on a pass with no signal still has the route's forecast (Figma V8).
     storage.setItem(ROUTE_WEATHER_KEY, { routeKey, points, fetchedAt });
   },
-  clear: () => set({ routeKey: null, points: [], fetchedAt: null }),
+  clear: () => set({ routeKey: null, points: [], fetchedAt: null, autoWeather: false }),
 }));
 
 export const ROUTE_WEATHER_KEY = "route_weather_v1";
