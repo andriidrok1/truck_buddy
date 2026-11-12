@@ -40,6 +40,7 @@ function fakeDeps(): Fake {
     api: { transcribe: f.transcribe as never, agentSpeak: f.agent as never },
     fillers: { schedule: plan, noteTurn: () => undefined },
     offline: () => false,
+    isOnline: () => true,
     context: () => ({ coords: { lat: 1, lng: 2 }, active: null, ui: { driving: false, voice_guidance: true, hands_free: false, options_count: 0 }, heading: null, speed: null, limitMph: null, hintNames: [] }),
     onPhase: (p) => calls.push(`phase:${p}`),
     onIdle: () => calls.push("idle"),
@@ -226,4 +227,22 @@ test("a tap while the mic is recording does not cancel anything here (the screen
   expect(f.calls).not.toContain("stopSpeaking");
   act(() => result.current.tap());
   expect(f.calls).not.toContain("stopSpeaking"); // no "cancel" was dispatched, as before
+});
+
+test("a nudge that played with no signal opens no mic and says nothing by itself", () => {
+  const f = fakeDeps();
+  f.deps.autoListen = true;
+  const offline = jest.fn(() => true); // the turn's own check: it speaks and shows "No signal"
+  f.deps.offline = offline;
+  f.deps.isOnline = () => false;
+  const { result } = harness(f.deps);
+  act(() => result.current.nudgeOffer());
+  expect(offline).not.toHaveBeenCalled();
+  expect(f.listen).not.toHaveBeenCalled();
+  expect(result.current.state.mode).toBe("idle");
+
+  f.deps.isOnline = () => true;
+  act(() => result.current.nudgeOffer());
+  expect(offline).not.toHaveBeenCalled();
+  expect(f.listen).toHaveBeenCalledTimes(1); // with a signal the hands-free window still opens
 });

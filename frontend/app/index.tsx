@@ -404,6 +404,7 @@ export default function MapScreen() {
     api: { transcribe: api.transcribe, agentSpeak: api.agentSpeak },
     fillers,
     offline: () => offlineTurn({ isOnline, say, setCaption }),
+    isOnline,
     context: () =>
       turnContext(trip(), {
         coords: coordsRef.current, // the truck moved while the driver talked and the words were transcribed
