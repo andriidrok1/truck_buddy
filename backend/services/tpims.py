@@ -26,6 +26,7 @@ from services.flags import on
 from services.geo import haversine_km
 from services import kv, leader
 from services.http import client
+from services.redact import describe
 
 logger = logging.getLogger("truckbuddy.tpims")
 
@@ -174,13 +175,13 @@ async def refresh(now: Optional[float] = None) -> None:
                     _sites.update(sites)
                     _static_at[state] = mono
             except Exception as e:  # noqa: BLE001
-                logger.warning("TPIMS static %s failed: %s", state, e)
+                logger.warning("TPIMS static %s failed: %s", state, describe(e))
         try:
             live = parse_dynamic(await _get_json(dyn_url))
             if live:
                 _live.update(live)
         except Exception as e:  # noqa: BLE001
-            logger.warning("TPIMS dynamic %s failed: %s", state, e)
+            logger.warning("TPIMS dynamic %s failed: %s", state, describe(e))
 
 
 FEED_NAME = "tpims"

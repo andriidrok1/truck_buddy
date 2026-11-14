@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Optional
 
 from services.http import client
+from services.redact import describe
 
 from models import Category, Place, PlacesResponse, Review
 from services.flags import on
@@ -279,7 +280,7 @@ class GooglePlacesProvider:
         try:
             r = await client().get(DETAILS_URL.format(id=place_id), headers=headers, timeout=10)
         except Exception as e:  # noqa: BLE001
-            logger.warning("Google Place Details failed: %s", e)
+            logger.warning("Google Place Details failed: %s", describe(e))
             return None
         if r.is_error:
             logger.warning("Google Place Details %s: %s", r.status_code, r.text[:200])

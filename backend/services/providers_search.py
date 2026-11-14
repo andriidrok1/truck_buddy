@@ -23,6 +23,7 @@ from urllib.parse import urljoin, urlparse
 from services.geo import haversine_km, km_to_mi
 from services import llm
 from services.http import client
+from services.redact import describe
 
 logger = logging.getLogger("truckbuddy.providers")
 
@@ -456,14 +457,14 @@ async def research(kind: str, mode: str, lat: float, lng: float, budget: Optiona
         try:
             cands = await asyncio.wait_for(google_candidates(kind, lat, lng, radius, budget), timeout=budget.left(10))
         except Exception as e:  # noqa: BLE001
-            logger.warning("Google candidates failed, trying HERE: %s", e)
+            logger.warning("Google candidates failed, trying HERE: %s", describe(e))
             cands = []
     if not cands:
         source = "here"
         try:
             cands = await here_candidates(kind, lat, lng, radius, budget)
         except Exception as e:  # noqa: BLE001
-            logger.warning("HERE candidates failed: %s", e)
+            logger.warning("HERE candidates failed: %s", describe(e))
         if not cands:
             source = "none"
     t = budget.mark("candidates", t)

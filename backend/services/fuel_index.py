@@ -11,6 +11,7 @@ from typing import Optional
 
 from services.flags import on
 from services.http import client
+from services.redact import describe
 
 logger = logging.getLogger("truckbuddy.fuel_index")
 
@@ -89,7 +90,7 @@ async def state_code(lat: float, lng: float, now: Optional[float] = None) -> Opt
         addr = (items[0].get("address") or {}) if items else {}
         state = addr.get("stateCode") if addr.get("countryCode") == "USA" else None
     except Exception as e:  # noqa: BLE001
-        logger.warning("revgeocode failed: %s", e)
+        logger.warning("revgeocode failed: %s", describe(e))
         return None
     _state_cache[cell] = (now, state)
     return state
@@ -113,7 +114,7 @@ async def weekly_avg(duoarea: str, now: Optional[float] = None) -> Optional[tupl
             return None
         parsed = parse_weekly(r.json())
     except Exception as e:  # noqa: BLE001
-        logger.warning("EIA failed: %s", e)
+        logger.warning("EIA failed: %s", describe(e))
         return None
     if not parsed:
         return None
@@ -143,7 +144,7 @@ async def prewarm(now: Optional[float] = None) -> int:
             return 0
         rows = ((r.json() or {}).get("response") or {}).get("data") or []
     except Exception as e:  # noqa: BLE001
-        logger.warning("EIA prewarm failed: %s", e)
+        logger.warning("EIA prewarm failed: %s", describe(e))
         return 0
     by_area: dict[str, list] = {}
     for row in rows:

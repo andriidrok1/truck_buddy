@@ -19,6 +19,7 @@ from typing import List, Optional, Sequence
 
 import flexpolyline
 from services.http import client
+from services.redact import describe
 
 from models import Incident, Maneuver, RouteInfo, SpeedLimit, TrafficSegment, TruckProfile
 from services.approach import from_route
@@ -468,7 +469,7 @@ def _here_parse(data: dict, truck: Optional[TruckProfile] = None) -> RouteInfo:
         try:
             primary.alternatives.append(_parse_route(alt, truck))
         except Exception as e:  # noqa: BLE001
-            logger.warning("HERE alternative skipped: %s", e)
+            logger.warning("HERE alternative skipped: %s", describe(e))
     return primary
 
 
@@ -723,7 +724,7 @@ class TruckRoutingProvider:
                 no_route = e
                 break
             except Exception as e:  # noqa: BLE001 - fall through to the next provider
-                logger.warning("%s routing failed: %s", fn.__name__, e)
+                logger.warning("%s routing failed: %s", fn.__name__, describe(e))
                 failed.append(f"{fn.__name__}: {type(e).__name__}")
         if no_route is not None:  # "no route" beats "down": the driver should pick another place, not wait
             raise no_route
@@ -749,7 +750,7 @@ class TruckRoutingProvider:
                 info.via = [[float(v[0]), float(v[1])] for v in via]  # the handle keeps them; echo for the app
                 return info
             except Exception as e:  # noqa: BLE001 - expired/invalid handle, HERE hiccup: fall back
-                logger.warning("re-route by handle failed, routing fresh: %s", e)
+                logger.warning("re-route by handle failed, routing fresh: %s", describe(e))
         # A via stop ends a section: on section k the first k stops are behind the truck. Routing fresh
         # through all of them sent the driver back to a stop already made.
         ahead = list(via)[max(0, int(section_index)):]

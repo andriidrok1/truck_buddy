@@ -28,12 +28,14 @@ from services import account_api, approach, approach_api, auth, chains, db, flee
 from services.http import client as http_client  # noqa: E402
 from services.logs import said, transcripts_on  # noqa: E402
 from services.settings import settings  # noqa: E402
+from services import redact  # noqa: E402
 
 WEATHER_BUDGET_S = 2.5  # NWS alerts on /route may add at most this much; never the route itself
 from pydantic import BaseModel, Field  # noqa: E402
 
 reqid.install_log_field()  # %(req)s: the request id on every line (services/reqid.py)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(req)s - %(message)s")
+redact.install()  # a provider key in a logged URL or traceback comes out as *** (services/redact.py)
 logger = logging.getLogger("truckbuddy")
 # httpx logs every request URL at INFO: HERE's apiKey, the driver's geocode text and position. Warnings only.
 for _noisy in ("httpx", "httpcore"):

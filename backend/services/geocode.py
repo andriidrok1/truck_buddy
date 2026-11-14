@@ -11,6 +11,7 @@ import re
 from typing import Optional
 
 from services.http import client
+from services.redact import describe
 
 from models import Place
 from services.geo import haversine_km, km_to_mi, without_country
@@ -418,7 +419,7 @@ async def geocode(q: str, lat: float, lng: float) -> list[Place]:
                         f"{found[0].name} | {found[0].address}" if found else "no match")
             return found
         except Exception as e:  # noqa: BLE001 - provider error: try the next geocoder
-            logger.warning("%s geocode failed for %r: %s", fn.__name__, q, e)
+            logger.warning("%s geocode failed for %r: %s", fn.__name__, q, describe(e))  # never the URL: it has the key
             errors += 1
     if errors:  # every geocoder that was tried errored: a service problem, not "address not found"
         raise PlacesUnavailable(f"all geocoders failed for {q!r}")
