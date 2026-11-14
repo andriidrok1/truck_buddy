@@ -157,13 +157,17 @@ export async function setToken(
 export async function forgetIdentity() {
   codeWanted = false;
   await setToken(null);
-  hold?.release(); // the queued requests go now, without the token
+  // The hold stays: only whoever put it up takes it down (re-review of #173, L-2). A sign-out while "Delete my data"
+  // runs must not let the held requests go while that DELETE is still on the wire; the wipe lets them go when it
+  // settles, and they go without a token then.
 }
 
 // Every authenticated request also says the driver's language (backend services/i18n.LangMiddleware).
-/** Holds every authenticated request from now on; the returned function lets them go (idempotent). */
+/** Holds every authenticated request from now on; the returned function lets them go (idempotent). With a hold
+ *  already up, the caller gets a function that does nothing: only whoever put the hold up can take it down
+ *  (review of #173, M1). */
 export function holdToken(): () => void {
-  if (hold) return hold.release;
+  if (hold) return () => {};
   let resolve: () => void = () => {};
   const promise = new Promise<void>((r) => {
     resolve = r;

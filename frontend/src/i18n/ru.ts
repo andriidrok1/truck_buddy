@@ -421,7 +421,6 @@ export const RU: Record<string, string> = {
   "Clear memory": "Очистить память",
   "Clear memory?": "Очистить память?",
   "Clear": "Очистить",
-  "Your copilot will forget everything you've talked about.": "Штурман забудет всё, о чём вы говорили.",
   "Nothing yet. Talk to your copilot and it will remember.": "Пока пусто. Поговори со штурманом, и он запомнит.",
   "Today": "Сегодня",
   "Yesterday": "Вчера",
@@ -569,4 +568,44 @@ export const RU: Record<string, string> = {
   "Here is what I brought over.": "Вот что уже на месте.",
   "Open the map": "Открыть карту",
   "Open the map anyway": "Всё равно открыть карту",
+  // ---- the account on the truck screen and "Clear memory" (src/components/AccountSection.tsx, AccountActions.tsx,
+  //      app/history.tsx) ----
+  "Your account": "Твой аккаунт",
+  "Signed in with Apple": "Вход через Apple",
+  "Signed in with Google": "Вход через Google",
+  "Signed in with an access code": "Вход по коду доступа",
+  "Synced": "Синхронизировано",
+  "Sign out?": "Выйти?",
+  "Your truck, places and history stay in your account. This phone goes back to an empty start.":
+    "Трак, места и история остаются в твоём аккаунте. Телефон вернётся к чистому старту.",
+  "Sign out of all phones": "Выйти на всех телефонах",
+  "Sign out of all phones?": "Выйти на всех телефонах?",
+  "Every phone signed in to this account goes back to the sign-in screen within a minute, this one too. Your data stays in your account.":
+    "Все телефоны с этим аккаунтом, и этот тоже, в течение минуты вернутся к экрану входа. Данные остаются в твоём аккаунте.",
+  "Sign out everywhere": "Выйти везде",
+  "We couldn't confirm that every phone was signed out. Check your connection and try again.":
+    "Не получилось проверить, что выход сделан на всех телефонах. Проверь связь и попробуй ещё раз.",
+  "Couldn't reach the server. You're still signed in everywhere. Try again.":
+    "Сервер недоступен. Вход на всех телефонах остался. Попробуй ещё раз.",
+  "Delete account and data": "Удалить аккаунт и данные",
+  "Delete your account?": "Удалить аккаунт?",
+  "Your truck profile, preferences, history, trips and ledger are removed, on this phone and on our servers. This can't be undone.":
+    "Профиль трака, предпочтения, история, поездки и журнал удалятся на этом телефоне и на наших серверах. Отменить нельзя.",
+  "Delete everything?": "Удалить всё?",
+  "Last step. Your account and everything in it are deleted now.": "Последний шаг. Аккаунт и всё, что в нём есть, удалятся сейчас.",
+  "Delete everything": "Удалить всё",
+  "Deletes your account and everything in it, on our servers and on this phone. The app starts over like a fresh install.":
+    "Удаляет аккаунт и всё, что в нём есть, на наших серверах и на этом телефоне. Приложение начнётся заново, как после установки.",
+  "We couldn't confirm. Check your connection and try again.": "Не получилось проверить. Проверь связь и попробуй ещё раз.",
+  "Another deletion is still running. Try again in a minute.": "Ещё идёт другое удаление. Попробуй через минуту.",
+  "Deleting… this can take a minute": "Удаляем… это может занять минуту",
+  "Couldn't delete your account. Nothing was removed. Try again.": "Не получилось удалить аккаунт. Ничего не удалено. Попробуй ещё раз.",
+  "Couldn't delete your account. Try again.": "Не получилось удалить аккаунт. Попробуй ещё раз.",
+  "This account can't be deleted from the app. Write to support@truckbuddy.io.":
+    "Этот аккаунт нельзя удалить из приложения. Напиши на support@truckbuddy.io.",
+  // the server's 409 detail for the last owner of a fleet (backend services/account_api.py LAST_OWNER), word for word
+  "This account is the only owner of a fleet that still has drivers or a stored key. Write to support@truckbuddy.io to close the fleet or hand it over.":
+    "У этого аккаунта есть флот, где ещё остались водители или сохранённый ключ, и других владельцев у флота нет. Напиши на support@truckbuddy.io, чтобы закрыть флот или передать его.",
+  "Your copilot forgets your conversations and what it learned from them. Your truck and trips stay.":
+    "Штурман забудет твои разговоры и то, что узнал из них. Трак и поездки останутся.",
 };

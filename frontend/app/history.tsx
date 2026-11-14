@@ -5,6 +5,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, type MemoryTurn } from "@/src/api";
+import { clearConversations } from "@/src/state/accountActions";
 import { Icon } from "@/src/components/Icon";
 import { HistoryEmpty } from "@/src/components/HistoryEmpty";
 import { PressableScale } from "@/src/components/PressableScale";
@@ -25,6 +26,8 @@ const confirm = (msg: string, onYes: () => void) => {
 };
 
 /** Everything the copilot remembers from past conversations, with a "clear" button. */
+
+const CLEAR_MSG = "Your copilot forgets your conversations and what it learned from them. Your truck and trips stay.";
 
 /** "Today", "Yesterday", else "Oct 28": one separator per day instead of a date under every bubble. */
 function dayLabel(iso: string, lang: Lang): string {
@@ -80,9 +83,9 @@ export default function HistoryScreen() {
   };
 
   const clear = () =>
-    confirm("Your copilot will forget everything you've talked about.", async () => {
+    confirm(CLEAR_MSG, async () => {
       try {
-        await api.clearMemory();
+        await clearConversations();
         setTurns([]);
         setError(false); // a refresh that failed earlier must not turn the empty state into "Couldn't load"
       } catch {

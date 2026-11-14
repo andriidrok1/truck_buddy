@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { act, renderHook } from "@testing-library/react-native";
 
 import { api } from "../api";
-import { getToken, loadToken, setToken, useAuthState } from "../auth";
+import { getToken, loadToken, setToken, tokenHold, useAuthState } from "../auth";
 import { giveConsent, useConsent } from "../consent";
 import { saveProfile } from "../data/profile";
 import { loadEldToken, setEldToken } from "../eld";
@@ -12,7 +12,7 @@ import { DEFAULT_TRUCK, getTruckProfile, isOnboarded, setOnboarded } from "../ho
 import { loadLang, setLang, useLangStore } from "../i18n";
 import { tripLog } from "../net/tripEvents";
 import { deleteMyData, resetToFirstLaunch, rootScreen } from "../state/firstLaunch";
-import { getAccount, saveAccount } from "../state/account";
+import { getAccount, saveAccount, setSignInNotice, signInNotice } from "../state/account";
 import { loadHowTo, markHowToSeen } from "../state/howTo";
 import { loadIntro, markIntroSeen } from "../state/intro";
 import { saveActiveRoute } from "../state/routeStore";
@@ -71,11 +71,11 @@ test("Delete my data: storage holds no app key, every store is back to a fresh i
 
   const router = { canDismiss: jest.fn(() => true), dismissAll: jest.fn() };
   const clearServer = jest.fn(async () => ({ deleted: 3 }));
-  let ok = false;
+  let ok = "";
   await act(async () => {
     ok = await deleteMyData(router, clearServer);
   });
-  expect(ok).toBe(true);
+  expect(ok).toBe("done");
 
   expect(clearServer).toHaveBeenCalledTimes(1);
   expect(router.dismissAll).toHaveBeenCalledTimes(1);
@@ -112,9 +112,24 @@ test("no server, nothing deleted: the phone keeps its data and the driver gets t
   const ok = await deleteMyData(router, async () => {
     throw new Error("offline");
   });
-  expect(ok).toBe(false);
+  expect(ok).toBe("failed");
   expect(router.dismissAll).not.toHaveBeenCalled();
   expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru"));
+});
+
+test("the router throws after the server wipe: the hold goes and the trip log sends again all the same (review of #173, L-1)", async () => {
+  await setToken("tok", "driver", "code");
+  const router = { canDismiss: () => true, dismissAll: jest.fn(() => {
+    throw new Error("navigator gone");
+  }) };
+  const resume = jest.spyOn(tripLog, "resume");
+  try {
+    await expect(deleteMyData(router, async () => ({ deleted: 1 }))).rejects.toThrow("navigator gone");
+    expect(tokenHold()).toBeNull();
+    expect(resume).toHaveBeenCalled();
+  } finally {
+    resume.mockRestore();
+  }
 });
 
 describe("the delete and the old token (review of #129)", () => {
@@ -155,7 +170,7 @@ describe("the delete and the old token (review of #129)", () => {
     tripLog.log("question", { text: "before" });
     const early = tripLog.flush(); // on the wire before the driver confirmed
     const router = { canDismiss: () => false, dismissAll: jest.fn() };
-    let done: Promise<boolean> = Promise.resolve(false);
+    let done: Promise<string> = Promise.resolve("");
     await act(async () => {
       done = deleteMyData(router);
       await early;
@@ -174,7 +189,7 @@ describe("the delete and the old token (review of #129)", () => {
 
     await act(async () => {
       finishDelete(true);
-      expect(await done).toBe(true);
+      expect(await done).toBe("done");
       await queued; // went out after the wipe, without a token
     });
     tripLog.log("question", { text: "after" });
@@ -186,10 +201,10 @@ describe("the delete and the old token (review of #129)", () => {
     expect(afterStart.filter((c) => c.auth?.includes("old-device-token"))).toEqual([]);
   });
 
-  test("the server can't be reached: the token and the trip log come back, nothing local is wiped", async () => {
+  test("the server can't be reached: checked, then the token and the trip log come back, nothing local is wiped, and it is unconfirmed (review of #173, L-4)", async () => {
     await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
     const router = { canDismiss: () => true, dismissAll: jest.fn() };
-    let done: Promise<boolean> = Promise.resolve(true);
+    let done: Promise<string> = Promise.resolve("");
     let queued: Promise<unknown> = Promise.resolve();
     await act(async () => {
       done = deleteMyData(router);
@@ -199,12 +214,14 @@ describe("the delete and the old token (review of #129)", () => {
       await flush();
       expect(calls.map((c) => c.method)).toEqual(["DELETE"]);
       finishDelete(false);
-      expect(await done).toBe(false);
+      // The server may have wiped: never "your data is still there". The check answers 200, which settles nothing.
+      expect(await done).toBe("unconfirmed");
       await queued;
     });
+    expect(calls[1]).toEqual({ method: "GET", path: "/auth/check", auth: "Bearer old-device-token" });
     // Same identity: the waiting request went with the old token, nothing signed the phone in anew.
-    expect(calls[1]).toEqual({ method: "GET", path: "/memory", auth: "Bearer old-device-token" });
-    expect(calls.some((c) => c.path.startsWith("/auth/"))).toBe(false);
+    expect(calls[2]).toEqual({ method: "GET", path: "/memory", auth: "Bearer old-device-token" });
+    expect(calls.some((c) => c.path === "/auth/refresh" || c.path === "/auth/renew")).toBe(false);
     expect(router.dismissAll).not.toHaveBeenCalled();
     expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru"));
     expect(getToken()).toBe("old-device-token");
@@ -258,31 +275,54 @@ describe("Delete my data with an expired access token (re-review of #172)", () =
     await setToken(EXPIRED, "driver", "code", "R1");
     server("ok");
     const router = { canDismiss: () => false, dismissAll: jest.fn() };
-    let ok = false;
+    let ok = "";
     await act(async () => {
       ok = await within(deleteMyData(router));
     });
-    expect(ok).toBe(true);
+    expect(ok).toBe("done");
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["DELETE /memory", "POST /auth/refresh", "DELETE /memory"]);
     expect(calls[2].auth).toBe("Bearer FRESH");
     expect(getToken()).toBeNull();
     expect(await AsyncStorage.getItem("lang_v1")).toBeNull();
   });
 
-  test("the renewal is refused: nothing is wiped, the delete settles with false, the next requests are not held", async () => {
+  test("the renewal is refused: the server says the token is dead, so the phone signs out with the notice; nothing claims a deletion (review of #173, M-1)", async () => {
     await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
     await setToken(EXPIRED, "driver", "code", "R1");
     server("refused");
     const router = { canDismiss: () => true, dismissAll: jest.fn() };
-    let ok = true;
+    let ok = "";
     await act(async () => {
       ok = await within(deleteMyData(router));
     });
-    expect(ok).toBe(false);
+    expect(ok).toBe("signed_out");
     expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1); // one retry only after a renewal that worked
     expect(router.dismissAll).not.toHaveBeenCalled();
-    expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru"));
+    expect(getToken()).toBeNull();
+    expect(signInNotice()).toBe("signed_out");
+    expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru")); // a sign-out, not a fresh install
     await within(api.memory().catch(() => undefined)); // the hold is down: this does not wait forever
+  });
+
+  test("the renewal gets no answer: nothing is wiped, the phone stays signed in, the delete settles as failed", async () => {
+    await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
+    await setToken(EXPIRED, "driver", "code", "R1");
+    setSignInNotice(null);
+    server("ok");
+    const inner = global.fetch as jest.Mock;
+    global.fetch = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).endsWith("/auth/refresh")) throw new TypeError("Network request failed");
+      return inner(url, init);
+    }) as typeof fetch;
+    const router = { canDismiss: () => true, dismissAll: jest.fn() };
+    let ok = "";
+    await act(async () => {
+      ok = await within(deleteMyData(router));
+    });
+    expect(ok).toBe("failed");
+    expect(getToken()).toBe(EXPIRED);
+    expect(signInNotice()).toBeNull();
+    expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru"));
   });
 });
 

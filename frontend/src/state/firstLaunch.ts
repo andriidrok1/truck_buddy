@@ -6,7 +6,9 @@
 // Not removed: the storage schema stamp (a fresh install writes it on its first start too) and downloaded offline
 // map packs (tiles, nothing about the driver).
 
-import { ApiError, wipeServerData } from "../api";
+import { useSyncExternalStore } from "react";
+
+import { ApiError, isNoAnswer, tokenState, wipeServerData } from "../api";
 import { forgetIdentity, getToken, holdToken, identitySub, signedInVia, signedInViaKnown, type SignedInVia } from "../auth";
 import { forgetConsent } from "../consent";
 import { resetProfile } from "../data/profile";
@@ -40,14 +42,14 @@ const step = async (f: () => unknown) => {
 
 /** Everything on the phone that is about the signed-in driver, in memory and on disk: the trip and its lists, the
  *  truck and the change still waiting for the server, what was fetched for them, the trip log, the settings, the
- *  Motive key, the height and how-to flags, the account. Every step runs even if one before it failed. */
+ *  Motive key, the height flag, the account. Not the how-to flag: it is about the phone (KEPT_ON_SIGN_OUT). Every step runs even if one before it failed. */
 async function clearDriverData(keepTripLog = false): Promise<void> {
   await step(resetTripStore);
   await step(() => setSim(null));
   await step(resetProfile); // the default truck in memory and in the query cache, no pending server sync or restore
   await step(() => queryClient.clear()); // conversation memory, the server profile: fetched again for the new identity
   await Promise.all(
-    [forgetTruckProfile, forgetHeight, forgetHowTo, forgetSettings, clearSavedRoute, forgetArrived, () => (keepTripLog ? undefined : tripLog.clear()), () => setEldToken(null), forgetAccount].map(step),
+    [forgetTruckProfile, forgetHeight, forgetSettings, clearSavedRoute, forgetArrived, () => (keepTripLog ? undefined : tripLog.clear()), () => setEldToken(null), forgetAccount].map(step),
   );
 }
 
@@ -63,20 +65,23 @@ export async function resetToFirstLaunch(): Promise<string[]> {
   // token removal below does to the rest.
   await step(forgetLang);
   await step(forgetIntro);
+  await step(forgetHowTo);
   await step(forgetConsent);
   await step(forgetIdentity);
   return removeAllAppKeys();
 }
 
 let signingOut: Promise<string[]> | null = null;
+/** The sign-out under way came with a notice or a trip kept (the server turned the token down). */
+let signingOutForced = false;
 
 const TRIP_LOG_KEY = "trip_events_pending";
 
 /**
  * The phone stops being this driver's without becoming a fresh install: "Sign out", and a token the server turned
  * down (the account was deleted from another phone, the session was closed). Everything resetToFirstLaunch clears
- * goes, the AI consent included (the next driver agrees for themselves), except the language, the intro flag and the
- * theme, which are choices about the phone. The
+ * goes, the AI consent included (the next driver agrees for themselves), except the language, the intro and how-to
+ * flags and the theme, which are about the phone. The
  * root layout then shows the sign-in screen, and whoever signs in next starts from nothing of the previous driver:
  * no truck pushed to their account, no trip events sent under their name, no route, no Motive key.
  *
@@ -87,7 +92,19 @@ const TRIP_LOG_KEY = "trip_events_pending";
  * Returns the keys that would not go; the next cold start, or the next sign-in, finishes them (pendingWipe.ts).
  */
 export function signedOutReset(opts: { notice?: boolean; keepTripFor?: string | null } = {}): Promise<string[]> {
+  const explicit = !opts.notice && !opts.keepTripFor;
+  if (signingOut && explicit && signingOutForced) {
+    // The driver's own "Sign out" while a forced one runs (review of #173, L3): it waits for that one, then takes
+    // back what only the forced path keeps. No "You were signed out", no route set aside, no trip events left.
+    return signingOut.then(async (left) => {
+      setSignInNotice(null);
+      await step(dropHeldTrip);
+      await step(() => tripLog.clear());
+      return left;
+    });
+  }
   if (!signingOut) {
+    signingOutForced = !explicit;
     signingOut = (async () => {
       // Before anything is cleared: the route on disk is the one being driven.
       const sub = opts.keepTripFor ?? null;
@@ -121,7 +138,19 @@ export function signedOutReset(opts: { notice?: boolean; keepTripFor?: string | 
 
 // The server rejected the token for good (src/net/tokenRenewal.ts after401): the same reset, with the notice, and
 // the trip kept for the same account when it was on the road.
-setIdentityRejectedHandler(() => signedOutReset({ notice: true, keepTripFor: identitySub() }));
+//
+// During a server wipe (re-review of #173, L-3) another request may hear the 401 first: the account was just
+// deleted, or the session closed under the DELETE. Then the wipe decides: the handler waits for it, and when it
+// left the phone without a token (a fresh install, or its own sign-out) there is nothing more to do, so no trip is
+// set aside for an account that is gone and no "You were signed out" lands on the fresh-install screens. Only once
+// the DELETE is on the wire: before that the wipe still waits for the trip batch that may be this very request.
+setIdentityRejectedHandler(async () => {
+  if (wiping && wipeOnWire) {
+    await wiping.result.catch(() => undefined);
+    if (!getToken()) return [];
+  }
+  return signedOutReset({ notice: true, keepTripFor: identitySub() });
+});
 
 /**
  * Sign-in is required since 1.1.0. A phone that still holds the anonymous device token of build 1.0 (`auth_via`
@@ -168,45 +197,152 @@ export function rootScreen(
   return welcomeBack ? "welcome" : "app";
 }
 
-type Nav = { canDismiss: () => boolean; dismissAll: () => void };
+export type Nav = { canDismiss: () => boolean; dismissAll: () => void };
+
+// One server wipe at a time for the whole app, whichever screen or button started it (review of #173, M1): a second
+// truck screen gets the wipe already under way. A wipe of the other kind ("Delete my data" while "Delete account"
+// runs) gets WipeBusy, never the result of a wipe it did not ask for.
+export type WipeKind = "data" | "account";
+export type WipeResult<T> = { ok: true; value: T } | { ok: false; error: unknown };
+/** Another kind of server wipe is under way: nothing was sent for this one. */
+export class WipeBusy extends Error {}
+/** The server turned this phone's sign-in down for good during a wipe (the renewal was rejected, or the 401 said the
+ *  session is closed): the phone was signed out as after any rejected token, with "You were signed out", and
+ *  nothing claims that anything was deleted (re-review of #173, M-1). */
+export class SignedOutByServer extends Error {}
+let wiping: { kind: WipeKind; result: Promise<WipeResult<unknown>> } | null = null;
+/** The wipe under way is past its wait for the trip batch on the wire, and sends (or has sent) its DELETE. */
+let wipeOnWire = false;
+const wipeListeners = new Set<() => void>();
+const wipeChanged = () => wipeListeners.forEach((l) => l());
+
+/** True while a server wipe (serverThenReset) is under way. */
+export const wipeRunning = (): boolean => wiping !== null;
+
+/** The same, for a screen: the truck screen keeps its Back closed meanwhile. */
+export function useWipeRunning(): boolean {
+  return useSyncExternalStore(
+    (l) => {
+      wipeListeners.add(l);
+      return () => wipeListeners.delete(l);
+    },
+    wipeRunning,
+    wipeRunning,
+  );
+}
 
 /**
- * The whole "Delete my data": the server records first (while the token is still valid), then off the truck screen,
- * so the stack that comes back after the gates starts on the map (which sends a driver who is not onboarded to
- * onboarding), then the fresh-install state. False when the server could not be reached: nothing is touched then.
+ * A server wipe, then the phone back to a fresh install: "Delete my data" (an access-code sign-in) and "Delete
+ * account and data" (src/state/accountActions.ts). The server records first, while the token is still valid, then
+ * off the truck screen, so the stack that comes back after the gates starts on the map (which sends a driver who is
+ * not onboarded to onboarding), then the fresh-install state. When the server call fails nothing is touched and the
+ * error comes back to the caller.
+ *
+ * Single-flight: a call made while a wipe of the same `kind` runs does not send anything and gets that wipe's result
+ * (its `value` is what the first caller's `clearServer` returned); one of the other kind gets WipeBusy.
  */
-export async function deleteMyData(router: Nav, clearServer: () => Promise<unknown> = wipeServerData): Promise<boolean> {
+export function serverThenReset<T>(router: Nav, clearServer: () => Promise<T>, kind: WipeKind): Promise<WipeResult<T>> {
+  if (wiping && wiping.kind !== kind) return Promise.resolve({ ok: false, error: new WipeBusy() });
+  if (!wiping) {
+    const result = wipeOnce(router, clearServer).finally(() => {
+      wiping = null;
+      wipeOnWire = false;
+      wipeChanged();
+    });
+    wiping = { kind, result };
+    wipeChanged();
+  }
+  return wiping.result as Promise<WipeResult<T>>;
+}
+
+async function wipeOnce<T>(router: Nav, clearServer: () => Promise<T>): Promise<WipeResult<T>> {
   // Nothing may reach the server with the old token once the delete is under way: an event posted after it would
   // bring trip rows back for the driver just wiped (review of #129). The trip log stops sending (a batch already on
   // the wire lands first, before the DELETE), the DELETE takes the token with it, and every other request waits for
   // the DELETE to settle: on failure they go out with the same token as before, on success after the wipe, without
   // one. None goes out tokenless meanwhile, so no 401 can sign the phone out behind the dialog (re-review of #129).
+  const signedIn = getToken() !== null;
   await tripLog.pause();
+  if (signedIn && !getToken()) {
+    // The batch it waited for heard the token turned down, and the phone signed out meanwhile: nothing to send.
+    tripLog.resume();
+    return { ok: false, error: new SignedOutByServer() };
+  }
+  wipeOnWire = true;
   let release: () => void = () => {};
+  let value!: T;
   const underHold = async () => {
     const call = clearServer(); // reads authHeader() synchronously, before its first await
     release = holdToken();
-    await call;
+    value = await call;
   };
   try {
     try {
       await underHold();
     } catch (e) {
       // The access token expired (or was refused): the renewal cannot run under the hold, which it would wait on.
-      // So the hold goes, the token is renewed once, and the delete is sent once more with the new one.
+      // So the hold goes, the token is renewed once, and the delete is sent once more with the new one. This is the
+      // only retry of a wipe: "Delete account" relies on it and has none of its own.
       if (!(e instanceof ApiError) || e.status !== 401) throw e;
       release();
-      if ((await renewToken(true)) !== "renewed") throw e;
+      const renewed = await renewToken(true);
+      // "rejected": the server says the token is dead; the phone signs out as after401 does (M-1). "unavailable":
+      // nothing settled, the phone stays as it is and the caller says it could not confirm.
+      if (renewed === "rejected") throw new SignedOutByServer();
+      if (renewed !== "renewed") throw e;
       await underHold();
     }
-  } catch {
+  } catch (error) {
     release();
     tripLog.resume();
-    return false;
+    if (error instanceof SignedOutByServer) await signedOutReset({ notice: true }).catch(() => undefined);
+    return { ok: false, error };
   }
-  if (router.canDismiss()) router.dismissAll();
-  await resetToFirstLaunch(); // releases the hold once the token is gone (forgetIdentity)
-  release(); // in case that step failed
-  tripLog.resume(); // empty now; the next events belong to the new identity
-  return true;
+  try {
+    if (router.canDismiss()) router.dismissAll();
+    await resetToFirstLaunch();
+  } finally {
+    // Whatever threw above (review of #173, L-1): the held requests and the trip log never stay stopped.
+    release(); // the queued requests go now, without the token
+    tripLog.resume(); // empty now; the next events belong to the new identity
+  }
+  return { ok: true, value };
+}
+
+/** How "Delete my data" ended. "done": the phone is a fresh install. "failed": the server answered with an error;
+ *  nothing on the phone was touched. "unconfirmed": no answer, and the check could not say whether the server wiped
+ *  (it may have); nothing on the phone was touched. "busy": "Delete account" is under way. "signed_out": the server
+ *  turned the sign-in down, and the phone is on the sign-in screen with "You were signed out". */
+export type DataOutcome = "done" | "failed" | "unconfirmed" | "busy" | "signed_out";
+
+class DataUnconfirmed extends Error {}
+
+/**
+ * "Delete my data" for an access-code sign-in (DELETE /api/memory).
+ *
+ * No answer (review of #173, L-4): the server may have wiped all the same, so the driver is never told the data is
+ * still there. GET /api/auth/check with the same token, still under the hold: a 401 that says the sign-in is over
+ * signs the phone out; any other 401 (an expired token) goes through the renewal and one more DELETE (the wipe is
+ * safe to repeat); a 200 settles nothing, because the wipe leaves the token alive, so it is "unconfirmed", as is no
+ * answer to the check.
+ */
+export async function deleteMyData(router: Nav, clearServer: () => Promise<unknown> = wipeServerData): Promise<DataOutcome> {
+  const checked = async (): Promise<unknown> => {
+    const sent = getToken(); // per attempt: the retry after a renewal carries the new token
+    try {
+      return await clearServer(); // reads its header in this same tick (serverThenReset relies on it)
+    } catch (e) {
+      if (!sent || !isNoAnswer(e)) throw e;
+      const state = await tokenState(sent);
+      if (state === "refused") throw new ApiError(401, "/auth/check", "refused");
+      if (state === "session_closed" || state === "account_gone" || state === "unregistered") throw new SignedOutByServer();
+      throw new DataUnconfirmed();
+    }
+  };
+  const r = await serverThenReset(router, checked, "data");
+  if (r.ok) return "done";
+  if (r.error instanceof WipeBusy) return "busy";
+  if (r.error instanceof SignedOutByServer) return "signed_out";
+  if (r.error instanceof DataUnconfirmed) return "unconfirmed";
+  return "failed";
 }

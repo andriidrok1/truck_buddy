@@ -109,6 +109,18 @@ test("on start: a fresh token with a refresh token stored does nothing", async (
   expect(calls).toHaveLength(0);
 });
 
+test("on start: an account session near its end renews once; a token that ends with the session is not renewed again on every return", async () => {
+  await setToken(jwtExp(3 * 86400_000, "acct"), "driver", "account", "R1");
+  const end = jwtExp(2 * 86400_000, "acct2"); // the server's renew capped at the session's end (#171)
+  mockFetch({ "/auth/renew": { status: 200, body: { access_token: end, role: "driver" } } });
+  expect(await renewOnStart()).toBe("renewed");
+  expect(getToken()).toBe(end);
+  expect(getRefreshToken()).toBe("R1"); // a sid renew keeps the refresh token
+  expect(await renewOnStart()).toBeNull();
+  expect(await renewOnStart()).toBeNull();
+  expect(hits("/auth/renew")).toHaveLength(1);
+});
+
 test("on start: a build-2 phone (no refresh token) trades its expired token for a pair via /auth/renew", async () => {
   const old = jwtExp(-40 * 86400_000);
   await setToken(old);

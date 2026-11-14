@@ -8,7 +8,7 @@ import { DEFAULT_TRUCK, forgetTruckProfile, getTruckProfile, isOnboarded, setOnb
 import { ACCOUNT_KEY, getAccount, givenName, loadAccount, parseAccount, resetAccountForTests, setSignInNotice, signInNotice, welcomeBackDue, withAccountName } from "../state/account";
 import { queryClient } from "../query-client";
 import { afterSignIn, finishSignedIn, prepareSignedIn } from "../state/afterSignIn";
-import { forgetHowTo, howToDot, loadHowTo, shouldAutoShowHowTo } from "../state/howTo";
+import { forgetHowTo, howToDot, loadHowTo, markHowToSeen, shouldAutoShowHowTo } from "../state/howTo";
 import { forgetHeight, isHeightConfirmed } from "../truck/heightConfirmed";
 
 jest.mock("expo-secure-store", () => ({ getItemAsync: async () => null, setItemAsync: async () => {}, deleteItemAsync: async () => {} }));
@@ -128,6 +128,15 @@ describe("a returning driver", () => {
     expect(await isOnboarded()).toBe(false);
     expect(await loadHowTo()).toBeNull();
     expect(serverProfile()).toBeNull();
+  });
+
+  test("a 404 after all leaves the phone's how-to flag: a screen already seen on this phone stays seen", async () => {
+    await markHowToSeen();
+    await prepareSignedIn(RETURNING);
+    A.profile.mockRejectedValue(new ApiError(404, "/me/profile"));
+    await fetchProfile();
+    expect(await isOnboarded()).toBe(false);
+    expect(await loadHowTo()).toBe("seen");
   });
 
   test("killed while the profile was on its way: after the restart the restore is still pending (Welcome back holds the app)", async () => {

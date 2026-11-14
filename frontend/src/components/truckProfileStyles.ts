@@ -8,6 +8,9 @@ const INPUT_BORDER = 1.5;
 export const styles = StyleSheet.create({
   signOut: { height: 56, borderRadius: radius.pill, borderWidth: 1.5, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginTop: spacing.xl },
   signOutText: { fontFamily: fonts.semibold, fontSize: 16 },
+  textAction: { minHeight: 56, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, marginTop: spacing.xs },
+  textActionText: { fontFamily: fonts.medium, fontSize: 15, textDecorationLine: "underline" },
+  accountError: { fontFamily: fonts.medium, fontSize: 15, lineHeight: 21, textAlign: "center", marginTop: spacing.sm, paddingHorizontal: spacing.lg },
   deleteNote: { fontFamily: fonts.regular, fontSize: 13, textAlign: "center", marginTop: spacing.sm, paddingHorizontal: spacing.lg },
   root: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, gap: spacing.md },

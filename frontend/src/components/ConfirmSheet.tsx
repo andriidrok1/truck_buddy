@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "../i18n/Text";
 import { fonts, radius, shadow, spacing, useTheme } from "../theme";
 import { PressableScale } from "./PressableScale";
-import { t } from "../i18n";
 
 type Props = {
   /** Null hides the sheet. */
@@ -16,6 +15,10 @@ type Props = {
   onCancel: () => void;
   /** testID prefix: `<id>`, `<id>-confirm`, `<id>-cancel`. */
   testID: string;
+  /** What the answer does, under the title. */
+  message?: string | null;
+  /** "neutral": the confirm button in the brand colour, for an answer that destroys nothing (sign out). */
+  tone?: "destructive" | "neutral";
 };
 
 /** A yes/no question from the bottom of the screen with two full-width 56 pt buttons: the destructive one red,
@@ -24,7 +27,7 @@ type Props = {
  *  The safe button is on top and the destructive one under it: the sheet opens from a button at the bottom of the
  *  screen, and with the red one on top it landed right under that finger, so a double tap went through the
  *  question (UI review 2026-11-05, N6). The red one also ignores taps for ARM_MS after the sheet opens. */
-export function ConfirmSheet({ title, confirmLabel, cancelLabel, onConfirm, onCancel, testID }: Props) {
+export function ConfirmSheet({ title, confirmLabel, cancelLabel, onConfirm, onCancel, testID, message, tone = "destructive" }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const openedAt = useRef(0);
@@ -37,14 +40,24 @@ export function ConfirmSheet({ title, confirmLabel, cancelLabel, onConfirm, onCa
   };
   return (
     <Modal visible={!!title} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
-      <Pressable testID={`${testID}-backdrop`} accessibilityLabel={t(cancelLabel)} onPress={onCancel} style={[styles.backdrop, { backgroundColor: colors.scrim }]} />
+      {/* Hidden from the screen reader (review of #173, L5): it was the first thing VoiceOver and TalkBack read,
+          before the question. The Cancel button does the same for them. */}
+      <Pressable
+        testID={`${testID}-backdrop`}
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
+        onPress={onCancel}
+        style={[styles.backdrop, { backgroundColor: colors.scrim }]}
+      />
       <View testID={testID} style={[styles.sheet, shadow(colors, 2), { backgroundColor: colors.surface, paddingBottom: insets.bottom + spacing.lg }]}>
-        <Text style={[styles.title, { color: colors.onSurface }]}>{title ?? ""}</Text>
+        <Text accessibilityRole="header" style={[styles.title, { color: colors.onSurface }]}>{title ?? ""}</Text>
+        {!!message && <Text testID={`${testID}-message`} style={[styles.message, { color: colors.onSurfaceSecondary }]}>{message}</Text>}
         <PressableScale testID={`${testID}-cancel`} accessibilityRole="button" onPress={onCancel} style={[styles.btn, { backgroundColor: colors.surfaceSecondary }]}>
           <Text style={[styles.btnText, { color: colors.onSurface }]}>{cancelLabel}</Text>
         </PressableScale>
-        <PressableScale testID={`${testID}-confirm`} accessibilityRole="button" haptic="heavy" onPress={confirm} style={[styles.btn, { backgroundColor: colors.error }]}>
-          <Text style={[styles.btnText, { color: colors.onError }]}>{confirmLabel}</Text>
+        <PressableScale testID={`${testID}-confirm`} accessibilityRole="button" haptic="heavy" onPress={confirm} style={[styles.btn, { backgroundColor: tone === "neutral" ? colors.brandPrimary : colors.error }]}>
+          <Text style={[styles.btnText, { color: tone === "neutral" ? colors.onBrandPrimary : colors.onError }]}>{confirmLabel}</Text>
         </PressableScale>
       </View>
     </Modal>
@@ -58,6 +71,7 @@ const styles = StyleSheet.create({
   backdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
   sheet: { position: "absolute", left: 0, right: 0, bottom: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: spacing.xl, paddingHorizontal: spacing.xl, gap: spacing.md },
   title: { fontFamily: fonts.bold, fontSize: 20, textAlign: "center", marginBottom: spacing.sm },
+  message: { fontFamily: fonts.regular, fontSize: 17, lineHeight: 24, textAlign: "center", marginTop: -spacing.sm, marginBottom: spacing.sm },
   btn: { height: 56, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
   btnText: { fontFamily: fonts.bold, fontSize: 17 },
 });

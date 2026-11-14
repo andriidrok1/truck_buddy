@@ -1,101 +1,39 @@
-import { useRouter } from "expo-router";
-import { useState } from "react";
-import { Alert, Platform, TextInput, View } from "react-native";
+import { Stack, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
+import { BackHandler, TextInput, View } from "react-native";
 import { Text } from "@/src/i18n/Text";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { requestCode, signedInWithCode } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
 import { PressableScale } from "@/src/components/PressableScale";
+import { AccountActions } from "@/src/components/AccountActions";
+import { AccountSection } from "@/src/components/AccountSection";
 import { EldSection } from "@/src/components/EldSection";
+import { Field } from "@/src/components/ProfileField";
 import { LegalLinks } from "@/src/components/LegalLinks";
 import { OfflineMapsSection } from "@/src/components/OfflineMapsSection";
 import { styles } from "@/src/components/truckProfileStyles";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { saveProfile } from "@/src/data/profile";
-import { deleteMyData, signedOutReset } from "@/src/state/firstLaunch";
 import { DEFAULT_TRUCK, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
+import { useWipeRunning, wipeRunning } from "@/src/state/firstLaunch";
 import { requestTruckReroute, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts } from "@/src/state/settingsStore";
 import { Chip, PrefsForm, ToggleRow, type Prefs } from "@/src/components/PrefsForm";
 import { parseMpg, truckErrors, truckFromInputs } from "@/src/truck/validate";
 import { confirmHeight } from "@/src/truck/heightConfirmed";
+import { confirmDestructive } from "@/src/utils/confirmDestructive";
 import { spacing, useTheme, setThemePref, useThemePref, type ThemePref } from "@/src/theme";
-import { groupedInput, LANGS, setLang, t, UK_READY, useLang } from "@/src/i18n";
+import { LANGS, setLang, t, UK_READY, useLang } from "@/src/i18n";
 
-
-function Field({
-  label,
-  value,
-  onChange,
-  unit,
-  testID,
-  error,
-  decimal,
-  grouped,
-}: {
-  label: string;
-  value: string;
-  onChange: (s: string) => void;
-  unit: string;
-  testID: string;
-  error?: boolean;
-  /** A decimal keyboard (mpg); the number pad has no point on iOS. */
-  decimal?: boolean;
-  /** Thousands shown split in Russian ("80 000"); the value itself stays digits (src/truck/validate.ts toInt). */
-  grouped?: boolean;
-}) {
-  const { colors } = useTheme();
-  const lang = useLang();
-  return (
-    <View style={styles.field}>
-      <Text style={[styles.label, { color: colors.onSurfaceSecondary }]}>{label}</Text>
-      <View style={[styles.inputRow, { backgroundColor: colors.surfaceSecondary, borderColor: error ? colors.error : colors.surfaceSecondary }]}>
-        <TextInput
-          testID={testID}
-          value={grouped ? groupedInput(value, lang) : value}
-          onChangeText={onChange}
-          keyboardType={decimal ? "decimal-pad" : "number-pad"}
-          returnKeyType="done"
-          style={[styles.input, { color: colors.onSurface }]}
-          placeholderTextColor={colors.muted}
-        />
-        <Text style={[styles.unit, { color: colors.muted }]}>{unit}</Text>
-      </View>
-    </View>
-  );
-}
-
-/** A destructive action asks first: a native alert, or the browser's confirm on web (which shows `message` as is). */
-const confirmDestructive = (title: string, message: string, action: string, onYes: () => void) => {
-  if (Platform.OS === "web") {
-    if (window.confirm(message)) onYes();
-    return;
-  }
-  Alert.alert(t(title), t(message), [
-    { text: t("Cancel"), style: "cancel" },
-    { text: t(action), style: "destructive", onPress: onYes },
-  ]);
-};
 
 const MPG_ERROR = "Fuel economy must be 3 to 15 mpg.";
 const DATA_CREDITS =
   "Places: © OpenStreetMap contributors (ODbL), © Overture Maps Foundation, Foursquare, AllThePlaces, FHWA. Search and truck routes: © HERE, openrouteservice. Weather: National Weather Service. Chain controls: Caltrans. What drivers say: Google Maps.";
 
-const DELETE_MSG = "This removes everything TruckBuddy stored for this device on our servers and on this phone. The app starts over like a fresh install. This can't be undone.";
-
-const confirmDelete = (onYes: () => void) => confirmDestructive("Delete my data?", DELETE_MSG, "Delete", onYes);
-
 const RESET_MSG = "Height, trailer, weight, hazmat and your name go back to the defaults. Nothing is saved until you tap Save truck.";
 
 const confirmReset = (onYes: () => void) => confirmDestructive("Reset to defaults?", RESET_MSG, "Reset", onYes);
-
-/** The server copy, then the phone back to a fresh install (src/state/firstLaunch.ts). */
-const onDeleteMyData = async (router: ReturnType<typeof useRouter>) => {
-  if (!(await deleteMyData(router))) {
-    Alert.alert(t("Couldn't reach the server"), t("Your data is still there. Check your connection and try again."));
-  }
-};
 
 const THEME_CHOICES: { value: ThemePref; label: string }[] = [
   { value: "light", label: "Light" },
@@ -145,7 +83,19 @@ export default function TruckProfileScreen() {
     setPrefs(pickPrefs(truck));
   }
 
-  const close = () => (router.canGoBack() ? router.back() : router.replace("/"));
+  // While "Delete account" or "Delete my data" runs, the screen stays: leaving it would leave the driver on the map
+  // with a wipe still going on behind it (review of #173, M1). Back, the hardware Back and the iOS swipe are closed.
+  const wiping = useWipeRunning();
+  useEffect(() => {
+    if (!wiping) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => true);
+    return () => sub.remove();
+  }, [wiping]);
+  const close = () => {
+    if (wipeRunning()) return;
+    if (router.canGoBack()) router.back();
+    else router.replace("/");
+  };
 
   // The server's limits, one message per field (src/truck/validate.ts, shared with onboarding).
   const errors = truckErrors({ feet, inches, trailer, weight });
@@ -182,8 +132,9 @@ export default function TruckProfileScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: colors.surface }]} testID="truck-profile-screen">
+      <Stack.Screen options={{ gestureEnabled: !wiping }} />
       <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-        <PressableScale testID="truck-profile-back-button" accessibilityLabel={t("Back")} onPress={close} style={[styles.back, { backgroundColor: colors.surfaceSecondary }]}>
+        <PressableScale testID="truck-profile-back-button" accessibilityLabel={t("Back")} disabled={wiping} onPress={close} style={[styles.back, { backgroundColor: colors.surfaceSecondary }]}>
           <Icon name="arrow-left" size={24} color={colors.onSurface} />
         </PressableScale>
         <Text style={[styles.title, { color: colors.onSurface }]}>Your truck</Text>
@@ -191,6 +142,8 @@ export default function TruckProfileScreen() {
       </View>
 
       <KeyboardAwareScrollView bottomOffset={96} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <AccountSection driverName={truck.driver_name} />
+
         <Text style={[styles.hint, { color: colors.onSurfaceSecondary }]}>
           Routes avoid low bridges and roads closed to trucks of this size and weight.
         </Text>
@@ -328,36 +281,7 @@ export default function TruckProfileScreen() {
           <Text style={[styles.signOutText, { color: colors.onSurface }]}>Reset to defaults</Text>
         </PressableScale>
 
-        {/* A tester signed in with an access code. An account's Sign out and Delete account come with the account section (APP-3). */}
-        {signedInWithCode() && (
-          <PressableScale
-            testID="sign-out"
-            accessibilityLabel={t("Sign out")}
-            onPress={async () => {
-              // Nothing of this tester stays for whoever signs in next (the truck, the trip, the Motive key).
-              await signedOutReset();
-              requestCode(); // the sign-in screen opens on the code screen, in the builds that have one
-            }}
-            style={[styles.signOut, { borderColor: colors.border }]}
-          >
-            <Icon name="logout" size={20} color={colors.onSurface} />
-            <Text style={[styles.signOutText, { color: colors.onSurface }]}>Sign out</Text>
-          </PressableScale>
-        )}
-
-        {/* 5.1.1(v): a device identity with server records counts as an account; deletion must be in-app. */}
-        <PressableScale
-          testID="delete-my-data"
-          accessibilityLabel={t("Delete my data")}
-          onPress={() => confirmDelete(() => onDeleteMyData(router))}
-          style={[styles.signOut, { borderColor: colors.error, marginTop: spacing.md }]}
-        >
-          <Icon name="delete-outline" size={20} color={colors.error} />
-          <Text style={[styles.signOutText, { color: colors.error }]}>Delete my data</Text>
-        </PressableScale>
-        <Text style={[styles.deleteNote, { color: colors.muted }]}>
-          Erases everything stored for this device on our servers (conversation memory, trip events, your name and truck profile) and on this phone: language, settings, the truck profile. The app starts over like a fresh install.
-        </Text>
+        <AccountActions router={router} />
         {/* Credits the open place data asks for (backend/scripts/build_places.py: ODbL, CDLA, Apache-2.0), plus HERE and
             openrouteservice routing, NWS weather and Caltrans chain controls. */}
         <Text testID="data-credits" style={[styles.deleteNote, { color: colors.muted, marginTop: spacing.lg }]}>

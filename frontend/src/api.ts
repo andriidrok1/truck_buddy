@@ -53,6 +53,8 @@ export class ApiError extends Error {
     public readonly status: number,
     path: string,
     public readonly detail: string | null = null,
+    /** The machine-readable reason some answers carry next to `detail` (a 409 Refusal of DELETE /api/account). */
+    public readonly code: string | null = null,
   ) {
     super(`${path} failed: ${status}${detail ? ` (${detail})` : ""}`);
     this.name = "ApiError";
@@ -72,13 +74,15 @@ async function check(res: Response, path: string, sent: string | null, renew = t
   if (renew && sent !== null && sent === getToken() && (await isOur401(res))) await after401(sent);
   if (res.ok) return;
   let detail: string | null = null;
+  let code: string | null = null;
   try {
-    const body = (await res.json()) as { detail?: unknown };
+    const body = (await res.json()) as { detail?: unknown; code?: unknown };
     if (typeof body?.detail === "string") detail = body.detail;
+    if (typeof body?.code === "string") code = body.code;
   } catch {
     // not JSON: the status is all we know
   }
-  throw new ApiError(res.status, path, detail);
+  throw new ApiError(res.status, path, detail, code);
 }
 
 /**
@@ -276,6 +280,10 @@ export async function logout(): Promise<boolean> {
   }
 }
 
+/** How long the app waits for DELETE /api/memory: the server waits for the trip saves still in flight and wipes four
+ *  stores in one request, which on a slow cell connection takes longer than an ordinary call (review of #173, L-4). */
+export const WIPE_DATA_TIMEOUT_MS = 60000;
+
 /**
  * "Delete my data" on the server (DELETE /api/memory). Not through request(): the caller holds every other request
  * until this one settles (firstLaunch.ts deleteMyData), and request()'s renewal on a 401 waits on that very hold, so
@@ -283,11 +291,85 @@ export async function logout(): Promise<boolean> {
  * up. A 401 comes back as an ApiError: the caller renews outside the hold and tries once more.
  */
 export async function wipeServerData(): Promise<{ deleted: number }> {
-  const d = deadline(DEFAULT_TIMEOUT_MS);
+  const d = deadline(WIPE_DATA_TIMEOUT_MS);
   try {
     const res = await fetchTracked(`${BASE}/memory`, { method: "DELETE", signal: d.signal, headers: { "Content-Type": "application/json", ...authHeader() } });
     await check(res, "/memory", null, false);
     return await json<{ deleted: number }>(res, "/memory");
+  } finally {
+    d.done();
+  }
+}
+
+/** What DELETE /api/account answers (backend services/account_api.py AccountDeleteResponse). `apple_revoked`: true
+ *  when Apple took the revocation, false when Apple could not be reached or refused, null when there was nothing to
+ *  revoke. */
+export type AccountDeleted = components["schemas"]["AccountDeleteResponse"];
+/** Why DELETE /api/account answered 409 (backend Refusal.code). */
+export type RefusalCode = components["schemas"]["Refusal"]["code"];
+
+/** How long the app waits for DELETE /api/account. The server revokes the Apple token and wipes every table in one
+ *  request; on a slow cell connection that takes longer than an ordinary call (review of #173, H2). */
+export const ACCOUNT_DELETE_TIMEOUT_MS = 60000;
+
+/**
+ * Deletes the signed-in account and everything stored for it. Not through request(): the caller holds every other
+ * request until this one settles (firstLaunch.ts serverThenReset), and request()'s renewal on a 401 would wait on
+ * that very hold. The header is read in the same tick as the call, before the hold goes up. A 401 comes back as an
+ * ApiError for the caller to renew and retry outside the hold; a 409 carries the server's reason in `detail`.
+ */
+async function deleteAccount(): Promise<AccountDeleted> {
+  const d = deadline(ACCOUNT_DELETE_TIMEOUT_MS);
+  try {
+    const res = await fetchTracked(`${BASE}/account`, { method: "DELETE", signal: d.signal, headers: { "Content-Type": "application/json", ...authHeader() } });
+    await check(res, "/account", null, false);
+    return await json<AccountDeleted>(res, "/account");
+  } finally {
+    d.done();
+  }
+}
+
+/** Our 401 for a token whose sub has no driver any more (backend services/auth.py). A server from before #171's
+ *  `code` on 401s says it also for a session that was only closed (logout-all from another phone, a refresh token
+ *  reused, an idle session), so on its own it never proves that the account is gone. */
+export const isNoLongerRegistered = (detail: string | null | undefined): boolean => typeof detail === "string" && /no longer registered/i.test(detail);
+
+/**
+ * What our 401 says about the identity behind the token. The server (#171) puts a `code` next to `detail`:
+ * "account_gone": the account (the token's sub) was deleted. "session_closed": only this session ended, the account
+ * is alive. Without a code (an older server), "unregistered" is the "no longer registered" text that can mean
+ * either, and "refused" is any other 401 (an expired access token: a renewal may fix it).
+ */
+export type Why401 = "account_gone" | "session_closed" | "unregistered" | "refused";
+export function why401(detail: string | null | undefined, code: string | null | undefined): Why401 {
+  if (code === "account_gone" || code === "session_closed") return code;
+  return isNoLongerRegistered(detail) ? "unregistered" : "refused";
+}
+
+/** No answer to a call that changes something on the server: it may have finished all the same (a timeout, a dead
+ *  zone, the edge's 502/504, a 503 page from the proxy during a deploy, which has no JSON `detail`). A 503 with our
+ *  `detail` is the backend saying it did not (review of #173, M4). */
+export const isNoAnswer = (e: unknown): boolean =>
+  !(e instanceof ApiError) || e.status === 502 || e.status === 504 || (e.status === 503 && e.detail === null);
+
+/**
+ * What GET /api/auth/check says about `token`, after a call that got no answer (a DELETE /api/account, a DELETE
+ * /api/memory, a POST /api/auth/logout-all). The token is set by hand because the caller may hold every other
+ * request (authHeader() leaves the token out meanwhile) and because a 401 here must not start a renewal.
+ * "alive": a 200. A 401 of ours: what why401 makes of it. "unknown": anything else (offline, a timeout, a 5xx, a 429,
+ * a page that is not ours).
+ */
+export async function tokenState(token: string): Promise<"alive" | Why401 | "unknown"> {
+  const d = deadline(10000);
+  try {
+    const res = await fetchTracked(`${BASE}/auth/check`, { signal: d.signal, headers: { Authorization: `Bearer ${token}`, "X-Lang": "en" } });
+    if (res.ok) return "alive";
+    if (res.status !== 401) return "unknown";
+    const body = (await res.json().catch(() => null)) as { detail?: unknown; code?: unknown } | null;
+    if (typeof body?.detail !== "string") return "unknown";
+    return why401(body.detail, typeof body.code === "string" ? body.code : null);
+  } catch {
+    return "unknown";
   } finally {
     d.done();
   }
@@ -341,7 +423,12 @@ export async function redeemAccessCode(code: string, prepare?: (r: { access_toke
 
 export const api = {
   memory: () => request<{ turns: MemoryTurn[] }>(`/memory`),
-  clearMemory: () => request<{ deleted: number }>(`/memory`, { method: "DELETE" }),
+  /** "Clear memory", for any sign-in: the conversations and what the copilot learned from them. The truck profile,
+   *  the trip events and the visit counts stay. */
+  clearHistory: () => request<components["schemas"]["HistoryClearResponse"]>(`/memory/history`, { method: "DELETE" }),
+  /** Signs every phone of the account out, this one included. */
+  logoutAll: () => request<components["schemas"]["LogoutAllResponse"]>(`/auth/logout-all`, { method: "POST", timeoutMs: 15000 }),
+  deleteAccount,
   places: (category: Category, at: LatLng) =>
     request<PlacesResponse>(`/places?category=${category}&lat=${at.lat}&lng=${at.lng}`),
   /** POST /api/route; `via` = the stops already on the way, so a re-plan (new truck size, entrance,

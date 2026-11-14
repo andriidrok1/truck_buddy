@@ -52,4 +52,14 @@ describe("ConfirmSheet", () => {
     await fireEvent.press(screen.getByTestId("end-route-confirm-cancel"));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
+
+  test("the screen reader skips the backdrop and hears the title as a header (review of #173, L5)", async () => {
+    await render(sheet(() => {}, () => {}));
+    const backdrop = screen.getByTestId("end-route-confirm-backdrop", { includeHiddenElements: true });
+    expect(screen.queryByTestId("end-route-confirm-backdrop")).toBeNull(); // what a screen reader can reach
+    expect(backdrop.props.accessible).toBe(false);
+    expect(backdrop.props.importantForAccessibility).toBe("no-hide-descendants");
+    expect(backdrop.props.accessibilityElementsHidden).toBe(true);
+    expect(screen.getByRole("header")).toHaveTextContent("End the route to Reno?");
+  });
 });
