@@ -1,4 +1,4 @@
-import { AMBIENT_GAP_MS, isAmbient, preempts, PRIORITY, SpeechQueue, type DropReason, type QueuedSpeech } from "../voice/queue";
+import { AMBIENT_GAP_MS, isAmbient, isExpired, preempts, PRIORITY, SpeechQueue, type DropReason, type QueuedSpeech } from "../voice/queue";
 
 const T0 = 1_700_000_000_000;
 const maneuver = (text: string, key?: string) => ({ text, priority: PRIORITY.MANEUVER, key, ttlMs: 30000, kind: "maneuver" as const });
@@ -116,6 +116,56 @@ describe("SpeechQueue", () => {
     expect(drain(q, T0 + 30000)).toEqual(["Snow ahead."]);
     expect(drops).toHaveLength(2);
     expect(drops[1]).toEqual(["In half a mile, keep left.", "expired"]);
+  });
+
+  test("a taken line that went stale while its audio was fetched is reported as expired", () => {
+    const drops: [string, DropReason][] = [];
+    const q = new SpeechQueue({ onDrop: (i, why) => drops.push([i.text, why]) });
+    q.enqueue(now("Turn right.", "m-1-now"), T0);
+    const taken = q.take(T0 + 1000, false)!;
+    expect(isExpired(taken, T0 + 7999)).toBe(false);
+    expect(isExpired(taken, T0 + 8000)).toBe(true);
+    expect(isExpired({ at: T0 }, T0 + 3_600_000)).toBe(false); // no ttl: never
+    q.dropTaken(taken);
+    expect(drops).toEqual([["Turn right.", "expired"]]);
+  });
+
+  test("an ambient line dropped after the take has not used up the minute", () => {
+    const q = new SpeechQueue();
+    q.enqueue({ ...weather("Snow ahead."), ttlMs: 5000 }, T0);
+    q.enqueue(speed("Slow down."), T0);
+    q.dropTaken(q.take(T0, false)!);
+    expect(q.take(T0 + 6000, false)?.text).toBe("Slow down.");
+  });
+
+  test("a line put back keeps its age and order; a newer line of the same key wins", () => {
+    const drops: [string, DropReason][] = [];
+    const q = new SpeechQueue({ onDrop: (i, why) => drops.push([i.text, why]) });
+    q.enqueue(maneuver("In half a mile, turn right.", "m-1"), T0);
+    q.enqueue(maneuver("Then keep left.", "m-2"), T0 + 1);
+    const far = q.take(T0 + 100, false)!;
+    q.putBack(far);
+    expect(q.take(T0 + 200, false)).toBe(far); // still ahead of the line enqueued after it
+    q.putBack(far);
+    expect(q.take(T0 + 30000, true)).toBeNull(); // and still as old as it was: it expires on time, the other a tick later
+    expect(drops).toEqual([["In half a mile, turn right.", "expired"]]);
+    expect(q.take(T0 + 30001, true)).toBeNull();
+    expect(drops.at(-1)).toEqual(["Then keep left.", "expired"]);
+
+    const old = q.enqueue(maneuver("In about a mile, turn left.", "m-3"), T0 + 40000);
+    expect(q.take(T0 + 40000, false)).toBe(old);
+    q.enqueue(maneuver("In half a mile, turn left.", "m-3"), T0 + 41000);
+    q.putBack(old);
+    expect(drops.at(-1)).toEqual(["In about a mile, turn left.", "replaced"]);
+    expect(drain(q, T0 + 41000)).toEqual(["In half a mile, turn left."]);
+  });
+
+  test("an ambient line put back has not used up the minute", () => {
+    const q = new SpeechQueue();
+    q.enqueue(weather("Snow ahead."), T0);
+    const w = q.take(T0, false)!;
+    q.putBack(w);
+    expect(q.take(T0 + 500, false)).toBe(w);
   });
 
   test("clear drops everything", () => {

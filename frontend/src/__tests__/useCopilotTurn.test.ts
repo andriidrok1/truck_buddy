@@ -40,6 +40,7 @@ function fakeDeps(): Fake {
     api: { transcribe: f.transcribe as never, agentSpeak: f.agent as never },
     fillers: { schedule: plan, noteTurn: () => undefined },
     offline: () => false,
+    isOnline: () => true,
     context: () => ({ coords: { lat: 1, lng: 2 }, active: null, ui: { driving: false, voice_guidance: true, hands_free: false, options_count: 0 }, heading: null, speed: null, limitMph: null, hintNames: [] }),
     onPhase: (p) => calls.push(`phase:${p}`),
     onIdle: () => calls.push("idle"),
@@ -188,4 +189,60 @@ test("a doubtful recording with words is an ordinary turn", async () => {
   await flush();
   await flush();
   expect(f.agent.mock.calls[0][0]).toBe("take me to Reno");
+});
+
+test("a tap while the words are still being transcribed drops that request and its filler", async () => {
+  const f = fakeDeps();
+  const plan = { picked: "hang-on", done: Promise.resolve(), cancel: jest.fn(() => true), startedAt: () => null, elapsed: () => 0 };
+  f.deps.fillers.schedule = () => plan;
+  let sttSignal: AbortSignal | undefined;
+  f.transcribe.mockImplementation((_uri: string, signal?: AbortSignal) => {
+    sttSignal = signal;
+    return new Promise((_, reject) => signal?.addEventListener("abort", () => reject(new Error("aborted"))));
+  });
+  const { result } = harness(f.deps);
+  act(() => result.current.tap());
+  await flush();
+  expect(f.transcribe).toHaveBeenCalledTimes(1);
+  expect(result.current.state.mode).toBe("listening"); // the machine's view while STT runs
+  expect(plan.cancel).not.toHaveBeenCalled();
+
+  act(() => result.current.tap());
+  expect(plan.cancel).toHaveBeenCalledTimes(1); // no "Still looking." over the new recording
+  expect(sttSignal?.aborted).toBe(true);
+  expect(f.calls).toContain("stopSpeaking"); // a "Hang on." already on air is cut
+  expect(f.listen).toHaveBeenCalledTimes(2);
+  expect(result.current.state.mode).toBe("listening");
+  await flush();
+  expect(f.agent).not.toHaveBeenCalled(); // the first turn never reaches the agent
+  expect(f.calls.filter((c) => c.startsWith("error:"))).toEqual([]);
+  expect(result.current.dialogId()).toBe("dlg-1"); // same session
+});
+
+test("a tap while the mic is recording does not cancel anything here (the screen finishes the recording)", () => {
+  const f = fakeDeps();
+  f.listenResult = () => new Promise<string>(() => undefined);
+  const { result } = harness(f.deps);
+  act(() => result.current.tap());
+  expect(f.calls).not.toContain("stopSpeaking");
+  act(() => result.current.tap());
+  expect(f.calls).not.toContain("stopSpeaking"); // no "cancel" was dispatched, as before
+});
+
+test("a nudge that played with no signal opens no mic and says nothing by itself", () => {
+  const f = fakeDeps();
+  f.deps.autoListen = true;
+  const offline = jest.fn(() => true); // the turn's own check: it speaks and shows "No signal"
+  f.deps.offline = offline;
+  f.deps.isOnline = () => false;
+  const { result } = harness(f.deps);
+  act(() => result.current.nudgeOffer());
+  expect(offline).not.toHaveBeenCalled();
+  expect(f.listen).not.toHaveBeenCalled();
+  expect(result.current.state.mode).toBe("idle");
+
+  f.deps.isOnline = () => true;
+  act(() => result.current.nudgeOffer());
+  expect(offline).not.toHaveBeenCalled();
+  expect(f.listen).toHaveBeenCalledTimes(1); // with a signal the hands-free window still opens
 });

@@ -27,6 +27,11 @@ export type SpeechItem = {
   /** Not spoken once this old (a maneuver call after the turn is noise). */
   ttlMs?: number;
   kind: SpeechKind;
+  /** The clip the server already made for this line (a parking answer): played as is, no /speak call. */
+  audioUrl?: string;
+  /** Still worth saying? Asked when the line's turn comes, which can be long after it was queued: a parking
+   *  verdict that waited behind a driver's turn must not be said about the destination before this one. */
+  valid?: () => boolean;
 };
 
 export type QueuedSpeech = SpeechItem & {
@@ -35,6 +40,9 @@ export type QueuedSpeech = SpeechItem & {
   /** Enqueue order, for FIFO within a priority. */
   seq: number;
 };
+
+/** Too old to say. `take` checks it, and the hook again once the audio is there (the fetch takes time too). */
+export const isExpired = (q: Pick<QueuedSpeech, "at" | "ttlMs">, now: number) => q.ttlMs !== undefined && now - q.at >= q.ttlMs;
 
 export type DropReason = "expired" | "replaced" | "cleared";
 
@@ -59,6 +67,8 @@ export class SpeechQueue {
   private items: QueuedSpeech[] = [];
   private seq = 0;
   private lastAmbientAt = -Infinity;
+  /** `lastAmbientAt` before the last take, for a line that is handed back. */
+  private ambientBefore = -Infinity;
   private readonly ambientGapMs: number;
   private readonly onDrop?: SpeechQueueOptions["onDrop"];
 
@@ -89,10 +99,28 @@ export class SpeechQueue {
     for (const q of order) {
       if (isAmbient(q.priority) && now - this.lastAmbientAt < this.ambientGapMs) continue;
       this.items.splice(this.items.indexOf(q), 1);
+      this.ambientBefore = this.lastAmbientAt;
       if (isAmbient(q.priority)) this.lastAmbientAt = now;
       return q;
     }
     return null;
+  }
+
+  /** A line `take` handed out that went stale while its audio was fetched: reported like one that expired waiting. */
+  dropTaken(q: QueuedSpeech) {
+    this.untake(q);
+    this.onDrop?.(q, "expired");
+  }
+
+  /**
+   * A line `take` handed out that could not start: the driver began talking, or a reply came on, while its
+   * audio was fetched. Back in line with its age and order, so it is said (or expires) as if never taken.
+   * A newer line of the same key that arrived meanwhile wins.
+   */
+  putBack(q: QueuedSpeech) {
+    this.untake(q);
+    if (q.key !== undefined && this.items.some((i) => i.key === q.key)) this.onDrop?.(q, "replaced");
+    else this.items.push(q);
   }
 
   clear() {
@@ -106,10 +134,15 @@ export class SpeechQueue {
     return this.items.length;
   }
 
+  /** An ambient line that was taken but never said has not used up the minute. */
+  private untake(q: QueuedSpeech) {
+    if (isAmbient(q.priority)) this.lastAmbientAt = this.ambientBefore;
+  }
+
   private expire(now: number) {
     const keep: QueuedSpeech[] = [];
     for (const q of this.items) {
-      if (q.ttlMs !== undefined && now - q.at >= q.ttlMs) this.onDrop?.(q, "expired");
+      if (isExpired(q, now)) this.onDrop?.(q, "expired");
       else keep.push(q);
     }
     this.items = keep;

@@ -165,9 +165,14 @@ export default function MapScreen() {
   // to add a stop at Pilot Fernley?") opens the mic for a few seconds once it has played:
   // listenForAnswer, defined further down (it needs the wake word and the mic), through this ref.
   const nudgeAnswer = useRef<() => void>(() => {});
+  // A tap on the mic (or a typed request) stops the line on air, and the queue goes on to the next one in the
+  // same tick: before the phase reads "listening" and before the recorder is up. A line with a ready clip (a
+  // parking verdict) then started over the opening mic. Until this time the queue counts the copilot as busy.
+  const turnStarting = useRef(0);
+  const TURN_STARTING_MS = 1500;
   const { say, clear: clearSpeech } = useSpeechQueue(
     voice,
-    () => phaseRef.current === "listening" || phaseRef.current === "thinking",
+    () => phaseRef.current === "listening" || phaseRef.current === "thinking" || Date.now() < turnStarting.current,
     (item) => {
       showLine(item.text);
       recorder.mark("said", item.text);
@@ -317,10 +322,17 @@ export default function MapScreen() {
       const audio = api.speak(text); // generate while the first answer is still playing
       await replyDone;
       if (!isCurrent() || trip().active?.place.id !== place.id) return;
-      showLine(text);
-      const r = await audio;
+      // Through the speech queue, never straight to the player: play() cuts whatever is on air, and a turn
+      // call cut mid-sentence still counted as said. The queue shows the caption when the line starts; if the
+      // clip failed it asks /speak itself or uses the phone's voice.
+      const audioUrl = await audio.then((r) => absoluteUrl(r.audio_url), () => undefined);
       if (isCurrent() && trip().active?.place.id === place.id) {
-        await voice.playAndWait(absoluteUrl(r.audio_url), Math.min(15000, 1500 + text.length * 65));
+        // It can wait behind a turn call and a whole driver's turn: a minute to be said in, and only while
+        // this is still the destination (the queue asks again when its turn comes).
+        say(text, {
+          priority: PRIORITY.MANEUVER, kind: "system", key: "parking-verdict", ttlMs: 60000, audioUrl,
+          valid: () => trip().active?.place.id === place.id,
+        });
       }
     } catch {
       // parking stays "unclear"; the route still works
@@ -419,6 +431,7 @@ export default function MapScreen() {
     api: { transcribe: api.transcribe, agentSpeak: api.agentSpeak },
     fillers,
     offline: () => offlineTurn({ isOnline, say, setCaption }),
+    isOnline,
     context: () =>
       turnContext(trip(), {
         coords: coordsRef.current, // the truck moved while the driver talked and the words were transcribed
@@ -472,6 +485,7 @@ export default function MapScreen() {
     // "Where to?" box took it after every typed request and kept the keyboard over the answer.
     searchBlurGuard.current = true;
     setTimeout(() => (searchBlurGuard.current = false), 1500);
+    turnStarting.current = Date.now() + TURN_STARTING_MS;
     voice.stopSpeaking();
     setCaption(null);
     turn.text(text);
@@ -532,6 +546,7 @@ export default function MapScreen() {
     }
     // Barge-in: a tap while the copilot is still working drops that turn and listens again (same session,
     // so "no, the other one" lands where it should); useCopilotTurn does the dropping.
+    turnStarting.current = Date.now() + TURN_STARTING_MS;
     voice.stopSpeaking();
     // The permission round trip only until it is known granted: the tap must start recording at once.
     if (!voice.micKnownGranted()) {
@@ -767,10 +782,15 @@ export default function MapScreen() {
         return parkingFollowup(fPlace, spoken, {
           isCurrent: ctx.isCurrent,
           busy: () => phaseRef.current === "listening" || phaseRef.current === "thinking",
+          // Queued like everything else the copilot says on its own: played directly, the answer cut a turn
+          // call on air. The queue shows the caption when the line starts; an answer that came without a clip
+          // is only shown, as before.
           say: async (text, url) => {
-            showLine(text);
-            const a = toAudio(url);
-            if (a) await voice.playAndWait(a, 6000);
+            const audioUrl = toAudio(url);
+            // Only while the place it is about is still on screen (the destination, the list or the pins).
+            const stillThere = () => [trip().active?.place, ...trip().options, ...trip().places()].some((p) => p?.id === placeId);
+            if (audioUrl) say(text, { priority: PRIORITY.MANEUVER, kind: "system", key: "parking-answer", ttlMs: 30000, audioUrl, valid: stillThere });
+            else showLine(text);
           },
         });
       },
@@ -816,6 +836,7 @@ export default function MapScreen() {
     const gen = t.claimRoute(); // the last tap wins over a route still in flight
     routing.current = gen;
     turn.cancel(); // a copilot turn in flight gives way to the tap
+    voice.cancelRecording().catch(() => {}); // and so does an open mic: it would hold every guidance line until it timed out
     voice.stopSpeaking();
     setCaption(null);
     setPhase("thinking");
