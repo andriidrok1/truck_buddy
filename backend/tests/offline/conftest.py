@@ -60,9 +60,25 @@ def _offline_env(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("MEMORY_STORE", "off")  # no store unless a test asks for sqlite
     monkeypatch.delenv("EXPO_PUBLIC_BACKEND_URL", raising=False)
-    from services import i18n, spend
-    i18n._model_cache.clear()
-    spend.reset()  # today's spend is process-wide; each test starts at $0  # model translations are cached per process; each test starts without them
+    from services import chains, i18n, spend, weather
+    i18n._model_cache.clear()  # model translations are cached per process; each test starts without them
+    spend.reset()  # today's spend is process-wide; each test starts at $0
+    _block_network()
+    # Process-wide feed caches: what one test (or a poller) put there must not answer the next test's route.
+    chains._cache.clear()
+    _clear_weather_caches(weather)
+
+
+def _no_network(request: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError(f"offline test: no real network ({request.url.host})", request=request)
+
+
+def _block_network() -> None:
+    """Without fake_http the shared client is one that refuses every call instead of a real one. The pollers a
+    TestClient starts (Caltrans chain controls, the NWS feed) used to reach the real feeds from here: in a storm
+    the live Caltrans copy put a chain line into replies of later tests that expected none (2026-11-13)."""
+    if not isinstance(getattr(http._client, "_transport", None), httpx.MockTransport) or http._client.is_closed:
+        http._client = httpx.AsyncClient(transport=httpx.MockTransport(_no_network))
 
 
 def fixture_json(name: str) -> Any:
@@ -137,6 +153,7 @@ def fake_http(monkeypatch) -> FakeHttp:
     _clear_weather_caches(weather)  # the NWS feed and zone polygons are process-wide; never across tests
     yield router
     http._client = None
+    _block_network()
     _clear_weather_caches(weather)
 
 
@@ -282,6 +299,7 @@ def api_client():
     from services import auth
     mp.setattr(auth, "RATE_PER_MIN", 0)
     mp.setattr(auth, "MAX_DEVICES_PER_IP", 0)  # the suite registers more devices than one IP may in 10 min
+    _block_network()  # the startup pollers (chains, weather) run before any test's fake_http
     try:
         with TestClient(server.app) as c:
             token = c.post("/api/auth/device").json()["access_token"]

@@ -70,6 +70,9 @@ def test_dict_surface_matches_what_the_agent_expects():
 
 def test_db_store_saves_loads_sweeps_and_drops(sqlite_store, monkeypatch):
     monkeypatch.setenv("SESSION_STORE", "db")
+    # drop_prefix also empties the process-wide memory store, and earlier tests leave dialogs there: a device id is
+    # drv_<random hex>, so one in 16 of them starts with "drv_a" and was counted here (CI #175: 3 == 2).
+    monkeypatch.setattr(session_store, "_memory", session_store.MemorySessionStore())
     store = session_store.DbSessionStore()
     assert session_store.kind() == "db" and isinstance(session_store.get_store(), session_store.DbSessionStore)
     s = _populated()
@@ -212,6 +215,9 @@ def _assert_both_kept(back):
 
 def test_a_poll_and_a_turn_at_once_keep_each_others_changes(sqlite_store, monkeypatch):
     monkeypatch.setenv("SESSION_STORE", "db")
+    # drop_prefix also empties the process-wide memory store, and earlier tests leave dialogs there: a device id is
+    # drv_<random hex>, so one in 16 of them starts with "drv_a" and was counted here (CI #175: 3 == 2).
+    monkeypatch.setattr(session_store, "_memory", session_store.MemorySessionStore())
     store = session_store.DbSessionStore()
     _assert_both_kept(run(_concurrent_writes(store, "drv_c:dlg")()))
 
@@ -257,6 +263,9 @@ def test_a_poll_and_a_turn_at_once_keep_each_others_changes_on_postgres(monkeypa
     monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
     monkeypatch.setenv("MEMORY_STORE", "pg")
     monkeypatch.setenv("SESSION_STORE", "db")
+    # drop_prefix also empties the process-wide memory store, and earlier tests leave dialogs there: a device id is
+    # drv_<random hex>, so one in 16 of them starts with "drv_a" and was counted here (CI #175: 3 == 2).
+    monkeypatch.setattr(session_store, "_memory", session_store.MemorySessionStore())
     store = session_store.DbSessionStore()
     sid = f"drv_pg:{uuid.uuid4().hex[:8]}"
     scenario = _concurrent_writes(store, sid)
