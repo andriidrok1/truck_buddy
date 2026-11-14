@@ -2,6 +2,7 @@
 // in Russian mode. Every line here is what a screen draws; English must come out unchanged.
 import { chipAhead } from "../geo/advisories";
 import { formatDistance } from "../geo/guidance";
+import { spokenMiles } from "../geo/offlineGuidance";
 import { arrivalClock } from "../utils/arrivalClock";
 import { t } from "../i18n";
 
@@ -16,6 +17,10 @@ test("nav banner distances: feet and miles with the Russian plural", () => {
   expect(ru("1 ft")).toBe("1 фут");
   expect(ru("2 ft")).toBe("2 фута");
   expect(ru(formatDistance(644))).toBe("0,4 мили");
+  // Whole miles carry no ",0" and take the plural of the number (QA 2026-11-11: "1,0 мили", "5,0 мили").
+  expect(ru(formatDistance(1609.34))).toBe("1 миля");
+  expect(ru(formatDistance(2 * 1609.34))).toBe("2 мили");
+  expect(ru(formatDistance(5 * 1609.34))).toBe("5 миль");
   expect(ru("21 mi")).toBe("21 миля");
   expect(ru("12 mi")).toBe("12 миль");
 });
@@ -31,7 +36,7 @@ test("advisory chips, the off-route line and the truck summary", () => {
   expect(ru(chipAhead(4828))).toBe("через 3 мили");
   expect(ru(chipAhead(1609))).toBe("через 1 милю");
   expect(ru("Return to the route: 0.4 mi NE")).toBe("Вернись на маршрут: 0,4 мили к северо-востоку");
-  expect(ru("14 ft 0 in · 53 ft trailer · 80,000 lb · HAZMAT")).toBe("14 футов 0 дюймов · трейлер 53 фута · 80 000 фунтов · HAZMAT");
+  expect(ru("14 ft 0 in · 53 ft trailer · 80,000 lb · HAZMAT")).toBe("14 футов 0 дюймов · трейлер 53 фута · 80 000 фунтов · опасный груз");
   expect(ru("Height must be 10 ft to 15 ft.")).toBe("Высота должна быть от 10 футов до 15 футов.");
   expect(ru("12 min by reviews")).toBe("12 мин по отзывам");
 });
@@ -70,5 +75,9 @@ test("the spoken off-route line is Russian end to end, direction included", () =
   expect(ru("Lost signal, can't reroute. The route is 0.4 miles to the north.")).toBe("Связь пропала, маршрут не перестроить. До маршрута 0,4 мили на север.");
   expect(ru("Lost signal, can't reroute. The route is 1 mile to the southwest.")).toBe("Связь пропала, маршрут не перестроить. До маршрута 1 миля на юго-запад.");
   expect(ru("Lost signal, can't reroute. The route is 300 feet to the east.")).toBe("Связь пропала, маршрут не перестроить. До маршрута 300 футов на восток.");
+  // spokenMiles: whole miles without ".0".
+  expect(ru(`Lost signal, can't reroute. The route is ${spokenMiles(2 * 1609.34)} to the west.`)).toBe("Связь пропала, маршрут не перестроить. До маршрута 2 мили на запад.");
+  expect(ru(`Lost signal, can't reroute. The route is ${spokenMiles(5 * 1609.34)} to the west.`)).toBe("Связь пропала, маршрут не перестроить. До маршрута 5 миль на запад.");
+  expect(ru(`Lost signal, can't reroute. The route is ${spokenMiles(1609.34)} to the west.`)).toBe("Связь пропала, маршрут не перестроить. До маршрута 1 миля на запад.");
   expect(en("Lost signal, can't reroute. The route is 0.4 miles to the north.")).toBe("Lost signal, can't reroute. The route is 0.4 miles to the north.");
 });

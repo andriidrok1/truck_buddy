@@ -211,13 +211,13 @@ export default function ParkingSatMap({ center, place, spots, tail }: ParkingSat
       </View>
       <View style={styles.zoomCol}>
         {[
-          { d: 1, icon: "plus", id: "in" },
-          { d: -1, icon: "minus", id: "out" },
+          { d: 1, icon: "plus", id: "in", label: "Zoom in" },
+          { d: -1, icon: "minus", id: "out", label: "Zoom out" },
         ].map((b) => (
           <PressableScale
             key={b.id}
             testID={`parking-sat-zoom-${b.id}`}
-            accessibilityLabel={t("Zoom {what}", { what: b.id })}
+            accessibilityLabel={t(b.label)}
             onPress={() => zoomBy(b.d)}
             style={[styles.zoomBtn, { backgroundColor: colors.surface }]}
           >

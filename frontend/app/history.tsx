@@ -84,8 +84,12 @@ export default function HistoryScreen() {
       try {
         await api.clearMemory();
         setTurns([]);
+        setError(false); // a refresh that failed earlier must not turn the empty state into "Couldn't load"
       } catch {
-        setError(true);
+        // The list is still on screen, and the error text is only drawn for an empty one: say it here.
+        const msg = t("Your data is still there. Check your connection and try again.");
+        if (Platform.OS === "web") window.alert(msg);
+        else Alert.alert(t("Couldn't reach the server"), msg);
       }
     });
 

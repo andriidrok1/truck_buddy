@@ -70,6 +70,10 @@ export async function forgetLang(): Promise<void> {
 export const getLang = (): Lang => useLangStore.getState().lang;
 export const setLang = (l: Lang) => useLangStore.getState().setLang(l);
 
+/** The text has a Cyrillic letter. Server lines come translated whole or stay English whole (backend
+ *  services/i18n.py), so in Russian mode a line without one is English the catalog missed. */
+export const hasCyrillic = (s: string): boolean => /[а-яё]/i.test(s);
+
 /** Russian plural form: 1 миля, 2 мили, 5 миль. */
 export function pluralRu(n: number, one: string, few: string, many: string): string {
   if (!Number.isInteger(n)) return few;

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { setMidTripCheck } from "../data/profile";
 import { arrivals, loadArrived, saveArrived } from "../geo/arrival";
 import { startDriveTracking, stopDriveTracking } from "../geo/driveTracking";
+import { t } from "../i18n";
 import { startPositionHeartbeat, tripLog } from "../net/tripEvents";
 import { useTripStore } from "../state/tripStore";
 import type { ActiveRoute, LatLng } from "../types";
@@ -21,7 +22,8 @@ type Fix = { coords: LatLng; speed: number | null; ts: number; isDemo: boolean }
 export function useDrivingSession(driving: boolean, active: ActiveRoute | null, loc: Fix) {
   // Driving: fixes keep coming with the screen off (a location task, src/geo/driveTracking.ts), and with the app
   // open the screen stays on. Where the task can't run (Expo Go, refused) the awake screen is all there is.
-  const drivingTo = driving ? (active?.place.name.split(",")[0] ?? "your stop") : null;
+  // The fallback name goes into "Navigating to …" in the phone's notification shade, so it is translated here.
+  const drivingTo = driving ? (active?.place.name.split(",")[0] ?? t("your stop")) : null;
   useEffect(() => {
     if (!drivingTo) {
       stopDriveTracking();

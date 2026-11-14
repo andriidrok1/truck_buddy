@@ -26,9 +26,11 @@ export function useRouteAdvisories(
 ) {
   const speedAlerts = useSpeedAlerts();
   const route = active?.route;
+  // Recomputed with every fix (alongM), so the chips count down with the truck. Each one is still spoken
+  // once: the set below is keyed on kind and id, not on the distance.
   const advisories = useMemo<Advisory[]>(
-    () => (route ? upcomingAdvisories(route, guidance.matchedIndex, guidance.cum) : []),
-    [route, guidance.matchedIndex, guidance.cum],
+    () => (route ? upcomingAdvisories(route, guidance.matchedIndex, guidance.cum, guidance.alongM) : []),
+    [route, guidance.matchedIndex, guidance.cum, guidance.alongM],
   );
 
   // The spoken-once set lives and dies with the route (a reroute brings new advisories). The speed watch

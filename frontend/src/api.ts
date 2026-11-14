@@ -289,7 +289,9 @@ export const api = {
       headers: eldHeader(), // Motive key: the copilot reads hours of service
       body: JSON.stringify({ text, lat: at.lat, lng: at.lng, truck_profile: await ensureTruckProfile() }),
     }),
-  speak: (text: string) => request<{ audio_url: string }>(`/speak`, { method: "POST", body: JSON.stringify({ text }) }),
+  /** `timeoutMs`: the speech queue gives a line a few seconds, not the default 30 (a turn call cannot wait). */
+  speak: (text: string, timeoutMs?: number) =>
+    request<{ audio_url: string }>(`/speak`, { method: "POST", body: JSON.stringify({ text }), timeoutMs }),
   /**
    * Voice turn step 1: speech -> text, shown to the driver right away. `stt_ms` is the server's
    * STT stage when it reports one, else the wall time of this call; agentSpeak forwards it along
