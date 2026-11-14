@@ -39,7 +39,16 @@ def control_phrase(text: str) -> Optional[dict]:
 
 
 PARK_WORDS = re.compile(r"\b(park|parking|overnight|shut ?down|lay ?over|sleep in (?:the|my) (?:truck|cab|sleeper))\b", re.I)
-BED_WORDS = re.compile(r"\b(hotel|motel|room|bed|shower|inn|lodge)\b", re.I)
+# No "shower": it is a truck-stop thing in the prompt, so "park tonight, with a shower" is still a truck stop.
+BED_WORDS = re.compile(r"\b(hotel|motel|room|bed|inn|lodge)\b", re.I)
+# The same pair in Russian: "где встать на ночь" is where to put the truck, and it went to a motel (QA 2026-11-11).
+# Parking and overnight words count on their own; "встать", "стоять", "остановиться" only with the night next to
+# them ("устал стоять в пробке" is not parking); sleeping counts only in the truck or the cab.
+PARK_WORDS_RU = re.compile(
+    r"\b(?:стоянк\w*|парков\w*|паркинг\w*|(?:при|за)парков\w*|ноч[её]вк\w*|(?:пере|за)?ноч(?:ева|у[юе])\w*"
+    r"|(?:в?стать|встан\w+|(?:по)?стоять|остановиться|остановлюсь)\b[^.?!]{0,25}?\b(?:на ночь|ночью|до утра)"
+    r"|(?:по)?спать\b[^.?!]{0,15}?\bв (?:траке|кабине|спальнике|машине))\b", re.I)
+BED_WORDS_RU = re.compile(r"\b(?:отел\w*|мотел\w*|гостиниц\w*|хостел\w*|номер\w*|кроват\w*|койк\w*|постел\w*)\b", re.I)
 
 _STREET_ONLY = re.compile(r"^\s*\d+[a-z]?\s+[\w .'-]+$", re.I)  # "2828 El Centro Rd" (no town after a comma)
 _ZIP_COUNTRY = re.compile(r"^\s*(?:[A-Z]{2}(?:\s+\d{5}(?:-\d{4})?)?|\d{5}|United States|USA)\s*$")

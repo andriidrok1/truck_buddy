@@ -12,7 +12,7 @@
   },
   {
    "en": ", about {mi} miles ahead",
-   "ru": ", примерно через {mi|plural:миля,мили,миль}",
+   "ru": ", примерно через {mi|plural:милю,мили,миль}",
    "part": true
   },
   {
@@ -47,17 +47,17 @@
   },
   {
    "en": ", about {d} longer",
-   "ru": ", примерно на {d|time} дольше",
+   "ru": ", примерно на {d|time:acc} дольше",
    "part": true
   },
   {
    "en": ", about {d} faster",
-   "ru": ", примерно на {d|time} быстрее",
+   "ru": ", примерно на {d|time:acc} быстрее",
    "part": true
   },
   {
    "en": ", and it misses the {event}",
-   "ru": ", и {event|nom} обходит стороной",
+   "ru": ", и он обходит участок, где {event|nom}",
    "part": true
   },
   {
@@ -189,7 +189,7 @@
   },
   {
    "en": "{name} is about {mi} miles ahead{up}.",
-   "ru": "{name} примерно через {mi|plural:миля,мили,миль}{up|part}."
+   "ru": "{name} примерно через {mi|plural:милю,мили,миль}{up|part}."
   },
   {
    "en": "{name}{off}, {mi} miles away.",
@@ -217,7 +217,7 @@
   },
   {
    "en": "{name} is about {mi} miles ahead{up}. Ask inside before you stay the night.",
-   "ru": "{name} примерно через {mi|plural:миля,мили,миль}{up|part}. Перед ночёвкой спроси в магазине."
+   "ru": "{name} примерно через {mi|plural:милю,мили,миль}{up|part}. Перед ночёвкой спроси в магазине."
   },
   {
    "en": "{name}{off}, {mi} miles away. Check with the store about parking overnight.",
@@ -229,7 +229,7 @@
   },
   {
    "en": "Nearest CAT scale is at {name}, about {mi} miles ahead{up}.",
-   "ru": "Ближайший кэт-скейл на {name}, примерно через {mi|plural:миля,мили,миль}{up|part}."
+   "ru": "Ближайший кэт-скейл на {name}, примерно через {mi|plural:милю,мили,миль}{up|part}."
   },
   {
    "en": "CAT scale at {name}{off}, {mi} miles away.",
@@ -241,7 +241,7 @@
   },
   {
    "en": "{name} is about {mi} miles ahead{up}. I can't see if it's open.",
-   "ru": "{name} примерно через {mi|plural:миля,мили,миль}{up|part}. Открыта ли, я не вижу."
+   "ru": "{name} примерно через {mi|plural:милю,мили,миль}{up|part}. Открыта ли, я не вижу."
   },
   {
    "en": "{name}{off}, {mi} miles away. Check the sign for open or closed.",
@@ -754,11 +754,28 @@
   },
   {
    "en": "The way via {via} only runs into a {event}{diff}. Say 'take the other way' if you want it.",
-   "ru": "На пути через {via|and} только {event|nom}{diff|tr}. Скажи «давай другим путём», если хочешь."
+   "ru": "На пути через {via|and} только {event|nom}{diff|part}. Скажи «давай другим путём», если хочешь."
   },
   {
    "en": "Say 'take the other way' if you want it.",
    "ru": "Скажи «давай другим путём», если хочешь."
+  },
+  {
+   "en": " and takes about the same time",
+   "ru": " и по времени примерно так же",
+   "part": true
+  },
+  {
+   "en": "The way via the other road only runs into a {event}{diff}. Say 'take the other way' if you want it.",
+   "ru": "На другой дороге только {event|nom}{diff|part}. Скажи «давай другим путём», если хочешь."
+  },
+  {
+   "en": "The way via the other road only runs into a {event}{diff}.",
+   "ru": "На другой дороге только {event|nom}{diff|part}."
+  },
+  {
+   "en": "The way via {via} only runs into a {event}{diff}.",
+   "ru": "На пути через {via|and} только {event|nom}{diff|part}."
   },
   {
    "en": "No truck route around it.",
@@ -862,11 +879,11 @@
   },
   {
    "en": "Got it, no chains on board. The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?",
-   "ru": "Понял, цепей нет. Последний трак-стоп до участка с цепями: {name}, через {mi|plural:миля,мили,миль}, добавить?"
+   "ru": "Понял, цепей нет. Последний трак-стоп до участка с цепями: {name}, через {mi|plural:милю,мили,миль}, добавить?"
   },
   {
    "en": "The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?",
-   "ru": "Последний трак-стоп до участка с цепями: {name}, через {mi|plural:миля,мили,миль}, добавить?"
+   "ru": "Последний трак-стоп до участка с цепями: {name}, через {mi|plural:милю,мили,миль}, добавить?"
   },
   {
    "en": "Got it, no chains on board. I couldn't find a truck stop before the control, keep an eye out for a safe spot.",
@@ -878,7 +895,7 @@
   },
   {
    "en": "Chains required ahead on {route} near {location}, and you've got no chains on board. The last truck stop before it is {name}, {mi} miles ahead, want me to add it?",
-   "ru": "Впереди на {route} у {location} нужны цепи, а у тебя их нет. Последний трак-стоп перед этим: {name}, через {mi|plural:миля,мили,миль}, добавить?"
+   "ru": "Впереди на {route} у {location} нужны цепи, а у тебя их нет. Последний трак-стоп перед этим: {name}, через {mi|plural:милю,мили,миль}, добавить?"
   },
   {
    "en": "Chains required ahead on {route} near {location}, and you've got no chains on board.",
@@ -886,7 +903,7 @@
   },
   {
    "en": "The last truck stop before it is {name}, {mi} miles ahead, want me to add it?",
-   "ru": "Последний трак-стоп перед этим: {name}, через {mi|plural:миля,мили,миль}, добавить?"
+   "ru": "Последний трак-стоп перед этим: {name}, через {mi|plural:милю,мили,миль}, добавить?"
   },
   {
    "en": "Got it, chains on board.",
@@ -898,7 +915,7 @@
   },
   {
    "en": "Your break is due in {due} minutes. There's a {name} in {mi} miles, want me to add it?",
-   "ru": "Перерыв через {due|plural:минуту,минуты,минут}. Через {mi|plural:миля,мили,миль} есть {name}, добавить?"
+   "ru": "Перерыв через {due|plural:минуту,минуты,минут}. Через {mi|plural:милю,мили,миль} есть {name}, добавить?"
   },
   {
    "en": "Your break is due in {due} minutes.",
@@ -906,7 +923,7 @@
   },
   {
    "en": "Your break is due now. There's a {name} in {mi} miles, want me to add it?",
-   "ru": "Пора на перерыв. Через {mi|plural:миля,мили,миль} есть {name}, добавить?"
+   "ru": "Пора на перерыв. Через {mi|plural:милю,мили,миль} есть {name}, добавить?"
   },
   {
    "en": "Your break is due now.",
@@ -914,11 +931,11 @@
   },
   {
    "en": "There's a {name} in {mi} miles, want me to add it?",
-   "ru": "Через {mi|plural:миля,мили,миль} есть {name}, добавить?"
+   "ru": "Через {mi|plural:милю,мили,миль} есть {name}, добавить?"
   },
   {
    "en": "About {shift} minutes on the shift. The {name} in {mi} miles{live}, should I route you there?",
-   "ru": "На смене осталось около {shift|plural:минуты,минут,минут}. {name} через {mi|plural:миля,мили,миль}{live|part}, проложить туда?"
+   "ru": "На смене осталось около {shift|plural:минуты,минут,минут}. {name} через {mi|plural:милю,мили,миль}{live|part}, проложить туда?"
   },
   {
    "en": "About {shift} minutes on the shift.",
@@ -926,7 +943,7 @@
   },
   {
    "en": "It's getting late. The {name} in {mi} miles{live}, should I route you there?",
-   "ru": "Уже поздно. {name} через {mi|plural:миля,мили,миль}{live|part}, проложить туда?"
+   "ru": "Уже поздно. {name} через {mi|plural:милю,мили,миль}{live|part}, проложить туда?"
   },
   {
    "en": "It's getting late.",
@@ -934,7 +951,7 @@
   },
   {
    "en": "The {name} in {mi} miles{live}, should I route you there?",
-   "ru": "{name} через {mi|plural:миля,мили,миль}{live|part}, проложить туда?"
+   "ru": "{name} через {mi|plural:милю,мили,миль}{live|part}, проложить туда?"
   },
   {
    "en": "Connect Motive in settings and I'll keep track of your hours.",
@@ -1367,7 +1384,7 @@
   },
   {
    "en": "I'll remind you to take a break every {n} hour.",
-   "ru": "Буду напоминать о перерыве каждый {n} час."
+   "ru": "Буду напоминать о перерыве каждый час."
   },
   {
    "en": "Done, {items}.",
@@ -1378,8 +1395,18 @@
    "ru": "Готово. {rest|tr}"
   },
   {
+   "en": "height is now {ft} foot {inch}",
+   "ru": "высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}",
+   "part": true
+  },
+  {
    "en": ", height is now {ft} foot {inch}",
    "ru": ", высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}",
+   "part": true
+  },
+  {
+   "en": "height is now {ft} feet",
+   "ru": "высота теперь {ft|plural:фут,фута,футов}",
    "part": true
   },
   {
@@ -1388,8 +1415,18 @@
    "part": true
   },
   {
+   "en": "trailer is now {n} feet",
+   "ru": "трейлер теперь {n|plural:фут,фута,футов}",
+   "part": true
+  },
+  {
    "en": ", trailer is now {n} feet",
    "ru": ", трейлер теперь {n|plural:фут,фута,футов}",
+   "part": true
+  },
+  {
+   "en": "weight is now {n} pounds",
+   "ru": "вес теперь {n|plural:фунт,фунта,фунтов}",
    "part": true
   },
   {
@@ -1398,8 +1435,28 @@
    "part": true
   },
   {
-   "en": ", hazmat is on, I'll keep you on hazmat-legal roads",
-   "ru": ", hazmat включён, поведу по дорогам, где он разрешён",
+   "en": "hazmat is on",
+   "ru": "hazmat включён",
+   "part": true
+  },
+  {
+   "en": ", hazmat is on",
+   "ru": ", hazmat включён",
+   "part": true
+  },
+  {
+   "en": "I'll keep you on hazmat-legal roads",
+   "ru": "поведу по дорогам, где он разрешён",
+   "part": true
+  },
+  {
+   "en": ", I'll keep you on hazmat-legal roads",
+   "ru": ", поведу по дорогам, где он разрешён",
+   "part": true
+  },
+  {
+   "en": "hazmat is off",
+   "ru": "hazmat выключен",
    "part": true
   },
   {
@@ -1408,8 +1465,18 @@
    "part": true
   },
   {
+   "en": "I'll avoid toll roads",
+   "ru": "буду объезжать платные дороги",
+   "part": true
+  },
+  {
    "en": ", I'll avoid toll roads",
    "ru": ", буду объезжать платные дороги",
+   "part": true
+  },
+  {
+   "en": "toll roads are fine now",
+   "ru": "платные дороги теперь можно",
    "part": true
   },
   {
@@ -1418,8 +1485,18 @@
    "part": true
   },
   {
+   "en": "I'll avoid ferries and tunnels",
+   "ru": "буду объезжать паромы и тоннели",
+   "part": true
+  },
+  {
    "en": ", I'll avoid ferries and tunnels",
    "ru": ", буду объезжать паромы и тоннели",
+   "part": true
+  },
+  {
+   "en": "ferries and tunnels are fine now",
+   "ru": "паромы и тоннели теперь можно",
    "part": true
   },
   {
@@ -1428,13 +1505,8 @@
    "part": true
   },
   {
-   "en": ", got it, chains on board",
-   "ru": ", цепи есть",
-   "part": true
-  },
-  {
-   "en": ", got it, no chains on board",
-   "ru": ", цепей нет",
+   "en": "break reminders are off",
+   "ru": "напоминания о перерыве выключены",
    "part": true
   },
   {
@@ -1443,8 +1515,48 @@
    "part": true
   },
   {
-   "en": ", got it, I'll call you {name}",
+   "en": "got it",
+   "ru": "понял",
+   "part": true
+  },
+  {
+   "en": ", got it",
+   "ru": ", понял",
+   "part": true
+  },
+  {
+   "en": "chains on board",
+   "ru": "цепи есть",
+   "part": true
+  },
+  {
+   "en": ", chains on board",
+   "ru": ", цепи есть",
+   "part": true
+  },
+  {
+   "en": "no chains on board",
+   "ru": "цепей нет",
+   "part": true
+  },
+  {
+   "en": ", no chains on board",
+   "ru": ", цепей нет",
+   "part": true
+  },
+  {
+   "en": "I'll call you {name}",
+   "ru": "буду звать тебя {name}",
+   "part": true
+  },
+  {
+   "en": ", I'll call you {name}",
    "ru": ", буду звать тебя {name}",
+   "part": true
+  },
+  {
+   "en": "added {name} to your favorites",
+   "ru": "добавил {name} в любимые",
    "part": true
   },
   {
@@ -1453,8 +1565,18 @@
    "part": true
   },
   {
+   "en": "removed {name} from your favorites",
+   "ru": "убрал {name} из любимых",
+   "part": true
+  },
+  {
    "en": ", removed {name} from your favorites",
    "ru": ", убрал {name} из любимых",
+   "part": true
+  },
+  {
+   "en": "I'll remind you to take a break every {n} hours",
+   "ru": "буду напоминать о перерыве каждые {n|plural:час,часа,часов}",
    "part": true
   },
   {
@@ -1463,13 +1585,23 @@
    "part": true
   },
   {
-   "en": "height is now {ft} foot {inch}",
-   "ru": "высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}",
+   "en": "I'll remind you to take a break every {n} hour",
+   "ru": "буду напоминать о перерыве каждый час",
    "part": true
   },
   {
-   "en": "height is now {ft} feet",
-   "ru": "высота теперь {ft|plural:фут,фута,футов}",
+   "en": ", I'll remind you to take a break every {n} hour",
+   "ru": ", буду напоминать о перерыве каждый час",
+   "part": true
+  },
+  {
+   "en": "rerouting for that",
+   "ru": "перестраиваю маршрут",
+   "part": true
+  },
+  {
+   "en": ", rerouting for that",
+   "ru": ", перестраиваю маршрут",
    "part": true
   },
   {
@@ -1626,12 +1758,12 @@
   },
   {
    "en": "{d} slower",
-   "ru": "на {d|time} дольше",
+   "ru": "на {d|time:acc} дольше",
    "part": true
   },
   {
    "en": "{d} faster",
-   "ru": "на {d|time} быстрее",
+   "ru": "на {d|time:acc} быстрее",
    "part": true
   },
   {
@@ -1806,284 +1938,729 @@
    "ru": "высота {h|tr}, трейлер {len|plural:фут,фута,футов} (всего около {total|plural:фута,футов,футов}), полная масса {w|plural:фунт,фунта,фунтов}, опасный груз"
   },
   {
+   "en": "accident",
+   "ru": "Авария",
+   "scope": "incident"
+  },
+  {
+   "en": "congestion",
+   "ru": "Пробка",
+   "scope": "incident"
+  },
+  {
+   "en": "construction",
+   "ru": "Ремонт дороги",
+   "scope": "incident"
+  },
+  {
+   "en": "disabledVehicle",
+   "ru": "Сломанная машина",
+   "scope": "incident"
+  },
+  {
+   "en": "massTransit",
+   "ru": "Общественный транспорт",
+   "scope": "incident"
+  },
+  {
+   "en": "plannedEvent",
+   "ru": "Мероприятие",
+   "scope": "incident"
+  },
+  {
+   "en": "roadHazard",
+   "ru": "Опасность на дороге",
+   "scope": "incident"
+  },
+  {
+   "en": "roadClosure",
+   "ru": "Дорога закрыта",
+   "scope": "incident"
+  },
+  {
+   "en": "weather",
+   "ru": "Погода",
+   "scope": "incident"
+  },
+  {
+   "en": "laneRestriction",
+   "ru": "Сужение дороги",
+   "scope": "incident"
+  },
+  {
+   "en": "other",
+   "ru": "Происшествие",
+   "scope": "incident"
+  },
+  {
    "en": "Road construction",
-   "ru": "Ремонт дороги"
+   "ru": "Ремонт дороги",
+   "scope": "incident"
   },
   {
    "en": "Road construction.",
-   "ru": "Ремонт дороги."
+   "ru": "Ремонт дороги.",
+   "scope": "incident"
   },
   {
    "en": "Major road construction",
-   "ru": "Большой ремонт дороги"
+   "ru": "Большой ремонт дороги",
+   "scope": "incident"
   },
   {
    "en": "Major road construction.",
-   "ru": "Большой ремонт дороги."
+   "ru": "Большой ремонт дороги.",
+   "scope": "incident"
   },
   {
    "en": "Road maintenance operations",
-   "ru": "Дорожные работы"
+   "ru": "Дорожные работы",
+   "scope": "incident"
   },
   {
    "en": "Road maintenance operations.",
-   "ru": "Дорожные работы."
+   "ru": "Дорожные работы.",
+   "scope": "incident"
   },
   {
    "en": "Construction work",
-   "ru": "Дорожные работы"
+   "ru": "Дорожные работы",
+   "scope": "incident"
   },
   {
    "en": "Construction work.",
-   "ru": "Дорожные работы."
+   "ru": "Дорожные работы.",
+   "scope": "incident"
   },
   {
    "en": "Roadworks",
-   "ru": "Дорожные работы"
+   "ru": "Дорожные работы",
+   "scope": "incident"
   },
   {
    "en": "Roadworks.",
-   "ru": "Дорожные работы."
+   "ru": "Дорожные работы.",
+   "scope": "incident"
   },
   {
    "en": "Accident",
-   "ru": "Авария"
+   "ru": "Авария",
+   "scope": "incident"
   },
   {
    "en": "Accident.",
-   "ru": "Авария."
+   "ru": "Авария.",
+   "scope": "incident"
   },
   {
    "en": "Multi-vehicle accident",
-   "ru": "Авария с несколькими машинами"
+   "ru": "Авария с несколькими машинами",
+   "scope": "incident"
   },
   {
    "en": "Multi-vehicle accident.",
-   "ru": "Авария с несколькими машинами."
+   "ru": "Авария с несколькими машинами.",
+   "scope": "incident"
   },
   {
    "en": "Road closed",
-   "ru": "Дорога закрыта"
+   "ru": "Дорога закрыта",
+   "scope": "incident"
   },
   {
    "en": "Road closed.",
-   "ru": "Дорога закрыта."
+   "ru": "Дорога закрыта.",
+   "scope": "incident"
   },
   {
    "en": "Closed",
-   "ru": "Закрыто"
+   "ru": "Закрыто",
+   "scope": "incident"
   },
   {
    "en": "Closed.",
-   "ru": "Закрыто."
+   "ru": "Закрыто.",
+   "scope": "incident"
   },
   {
    "en": "Bridge closed",
-   "ru": "Мост закрыт"
+   "ru": "Мост закрыт",
+   "scope": "incident"
   },
   {
    "en": "Bridge closed.",
-   "ru": "Мост закрыт."
+   "ru": "Мост закрыт.",
+   "scope": "incident"
   },
   {
    "en": "Ramp closed",
-   "ru": "Съезд закрыт"
+   "ru": "Съезд закрыт",
+   "scope": "incident"
   },
   {
    "en": "Ramp closed.",
-   "ru": "Съезд закрыт."
+   "ru": "Съезд закрыт.",
+   "scope": "incident"
   },
   {
    "en": "Exit closed",
-   "ru": "Съезд закрыт"
+   "ru": "Съезд закрыт",
+   "scope": "incident"
   },
   {
    "en": "Exit closed.",
-   "ru": "Съезд закрыт."
+   "ru": "Съезд закрыт.",
+   "scope": "incident"
   },
   {
    "en": "Entry ramp closed",
-   "ru": "Въезд закрыт"
+   "ru": "Въезд закрыт",
+   "scope": "incident"
   },
   {
    "en": "Entry ramp closed.",
-   "ru": "Въезд закрыт."
+   "ru": "Въезд закрыт.",
+   "scope": "incident"
   },
   {
    "en": "Exit ramp closed",
-   "ru": "Съезд закрыт"
+   "ru": "Съезд закрыт",
+   "scope": "incident"
   },
   {
    "en": "Exit ramp closed.",
-   "ru": "Съезд закрыт."
+   "ru": "Съезд закрыт.",
+   "scope": "incident"
   },
   {
    "en": "Lane closed",
-   "ru": "Полоса закрыта"
+   "ru": "Полоса закрыта",
+   "scope": "incident"
   },
   {
    "en": "Lane closed.",
-   "ru": "Полоса закрыта."
+   "ru": "Полоса закрыта.",
+   "scope": "incident"
   },
   {
    "en": "Right lane closed",
-   "ru": "Правая полоса закрыта"
+   "ru": "Правая полоса закрыта",
+   "scope": "incident"
   },
   {
    "en": "Right lane closed.",
-   "ru": "Правая полоса закрыта."
+   "ru": "Правая полоса закрыта.",
+   "scope": "incident"
   },
   {
    "en": "Left lane closed",
-   "ru": "Левая полоса закрыта"
+   "ru": "Левая полоса закрыта",
+   "scope": "incident"
   },
   {
    "en": "Left lane closed.",
-   "ru": "Левая полоса закрыта."
+   "ru": "Левая полоса закрыта.",
+   "scope": "incident"
   },
   {
    "en": "One lane closed",
-   "ru": "Одна полоса закрыта"
+   "ru": "Одна полоса закрыта",
+   "scope": "incident"
   },
   {
    "en": "One lane closed.",
-   "ru": "Одна полоса закрыта."
+   "ru": "Одна полоса закрыта.",
+   "scope": "incident"
   },
   {
    "en": "Two lanes closed",
-   "ru": "Две полосы закрыты"
+   "ru": "Две полосы закрыты",
+   "scope": "incident"
   },
   {
    "en": "Two lanes closed.",
-   "ru": "Две полосы закрыты."
+   "ru": "Две полосы закрыты.",
+   "scope": "incident"
   },
   {
    "en": "Three lanes closed",
-   "ru": "Три полосы закрыты"
+   "ru": "Три полосы закрыты",
+   "scope": "incident"
   },
   {
    "en": "Three lanes closed.",
-   "ru": "Три полосы закрыты."
+   "ru": "Три полосы закрыты.",
+   "scope": "incident"
   },
   {
    "en": "Shoulder closed",
-   "ru": "Обочина закрыта"
+   "ru": "Обочина закрыта",
+   "scope": "incident"
   },
   {
    "en": "Shoulder closed.",
-   "ru": "Обочина закрыта."
+   "ru": "Обочина закрыта.",
+   "scope": "incident"
   },
   {
    "en": "Hard shoulder closed",
-   "ru": "Обочина закрыта"
+   "ru": "Обочина закрыта",
+   "scope": "incident"
   },
   {
    "en": "Hard shoulder closed.",
-   "ru": "Обочина закрыта."
+   "ru": "Обочина закрыта.",
+   "scope": "incident"
   },
   {
    "en": "Stationary traffic",
-   "ru": "Стоячая пробка"
+   "ru": "Стоячая пробка",
+   "scope": "incident"
   },
   {
    "en": "Stationary traffic.",
-   "ru": "Стоячая пробка."
+   "ru": "Стоячая пробка.",
+   "scope": "incident"
   },
   {
    "en": "Slow traffic",
-   "ru": "Медленное движение"
+   "ru": "Медленное движение",
+   "scope": "incident"
   },
   {
    "en": "Slow traffic.",
-   "ru": "Медленное движение."
+   "ru": "Медленное движение.",
+   "scope": "incident"
   },
   {
    "en": "Queuing traffic",
-   "ru": "Затор"
+   "ru": "Затор",
+   "scope": "incident"
   },
   {
    "en": "Queuing traffic.",
-   "ru": "Затор."
+   "ru": "Затор.",
+   "scope": "incident"
   },
   {
    "en": "Heavy traffic",
-   "ru": "Плотное движение"
+   "ru": "Плотное движение",
+   "scope": "incident"
   },
   {
    "en": "Heavy traffic.",
-   "ru": "Плотное движение."
+   "ru": "Плотное движение.",
+   "scope": "incident"
   },
   {
    "en": "Disabled vehicle",
-   "ru": "Сломанная машина"
+   "ru": "Сломанная машина",
+   "scope": "incident"
   },
   {
    "en": "Disabled vehicle.",
-   "ru": "Сломанная машина."
+   "ru": "Сломанная машина.",
+   "scope": "incident"
   },
   {
    "en": "Broken down vehicle",
-   "ru": "Сломанная машина"
+   "ru": "Сломанная машина",
+   "scope": "incident"
   },
   {
    "en": "Broken down vehicle.",
-   "ru": "Сломанная машина."
+   "ru": "Сломанная машина.",
+   "scope": "incident"
   },
   {
    "en": "Debris on road",
-   "ru": "Мусор на дороге"
+   "ru": "Мусор на дороге",
+   "scope": "incident"
   },
   {
    "en": "Debris on road.",
-   "ru": "Мусор на дороге."
+   "ru": "Мусор на дороге.",
+   "scope": "incident"
   },
   {
    "en": "Object on roadway",
-   "ru": "Предмет на дороге"
+   "ru": "Предмет на дороге",
+   "scope": "incident"
   },
   {
    "en": "Object on roadway.",
-   "ru": "Предмет на дороге."
+   "ru": "Предмет на дороге.",
+   "scope": "incident"
   },
   {
    "en": "Vehicle fire",
-   "ru": "Горит машина"
+   "ru": "Горит машина",
+   "scope": "incident"
   },
   {
    "en": "Vehicle fire.",
-   "ru": "Горит машина."
+   "ru": "Горит машина.",
+   "scope": "incident"
   },
   {
    "en": "Flooding",
-   "ru": "Подтопление"
+   "ru": "Подтопление",
+   "scope": "incident"
   },
   {
    "en": "Flooding.",
-   "ru": "Подтопление."
+   "ru": "Подтопление.",
+   "scope": "incident"
   },
   {
    "en": "Road closed due to construction",
-   "ru": "Дорога закрыта на ремонт"
+   "ru": "Дорога закрыта на ремонт",
+   "scope": "incident"
   },
   {
    "en": "Road closed due to construction.",
-   "ru": "Дорога закрыта на ремонт."
+   "ru": "Дорога закрыта на ремонт.",
+   "scope": "incident"
   },
   {
    "en": "Closed due to accident",
-   "ru": "Закрыто из-за аварии"
+   "ru": "Закрыто из-за аварии",
+   "scope": "incident"
   },
   {
    "en": "Closed due to accident.",
-   "ru": "Закрыто из-за аварии."
+   "ru": "Закрыто из-за аварии.",
+   "scope": "incident"
   },
   {
    "en": "{n} lanes closed",
-   "ru": "Закрыто полос: {n}"
+   "ru": "Закрыто полос: {n}",
+   "scope": "incident"
   },
   {
    "en": "{n} lanes closed.",
-   "ru": "Закрыто полос: {n}."
+   "ru": "Закрыто полос: {n}.",
+   "scope": "incident"
+  },
+  {
+   "en": "Major event",
+   "ru": "Крупное мероприятие",
+   "scope": "incident"
+  },
+  {
+   "en": "Major event.",
+   "ru": "Крупное мероприятие.",
+   "scope": "incident"
+  },
+  {
+   "en": "Event",
+   "ru": "Мероприятие",
+   "scope": "incident"
+  },
+  {
+   "en": "Event.",
+   "ru": "Мероприятие.",
+   "scope": "incident"
+  },
+  {
+   "en": "Incident",
+   "ru": "Происшествие",
+   "scope": "incident"
+  },
+  {
+   "en": "Incident.",
+   "ru": "Происшествие.",
+   "scope": "incident"
+  },
+  {
+   "en": "Congestion",
+   "ru": "Пробка",
+   "scope": "incident"
+  },
+  {
+   "en": "Congestion.",
+   "ru": "Пробка.",
+   "scope": "incident"
+  },
+  {
+   "en": "Traffic congestion",
+   "ru": "Пробка",
+   "scope": "incident"
+  },
+  {
+   "en": "Traffic congestion.",
+   "ru": "Пробка.",
+   "scope": "incident"
+  },
+  {
+   "en": "Construction",
+   "ru": "Ремонт дороги",
+   "scope": "incident"
+  },
+  {
+   "en": "Construction.",
+   "ru": "Ремонт дороги.",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to one lane",
+   "ru": "Дорога сужена до одной полосы",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to one lane.",
+   "ru": "Дорога сужена до одной полосы.",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to two lanes",
+   "ru": "Дорога сужена до двух полос",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to two lanes.",
+   "ru": "Дорога сужена до двух полос.",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to three lanes",
+   "ru": "Дорога сужена до трёх полос",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to three lanes.",
+   "ru": "Дорога сужена до трёх полос.",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to four lanes",
+   "ru": "Дорога сужена до четырёх полос",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to four lanes.",
+   "ru": "Дорога сужена до четырёх полос.",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to 1 lane",
+   "ru": "Дорога сужена до 1 полосы",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to 1 lane.",
+   "ru": "Дорога сужена до 1 полосы.",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to 2 lanes",
+   "ru": "Дорога сужена до 2 полос",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to 2 lanes.",
+   "ru": "Дорога сужена до 2 полос.",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to 3 lanes",
+   "ru": "Дорога сужена до 3 полос",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to 3 lanes.",
+   "ru": "Дорога сужена до 3 полос.",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to 4 lanes",
+   "ru": "Дорога сужена до 4 полос",
+   "scope": "incident"
+  },
+  {
+   "en": "Roadway reduced to 4 lanes.",
+   "ru": "Дорога сужена до 4 полос.",
+   "scope": "incident"
+  },
+  {
+   "en": "Road blocked",
+   "ru": "Дорога перекрыта",
+   "scope": "incident"
+  },
+  {
+   "en": "Road blocked.",
+   "ru": "Дорога перекрыта.",
+   "scope": "incident"
+  },
+  {
+   "en": "Lane blocked",
+   "ru": "Полоса перекрыта",
+   "scope": "incident"
+  },
+  {
+   "en": "Lane blocked.",
+   "ru": "Полоса перекрыта.",
+   "scope": "incident"
+  },
+  {
+   "en": "Right lane blocked",
+   "ru": "Правая полоса перекрыта",
+   "scope": "incident"
+  },
+  {
+   "en": "Right lane blocked.",
+   "ru": "Правая полоса перекрыта.",
+   "scope": "incident"
+  },
+  {
+   "en": "Left lane blocked",
+   "ru": "Левая полоса перекрыта",
+   "scope": "incident"
+  },
+  {
+   "en": "Left lane blocked.",
+   "ru": "Левая полоса перекрыта.",
+   "scope": "incident"
+  },
+  {
+   "en": "Center lane blocked",
+   "ru": "Средняя полоса перекрыта",
+   "scope": "incident"
+  },
+  {
+   "en": "Center lane blocked.",
+   "ru": "Средняя полоса перекрыта.",
+   "scope": "incident"
+  },
+  {
+   "en": "Center lane closed",
+   "ru": "Средняя полоса закрыта",
+   "scope": "incident"
+  },
+  {
+   "en": "Center lane closed.",
+   "ru": "Средняя полоса закрыта.",
+   "scope": "incident"
+  },
+  {
+   "en": "One lane blocked",
+   "ru": "Одна полоса перекрыта",
+   "scope": "incident"
+  },
+  {
+   "en": "One lane blocked.",
+   "ru": "Одна полоса перекрыта.",
+   "scope": "incident"
+  },
+  {
+   "en": "Two lanes blocked",
+   "ru": "Две полосы перекрыты",
+   "scope": "incident"
+  },
+  {
+   "en": "Two lanes blocked.",
+   "ru": "Две полосы перекрыты.",
+   "scope": "incident"
+  },
+  {
+   "en": "Three lanes blocked",
+   "ru": "Три полосы перекрыты",
+   "scope": "incident"
+  },
+  {
+   "en": "Three lanes blocked.",
+   "ru": "Три полосы перекрыты.",
+   "scope": "incident"
+  },
+  {
+   "en": "Right shoulder closed",
+   "ru": "Правая обочина закрыта",
+   "scope": "incident"
+  },
+  {
+   "en": "Right shoulder closed.",
+   "ru": "Правая обочина закрыта.",
+   "scope": "incident"
+  },
+  {
+   "en": "Left shoulder closed",
+   "ru": "Левая обочина закрыта",
+   "scope": "incident"
+  },
+  {
+   "en": "Left shoulder closed.",
+   "ru": "Левая обочина закрыта.",
+   "scope": "incident"
+  },
+  {
+   "en": "Earlier accident",
+   "ru": "Последствия аварии",
+   "scope": "incident"
+  },
+  {
+   "en": "Earlier accident.",
+   "ru": "Последствия аварии.",
+   "scope": "incident"
+  },
+  {
+   "en": "Overturned vehicle",
+   "ru": "Перевернулась машина",
+   "scope": "incident"
+  },
+  {
+   "en": "Overturned vehicle.",
+   "ru": "Перевернулась машина.",
+   "scope": "incident"
+  },
+  {
+   "en": "Overturned truck",
+   "ru": "Перевернулся трак",
+   "scope": "incident"
+  },
+  {
+   "en": "Overturned truck.",
+   "ru": "Перевернулся трак.",
+   "scope": "incident"
+  },
+  {
+   "en": "Broken down truck",
+   "ru": "Сломанный трак",
+   "scope": "incident"
+  },
+  {
+   "en": "Broken down truck.",
+   "ru": "Сломанный трак.",
+   "scope": "incident"
+  },
+  {
+   "en": "Disabled truck",
+   "ru": "Сломанный трак",
+   "scope": "incident"
+  },
+  {
+   "en": "Disabled truck.",
+   "ru": "Сломанный трак.",
+   "scope": "incident"
+  },
+  {
+   "en": "Object on the road",
+   "ru": "Предмет на дороге",
+   "scope": "incident"
+  },
+  {
+   "en": "Object on the road.",
+   "ru": "Предмет на дороге.",
+   "scope": "incident"
+  },
+  {
+   "en": "Debris on the road",
+   "ru": "Мусор на дороге",
+   "scope": "incident"
+  },
+  {
+   "en": "Debris on the road.",
+   "ru": "Мусор на дороге.",
+   "scope": "incident"
   },
   {
    "en": "No chain controls are in effect at this time.",
@@ -2950,6 +3527,22 @@
    "ru": "Развернись на {road}"
   },
   {
+   "en": "Make a U-Turn",
+   "ru": "Развернись"
+  },
+  {
+   "en": "Make a U-Turn onto {road}",
+   "ru": "Развернись на {road}"
+  },
+  {
+   "en": "Make a U-Turn toward {to}",
+   "ru": "Развернись в сторону {to}"
+  },
+  {
+   "en": "Make a U-Turn at {road}",
+   "ru": "Развернись на {road}"
+  },
+  {
    "en": "Arrive at {place} on the left",
    "ru": "Прибытие: {place}, слева"
   },
@@ -2972,6 +3565,66 @@
   {
    "en": "Arrive at {place}.",
    "ru": "Прибытие: {place}."
+  },
+  {
+   "en": "Arrive at your destination.",
+   "ru": "Ты на месте."
+  },
+  {
+   "en": "Arrive at your destination on the left",
+   "ru": "Ты на месте, цель слева"
+  },
+  {
+   "en": "Arrive at your destination, on the left",
+   "ru": "Ты на месте, цель слева"
+  },
+  {
+   "en": "Arrive at {place}, on the left",
+   "ru": "Прибытие: {place}, слева"
+  },
+  {
+   "en": "Arrive at your destination on the left.",
+   "ru": "Ты на месте, цель слева."
+  },
+  {
+   "en": "Arrive at your destination, on the left.",
+   "ru": "Ты на месте, цель слева."
+  },
+  {
+   "en": "Arrive at {place}, on the left.",
+   "ru": "Прибытие: {place}, слева."
+  },
+  {
+   "en": "Arrive at {place} on the left.",
+   "ru": "Прибытие: {place}, слева."
+  },
+  {
+   "en": "Arrive at your destination on the right",
+   "ru": "Ты на месте, цель справа"
+  },
+  {
+   "en": "Arrive at your destination, on the right",
+   "ru": "Ты на месте, цель справа"
+  },
+  {
+   "en": "Arrive at {place}, on the right",
+   "ru": "Прибытие: {place}, справа"
+  },
+  {
+   "en": "Arrive at your destination on the right.",
+   "ru": "Ты на месте, цель справа."
+  },
+  {
+   "en": "Arrive at your destination, on the right.",
+   "ru": "Ты на месте, цель справа."
+  },
+  {
+   "en": "Arrive at {place}, on the right.",
+   "ru": "Прибытие: {place}, справа."
+  },
+  {
+   "en": "Arrive at {place} on the right.",
+   "ru": "Прибытие: {place}, справа."
   },
   {
    "en": "Take the ferry {name}",
@@ -3175,11 +3828,11 @@
   "no details": "без подробностей",
   "rain and snow": "дождь со снегом",
   "high wind warning": "штормовое предупреждение о ветре",
-  "high wind watch": "возможен сильный ветер",
+  "high wind watch": "угроза сильного ветра",
   "wind advisory": "предупреждение о ветре",
   "extreme wind warning": "предупреждение об экстремальном ветре",
   "winter storm warning": "предупреждение о зимнем шторме",
-  "winter storm watch": "возможен зимний шторм",
+  "winter storm watch": "угроза зимнего шторма",
   "winter weather advisory": "предупреждение о зимней погоде",
   "blizzard warning": "предупреждение о метели",
   "ice storm warning": "предупреждение о гололёде",
@@ -3196,9 +3849,9 @@
   "tornado warning": "предупреждение о торнадо",
   "severe thunderstorm warning": "предупреждение о сильной грозе",
   "hurricane warning": "предупреждение об урагане",
-  "hurricane watch": "возможен ураган",
+  "hurricane watch": "угроза урагана",
   "tropical storm warning": "предупреждение о тропическом шторме",
-  "tropical storm watch": "возможен тропический шторм",
+  "tropical storm watch": "угроза тропического шторма",
   "storm surge warning": "предупреждение о штормовом нагоне",
   "hurricane force wind warning": "предупреждение об ураганном ветре",
   "avalanche warning": "предупреждение о лавинах",
@@ -3215,37 +3868,26 @@
   "trailer": {
    "tire": "колесо трейлера"
   },
-  "accident": "Авария",
-  "congestion": "Пробка",
-  "construction": "Ремонт дороги",
-  "disabledvehicle": "Сломанная машина",
-  "masstransit": "Общественный транспорт",
-  "plannedevent": "Мероприятие",
-  "roadhazard": "Опасность на дороге",
-  "roadclosure": "Дорога закрыта",
-  "weather": "Погода",
-  "lanerestriction": "Сужение дороги",
-  "other": "Происшествие",
   "frost advisory": "предупреждение о заморозках",
   "freeze warning": "предупреждение о морозе",
-  "freeze watch": "возможны заморозки",
+  "freeze watch": "угроза заморозков",
   "hard freeze warning": "предупреждение о сильном морозе",
   "heat advisory": "предупреждение о жаре",
   "excessive heat warning": "предупреждение о сильной жаре",
   "extreme heat warning": "предупреждение о сильной жаре",
   "red flag warning": "пожароопасная погода",
-  "fire weather watch": "возможна пожароопасная погода",
+  "fire weather watch": "угроза пожароопасной погоды",
   "lake effect snow warning": "предупреждение о сильном снегопаде",
   "wind chill warning": "предупреждение о ледяном ветре",
   "wind chill advisory": "предупреждение о холодном ветре",
   "cold weather advisory": "предупреждение о холоде",
-  "extreme cold watch": "возможен сильный мороз",
+  "extreme cold watch": "угроза сильного мороза",
   "flood advisory": "предупреждение о подтоплении",
-  "flood watch": "возможно наводнение",
-  "flash flood watch": "возможно внезапное наводнение",
-  "severe thunderstorm watch": "возможна сильная гроза",
-  "tornado watch": "возможен торнадо",
-  "avalanche watch": "возможны лавины",
+  "flood watch": "угроза наводнения",
+  "flash flood watch": "угроза внезапного наводнения",
+  "severe thunderstorm watch": "угроза сильной грозы",
+  "tornado watch": "угроза торнадо",
+  "avalanche watch": "угроза лавин",
   "special weather statement": "особое сообщение о погоде",
   "air quality alert": "плохое качество воздуха",
   "1st": {

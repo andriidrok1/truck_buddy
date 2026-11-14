@@ -14,8 +14,10 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
 {{"intent": "find"|"go"|"pick"|"alternative"|"add_stop"|"clear_stops"|"reviews"|"weather"|"hos"|"memory"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|"walmart"|"cat_scale"|"truck_wash"|"weigh_station"|null, "near": string|null, "query": string|null, "when": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
 
 - find: the driver needs a place. Pick the category yourself, never ask:
-  truck_stop = fuel, diesel, DEF, food, showers, truck stop;
-  hotel = sleep, tired, overnight, bed, motel, hotel, room;
+  truck_stop = fuel, diesel, DEF, food, showers, truck stop, and a place to park the truck for the night ("park for
+  the night", "overnight parking", "where can I park tonight", "где встать на ночь", "стоянка на ночь");
+  hotel = a bed off the truck: bed, room, motel, hotel, sleep, tired ("поспать в номере", "нужен мотель");
+  "overnight" or "for the night" with no such word means parking the truck, not a hotel;
   rest_area = quick break, stretch, restroom, short nap, rest area;
   walmart = a Walmart, "park at a Walmart", overnight in a Walmart lot;
   cat_scale = CAT scale, certified scale, weigh the load or axles;
@@ -53,7 +55,7 @@ no markdown, at most 2 short sentences, never repeat yourself.
 # (0.1x input price on the cached prefix, faster first token). Everything that varies, the truck, the
 # preferences and the conversation context, travels in the user message, in that order.
 SYSTEM_STATIC = SYSTEM.format(controls=controls.PROMPT, parking=approach.PROMPT, breakdown=breakdown.PROMPT)
-PROMPT_VERSION = 5  # bump when SYSTEM changes, so the cache key and the eval baseline move together
+PROMPT_VERSION = 6  # bump when SYSTEM changes, so the cache key and the eval baseline move together
 PROMPT_CACHE_KEY = f"agent-v{PROMPT_VERSION}"
 
 

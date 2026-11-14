@@ -1,6 +1,7 @@
 # flake8: noqa  (a data list executed by i18n/build_ru.py, which supplies t, T, MI and the rest)
 MI = "{mi|plural:миля,мили,миль}"
 MI_GEN = "{mi|plural:мили,миль,миль}"
+MI_ACC = "{mi|plural:милю,мили,миль}"  # после «через»: через 1 милю, 21 милю, 2 мили, 0,5 мили
 MI_PREP = "{mi|plural:миле,милях,милях,мили}"
 T2 = []
 def t(en, ru, part=False):
@@ -17,8 +18,16 @@ t("{event} near {area} around {hit} and {n} more weather alerts along the route.
 t("The way via {via} misses it{diff}. Say 'take the other way' if you want it.", "Путь через {via|and} это обходит{diff|tr}. Скажи «давай другим путём», если хочешь.")
 t("The way via {via} misses it{diff}.", "Путь через {via|and} это обходит{diff|tr}.")
 t("The other way misses it{diff}. Say 'take the other way' if you want it.", "Другой путь это обходит{diff|tr}. Скажи «давай другим путём», если хочешь.")
-t("The way via {via} only runs into a {event}{diff}. Say 'take the other way' if you want it.", "На пути через {via|and} только {event|nom}{diff|tr}. Скажи «давай другим путём», если хочешь.")
+t("The way via {via} only runs into a {event}{diff}. Say 'take the other way' if you want it.", "На пути через {via|and} только {event|nom}{diff|part}. Скажи «давай другим путём», если хочешь.")
 t("Say 'take the other way' if you want it.", "Скажи «давай другим путём», если хочешь.")
+# {diff|part} above, not {diff|tr}: an open {diff} took the event's own words and the line never matched (the model
+# translated it, or it stayed English). SAME_TIME had no fragment at all.
+t(" and takes about the same time", " и по времени примерно так же", True)
+# No road name for the lighter way (weather.detour_speech says "the other road"): its own sentence, the preposition
+# changes. The generic line left "На пути через the other road".
+t("The way via the other road only runs into a {event}{diff}. Say 'take the other way' if you want it.", "На другой дороге только {event|nom}{diff|part}. Скажи «давай другим путём», если хочешь.")
+t("The way via the other road only runs into a {event}{diff}.", "На другой дороге только {event|nom}{diff|part}.")
+t("The way via {via} only runs into a {event}{diff}.", "На пути через {via|and} только {event|nom}{diff|part}.")
 t("No truck route around it.", "Объезда для трака нет.")
 t("I don't have another truck route to try.", "Другого маршрута для трака у меня нет.")
 t("No truck route around it; it should clear by {till}.", "Объезда для трака нет; должно закончиться к {till|clock}.")
@@ -45,27 +54,27 @@ t("I can't check chain controls on your route right now.", "Сейчас не м
 t("Chains required ahead on {route} near {location}. Do you have chains on board?", "Впереди на {route} у {location} нужны цепи. Цепи у тебя есть?")
 t("Chains required ahead on {route} near {location}.", "Впереди на {route} у {location} нужны цепи.")
 t("Do you have chains on board?", "Цепи у тебя есть?")
-t("Got it, no chains on board. The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?", "Понял, цепей нет. Последний трак-стоп до участка с цепями: {name}, через " + MI + ", добавить?")
-t("The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?", "Последний трак-стоп до участка с цепями: {name}, через " + MI + ", добавить?")
+t("Got it, no chains on board. The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?", "Понял, цепей нет. Последний трак-стоп до участка с цепями: {name}, через " + MI_ACC + ", добавить?")
+t("The last truck stop before the control is {name}, {mi} miles ahead, want me to add it?", "Последний трак-стоп до участка с цепями: {name}, через " + MI_ACC + ", добавить?")
 t("Got it, no chains on board. I couldn't find a truck stop before the control, keep an eye out for a safe spot.", "Понял, цепей нет. Трак-стоп до участка с цепями не нашёл, присматривай безопасное место.")
 t("I couldn't find a truck stop before the control, keep an eye out for a safe spot.", "Трак-стоп до участка с цепями не нашёл, присматривай безопасное место.")
-t("Chains required ahead on {route} near {location}, and you've got no chains on board. The last truck stop before it is {name}, {mi} miles ahead, want me to add it?", "Впереди на {route} у {location} нужны цепи, а у тебя их нет. Последний трак-стоп перед этим: {name}, через " + MI + ", добавить?")
+t("Chains required ahead on {route} near {location}, and you've got no chains on board. The last truck stop before it is {name}, {mi} miles ahead, want me to add it?", "Впереди на {route} у {location} нужны цепи, а у тебя их нет. Последний трак-стоп перед этим: {name}, через " + MI_ACC + ", добавить?")
 t("Chains required ahead on {route} near {location}, and you've got no chains on board.", "Впереди на {route} у {location} нужны цепи, а у тебя их нет.")
-t("The last truck stop before it is {name}, {mi} miles ahead, want me to add it?", "Последний трак-стоп перед этим: {name}, через " + MI + ", добавить?")
+t("The last truck stop before it is {name}, {mi} miles ahead, want me to add it?", "Последний трак-стоп перед этим: {name}, через " + MI_ACC + ", добавить?")
 t("Got it, chains on board.", "Понял, цепи есть.")
 t("Got it, no chains on board.", "Понял, цепей нет.")
 
 # --- nudges / HOS ---
-t("Your break is due in {due} minutes. There's a {name} in {mi} miles, want me to add it?", "Перерыв через {due|plural:минуту,минуты,минут}. Через " + MI + " есть {name}, добавить?")
+t("Your break is due in {due} minutes. There's a {name} in {mi} miles, want me to add it?", "Перерыв через {due|plural:минуту,минуты,минут}. Через " + MI_ACC + " есть {name}, добавить?")
 t("Your break is due in {due} minutes.", "Перерыв через {due|plural:минуту,минуты,минут}.")
-t("Your break is due now. There's a {name} in {mi} miles, want me to add it?", "Пора на перерыв. Через " + MI + " есть {name}, добавить?")
+t("Your break is due now. There's a {name} in {mi} miles, want me to add it?", "Пора на перерыв. Через " + MI_ACC + " есть {name}, добавить?")
 t("Your break is due now.", "Пора на перерыв.")
-t("There's a {name} in {mi} miles, want me to add it?", "Через " + MI + " есть {name}, добавить?")
-t("About {shift} minutes on the shift. The {name} in {mi} miles{live}, should I route you there?", "На смене осталось около {shift|plural:минуты,минут,минут}. {name} через " + MI + "{live|part}, проложить туда?")
+t("There's a {name} in {mi} miles, want me to add it?", "Через " + MI_ACC + " есть {name}, добавить?")
+t("About {shift} minutes on the shift. The {name} in {mi} miles{live}, should I route you there?", "На смене осталось около {shift|plural:минуты,минут,минут}. {name} через " + MI_ACC + "{live|part}, проложить туда?")
 t("About {shift} minutes on the shift.", "На смене осталось около {shift|plural:минуты,минут,минут}.")
-t("It's getting late. The {name} in {mi} miles{live}, should I route you there?", "Уже поздно. {name} через " + MI + "{live|part}, проложить туда?")
+t("It's getting late. The {name} in {mi} miles{live}, should I route you there?", "Уже поздно. {name} через " + MI_ACC + "{live|part}, проложить туда?")
 t("It's getting late.", "Уже поздно.")
-t("The {name} in {mi} miles{live}, should I route you there?", "{name} через " + MI + "{live|part}, проложить туда?")
+t("The {name} in {mi} miles{live}, should I route you there?", "{name} через " + MI_ACC + "{live|part}, проложить туда?")
 t("Connect Motive in settings and I'll keep track of your hours.", "Подключи Motive в настройках, и я буду следить за твоими часами.")
 t("Motive didn't accept the key. Check it in settings.", "Motive не принял ключ. Проверь его в настройках.")
 t("Motive didn't accept the key.", "Motive не принял ключ.")
@@ -167,24 +176,31 @@ t("Added {name} to your favorites.", "Добавил {name} в любимые.")
 t("Removed {name} from your favorites.", "Убрал {name} из любимых.")
 t("{name} isn't in your favorites.", "{name} нет в любимых.")
 t("I'll remind you to take a break every {n} hours.", "Буду напоминать о перерыве каждые {n|plural:час,часа,часов}.")
-t("I'll remind you to take a break every {n} hour.", "Буду напоминать о перерыве каждый {n} час.")
+# One hour is the only n this line is said with (controls.py): "каждый час", not "каждый 1 час".
+t("I'll remind you to take a break every {n} hour.", "Буду напоминать о перерыве каждый час.")
 t("Done, {items}.", "Готово: {items|tr}.")
 t("Done. {rest}", "Готово. {rest|tr}")
-for en, ru in [(", height is now {ft} foot {inch}", ", высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}"),
-               (", height is now {ft} feet", ", высота теперь {ft|plural:фут,фута,футов}"),
-               (", trailer is now {n} feet", ", трейлер теперь {n|plural:фут,фута,футов}"),
-               (", weight is now {n} pounds", ", вес теперь {n|plural:фунт,фунта,фунтов}"),
-               (", hazmat is on, I'll keep you on hazmat-legal roads", ", hazmat включён, поведу по дорогам, где он разрешён"),
-               (", hazmat is off", ", hazmat выключен"), (", I'll avoid toll roads", ", буду объезжать платные дороги"),
-               (", toll roads are fine now", ", платные дороги теперь можно"), (", I'll avoid ferries and tunnels", ", буду объезжать паромы и тоннели"),
-               (", ferries and tunnels are fine now", ", паромы и тоннели теперь можно"), (", got it, chains on board", ", цепи есть"),
-               (", got it, no chains on board", ", цепей нет"), (", break reminders are off", ", напоминания о перерыве выключены"),
-               (", got it, I'll call you {name}", ", буду звать тебя {name}"), (", added {name} to your favorites", ", добавил {name} в любимые"),
-               (", removed {name} from your favorites", ", убрал {name} из любимых"),
-               (", I'll remind you to take a break every {n} hours", ", буду напоминать о перерыве каждые {n|plural:час,часа,часов}")]:
+# The pieces of a combined answer, "Done, trailer is now 40 feet, hazmat is off, rerouting for that." Each piece
+# has two fragments: after a comma, and bare for the first place right after "Done, ". Only the height had the
+# bare one, so every single control said "Готово: trailer is now 40 feet." (review of #168).
+for en, ru in [("height is now {ft} foot {inch}", "высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}"),
+               ("height is now {ft} feet", "высота теперь {ft|plural:фут,фута,футов}"),
+               ("trailer is now {n} feet", "трейлер теперь {n|plural:фут,фута,футов}"),
+               ("weight is now {n} pounds", "вес теперь {n|plural:фунт,фунта,фунтов}"),
+               # said as "hazmat is on, I'll keep you on hazmat-legal roads": two pieces once it is split at commas
+               ("hazmat is on", "hazmat включён"), ("I'll keep you on hazmat-legal roads", "поведу по дорогам, где он разрешён"),
+               ("hazmat is off", "hazmat выключен"), ("I'll avoid toll roads", "буду объезжать платные дороги"),
+               ("toll roads are fine now", "платные дороги теперь можно"), ("I'll avoid ferries and tunnels", "буду объезжать паромы и тоннели"),
+               ("ferries and tunnels are fine now", "паромы и тоннели теперь можно"), ("break reminders are off", "напоминания о перерыве выключены"),
+               # "got it, chains on board" and "got it, I'll call you Mike" are two pieces each as well
+               ("got it", "понял"), ("chains on board", "цепи есть"), ("no chains on board", "цепей нет"),
+               ("I'll call you {name}", "буду звать тебя {name}"), ("added {name} to your favorites", "добавил {name} в любимые"),
+               ("removed {name} from your favorites", "убрал {name} из любимых"),
+               ("I'll remind you to take a break every {n} hours", "буду напоминать о перерыве каждые {n|plural:час,часа,часов}"),
+               ("I'll remind you to take a break every {n} hour", "буду напоминать о перерыве каждый час"),
+               ("rerouting for that", "перестраиваю маршрут")]:
     t(en, ru, True)
-t("height is now {ft} foot {inch}", "высота теперь {ft|plural:фут,фута,футов} {inch|plural:дюйм,дюйма,дюймов}", True)
-t("height is now {ft} feet", "высота теперь {ft|plural:фут,фута,футов}", True)
+    t(", " + en, ", " + ru, True)
 
 # --- breakdown ---
 t("Okay. Give me a minute, I'll check who's around and what drivers say about them.", "Хорошо. Дай минуту, посмотрю, кто есть рядом и что о них говорят водители.")
@@ -243,9 +259,9 @@ W = {
     "snow": "снег", "light snow": "небольшой снег", "chance snow": "возможен снег", "snow showers": "снегопад",
     "fog": "туман", "patchy fog": "местами туман", "areas of fog": "местами туман", "windy": "ветрено",
     "breezy": "ветрено", "no details": "без подробностей", "rain and snow": "дождь со снегом",
-    "high wind warning": "штормовое предупреждение о ветре", "high wind watch": "возможен сильный ветер",
+    "high wind warning": "штормовое предупреждение о ветре", "high wind watch": "угроза сильного ветра",
     "wind advisory": "предупреждение о ветре", "extreme wind warning": "предупреждение об экстремальном ветре",
-    "winter storm warning": "предупреждение о зимнем шторме", "winter storm watch": "возможен зимний шторм",
+    "winter storm warning": "предупреждение о зимнем шторме", "winter storm watch": "угроза зимнего шторма",
     "winter weather advisory": "предупреждение о зимней погоде", "blizzard warning": "предупреждение о метели",
     "ice storm warning": "предупреждение о гололёде", "snow squall warning": "предупреждение о снежном шквале",
     "freezing rain advisory": "предупреждение о ледяном дожде", "freezing fog advisory": "предупреждение о ледяном тумане",
@@ -254,8 +270,8 @@ W = {
     "flash flood warning": "предупреждение о внезапном наводнении", "flood warning": "предупреждение о наводнении",
     "extreme cold warning": "предупреждение о сильном морозе", "tornado warning": "предупреждение о торнадо",
     "severe thunderstorm warning": "предупреждение о сильной грозе", "hurricane warning": "предупреждение об урагане",
-    "hurricane watch": "возможен ураган", "tropical storm warning": "предупреждение о тропическом шторме",
-    "tropical storm watch": "возможен тропический шторм", "storm surge warning": "предупреждение о штормовом нагоне",
+    "hurricane watch": "угроза урагана", "tropical storm warning": "предупреждение о тропическом шторме",
+    "tropical storm watch": "угроза тропического шторма", "storm surge warning": "предупреждение о штормовом нагоне",
     "hurricane force wind warning": "предупреждение об ураганном ветре", "avalanche warning": "предупреждение о лавинах",
     "dense smoke advisory": "предупреждение о густом дыме",
 }
@@ -278,8 +294,8 @@ t("I can't tell where we are right now.", "Сейчас не могу понят
 # a cheaper way (S17)
 t("There's a way {diff} that saves about ${saves}. Want it?", "Есть путь {diff|tr}, экономия около ${saves}. Поедем по нему?")
 t("There's a way {diff} that saves about ${saves}.", "Есть путь {diff|tr}, экономия около ${saves}.")
-t("{d} slower", "на {d|time} дольше", True)
-t("{d} faster", "на {d|time} быстрее", True)
+t("{d} slower", "на {d|time:acc} дольше", True)
+t("{d} faster", "на {d|time:acc} быстрее", True)
 t("about as fast", "примерно за то же время", True)
 t("Want it?", "Поедем по нему?")
 t("Okay, staying on this one.", "Хорошо, остаёмся на этом.")
@@ -337,11 +353,17 @@ W["drive"] = {"tire": "ведущее колесо"}
 W["trailer"] = {"tire": "колесо трейлера"}
 
 # --- incidents on the route (HERE type and description; S10) ---
+# A type or a description is a short whole line ("construction", "Closed", "Event"), so these match only inside
+# the incident fields (scope, set by i18n.localize_route): anywhere else one took a place name, "Route to Construction is set" ->
+# "Маршрут до Ремонт дороги готов" (review of #168).
+def inc(en, ru):
+    for dot in ("", "."):
+        T2.append({"en": en + dot, "ru": ru + dot, "scope": "incident"})
 for typ, ru in [("accident", "Авария"), ("congestion", "Пробка"), ("construction", "Ремонт дороги"),
                 ("disabledVehicle", "Сломанная машина"), ("massTransit", "Общественный транспорт"),
                 ("plannedEvent", "Мероприятие"), ("roadHazard", "Опасность на дороге"), ("roadClosure", "Дорога закрыта"),
                 ("weather", "Погода"), ("laneRestriction", "Сужение дороги"), ("other", "Происшествие")]:
-    W[typ.lower()] = ru
+    T2.append({"en": typ, "ru": ru, "scope": "incident"})
 for en, ru in [("Road construction", "Ремонт дороги"), ("Major road construction", "Большой ремонт дороги"),
                ("Road maintenance operations", "Дорожные работы"), ("Construction work", "Дорожные работы"),
                ("Roadworks", "Дорожные работы"), ("Accident", "Авария"), ("Multi-vehicle accident", "Авария с несколькими машинами"),
@@ -356,10 +378,29 @@ for en, ru in [("Road construction", "Ремонт дороги"), ("Major road 
                ("Broken down vehicle", "Сломанная машина"), ("Debris on road", "Мусор на дороге"),
                ("Object on roadway", "Предмет на дороге"), ("Vehicle fire", "Горит машина"), ("Flooding", "Подтопление"),
                ("Road closed due to construction", "Дорога закрыта на ремонт"), ("Closed due to accident", "Закрыто из-за аварии")]:
-    t(en, ru)
-    t(en + ".", ru + ".")
-t("{n} lanes closed", "Закрыто полос: {n}")
-t("{n} lanes closed.", "Закрыто полос: {n}.")
+    inc(en, ru)
+inc("{n} lanes closed", "Закрыто полос: {n}")
+# More of what HERE writes in an incident's description. "Major event" and "Roadway reduced to two lanes" are from
+# the `i18n miss ru` lines of the QA run of 2026-11-11 (routes Sacramento - Reno and to Sac Valley Truck Stop); the
+# rest are the same family. A description outside these lists stays English whole (i18n.localize_route).
+for en, ru in [("Major event", "Крупное мероприятие"), ("Event", "Мероприятие"), ("Incident", "Происшествие"),
+               ("Congestion", "Пробка"), ("Traffic congestion", "Пробка"), ("Construction", "Ремонт дороги"),
+               ("Roadway reduced to one lane", "Дорога сужена до одной полосы"),
+               ("Roadway reduced to two lanes", "Дорога сужена до двух полос"),
+               ("Roadway reduced to three lanes", "Дорога сужена до трёх полос"),
+               ("Roadway reduced to four lanes", "Дорога сужена до четырёх полос"),
+               ("Roadway reduced to 1 lane", "Дорога сужена до 1 полосы"), ("Roadway reduced to 2 lanes", "Дорога сужена до 2 полос"),
+               ("Roadway reduced to 3 lanes", "Дорога сужена до 3 полос"), ("Roadway reduced to 4 lanes", "Дорога сужена до 4 полос"),
+               ("Road blocked", "Дорога перекрыта"), ("Lane blocked", "Полоса перекрыта"),
+               ("Right lane blocked", "Правая полоса перекрыта"), ("Left lane blocked", "Левая полоса перекрыта"),
+               ("Center lane blocked", "Средняя полоса перекрыта"), ("Center lane closed", "Средняя полоса закрыта"),
+               ("One lane blocked", "Одна полоса перекрыта"), ("Two lanes blocked", "Две полосы перекрыты"), ("Three lanes blocked", "Три полосы перекрыты"),
+               ("Right shoulder closed", "Правая обочина закрыта"), ("Left shoulder closed", "Левая обочина закрыта"),
+               ("Earlier accident", "Последствия аварии"), ("Overturned vehicle", "Перевернулась машина"),
+               ("Overturned truck", "Перевернулся трак"), ("Broken down truck", "Сломанный трак"),
+               ("Disabled truck", "Сломанный трак"), ("Object on the road", "Предмет на дороге"),
+               ("Debris on the road", "Мусор на дороге")]:
+    inc(en, ru)
 
 # --- Caltrans chain-control descriptions (S10; the app shows R-1..R-3 and these) ---
 for en, ru in [("No chain controls are in effect at this time.", "Сейчас цепи нигде не нужны."),
@@ -371,15 +412,18 @@ for en, ru in [("No chain controls are in effect at this time.", "Сейчас �
     t(en, ru)
 
 # --- NWS events outside services/weather.EVENTS: a route can carry them (S10) ---
+# A "... Watch" is a noun like the rest ("угроза зимнего шторма"), never a clause ("возможен зимний шторм"): every
+# template puts the event where a noun goes, and the clause gave "Внимание, возможен зимний шторм в районе Lassen
+# начнётся в пятницу" (QA 2026-11-11).
 W.update({
     "winter storm warning": "предупреждение о зимнем шторме", "frost advisory": "предупреждение о заморозках",
-    "freeze warning": "предупреждение о морозе", "freeze watch": "возможны заморозки", "hard freeze warning": "предупреждение о сильном морозе",
+    "freeze warning": "предупреждение о морозе", "freeze watch": "угроза заморозков", "hard freeze warning": "предупреждение о сильном морозе",
     "heat advisory": "предупреждение о жаре", "excessive heat warning": "предупреждение о сильной жаре",
     "extreme heat warning": "предупреждение о сильной жаре", "red flag warning": "пожароопасная погода",
-    "fire weather watch": "возможна пожароопасная погода", "lake effect snow warning": "предупреждение о сильном снегопаде",
+    "fire weather watch": "угроза пожароопасной погоды", "lake effect snow warning": "предупреждение о сильном снегопаде",
     "wind chill warning": "предупреждение о ледяном ветре", "wind chill advisory": "предупреждение о холодном ветре",
-    "cold weather advisory": "предупреждение о холоде", "extreme cold watch": "возможен сильный мороз",
-    "flood advisory": "предупреждение о подтоплении", "flood watch": "возможно наводнение", "flash flood watch": "возможно внезапное наводнение",
-    "severe thunderstorm watch": "возможна сильная гроза", "tornado watch": "возможен торнадо", "avalanche watch": "возможны лавины",
+    "cold weather advisory": "предупреждение о холоде", "extreme cold watch": "угроза сильного мороза",
+    "flood advisory": "предупреждение о подтоплении", "flood watch": "угроза наводнения", "flash flood watch": "угроза внезапного наводнения",
+    "severe thunderstorm watch": "угроза сильной грозы", "tornado watch": "угроза торнадо", "avalanche watch": "угроза лавин",
     "special weather statement": "особое сообщение о погоде", "air quality alert": "плохое качество воздуха",
 })

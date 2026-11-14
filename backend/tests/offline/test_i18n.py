@@ -109,7 +109,7 @@ def test_real_catalog_lines():
         "You've got 4 hours 20 minutes of drive time, 9 hours on the shift, and 42 hours left on the cycle.":
             "За рулём осталось 4 часа 20 минут, на смене 9 часов, по циклу 42 часа.",
         "Your break is due in 15 minutes. There's a Gold Run Rest Area in 41 miles, want me to add it?":
-            "Перерыв через 15 минут. Через 41 миля есть Gold Run Rest Area, добавить?",
+            "Перерыв через 15 минут. Через 41 милю есть Gold Run Rest Area, добавить?",
     }
     for en, ru in cases.items():
         assert i18n.translate(en, "ru") == ru, en

@@ -124,12 +124,26 @@ t("Pass {n} roundabouts and continue toward {to}", "Проедь {n|plural:кр�
 t("Pass the roundabout and continue on {road}", "Проедь круг и продолжай по {road}")
 t("Make a U-turn toward {to}", "Развернись в сторону {to}")
 t("Make a U-turn at {road}", "Развернись на {road}")
+# HERE also writes it with a capital T ("Make a U-Turn onto West Capitol Ave", in the miss log of 2026-11-11).
+for en, ru in [("Make a U-Turn", "Развернись"), ("Make a U-Turn onto {road}", "Развернись на {road}"),
+               ("Make a U-Turn toward {to}", "Развернись в сторону {to}"), ("Make a U-Turn at {road}", "Развернись на {road}")]:
+    t(en, ru)
 t("Arrive at {place} on the left", "Прибытие: {place}, слева")
 t("Arrive at {place} on the right", "Прибытие: {place}, справа")
 t("Your destination is on the left.", "Место назначения слева.")
 t("Your destination is on the right.", "Место назначения справа.")
 t("Your destination is straight ahead.", "Место назначения прямо.")
 t("Arrive at {place}.", "Прибытие: {place}.")
+# The last turn of nearly every route to a place on a side of the road: HERE says "Arrive at your destination on the
+# left" (also with a comma), and the generic "Arrive at {place} on the left" took "your destination" for the place:
+# "Прибытие: your destination, слева" (QA 2026-11-11). These have more literal text, so they are tried first.
+t("Arrive at your destination.", "Ты на месте.")
+for side, ru in (("left", "слева"), ("right", "справа")):
+    for dot in ("", "."):
+        t(f"Arrive at your destination on the {side}{dot}", f"Ты на месте, цель {ru}{dot}")
+        t(f"Arrive at your destination, on the {side}{dot}", f"Ты на месте, цель {ru}{dot}")
+        t(f"Arrive at {{place}}, on the {side}{dot}", f"Прибытие: {{place}}, {ru}{dot}")
+    t(f"Arrive at {{place}} on the {side}.", f"Прибытие: {{place}}, {ru}.")
 t("Take the ferry {name}", "Заезжай на паром {name}")
 t("Board the ferry", "Заезжай на паром")
 t("Leave the ferry", "Съезжай с парома")

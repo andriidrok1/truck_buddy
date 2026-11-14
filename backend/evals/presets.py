@@ -122,6 +122,20 @@ def past_memory() -> tuple[AgentRequest, dict]:
     return req, sess
 
 
+def idle_ru() -> tuple[AgentRequest, dict]:
+    """idle, with the app set to Russian: the context carries "Language: Russian", as the X-Lang header gives it."""
+    req, sess = idle()
+    req.lang = "ru"
+    return req, sess
+
+
+def route_active_alts_ru() -> tuple[AgentRequest, dict]:
+    """route_active_alts in Russian: "Маршрут до Рино" from the search box must stay a `go`, not another road."""
+    req, sess = route_active_alts()
+    req.lang = "ru"
+    return req, sess
+
+
 PRESETS: dict[str, Callable[[], tuple[AgentRequest, dict]]] = {
     "idle": idle,
     "route_active": route_active,
@@ -130,6 +144,8 @@ PRESETS: dict[str, Callable[[], tuple[AgentRequest, dict]]] = {
     "stops": stops,
     "near_follow_up": near_follow_up,
     "past_memory": past_memory,
+    "idle_ru": idle_ru,
+    "route_active_alts_ru": route_active_alts_ru,
 }
 
 

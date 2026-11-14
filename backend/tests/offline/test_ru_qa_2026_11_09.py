@@ -170,7 +170,7 @@ def test_fallback_prompt_sets_the_voice_and_the_words(fake_llm):
      "Здесь демо-мест нет. Демо-данные есть только по району Сан-Франциско и Сакраменто."),
     ("No chain controls on your route right now.", "Сейчас цепи на маршруте нигде не нужны."),
     ("And 3 more chain controls along the route.", "И ещё в 3 местах по маршруту нужны цепи."),
-    ("I'll remind you to take a break every 1 hour.", "Буду напоминать о перерыве каждый 1 час."),
+    ("I'll remind you to take a break every 1 hour.", "Буду напоминать о перерыве каждый час."),
     ("The weight has to be between 5,000 and 200,000 pounds.", "Вес должен быть от 5 000 до 200 000 фунтов."),
     ("Weight is now 81,000 pounds.", "Вес теперь 81 000 фунтов."),  # not "81 фунт": the comma is a thousands one
 ])

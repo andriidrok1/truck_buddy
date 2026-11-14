@@ -31,7 +31,7 @@ from services.timing import stage
 from services.agent.prompt import (  # noqa: F401
     SYSTEM, SYSTEM_STATIC, PROMPT_VERSION, PROMPT_CACHE_KEY, prompt_messages)
 from services.agent.phrases import (  # noqa: F401
-    _CONTROL_PHRASES, control_phrase, PARK_WORDS, BED_WORDS, _STREET_ONLY, _ZIP_COUNTRY, with_city, city_of, GOODBYE,
+    _CONTROL_PHRASES, control_phrase, PARK_WORDS, BED_WORDS, PARK_WORDS_RU, BED_WORDS_RU, _STREET_ONLY, _ZIP_COUNTRY, with_city, city_of, GOODBYE,
     CHAIN_QUESTION, YES_RU_UK, NO_RU_UK, DEST_YES, VIA_FAR_YES, YES_PATTERNS, YES, NO, ANSWER_FILLER, bare_answer,
     PRICE_WORDS, CHEAPEST, FUEL_WORDS, CHEAPEST_ASK, ELSEWHERE, NOT_ELSEWHERE, CHEAPEST_NEAR_MI, asks_cheapest,
     list_is_near, ON_THE_WAY, STOP_CATEGORIES, REJECT_PLACE, DROP_ORDER, TAKE_OFF, NOT_A_STOP_OBJECT, ALL_STOPS,
@@ -994,7 +994,8 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         # Parking question about a town destination answered as chat: give the town line, never a guess.
         if intent == "chat" and req.active_place and is_town(req.active_place) and re.search(r"\bpark", text, re.I):
             intent = "parking"
-        if intent == "find" and d.get("category") == "hotel" and PARK_WORDS.search(text) and not BED_WORDS.search(text):
+        if intent == "find" and d.get("category") == "hotel" and (PARK_WORDS.search(text) or PARK_WORDS_RU.search(text)) \
+                and not (BED_WORDS.search(text) or BED_WORDS_RU.search(text)):
             # "where can I park tonight" is a truck stop, not a hotel: the model drifts there now and then
             # (stand QA 2026-11-01), and a hotel lot is the wrong answer for a 53-footer.
             logger.info("agent find hotel for %s -> truck_stop", said(text))
