@@ -229,6 +229,36 @@ ACCOUNT_LOCK = "SELECT 1 FROM accounts WHERE sub = ? FOR UPDATE"  # sign-in, acc
 ORG_LOCK = "SELECT id FROM orgs WHERE id = ? FOR UPDATE"  # a fleet's last owner leaving, anybody joining it
 
 
+class LastOwner(Exception):
+    """The only owner of a fleet that still has people or a stored key in it would leave it: by deleting the
+    account (services/accounts.py) or by binding a code that moves the phone out of the fleet or makes it a driver
+    or dispatcher there. The fleet would be left with nobody who can manage it, and there is no way to add an owner
+    afterwards."""
+
+
+# For the org of a device: (solo, owners besides this sub, what else lives in it: other devices, other driver rows,
+# stored credentials). Args: sub, sub, driver id, org id.
+ORG_FACTS = ("SELECT o.solo, (SELECT count(*) FROM devices WHERE org_id = o.id AND role = 'owner' AND sub <> ?), "
+             "(SELECT count(*) FROM devices WHERE org_id = o.id AND sub <> ?) + "
+             "(SELECT count(*) FROM drivers WHERE org_id = o.id AND id <> ?) + "
+             "(SELECT count(*) FROM org_credentials WHERE org_id = o.id) FROM orgs o WHERE o.id = ?")
+
+
+def closes_fleet(role: Optional[str], facts: list[tuple], staying: bool = False) -> bool:
+    """Whether the fleet goes with this sub: its only owner is leaving and nobody else is in it. LastOwner when
+    somebody is, or a key is stored. Dispatchers and drivers leave freely. `staying`: the sub stays in the fleet
+    with another role (a code of its own fleet), so the fleet is never empty after it and the last owner is refused
+    whatever else is in it."""
+    if role != "owner" or not facts:
+        return False
+    solo, other_owners, others = facts[0]
+    if solo or other_owners:
+        return False
+    if others or staying:
+        raise LastOwner()
+    return True
+
+
 def _bind_script(sub: str, code: str, account: bool, now: datetime, at):
     """Binds in one transaction. Everything is read again inside it, under the locks a deletion takes too: the
     account (for an account's sub), the code (still unused, not expired), the fleet and the truck (not closed by
@@ -240,14 +270,27 @@ def _bind_script(sub: str, code: str, account: bool, now: datetime, at):
     if not rows or rows[0][4] or _at(rows[0][3]) < now:
         raise BadFleetCode("code unknown, used or expired")
     org_id, vehicle_id, role = rows[0][:3]
-    if not (yield (ORG_LOCK, (org_id,))):
-        raise BadFleetCode("the fleet is gone")
+    # An owner leaves its fleet here too (another fleet's code, or a driver's code of its own): that fleet's row is
+    # taken, as a deletion takes it, before the count below. Both fleets in id order, so two owners trading codes
+    # across each other's fleets never wait for each other in a circle.
+    seen = yield ("SELECT org_id, role FROM devices WHERE sub = ?", (sub,))
+    locked = {org_id}
+    if seen and seen[0][1] == "owner":
+        locked.add(seen[0][0])
+    for oid in sorted(locked):
+        if not (yield (ORG_LOCK, (oid,))) and oid == org_id:
+            raise BadFleetCode("the fleet is gone")
     if vehicle_id and not (yield ("SELECT 1 FROM vehicles WHERE id = ? AND org_id = ?", (vehicle_id, org_id))):
         raise BadFleetCode("the truck is gone")
-    dev = yield ("SELECT driver_id, org_id FROM devices WHERE sub = ? FOR UPDATE", (sub,))
+    dev = yield ("SELECT driver_id, org_id, role FROM devices WHERE sub = ? FOR UPDATE", (sub,))
     if not dev:
         raise Unregistered(sub)
-    driver_id, old_org = dev[0]
+    driver_id, old_org, old_role = dev[0]
+    if old_role == "owner" and (old_org != org_id or role != "owner"):
+        if old_org not in locked:  # the row changed between the two reads (a bind of the same device token)
+            yield (ORG_LOCK, (old_org,))
+        facts = yield (ORG_FACTS, (sub, sub, driver_id, old_org))
+        closes_fleet(old_role, facts, staying=old_org == org_id)  # LastOwner rolls the bind back; the code stays good
     yield ("UPDATE drivers SET org_id = ? WHERE id = ?", (org_id, driver_id))
     moved = yield ("UPDATE devices SET org_id = ?, vehicle_id = ?, role = ?, bound_at = ? WHERE sub = ? RETURNING sub",
                    (org_id, vehicle_id, role, at, sub))
@@ -264,7 +307,8 @@ async def bind_fleet_code(sub: str, code: str, create: bool = True) -> Device:
     moved into the fleet, so the driver's memory and trips come along. `create=False` for an account's sub: its
     rows are not made here (see ensure_solo_org), and the bind holds the account row against a deletion.
     BadFleetCode for a code that is unknown, spent or expired, or whose fleet or truck is gone; Unregistered when
-    the sub has no device row (an account deleted meanwhile)."""
+    the sub has no device row (an account deleted meanwhile); LastOwner when the phone is the only owner of a fleet
+    the bind would leave without one (closes_fleet), and then nothing changed."""
     code = code.strip().upper()
     k = db.store()
     if k == "off":

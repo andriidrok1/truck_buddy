@@ -934,6 +934,40 @@ def test_a_session_ends_for_good_a_year_after_its_sign_in(client, monkeypatch):
     assert accounts.max_days() == accounts.MAX_DAYS_DEFAULT
 
 
+def test_session_limits_far_past_any_date_are_capped_not_a_crash(client, monkeypatch):
+    """ACCOUNT_SESSION_MAX_DAYS or _IDLE_DAYS of 99999999 used to overflow the date math: /auth/refresh answered 500
+    and the session check let the token through without looking (review of PR #171)."""
+    who = _person()
+    a = _apple(client, who).json()
+    monkeypatch.setenv("ACCOUNT_SESSION_MAX_DAYS", "99999999")
+    monkeypatch.setenv("ACCOUNT_SESSION_IDLE_DAYS", "99999999")
+    assert accounts.max_days() == accounts.idle_days() == accounts.DAYS_CAP
+    r = _refresh(client, a)
+    assert r.status_code == 200 and r.json()["expires_in"] == auth.JWT_DAYS * 86400
+    a = r.json()
+    assert client.post("/api/auth/renew", headers=_h(a)).status_code == 200
+    assert client.get("/api/auth/check", headers=_h(a)).status_code == 200
+    # the check still looks: a session gone from the store is refused, not waved through
+    _rows(client, "DELETE FROM account_sessions WHERE id = ?", _claims(a["access_token"])["sid"])
+    accounts.reset_caches()
+    r = client.get("/api/auth/check", headers=_h(a))
+    assert r.status_code == 401 and r.json() == CLOSED
+    assert _apple(client, who).status_code == 200
+
+
+def test_the_first_token_of_a_short_session_ends_with_it(client, monkeypatch):
+    """ACCOUNT_SESSION_MAX_DAYS under JWT_DAYS: the sign-in's own access token runs out with the session, as the
+    refreshed and renewed ones do."""
+    monkeypatch.setenv("ACCOUNT_SESSION_MAX_DAYS", "7")
+    end = datetime.now(timezone.utc) + timedelta(days=7)
+    for body in (_apple(client, _person()).json(), _google(client, _person()).json()):
+        assert abs(_claims(body["access_token"])["exp"] - end.timestamp()) < 60
+        assert abs(body["expires_in"] - 7 * 86400) < 60
+    monkeypatch.setenv("ACCOUNT_SESSION_MAX_DAYS", "0")  # no limit: the full JWT_DAYS, as before
+    body = _apple(client, _person()).json()
+    assert body["expires_in"] == auth.JWT_DAYS * 86400
+
+
 def test_an_expired_account_token_gets_no_grace_but_a_device_token_does(client):
     who = _person()
     a = _apple(client, who).json()
@@ -958,6 +992,22 @@ def test_sessions_past_the_cap_drop_the_least_recently_used(client, monkeypatch)
     left = {r[0] for r in _rows(client, "SELECT id FROM account_sessions WHERE sub = ?", sub)}
     assert left == {_claims(p["access_token"])["sid"] for p in (phones[0], phones[2], newest)}
     assert _refresh(client, phones[1]).status_code == 401 and _refresh(client, phones[0]).status_code == 200
+
+
+def test_a_session_dropped_past_the_cap_is_refused_at_once_on_this_worker(client, monkeypatch):
+    """The sign-in that deletes it also drops this worker's cached "alive" for it, so its access token is refused
+    now, not a minute later."""
+    monkeypatch.setattr(accounts, "MAX_SESSIONS", 2)
+    who = _person()
+    old, kept = _apple(client, who).json(), _apple(client, who).json()
+    for body in (old, kept):
+        assert client.get("/api/auth/check", headers=_h(body)).status_code == 200  # cached as alive
+    _age_session(client, old, "seen_at", timedelta(days=2))
+    _apple(client, who)
+    assert _session_row(client, old) == []
+    r = client.get("/api/auth/check", headers=_h(old))
+    assert r.status_code == 401 and r.json() == CLOSED
+    assert client.get("/api/auth/check", headers=_h(kept)).status_code == 200
 
 
 def test_logout_all_signs_every_phone_out(client):

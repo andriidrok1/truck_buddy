@@ -102,30 +102,8 @@ SUB_COLUMNS = (("conversation", "driver"), ("driver_facts", "driver"), ("driver_
 CODE_USER_GONE = "deleted"  # fleet_codes.used_by once the driver who used the code deleted the account
 
 
-class LastOwner(Exception):
-    """The account is the only owner of a fleet that still has people or a stored key in it."""
-
-
-# For the org of a device: (solo, owners besides this sub, what else lives in it: other devices, other driver rows,
-# stored credentials). Args: sub, sub, driver id, org id.
-ORG_FACTS = ("SELECT o.solo, (SELECT count(*) FROM devices WHERE org_id = o.id AND role = 'owner' AND sub <> ?), "
-             "(SELECT count(*) FROM devices WHERE org_id = o.id AND sub <> ?) + "
-             "(SELECT count(*) FROM drivers WHERE org_id = o.id AND id <> ?) + "
-             "(SELECT count(*) FROM org_credentials WHERE org_id = o.id) FROM orgs o WHERE o.id = ?")
-
-
-def _closes_fleet(role: Optional[str], facts: list[tuple]) -> bool:
-    """Whether the fleet goes with this account: its only owner is leaving and nobody else is in it. LastOwner when
-    somebody is, or a key is stored: the fleet would be left with drivers and a Motive key and nobody who can manage
-    them, and there is no way to add an owner afterwards. Dispatchers and drivers leave freely."""
-    if role != "owner" or not facts:
-        return False
-    solo, other_owners, others = facts[0]
-    if solo or other_owners:
-        return False
-    if others:
-        raise LastOwner()
-    return True
+# The rule lives in services/tenancy.py: a fleet bind that would take the last owner out of a fleet asks it too.
+LastOwner, ORG_FACTS, _closes_fleet = tenancy.LastOwner, tenancy.ORG_FACTS, tenancy.closes_fleet
 
 
 def _device_script(sub: str):
@@ -229,6 +207,7 @@ TOUCH_EVERY_S = 3600.0
 MAX_SESSIONS = 20  # per account; a sign-in past it drops the ones used longest ago (phones that never signed out)
 IDLE_DAYS_DEFAULT = 180
 MAX_DAYS_DEFAULT = 365
+DAYS_CAP = 36500  # a hundred years: more would run past the dates Python and the store can hold (OverflowError)
 
 
 @dataclass(frozen=True)
@@ -244,7 +223,7 @@ class Session:
 def idle_days() -> int:
     """ACCOUNT_SESSION_IDLE_DAYS: a session not used for this long is gone (0 = sessions never expire)."""
     try:
-        return max(0, int(os.environ.get("ACCOUNT_SESSION_IDLE_DAYS", "") or IDLE_DAYS_DEFAULT))
+        return min(DAYS_CAP, max(0, int(os.environ.get("ACCOUNT_SESSION_IDLE_DAYS", "") or IDLE_DAYS_DEFAULT)))
     except ValueError:  # a typo must not make every session immortal or dead
         return IDLE_DAYS_DEFAULT
 
@@ -260,7 +239,7 @@ def max_days() -> int:
         days = int(os.environ.get("ACCOUNT_SESSION_MAX_DAYS", "") or MAX_DAYS_DEFAULT)
     except ValueError:  # a typo must not make every session immortal or dead
         return MAX_DAYS_DEFAULT
-    return days if days >= 0 else MAX_DAYS_DEFAULT  # "-1" is a typo too, not "no limit"
+    return min(DAYS_CAP, days) if days >= 0 else MAX_DAYS_DEFAULT  # "-1" is a typo too, not "no limit"
 
 
 def session_end(created_at: datetime) -> Optional[datetime]:
@@ -274,7 +253,9 @@ def ended(created_at: datetime) -> bool:
     return end is not None and _now() >= end
 
 
-def _sign_in_script(sub: str, sid: str, refresh_hash: str, platform: Optional[str], at):
+def _sign_in_script(sub: str, sid: str, refresh_hash: str, platform: Optional[str], at,
+                    dropped: Optional[list] = None):
+    """`dropped` gets the ids of the sessions past MAX_SESSIONS this sign-in deleted."""
     if not (yield (ACCOUNT_LOCK, (sub,))):
         return None  # deleted since the caller looked the account up
     first = not (yield ("SELECT 1 FROM devices WHERE sub = ?", (sub,)))
@@ -283,22 +264,30 @@ def _sign_in_script(sub: str, sid: str, refresh_hash: str, platform: Optional[st
             yield step
     yield ("INSERT INTO account_sessions (id, sub, refresh_hash, platform, created_at, seen_at) VALUES (?, ?, ?, ?, ?, ?)",
            (sid, sub, refresh_hash, platform, at, at))
-    yield ("DELETE FROM account_sessions WHERE sub = ? AND id NOT IN (SELECT id FROM account_sessions WHERE sub = ? "
-           f"ORDER BY seen_at DESC, created_at DESC LIMIT {MAX_SESSIONS})", (sub, sub))
+    old = [r[0] for r in (yield ("SELECT id FROM account_sessions WHERE sub = ? AND id NOT IN (SELECT id FROM "
+                                 "account_sessions WHERE sub = ? ORDER BY seen_at DESC, created_at DESC "
+                                 f"LIMIT {MAX_SESSIONS})", (sub, sub)))]
+    if old:
+        yield (f"DELETE FROM account_sessions WHERE id IN ({', '.join('?' * len(old))})", tuple(old))
+    if dropped is not None:
+        dropped.extend(old)
     return first
 
 
-async def session_open(sub: str, refresh_hash: str, platform: Optional[str] = None) -> Optional[tuple[str, bool]]:
+async def session_open(sub: str, refresh_hash: str, platform: Optional[str] = None) -> Optional[tuple[str, bool, datetime]]:
     """Signs the account in on one phone, in one transaction: the account row is still there (and is held against
     a deletion running beside this one), the org, driver and device rows are made when the sub has none, and a new
     session holds the phone's first refresh token. Past MAX_SESSIONS the account's least recently used sessions go.
 
-    Returns (session id, whether the rows were made now: the account's first time through), or None when the
-    account is gone. This is the only place an account's sub gets its tenancy rows, so nothing can make them for
+    Returns (session id, whether the rows were made now: the account's first time through, when the session
+    started), or None when the account is gone. This is the only place an account's sub gets its tenancy rows, so nothing can make them for
     an account that was deleted."""
-    sid = new_id("ses")
-    first = await db.run_script(_sign_in_script(sub, sid, refresh_hash, platform, _stamp(_now())))
-    return None if first is None else (sid, first)
+    sid, now, dropped = new_id("ses"), _now(), []
+    first = await db.run_script(_sign_in_script(sub, sid, refresh_hash, platform, _stamp(now), dropped))
+    for old in dropped:  # this worker forgets them now; the others re-read within SESSION_TTL_S
+        _sessions.pop(old, None)
+        _touched.pop(old, None)
+    return None if first is None else (sid, first, now)
 
 
 async def session_rotate(sid: str, refresh_hash: str, spent: Optional[str] = None) -> bool:

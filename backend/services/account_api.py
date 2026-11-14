@@ -223,14 +223,19 @@ async def auth_logout_all(principal: auth.Principal = Depends(auth.require_drive
         raise _unavailable()
 
 
-@api.post("/auth/fleet-code")
+@api.post("/auth/fleet-code",
+          responses={409: {"model": Refusal, "description": "the only owner of a fleet with people in it would leave it"}})
 async def auth_fleet_code(req: FleetCodeRequest, principal: auth.Principal = Depends(auth.require_driver)):
     """Binds this device to the fleet (and truck) the code was made for; answers with a token carrying the org.
 
     A device token gets a new pair, as before. An account session keeps its refresh token, as on /auth/renew: the
     answer has a new access token and no refresh_token, and the phone keeps the one it holds (an answer lost on the
     way would otherwise leave the phone with a refresh token the server counts as spent, and its next refresh would
-    close the session as stolen)."""
+    close the session as stolen).
+
+    409 `last_owner` when the phone is the only owner of a fleet that would be left without one: a code of another
+    fleet with drivers, other phones or a stored key in this one, or a driver's or dispatcher's code of its own fleet.
+    Nothing changes and the code stays good."""
     unavailable = HTTPException(status_code=503, detail="Fleet codes are unavailable right now")
     try:
         dev = await tenancy.bind_fleet_code(principal.sub, req.code, create=not principal.sid)
@@ -238,6 +243,8 @@ async def auth_fleet_code(req: FleetCodeRequest, principal: auth.Principal = Dep
         raise auth._unregistered()
     except tenancy.BadFleetCode:
         raise HTTPException(status_code=401, detail="That fleet code isn't right or has expired")
+    except tenancy.LastOwner:
+        return _refused("last_owner", LAST_OWNER_BIND)
     except Exception as e:  # noqa: BLE001 - the store, or anything else: never a 500 with a trace
         logger.warning("fleet bind failed for %s: %s", principal.sub, type(e).__name__)
         raise unavailable
@@ -338,6 +345,8 @@ async def memory_history_clear(driver: str = Depends(auth.require_driver)):
 NOT_AN_ACCOUNT = "This sign-in has no account. Use DELETE /api/memory to delete its data."
 LAST_OWNER = ("This account is the only owner of a fleet that still has drivers or a stored key. "
               "Write to support@truckbuddy.io to close the fleet or hand it over.")
+LAST_OWNER_BIND = ("This phone is the only owner of a fleet that still needs one, so it can't join another fleet or "
+                   "take another role in this one. Write to support@truckbuddy.io to hand the fleet over.")
 
 
 @api.delete("/account", response_model=AccountDeleteResponse,

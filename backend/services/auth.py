@@ -254,12 +254,13 @@ async def open_session(sub: str, platform: Optional[str] = None) -> Optional[tup
     opened = await accounts.session_open(sub, _hash(refresh), platform)
     if opened is None:
         return None
-    sid, first = opened
+    sid, first, started = opened
+    until = accounts.session_end(started)  # ACCOUNT_SESSION_MAX_DAYS under JWT_DAYS: the first token ends with it
     tenancy.forget(sub)  # a copy from before the rows were made, or before a deletion
     dev = await tenancy.device_of(sub)
     if dev is None:
         raise RuntimeError("no device row after sign-in")
-    return {**_access(sub, dev.role, dev, sid), "refresh_token": refresh, "expires_in": JWT_DAYS * 86400}, first
+    return {**_access(sub, dev.role, dev, sid, until), "refresh_token": refresh, "expires_in": _expires_in(until)}, first
 
 
 async def refresh(refresh_token: str) -> dict:

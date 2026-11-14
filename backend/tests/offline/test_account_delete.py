@@ -926,6 +926,91 @@ def test_a_deletion_that_became_the_last_owners_inside_the_transaction_is_refuse
     assert client.get("/api/auth/check", headers=_h(owner)).status_code == 200
 
 
+def _code(client, fleet, role: str = "driver") -> str:
+    return client.portal.call(tenancy.create_fleet_code, fleet.org, fleet.truck if role == "driver" else None, role)
+
+
+def _bind(client, body: dict, code: str):
+    return client.post("/api/auth/fleet-code", json={"code": code}, headers=_h(body))
+
+
+def _role(client, body: dict) -> tuple:
+    return _rows(client, "SELECT org_id, role FROM devices WHERE sub = ?", _claims(body["access_token"])["sub"])[0]
+
+
+def _refused_bind(client, body: dict, code: str) -> None:
+    """409 last_owner, and nothing changed: same fleet, same role, the code still good for somebody else."""
+    from services import account_api
+    before = _role(client, body)
+    r = _bind(client, body, code)
+    assert r.status_code == 409 and r.json() == {"detail": account_api.LAST_OWNER_BIND, "code": "last_owner"}, r.text
+    assert _role(client, body) == before
+    assert _rows(client, "SELECT used_by FROM fleet_codes WHERE code = ?", code) == [(None,)]
+
+
+def test_the_only_owner_cannot_become_a_driver_of_the_fleet_and_then_delete(client):
+    """Review of PR #171: binding a driver code took the last owner's role away, and then DELETE /api/account let
+    the account go and left the fleet's driver with nobody to manage it."""
+    fleet = _fleet(client)
+    owner = _join(client, fleet, _apple(client, _person()).json(), "owner")
+    driver = _join(client, fleet, _google(client, _person()).json())
+    for role in ("driver", "dispatcher"):
+        _refused_bind(client, owner, _code(client, fleet, role))
+    assert client.delete("/api/account", headers=_h(owner)).status_code == 409
+    assert client.get("/api/auth/check", headers=_h(driver)).status_code == 200
+    # alone in the fleet it is refused too: it would stay in it as a driver nobody can manage
+    alone = _fleet(client)
+    sole = _join(client, alone, _google(client, _person()).json(), "owner")
+    _refused_bind(client, sole, _code(client, alone))
+    # another owner code of the same fleet changes nothing that matters
+    assert _bind(client, owner, _code(client, fleet, "owner")).status_code == 200
+    # with a second owner, either one may step down
+    second = _join(client, fleet, _google(client, _person()).json(), "owner")
+    r = _bind(client, owner, _code(client, fleet))
+    assert r.status_code == 200 and r.json()["role"] == "driver"
+    assert client.delete("/api/account", headers=_h(second)).status_code == 409  # the last owner now
+
+
+def test_the_only_owner_cannot_move_to_another_fleet_and_leave_theirs_unmanaged(client, monkeypatch):
+    monkeypatch.setenv("CREDENTIALS_KEY", Fernet.generate_key().decode())
+    mine, other = _fleet(client), _fleet(client)
+    owner = _join(client, mine, _google(client, _person()).json(), "owner")
+    driver = _join(client, mine, client.post("/api/auth/device").json())  # a build-2 phone counts the same
+    for role in ("driver", "owner"):
+        _refused_bind(client, owner, _code(client, other, role))
+    # a stored key alone keeps the owner there too
+    _rows(client, "DELETE FROM devices WHERE sub = ?", _claims(driver["access_token"])["sub"])
+    _rows(client, "DELETE FROM drivers WHERE org_id = ? AND id <> ?", mine.org, _claims(owner["access_token"])["driver_id"])
+    tenancy.reset_caches()
+    assert client.put("/api/fleet/credentials/motive", json={"key": "motive-key-123456789"}, headers=_h(owner)).status_code == 200
+    _refused_bind(client, owner, _code(client, other))
+    # nobody and nothing left behind: the owner may go, as a deletion may
+    _rows(client, "DELETE FROM org_credentials WHERE org_id = ?", mine.org)
+    r = _bind(client, owner, _code(client, other))
+    assert r.status_code == 200 and _role(client, r.json()) == (other.org, "driver")
+    # a device-token owner is held the same way
+    dev_owner = _join(client, mine, client.post("/api/auth/device").json(), "owner")
+    _join(client, mine, _google(client, _person()).json())
+    _refused_bind(client, dev_owner, _code(client, other))
+
+
+def test_two_owners_trading_codes_across_their_fleets_do_not_deadlock(client):
+    """Each bind takes both fleets' rows in id order: two owners each binding a code of the other's fleet at once
+    finish (both refused: each is the last owner of a fleet with a driver in it), neither waits for ever."""
+    a, b = _fleet(client), _fleet(client)
+    owners = [_join(client, f, _google(client, _person()).json(), "owner") for f in (a, b)]
+    for f in (a, b):
+        _join(client, f, _google(client, _person()).json())
+    codes = [_code(client, b), _code(client, a)]
+    subs = [_claims(o["access_token"])["sub"] for o in owners]
+
+    async def race():
+        return await asyncio.wait_for(asyncio.gather(
+            *(tenancy.bind_fleet_code(s, c, create=False) for s, c in zip(subs, codes)), return_exceptions=True), 10)
+    out = client.portal.call(race)
+    assert all(isinstance(o, tenancy.LastOwner) for o in out), out
+
+
 # ---- dialogs go inside the transaction, and a drop that fails fails the deletion ------------------------------------
 
 def test_a_dialog_without_a_driver_goes_in_the_transaction(client, monkeypatch, db_dialogs):
