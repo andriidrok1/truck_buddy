@@ -156,6 +156,11 @@ t("Okay, say it again.", "Хорошо, повтори.")
 t("That's a whole town, so there's no parking check. Ask me for a truck stop there or give me an address and I'll check it.", "Это целый город, тут парковку не проверить. Спроси там трак-стоп или дай адрес, и я проверю.")
 t("Rerouting for that.", "Перестраиваю маршрут.")
 
+# --- showers (QA 2026-11-11: "душ") ---
+t("It has showers listed.", "Душ там указан.")
+t("I can't confirm showers there, but big chains like Pilot, Love's and TA usually have them.",
+  "Есть ли там душ, точно не знаю, но на крупных сетях вроде Pilot, Love's и TA душ обычно есть.")
+
 # --- prices ---
 t("I don't have a diesel price for it.", "Цены на дизель там у меня нет.")
 t("None of these list a diesel price, so I can't tell which is cheapest.", "Ни у одного нет цены на дизель, так что какой дешевле, не скажу.")

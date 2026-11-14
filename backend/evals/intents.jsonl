@@ -26,6 +26,11 @@
 {"id": "h_find_ru_perenochevat", "text": "где тут переночевать с траком", "context_preset": "idle_ru", "expected": {"intent": "find", "category": "truck_stop"}, "tags": ["ambiguous"], "source": "hand"}
 {"id": "h_find_ru_motel", "text": "нужен мотель на ночь", "context_preset": "idle_ru", "expected": {"intent": "find", "category": "hotel"}, "tags": [], "source": "hand"}
 {"id": "h_find_ru_room", "text": "хочу поспать в номере", "context_preset": "idle_ru", "expected": {"intent": "find", "category": "hotel"}, "tags": [], "source": "hand"}
+{"id": "h_find_ru_dush", "text": "душ", "context_preset": "idle_ru", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
+{"id": "h_find_ru_pomytsya", "text": "где помыться", "context_preset": "idle_ru", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
+{"id": "h_find_ru_prinyat_dush", "text": "где принять душ", "context_preset": "idle_ru", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
+{"id": "h_find_en_wash_up", "text": "where can I wash up", "context_preset": "idle", "expected": {"intent": "find", "category": "truck_stop"}, "tags": [], "source": "hand"}
+{"id": "h_find_ru_motel_dush", "text": "мотель с душем", "context_preset": "idle_ru", "expected": {"intent": "find", "category": "hotel"}, "tags": [], "source": "hand"}
 {"id": "h_find_rest_area", "text": "find a rest area", "context_preset": "idle", "expected": {"intent": "find", "category": "rest_area"}, "tags": ["core"], "source": "hand"}
 {"id": "h_find_restroom", "text": "I need a restroom quick", "context_preset": "idle", "expected": {"intent": "find", "category": "rest_area"}, "tags": ["core"], "source": "hand"}
 {"id": "h_find_nap", "text": "I need a short nap", "context_preset": "idle", "expected": {"intent": "find", "category": "rest_area"}, "tags": [], "source": "hand"}

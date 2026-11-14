@@ -49,6 +49,22 @@ PARK_WORDS_RU = re.compile(
     r"|(?:в?стать|встан\w+|(?:по)?стоять|остановиться|остановлюсь)\b[^.?!]{0,25}?\b(?:на ночь|ночью|до утра)"
     r"|(?:по)?спать\b[^.?!]{0,15}?\bв (?:траке|кабине|спальнике|машине))\b", re.I)
 BED_WORDS_RU = re.compile(r"\b(?:отел\w*|мотел\w*|гостиниц\w*|хостел\w*|номер\w*|кроват\w*|койк\w*|постел\w*)\b", re.I)
+# A driver who wants a shower (QA 2026-11-11: a bare "душ" came back unclear). Paid showers are a truck-stop thing.
+# Only the reflexive verbs: "помыть трак" is a truck wash, "помыться" is the driver. "Rain showers" is weather.
+SHOWER_WORDS = re.compile(
+    r"\b(?:showers?|wash up|freshen up|душ\w*|помыть?ся|помоюсь|вымыть?ся|искупаться|сполоснуться"
+    r"|помит(?:и|ь)ся|помитись|помиюсь)\b", re.I)
+SHOWER_NOT = re.compile(r"\b(?:rain|snow|thunder\w*|scattered|isolated|chance of|дожд\w*|ливн\w*|душн\w*)\b", re.I)
+# A question or a request, not small talk about a shower: "where can I shower", "душ", "нужен душ", "хочу помыться".
+SHOWER_ASK = re.compile(
+    r"^\W*(?:душ|shower)\W*$|\b(?:where|need|want|find|get|take|any|где|нужен|нужна|нужно|надо|хочу|найди|есть|де|потрібен)\b",
+    re.I)
+
+
+def asks_for_shower(text: str) -> bool:
+    """The driver asks where to wash: "душ", "где помыться", "where can I take a shower" (not "rain showers")."""
+    return bool(SHOWER_WORDS.search(text or "")) and not SHOWER_NOT.search(text or "")
+
 
 _STREET_ONLY = re.compile(r"^\s*\d+[a-z]?\s+[\w .'-]+$", re.I)  # "2828 El Centro Rd" (no town after a comma)
 _ZIP_COUNTRY = re.compile(r"^\s*(?:[A-Z]{2}(?:\s+\d{5}(?:-\d{4})?)?|\d{5}|United States|USA)\s*$")

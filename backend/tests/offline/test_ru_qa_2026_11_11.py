@@ -454,7 +454,7 @@ def test_prompt_sends_overnight_parking_to_a_truck_stop():
     assert "park the truck for the night" in truck_stop and "где встать на ночь" in truck_stop
     assert not re.search(r"hotel = [^(]*overnight", SYSTEM_STATIC)  # "overnight" no longer lists under hotel
     assert "means parking the truck, not a hotel" in hotel and "motel" in hotel
-    assert PROMPT_VERSION == 6 and PROMPT_CACHE_KEY == "agent-v6"  # a changed prompt gets a new cache key
+    assert PROMPT_VERSION == 7 and PROMPT_CACHE_KEY == "agent-v7"  # a changed prompt gets a new cache key
 
 
 PARKING_RU = ["где встать на ночь", "где припарковать трак на ночь", "нужна стоянка на ночь", "где тут переночевать",
