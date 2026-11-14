@@ -145,3 +145,85 @@ def test_ru_json_is_built_from_the_lists():
     from pathlib import Path
     built = json.loads((Path(i18n.CATALOG_DIR) / "ru.json").read_text())
     assert any(t["en"] == SHOWERS_LISTED.strip() for t in built["templates"])
+
+
+# ---- review of #179: only an ask for a place is a shower ask -----------------------------------
+
+FAR_SHOWERS = Place(id="atp-ta-far", name="TA Truck Service", category="truck_stop", lat=39.0, lng=-121.0,
+                    distance_mi=40.0, tags=["Showers"])
+TRUCK_WASH = Place(id="g-blue-beacon", name="Blue Beacon Truck Wash", category="truck_wash", lat=38.6, lng=-121.45,
+                   distance_mi=5.0)
+
+
+@pytest.mark.parametrize("said,lang", [
+    ("thanks, I'm gonna take a shower when I get there", "en"),
+    ("any showers today?", "en"),
+    ("I'll take a shower later", "en"),
+    ("спасибо от души", "ru"),
+    ("спасибо, потом помоюсь", "ru"),
+    ("будет дождь с ливнями сегодня? душ с неба", "ru"),
+])
+def test_talk_about_a_shower_stays_chat(agent_sandbox, routes, said, lang):
+    res = _turn(agent_sandbox, said, {"intent": "chat", "reply": "Sounds good."}, lang)
+    assert res.status == "chat" and not agent_sandbox.places_provider.calls, (said, res.reply)
+
+
+@pytest.mark.parametrize("said,lang", [
+    ("where can I find a shower", "en"), ("I need a shower", "en"), ("find me a shower", "en"),
+    ("nearest shower", "en"), ("any showers nearby?", "en"), ("где помыться", "ru"), ("где душ", "ru"),
+    ("нужен душ", "ru"), ("душ рядом есть?", "ru"), ("душ", "ru"),
+])
+def test_a_chat_that_asks_for_a_shower_becomes_a_truck_stop(agent_sandbox, routes, said, lang):
+    res = _turn(agent_sandbox, said, {"intent": "chat", "reply": "Truck stops have showers."}, lang)
+    assert res.status == "route_set" and res.category == "truck_stop", (said, res.reply)
+
+
+@pytest.mark.parametrize("said", ["души", "от души", "душевно", "душит", "душа болит", "в душе не знаю где",
+                                  "по душе", "any showers today?", "rain showers tonight", "truck wash up ahead",
+                                  "помыть трак", "погода: возможен душ"])
+def test_soul_weather_and_truck_wash_are_not_shower_words(said):
+    assert not asks_for_shower(said), said
+
+
+@pytest.mark.parametrize("said", ["душем", "в душе", "душевая", "душевой", "ополоснуться", "помыться"])
+def test_shower_forms(said):
+    assert asks_for_shower(said), said
+
+
+def test_from_the_soul_with_a_fuel_ask_takes_the_nearest_stop(agent_sandbox, routes):
+    # "от души, есть рядом заправка?" picked a farther stop with showers (review of #179).
+    res = _turn(agent_sandbox, "от души, есть рядом заправка?", {"intent": "find", "category": "truck_stop"}, "ru",
+                places=(NEAR, LOVES))
+    assert res.place.id == NEAR.id and SHOWERS_LISTED.strip() not in res.reply
+
+
+@pytest.mark.parametrize("said,lang", [("где помыться", "ru"), ("хочу помыться", "ru"), ("I need a shower", "en")])
+def test_a_personal_wash_filed_as_truck_wash_becomes_a_truck_stop(agent_sandbox, routes, said, lang, monkeypatch):
+    monkeypatch.setenv("CATEGORIES_EXTRA", "truck_wash")
+    res = _turn(agent_sandbox, said, {"intent": "find", "category": "truck_wash"}, lang, places=(NEAR, TRUCK_WASH))
+    assert res.category == "truck_stop" and agent_sandbox.places_provider.calls[-1][0] == "truck_stop", res.reply
+
+
+@pytest.mark.parametrize("said,lang", [("truck wash up ahead", "en"), ("помыть трак", "ru"),
+                                       ("where can I wash the truck", "en")])
+def test_a_truck_wash_stays_a_truck_wash(agent_sandbox, routes, said, lang, monkeypatch):
+    monkeypatch.setenv("CATEGORIES_EXTRA", "truck_wash")
+    _turn(agent_sandbox, said, {"intent": "find", "category": "truck_wash"}, lang, places=(NEAR, TRUCK_WASH))
+    assert agent_sandbox.places_provider.calls[-1][0] == "truck_wash", said
+
+
+def test_a_shower_stop_far_beyond_the_nearest_does_not_win(agent_sandbox, routes):
+    res = _turn(agent_sandbox, "где принять душ", {"intent": "find", "category": "truck_stop"}, "ru",
+                places=(NEAR, FAR_SHOWERS))
+    assert res.place.id == NEAR.id and SHOWERS_UNKNOWN.strip() in res.reply  # 40 mi vs 4 mi: past the 15-mi cap
+
+
+def test_the_shower_stop_gets_the_parking_warm_up(agent_sandbox, routes, monkeypatch):
+    from services import agent
+    warmed: list[str] = []
+
+    monkeypatch.setattr(agent, "check_parking", lambda p, *a, **k: warmed.append(p.id))
+    monkeypatch.setattr(agent, "_background", lambda _: None)
+    res = _turn(agent_sandbox, "где принять душ", {"intent": "find", "category": "truck_stop"}, "ru",
+                places=(NEAR, LOVES))
+    assert res.place.id == LOVES.id and warmed[:1] == [LOVES.id]  # the same warm-up as the normal find path

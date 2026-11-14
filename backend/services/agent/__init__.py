@@ -38,7 +38,8 @@ from services.agent.phrases import (  # noqa: F401
     STOP_ORDER, THAT_STOP, STOP_KIND, ANOTHER, ROAD_WORDS, LIST_REF, ORDINALS, NOT_A_PLACE, REMEMBER, ROAD_PREFS,
     BYE_PHRASE, numbered, list_reference, _NAME_TOKEN, _name_tokens, named_place, NAME_LIKE, name_like,
     GENERIC_NAME_WORDS, named_in_text, stop_named, stop_to_drop, reject_or_reference_guard, pick_place, ORDER_VERB,
-    WHERE_AM_I, ROUTE_CHEAPEST, ROUTE_FASTEST, PRICE_AT, SHOWER_WORDS, SHOWER_ASK, asks_for_shower)
+    WHERE_AM_I, ROUTE_CHEAPEST, ROUTE_FASTEST, PRICE_AT, SHOWER_WORDS, SHOWER_ASK, SHOWER_TALK, asks_for_shower,
+    shower_request)
 from services.agent.driver_name import (  # noqa: F401
     NAME_EVERY, NAME_MIN_WORDS, _SENTENCE_START, _INTERJECTION, _address, _a_place, _cut, GREETING, SHORT_LEAD,
     _vocatives, without_name, name_policy)
@@ -72,6 +73,7 @@ MODEL = ("openai", "gpt-5.4-mini")
 MAX_OPTIONS = 4
 WEATHER_BUDGET_S = 2.0  # NWS lookups on a new route may add at most this much to the reply
 DETOUR_BUDGET_S = 3.5  # the alternatives' weather, measured from the start; past it the detour line is skipped
+SHOWER_EXTRA_MI = 15.0  # a stop with showers listed wins over the nearest only within this many extra miles
 PRECHECK = 1  # nearest candidates satellite-checked in the background (each = one vision call)
 FAVORITE_EXTRA_MI = 5.0
 TRUCK_TAGS = ("truck parking", "53 ft", "truck lot", "hgv")
@@ -888,14 +890,17 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         with stage("tools"):
             res = await get_places_provider().search(category, req.lat, req.lng)
         found = res.places[:MAX_OPTIONS + 2]
+        pool = found
         if category == "truck_stop" and asks_for_shower(text) and not chain:
             # The places search has no shower filter; our own places carry a "Showers" tag from their data. Those
-            # go first, the rest stay as options (no tag means we don't know, not that there are none).
-            showers = [p for p in res.places if "Showers" in p.tags]
-            if showers and not all(p.id in exclude for p in showers):
+            # go first if they are not much farther than the nearest stop, the rest stay as options (no tag means
+            # we don't know, not that there are none). Then the usual path: parking warm-up, the rejected set.
+            open_ = [p for p in res.places if p.id not in exclude]
+            near_mi = min((p.distance_mi or 0.0 for p in open_), default=0.0)
+            showers = [p for p in open_ if "Showers" in p.tags and (p.distance_mi or 0.0) <= near_mi + SHOWER_EXTRA_MI]
+            if showers:
                 found = (showers + [p for p in found if p not in showers])[:MAX_OPTIONS + 2]
-                chosen = choose_place(showers, req.truck_profile, exclude, _facts(req))
-                return await self._route_to(req, chosen, found, text)
+                pool = showers
         if chain and found:
             # No such chain within reach: say so, then the usual nearest truck stop.
             chosen = choose_place(found, req.truck_profile, exclude, _facts(req))
@@ -919,7 +924,7 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
                 s_.pop("rejected", None)
             return AgentResponse(status="chat", transcript=text, category=category, reply=ALL_REJECTED,
                                  source=self.source)
-        chosen = choose_place(found, req.truck_profile, exclude, _facts(req))
+        chosen = choose_place(pool, req.truck_profile, exclude, _facts(req))
         return await self._route_to(req, chosen, found, text)
 
     async def _handle(self, req: AgentRequest) -> AgentResponse:
@@ -1010,13 +1015,16 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
             # (stand QA 2026-11-01), and a hotel lot is the wrong answer for a 53-footer.
             logger.info("agent find hotel for %s -> truck_stop", said(text))
             d = {**d, "category": "truck_stop"}
-        # "Душ" alone came back unclear (QA 2026-11-11), and the model may file "где помыться" as a rest area: a
-        # shower is a truck stop. A bed word keeps a hotel ("мотель с душем"); chat about a place on screen
-        # ("how are the showers there") stays chat.
-        if asks_for_shower(text) and not (BED_WORDS.search(text) or BED_WORDS_RU.search(text)) and (
+        # "Душ" alone came back unclear (QA 2026-11-11), and the model may file "где помыться" as a rest area or a
+        # truck wash: a shower is a truck stop. A bed word keeps a hotel ("мотель с душем"); chat stays chat unless
+        # it is an ask for a place ("where can I shower", "нужен душ"), never thanks, plans or the weather
+        # ("thanks, I'm gonna take a shower when I get there", "any showers today?"), nor talk about a place on
+        # screen ("how are the showers there").
+        if asks_for_shower(text) and not SHOWER_TALK.search(text) \
+                and not (BED_WORDS.search(text) or BED_WORDS_RU.search(text)) and (
                 intent == "unclear"
-                or intent == "chat" and SHOWER_ASK.search(text) and not req.active_place and not sess["places"]
-                or intent == "find" and d.get("category") in (None, "hotel", "rest_area")):
+                or intent == "chat" and shower_request(text) and not req.active_place and not sess["places"]
+                or intent == "find" and d.get("category") in (None, "hotel", "rest_area", "truck_wash")):
             logger.info("agent %s %s %s -> find truck_stop (shower)", intent, d.get("category"), said(text))
             intent, d = "find", {**d, "intent": "find", "category": "truck_stop"}
         if req.active_place and intent not in ("go", "add_stop", "clear_stops") and ROAD_WORDS.search(text) \
