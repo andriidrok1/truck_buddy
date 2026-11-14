@@ -7,10 +7,16 @@
 /** Longer than this, an instruction is shortened, and if it is still longer it is printed a size smaller. */
 export const LONG_INSTRUCTION = 40;
 
-const TOWARD = /(\s(?:toward|towards|for|в сторону)\s)(.+?)(?=\s(?:onto|на)\s|$)/i;
-const ONTO = /(\s(?:onto|на)\s)(.+?)(?=\s(?:toward|towards|for|в сторону)\s|$)/i;
+// Each sign list runs from its lead word to the next lead word: "for X/Y toward Z" is two lists, not one (review of
+// #178: "...I-80 W for San Francisco/Oakland toward Bay Bridge" lost "toward Bay Bridge").
+const DIRECTION_WORDS = "toward|towards|for|в сторону";
+const LEADS = `${DIRECTION_WORDS}|onto|на`;
+const LIST = new RegExp(`(\\s(?:${LEADS})\\s)(.+?)(?=\\s(?:${LEADS})\\s|$)`, "gi");
+const DIRECTION = new RegExp(`\\s(?:${DIRECTION_WORDS})\\s`, "i");
+const ONTO = new RegExp(`\\s(?:onto|на)\\s.+?(?=\\s(?:${DIRECTION_WORDS})\\s|$)`, "gi");
+// An exit: a number ("exit 52B"), a range ("exit 33-34", "exit 33A/B"), or none ("Take the exit toward ...").
 // No \b before "съезд": in JS \b only knows Latin letters.
-const EXIT = /(?:^|\s)(?:exit|съезд)\s+\d+[A-Z]?(?=\s|$)/i;
+const EXIT = /(?:^|\s)(?:exit|съезд)\s+\d+[A-Z]?(?:\s*[-–/]\s*\d*[A-Z]?)?(?=\s|$)|^(?:take (?:the )?)?exit\b|^съезд(?=\s|$)/i;
 
 /** "A/B/C" -> "A": the first name on a sign list is the one the sign leads with. */
 const firstOf = (list: string) => list.split("/")[0].trim();
@@ -19,8 +25,9 @@ const firstOf = (list: string) => list.split("/")[0].trim();
  * The banner's text for an instruction. Short ones come back as they are. A long one loses, in this order:
  * - the bracketed road name: "(Capital City Fwy)";
  * - every name but the first in a list after "toward" / "в сторону" and after "onto" / "на";
- * - on an exit with a direction, the road after it: the exit number and the sign are what the driver looks for;
- * - "Take exit" becomes "Exit", the trailing full stop goes.
+ * - on an exit with a direction (numbered, a range like "33-34", or none), the road after it: the exit and the sign
+ *   are what the driver looks for;
+ * - "Take exit" / "Take the exit" becomes "Exit", the trailing full stop goes.
  */
 export function bannerInstruction(instruction: string): string {
   const text = instruction.trim();
@@ -28,9 +35,8 @@ export function bannerInstruction(instruction: string): string {
   let s = text
     .replace(/\.$/, "")
     .replace(/\s*\([^)]*\)/g, "")
-    .replace(/^take exit\b/i, "Exit");
-  s = s.replace(TOWARD, (_m, lead: string, list: string) => lead + firstOf(list));
-  s = s.replace(ONTO, (_m, lead: string, list: string) => lead + firstOf(list));
-  if (EXIT.test(s) && TOWARD.test(s)) s = s.replace(ONTO, "");
+    .replace(/^take (?:the )?exit\b/i, "Exit");
+  s = s.replace(LIST, (_m, lead: string, list: string) => lead + firstOf(list));
+  if (EXIT.test(s) && DIRECTION.test(s)) s = s.replace(ONTO, "");
   return s.replace(/\s+/g, " ").trim();
 }
