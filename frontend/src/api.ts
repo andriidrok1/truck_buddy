@@ -223,8 +223,8 @@ export async function redeemAccessCode(code: string) {
 export const api = {
   memory: () => request<{ turns: MemoryTurn[] }>(`/memory`),
   clearMemory: () => request<{ deleted: number }>(`/memory`, { method: "DELETE" }),
-  places: (category: Category, at: LatLng) =>
-    request<PlacesResponse>(`/places?category=${category}&lat=${at.lat}&lng=${at.lng}`),
+  places: (category: Category, at: LatLng, signal?: AbortSignal) =>
+    request<PlacesResponse>(`/places?category=${category}&lat=${at.lat}&lng=${at.lng}`, { signal }),
   /** POST /api/route; `via` = the stops already on the way, so a re-plan (new truck size, entrance,
    * off-route fallback) keeps them instead of silently routing straight to the destination. */
   route: async (from: LatLng, place: Place, skipParking = false, via: [number, number][] = [], tripId: string | null = null) =>
