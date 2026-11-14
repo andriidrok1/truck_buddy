@@ -340,6 +340,23 @@ export default function MapScreen() {
   };
 
   const backToIdle = () => setPhase(trip().idleSheet());
+  /** The generation of the tapped route being planned ("Setting route…" is its sheet), null when none is. */
+  const routing = useRef<number | null>(null);
+  /** A tapped route that is dropped must not leave "Setting route…" up: nothing else takes it down, and the
+   *  pins and Route buttons are dead while it shows. Only when "thinking" is still on screen: a mic turn that
+   *  began meanwhile owns "listening". */
+  const leaveRouting = (gen: number) => {
+    if (routing.current !== gen) return; // called off, or a later tap owns the sheet now
+    routing.current = null;
+    if (phaseRef.current === "thinking") backToIdle();
+  };
+  /** Close or Back while a tapped route is being planned: the request is called off, so its answer does not
+   *  replace the route a minute later, and a "thinking" that belongs to something else is never taken down. */
+  const cancelRouting = () => {
+    if (routing.current === null) return;
+    trip().abandonRoute(routing.current);
+    routing.current = null;
+  };
 
   const restored = useTripRestore(active, driving, restoredId, setDialogPhase, setFit);
 
@@ -559,6 +576,7 @@ export default function MapScreen() {
   };
 
   const onClose = () => {
+    cancelRouting();
     turn.pause();
     turn.cancel(); // discard any in-flight turn
     voice.cancelRecording().catch(() => {});
@@ -629,6 +647,7 @@ export default function MapScreen() {
     {
       state: { micCard: !!micCard, routesOpen, reply: isReplyCaption(caption), phase },
       cancel: () => {
+        cancelRouting();
         turn.cancel();
         voice.cancelRecording().catch(() => {});
         turn.pause();
@@ -795,6 +814,7 @@ export default function MapScreen() {
     const t = trip();
     const prev = t.active;
     const gen = t.claimRoute(); // the last tap wins over a route still in flight
+    routing.current = gen;
     turn.cancel(); // a copilot turn in flight gives way to the tap
     voice.stopSpeaking();
     setCaption(null);
@@ -804,12 +824,15 @@ export default function MapScreen() {
       // Breakdown providers: the driver needs the shop, not a satellite parking check (faster route).
       const isProvider = p.category === "service" || !!t.providers?.providers.some((x) => x.id === p.id);
       const res = await api.route(coordsRef.current, p, isProvider);
-      if (trip().routeGen !== gen) return; // a newer route landed while this one was planned
+      if (trip().routeGen !== gen) return leaveRouting(gen); // a newer route landed while this one was planned
+      routing.current = null;
       // Keep the previous destination among the alternatives.
       trip().setOptions((list) => [...(prev ? [prev.place] : []), ...list].filter((o) => o.id !== p.id));
       startRoute(res);
     } catch (e) {
-      if (trip().routeGen !== gen) return;
+      if (trip().routeGen !== gen) return leaveRouting(gen);
+      routing.current = null;
+      trip().releaseRoute(gen); // the route on screen stays: its re-plans may land again
       backToIdle();
       showToast(routeFailText(e));
     }
