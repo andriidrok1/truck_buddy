@@ -45,7 +45,7 @@ from services.agent.driver_name import (  # noqa: F401
 from services.agent.replies import (  # noqa: F401
     NOT_UNDERSTOOD, NOT_UNDERSTOOD_TYPED, ROUTE_DOWN, NO_TRUCK_ROUTE, PLACES_DOWN, LLM_DOWN, SOMETHING_BROKE, NO_PLACES, CATEGORY_OFF, NO_CHAIN_NEARBY,
     WHERE_ON, WHERE_IN, WHERE_UNKNOWN, CHEAPER_OFFER, ALREADY_BEST, NO_ROUTE_COST, cheaper_offer, NO_PRICE_AT,
-    NO_WALMART, ALL_REJECTED, heard_not_found, _COUNTRY, _town, _in_town, _street, _speak_street, _label_parts,
+    NO_WALMART, ALL_REJECTED, heard_not_found, NOT_FOUND_TYPED, typed_miss, _COUNTRY, _town, _in_town, _street, _speak_street, _label_parts,
     spoken_where, _tokens, _names_match, dest_check, arrival_street, _miles, TEMPLATES, NOTICES, CLOSURE, ALT_REPLY,
     NO_ALT, TILL_SAID, CHAINS_NO_ROUTE, CHAINS_OUTSIDE, CHAINS_NONE, CHAINS_DOWN, ALT_NO_ROUTE, VIA_ADDED, VIA_DWELL,
     VIA_NO_ROUTE, VIA_FULL, VIA_DUPLICATE, VIA_IS_DESTINATION, VIA_STRAIGHT, VIA_CLEARED, VIA_NONE, VIA_NONE_AHEAD,
@@ -471,7 +471,7 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
             with stage("tools"):
                 matches = await geocode(with_city(query, sess.get("city")), req.lat, req.lng)
             if not matches:
-                return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query), source=self.source)
+                return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query, req.input == "text"), source=self.source)
             name, lat, lng = matches[0].name.split(",")[0], matches[0].lat, matches[0].lng
         elif req.active_place and re.search(r"\b(there|ahead|at the destination|when I get)\b", text, re.I):
             name, lat, lng = req.active_place.name.split(",")[0], req.active_place.lat, req.active_place.lng
@@ -633,7 +633,7 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
                 if matches:
                     return await self._route_to(req, matches[0], [], text)
                 if not category:
-                    return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query), source=self.source)
+                    return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query, req.input == "text"), source=self.source)
             if category:
                 return await self._find(req, category, text, set())
             return AgentResponse(status="chat", transcript=text, reply=VIA_NO_ROUTE, source=self.source)
@@ -648,7 +648,7 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
                 return AgentResponse(status="chat", transcript=text, reply=VIA_NONE_AHEAD.format(what=what),
                                      source=self.source)
             what = str(d.get("query") or CATEGORY_WORD.get(str(d.get("category")), "a stop")).strip()
-            return AgentResponse(status="chat", transcript=text, reply=heard_not_found(what), source=self.source)
+            return AgentResponse(status="chat", transcript=text, reply=heard_not_found(what, req.input == "text"), source=self.source)
         if stop.id == place.id or haversine_km(stop.lat, stop.lng, place.lat, place.lng) < 0.15:
             # "stop at the 49er" while going to the 49er: the model echoed the destination's address and the
             # geocode of it came back as a new place (QA 2026-10-31, H9)
@@ -818,7 +818,7 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
             matches = await geocode(query, req.lat, req.lng)
         logger.info("agent find near=%r (llm %r) -> %s", query, near, matches[0].name if matches else "no match")
         if not matches:
-            return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query), source=self.source)
+            return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query, req.input == "text"), source=self.source)
         point = matches[0]
         sess["city"] = city_of(query, point) or sess.get("city")
         sess["near"] = {"query": query, "lat": point.lat, "lng": point.lng}
@@ -1146,7 +1146,7 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
                     if stop:
                         return await self._route_to(req, stop, sess["places"], text)
                 if not matches:
-                    return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query),
+                    return AgentResponse(status="chat", transcript=text, reply=heard_not_found(query, req.input == "text"),
                                          source=self.source)
                 place = matches[0]
                 if place.id in sess.get("dest_declined", []):  # said no to this one already in this dialog

@@ -566,6 +566,18 @@
    "ru": "Повтори или напиши."
   },
   {
+   "en": "Couldn't find {query}. Try another name or a nearby town.",
+   "ru": "Не нашёл «{query}». Попробуй другое название или город рядом."
+  },
+  {
+   "en": "Couldn't find {query}.",
+   "ru": "Не нашёл «{query}»."
+  },
+  {
+   "en": "Try another name or a nearby town.",
+   "ru": "Попробуй другое название или город рядом."
+  },
+  {
    "en": "{head} on {street} in {town}",
    "ru": "{head}, {street}, {town}",
    "part": true

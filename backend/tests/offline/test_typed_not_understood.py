@@ -43,3 +43,46 @@ def test_typed_line_in_russian_is_about_meaning(api_client):
     assert body["reply"].startswith("Не понял, о чём ты.") and "расслыш" not in body["reply"]
     r = api_client.post("/api/agent", json={"text": "??", "lang": "ru", **SAC})
     assert "расслыш" in r.json()["reply"]
+
+
+# ---- review of #181: a typed miss is "couldn't find", not "I heard... say it again" ----------------
+
+def _go_narnia(agent_sandbox, **kw):
+    agent_sandbox.llm.on(r"Narnia", {"intent": "go", "query": "Narnia"})
+    return _turn(agent_sandbox, "take me to Narnia", **kw)
+
+
+def test_typed_destination_not_found_is_not_heard():
+    from services.agent.replies import NOT_FOUND_TYPED, heard_not_found
+    assert heard_not_found("Narnia", typed=True) == NOT_FOUND_TYPED.format(query="Narnia") == \
+        "Couldn't find Narnia. Try another name or a nearby town."
+    assert heard_not_found("Narnia") == "I heard Narnia, but can't find it. Say it again or type it."
+
+
+def test_typed_go_nowhere_gets_the_typed_line(agent_sandbox):
+    res = _go_narnia(agent_sandbox, input="text")
+    assert res.status == "chat" and res.reply == "Couldn't find Narnia. Try another name or a nearby town."
+    assert "heard" not in _go_narnia(agent_sandbox, input="text").reply
+
+
+def test_spoken_go_nowhere_keeps_the_heard_line(agent_sandbox):
+    assert _go_narnia(agent_sandbox, input="voice").reply.startswith("I heard Narnia")
+    assert _go_narnia(agent_sandbox).reply.startswith("I heard Narnia")  # an older app sends no input
+
+
+def test_at_highway_speed_a_typed_miss_keeps_its_hint(agent_sandbox):
+    fast = {"speed_mps": 30.0}
+    assert _go_narnia(agent_sandbox, input="text", **fast).reply.endswith("Try another name or a nearby town.")
+    agent_sandbox.llm.on(r"blorp", {"intent": "unclear"})
+    assert _turn(agent_sandbox, "blorp blorp", input="text", **fast).reply == NOT_UNDERSTOOD_TYPED
+    # voice is still cut to one sentence at speed
+    assert _go_narnia(agent_sandbox, input="voice", **fast).reply == "I heard Narnia, but can't find it."
+
+
+def test_typed_not_found_in_the_russian_catalog():
+    from services import i18n
+    i18n.catalog.cache_clear()
+    misses: list[str] = []
+    ru = i18n.translate("Couldn't find Narnia. Try another name or a nearby town.", "ru",
+                        fallback=lambda s, c: misses.append(s) or None)
+    assert ru == "Не нашёл «Narnia». Попробуй другое название или город рядом." and not misses
