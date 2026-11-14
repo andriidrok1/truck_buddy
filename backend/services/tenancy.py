@@ -476,6 +476,25 @@ async def profile_get(sub: str) -> Optional[TruckProfile]:
     return profile
 
 
+async def has_profile(sub: str) -> bool:
+    """Whether this driver has finished setup, which is what the app skips onboarding on: a truck profile of their
+    own is stored, or the device is bound to a fleet truck (its sizes are the fleet's; profile_put stores only the
+    driver's name there), or a name is stored. Read from the store and not from this worker's copies: a sign-in
+    right after the profile was saved through another worker must not send the driver to onboarding again."""
+    _devices.pop(sub, None)
+    dev = await device_of(sub)
+    if dev is None:
+        return False
+    if dev.vehicle_id:
+        return True
+    sql = "SELECT (profile IS NOT NULL) OR (COALESCE(display_name, '') <> '') FROM drivers WHERE id = {p}"
+    if db.store() == "sqlite":
+        row = await db._sq_run(lambda con: con.execute(sql.format(p="?"), (dev.driver_id,)).fetchone())
+        return bool(row and row[0])
+    pool = await db._db()
+    return bool(await pool.fetchval(sql.format(p="$1"), dev.driver_id))
+
+
 async def profile_put(sub: str, profile: TruckProfile) -> None:
     """The app's profile. A fleet driver's sizes are not written anywhere: they change the trip, which the phone
     carries (decision 2026-11-02, bug 2: one driver's trailer and name were written onto the truck for all of

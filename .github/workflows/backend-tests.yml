@@ -10,6 +10,17 @@ on:
 jobs:
   offline:
     runs-on: ubuntu-latest
+    # A throwaway Postgres, so the tests that need the store production runs on (migrations, advisory locks, the
+    # account-creation race) run here instead of being skipped.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: tb
+          POSTGRES_DB: truckbuddy_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     defaults:
       run:
         working-directory: backend
@@ -24,6 +35,7 @@ jobs:
       - name: offline tests (no keys, no network)
         env:
           EXPO_PUBLIC_BACKEND_URL: ""
+          TEST_DATABASE_URL: postgresql://postgres:tb@localhost:5432/truckbuddy_test
         # tests/offline plus the offline files directly in tests/ (OFFLINE_FILES in tests/conftest.py)
         run: python -m pytest -n 0 -m "not live" -q tests
       - name: flake8
