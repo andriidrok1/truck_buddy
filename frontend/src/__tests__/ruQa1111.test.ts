@@ -180,8 +180,8 @@ describe("wording (src/i18n/ru.ts)", () => {
 
   test("nothing says the driver is a man", () => {
     expect(ru("You said: “где дизель”")).toBe("Твои слова: «где дизель»");
+    // "Agree and enter an access code" is gone with the sign-in screen (the code entry moved behind it).
     expect(ru("Agree and continue")).toBe("Принять и продолжить");
-    expect(ru("Agree and enter an access code")).toBe("Принять и ввести код доступа");
   });
 
   test("the location chip is short enough for its one line", () => {

@@ -50,6 +50,11 @@ export async function forgetHeight(): Promise<void> {
 
 export const isHeightConfirmed = () => confirmed === true;
 
+/** Whether the map may ask for the height at all: the height is known to be unconfirmed, and no returning
+ *  driver's truck is still on its way (`restoring` from src/data/profile.ts useRestorePending). Asking then would
+ *  save the phone's 13'6" default as the driver's answer before the real truck lands. */
+export const heightCardAllowed = (confirmed: boolean | null, restoring: boolean | undefined): boolean => confirmed === false && restoring === false;
+
 /** null while the flag is being read (show nothing yet), then true / false. */
 export function useHeightConfirmed(): boolean | null {
   const [v, setV] = useState<boolean | null>(confirmed);

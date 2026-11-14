@@ -28,12 +28,36 @@ const easProjectId = easEnv === "none" ? undefined : easEnv || EAS_PROJECT_ID;
 // (EXPO_PUBLIC_SENTRY_DSN, app/_layout.tsx). No slugs = no plugin, nothing else changes.
 const sentryOrg = process.env.SENTRY_ORG?.trim() || undefined;
 const sentryProject = process.env.SENTRY_PROJECT?.trim() || undefined;
+// Sign in with Google (src/signin/google.ts). iOS returns from Google's sheet through a URL scheme: the iOS
+// OAuth client id reversed ("com.googleusercontent.apps.<id>"). EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME gives it, else it
+// is worked out from EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID (when both are set they must agree). Neither set: the plugin
+// is left out (it throws without a scheme, and with no options at all it expects Firebase files), the config still
+// evaluates, and the Google button says sign-in is not set up. The client ids themselves are read at runtime (EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+// EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID); none of the three is a secret.
+const GOOGLE_SCHEME_PREFIX = "com.googleusercontent.apps.";
+const GOOGLE_CLIENT_SUFFIX = ".apps.googleusercontent.com";
+const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim() ?? "";
+const googleSchemeEnv = process.env.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME?.trim() ?? "";
+// A wrong scheme is not something to find out on a phone: a release iOS build without the right one crashes with
+// an NSException when the driver taps "Continue with Google". So a value that cannot be right stops the build here.
+if (googleIosClientId && !(googleIosClientId.endsWith(GOOGLE_CLIENT_SUFFIX) && googleIosClientId.length > GOOGLE_CLIENT_SUFFIX.length)) {
+  throw new Error(`EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID must look like "<id>${GOOGLE_CLIENT_SUFFIX}", got "${googleIosClientId}"`);
+}
+const googleSchemeDerived = googleIosClientId ? GOOGLE_SCHEME_PREFIX + googleIosClientId.slice(0, -GOOGLE_CLIENT_SUFFIX.length) : "";
+if (googleSchemeEnv && !(googleSchemeEnv.startsWith(GOOGLE_SCHEME_PREFIX) && googleSchemeEnv.length > GOOGLE_SCHEME_PREFIX.length)) {
+  throw new Error(`EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME must look like "${GOOGLE_SCHEME_PREFIX}<id>", got "${googleSchemeEnv}"`);
+}
+if (googleSchemeEnv && googleSchemeDerived && googleSchemeEnv !== googleSchemeDerived) {
+  throw new Error(`EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME ("${googleSchemeEnv}") is not the reverse of EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID (expected "${googleSchemeDerived}")`);
+}
+const googleIosUrlScheme = googleSchemeDerived || googleSchemeEnv;
+const googleSignIn = !!googleIosUrlScheme;
 
 const config: ExpoConfig = {
     "name": "TruckBuddy",
     "slug": "truckbuddy",
     "owner": "andrylik",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "truckbuddy",
@@ -47,10 +71,15 @@ const config: ExpoConfig = {
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "io.truckbuddy.ios",
+      // Sign in with Apple (src/signin/apple.ts): the entitlement; the capability is switched on for the App ID too.
+      "usesAppleSignIn": true,
       "infoPlist": {
         "LSApplicationQueriesSchemes": [
           "comgooglemaps",
-          "waze"
+          "waze",
+          // Our own Google sign-in scheme, listed exactly when the binary registers it: the app asks the system
+          // whether it can open it before calling Google's SDK (src/signin/available.ts googleUsable).
+          ...(googleSignIn ? [googleIosUrlScheme] : [])
         ],
         "NSLocationWhenInUseUsageDescription": "TruckBuddy uses your location to find truck-friendly parking, fuel and repair shops near you and to plan truck-safe routes.",
         "NSMicrophoneUsageDescription": "TruckBuddy listens after you tap the copilot so you can ask for stops and directions by voice while driving.",
@@ -138,7 +167,17 @@ const config: ExpoConfig = {
               "NSPrivacyCollectedDataTypePurposeAppFunctionality"
             ]
           },
-          // The random ID the server hands out on first launch (POST /auth/device): everything above is keyed by it.
+          // The account's email, from Apple or Google at sign-in (Apple may hand over a relay address): kept with the
+          // account and shown in the profile. The name above comes from the same sign-in or from onboarding.
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeEmailAddress",
+            "NSPrivacyCollectedDataTypeLinked": true,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
+          // The account's random ID on the server (made at the first sign-in): everything above is keyed by it.
           {
             "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeUserID",
             "NSPrivacyCollectedDataTypeLinked": true,
@@ -238,6 +277,10 @@ const config: ExpoConfig = {
         }
       ],
       "expo-asset",
+      "expo-apple-authentication",
+      ...(googleSignIn
+        ? ([["@react-native-google-signin/google-signin", { iosUrlScheme: googleIosUrlScheme }]] as [string, Record<string, string>][])
+        : []),
       ...(mapLibre ? (["@maplibre/maplibre-react-native"] as const) : []),
       ...(sentryOrg && sentryProject
         ? ([["@sentry/react-native/expo", { organization: sentryOrg, project: sentryProject }]] as [string, Record<string, string>][])

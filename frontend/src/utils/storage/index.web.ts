@@ -8,7 +8,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { noteWrite, removeAppKeys, settleWipeAfterSignIn, wipeGate } from "./pendingWipe";
+import { IDENTITY_KEYS, noteWrite, removeAppKeys, settleWipeAfterSignIn, wipeGate } from "./pendingWipe";
 import { AssertNoExtras, StorageBase, StorageItemValue } from "./storage-base";
 
 // A "Delete my data" the last run could not finish is finished before the first read (pendingWipe.ts).
@@ -18,6 +18,9 @@ const pending = () => wipeGate(removeSecure);
 
 /** Every key the app writes, a failed one retried once; the keys still there come back (pendingWipe.ts). */
 export const removeAllAppKeys = (): Promise<string[]> => removeAppKeys(removeSecure);
+/** The signed-in driver's keys only (sign-out): the language, consent, the intro flag and the theme stay. */
+export const removeIdentityKeys = (except: readonly string[] = []): Promise<string[]> =>
+  removeAppKeys(removeSecure, IDENTITY_KEYS.filter((k) => !except.includes(k)));
 /** A wipe still pending when the phone signs in again: the old leftovers go, the new identity stays. */
 export const settleWipe = (): Promise<string[]> => settleWipeAfterSignIn(removeSecure);
 
@@ -79,6 +82,17 @@ export class Storage extends StorageBase {
     value: Value,
   ): Promise<boolean> {
     return this.setItem(key, value);
+  }
+
+  async secureRead<T extends StorageItemValue>(key: string): Promise<{ ok: true; value: T | null } | { ok: false }> {
+    try {
+      const gate = pending();
+      if (gate) await gate;
+      return { ok: true, value: this.retrieve<T | null>(await AsyncStorage.getItem(key), null) };
+    } catch (e) {
+      this.warn("secureRead", key, e);
+      return { ok: false };
+    }
   }
 
   async secureRemove(key: string): Promise<boolean> {

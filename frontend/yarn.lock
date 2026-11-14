@@ -2092,6 +2092,11 @@
   resolved "https://registry.yarnpkg.com/@react-native-community/netinfo/-/netinfo-12.0.1.tgz#fec75f4093c27778479d8927b4f51f133b8a13a4"
   integrity sha512-P/3caXIvfYSJG8AWJVefukg+ZGRPs+M4Lp3pNJtgcTYoJxCjWrKQGNnCkj/Cz//zWa/avGed0i/wzm0T8vV2IQ==
 
+"@react-native-google-signin/google-signin@17.0.0":
+  version "17.0.0"
+  resolved "https://registry.yarnpkg.com/@react-native-google-signin/google-signin/-/google-signin-17.0.0.tgz#4e50f283765ce29b92a03d89a58a55382c2cc31d"
+  integrity sha512-FAnq5tkoq01np7jCzGjBYK1QPS61hJxjLJHJyJjQN3gaTwAZiGll18Xn3nygITMsZ/WoJ0jmskuHSG/oknUskQ==
+
 "@react-native-masked-view/masked-view@^0.3.2":
   version "0.3.2"
   resolved "https://registry.yarnpkg.com/@react-native-masked-view/masked-view/-/masked-view-0.3.2.tgz#7064533a573e3539ec912f59c1f457371bf49dd9"
@@ -4501,6 +4506,11 @@ expect@30.5.2, expect@^30.0.0:
     jest-mock "30.5.2"
     jest-util "30.5.1"
 
+expo-apple-authentication@~58.0.3:
+  version "58.0.3"
+  resolved "https://registry.yarnpkg.com/expo-apple-authentication/-/expo-apple-authentication-58.0.3.tgz#78a9cb39e6b25588334fa04839361fe5fa3a021e"
+  integrity sha512-w7WFqHs6A89dAlKzv92dQV7JmoFouVso0NzmqfcKqaTbjJJcf/4+DDEa/oIMbUWxJDdWCz1Kx08/08FyVpr/+A==
+
 expo-asset@~58.0.18:
   version "58.0.18"
   resolved "https://registry.yarnpkg.com/expo-asset/-/expo-asset-58.0.18.tgz#e4912cebe40d8b9f3826409378f3243eed640ae7"
@@ -4521,6 +4531,11 @@ expo-constants@58.0.13, expo-constants@~58.0.13:
   dependencies:
     "@expo/env" "~2.5.3"
     "@expo/require-utils" "^58.0.4"
+
+expo-crypto@~58.0.8:
+  version "58.0.8"
+  resolved "https://registry.yarnpkg.com/expo-crypto/-/expo-crypto-58.0.8.tgz#2545c08169cc60d954ad83c7d659a624666e818a"
+  integrity sha512-yMSiMlallOweQ28oQ3BqJf6I/4ZoBggFNRg+PfjG1NbQWBWzGKmkPPUrd3yT0oPW4P+AYppg+Mw6xoAYddLUKA==
 
 expo-dev-client@~58.0.0:
   version "58.0.16"

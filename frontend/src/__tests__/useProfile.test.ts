@@ -1,5 +1,12 @@
+import { act, renderHook } from "@testing-library/react-native";
+import { AppState, type AppStateStatus } from "react-native";
+
+import { useNetStore } from "../state/netStore";
+
 import { ApiError, api } from "../api";
-import { fetchProfile, isMissing, resetProfile, saveProfile, setMidTripCheck, UNSYNCED_KEY } from "../data/profile";
+import { beginRestore, fetchProfile, isMissing, PROFILE_KEY, restorePending, resetProfile, saveProfile, setMidTripCheck, UNSYNCED_KEY, useProfileSync } from "../data/profile";
+import { queryClient } from "../query-client";
+import { forgetHeight, heightCardAllowed, isHeightConfirmed } from "../truck/heightConfirmed";
 import { DEFAULT_TRUCK, getTruckProfile, saveTruckProfile } from "../hooks/useTruckProfile";
 import { storage } from "../utils/storage";
 
@@ -102,4 +109,129 @@ test("a fleet truck's stored sizes do not undo a trip's change; between trips th
   expect((await fetchProfile()).trailer_ft).toBe(48);
   setMidTripCheck(() => false);
   expect((await fetchProfile())).toMatchObject({ trailer_ft: 53, driver_name: "Sam" });
+});
+
+describe("a returning driver's truck on a new phone", () => {
+  beforeEach(async () => {
+    await forgetHeight();
+    setMidTripCheck(() => false);
+  });
+
+  test("a stored height that is not the default is an answer the driver gave: the map does not ask again", async () => {
+    A.profile.mockResolvedValue({ profile: { ...DEFAULT_TRUCK, height_in: 168 }, source: "driver" });
+    await fetchProfile();
+    expect(getTruckProfile().height_in).toBe(168);
+    expect(isHeightConfirmed()).toBe(true);
+  });
+
+  test("the default height stays unconfirmed: a driver who skipped the truck step has it stored too, and the map must still ask", async () => {
+    A.profile.mockResolvedValue({ profile: { ...DEFAULT_TRUCK, driver_name: "Ray" }, source: "driver" });
+    await fetchProfile();
+    expect(isHeightConfirmed()).toBe(false);
+  });
+
+  test("no profile on the server (404), or no answer: nothing is confirmed", async () => {
+    A.profile.mockRejectedValue(new ApiError(404, "/me/profile"));
+    await fetchProfile();
+    expect(isHeightConfirmed()).toBe(false);
+    A.profile.mockRejectedValue(new ApiError(503, "/me/profile"));
+    await fetchProfile().catch(() => undefined);
+    expect(isHeightConfirmed()).toBe(false);
+  });
+});
+
+describe("when the server's profile is pulled (root layout)", () => {
+  const tick = async () => {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  };
+  afterEach(() => queryClient.clear());
+
+  test("not before sign-in; right after it; and again for the next driver after a sign-out", async () => {
+    A.profile.mockResolvedValue({ profile: { ...DEFAULT_TRUCK, height_in: 158 }, source: "driver" });
+    const hook = await renderHook(({ signedIn }: { signedIn: boolean }) => useProfileSync(signedIn), { initialProps: { signedIn: false } });
+    await tick();
+    expect(A.profile).not.toHaveBeenCalled(); // a cold start on the sign-in screen: no request that can only be a 401
+
+    await hook.rerender({ signedIn: true }); // the token just went in
+    await tick();
+    expect(A.profile).toHaveBeenCalledTimes(1);
+    expect(getTruckProfile().height_in).toBe(158);
+    expect(queryClient.getQueryData(PROFILE_KEY)).toMatchObject({ height_in: 158 });
+
+    await hook.rerender({ signedIn: false }); // signed out
+    queryClient.clear();
+    await resetProfile();
+    A.profile.mockResolvedValue({ profile: { ...DEFAULT_TRUCK, height_in: 150 }, source: "driver" });
+    await hook.rerender({ signedIn: true }); // someone else signs in, same run
+    await tick();
+    expect(A.profile).toHaveBeenCalledTimes(2);
+    expect(getTruckProfile().height_in).toBe(150);
+  });
+
+  test("a cold start with a token pulls once", async () => {
+    A.profile.mockResolvedValue({ profile: DEFAULT_TRUCK, source: "driver" });
+    const hook = await renderHook(() => useProfileSync(true));
+    await tick();
+    await hook.rerender({});
+    await tick();
+    expect(A.profile).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a returning driver's truck that has not landed (went to the map anyway)", () => {
+  const tick = async () => {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  };
+  afterEach(async () => {
+    await resetProfile(); // writes the cache: the clear comes after, or its gc timer keeps jest alive
+    queryClient.clear();
+  });
+
+  test("asked again on every return to the foreground and when the connection comes back, and no more once it landed", async () => {
+    let onChange: (s: AppStateStatus) => void = () => {};
+    const original = AppState.addEventListener;
+    AppState.addEventListener = ((_t: string, h: (s: AppStateStatus) => void) => {
+      onChange = h;
+      return { remove: () => {} };
+    }) as typeof AppState.addEventListener;
+    useNetStore.setState({ net: false, hinted: false });
+    await beginRestore();
+    A.profile.mockRejectedValue(new ApiError(503, "/me/profile"));
+    // The app's client retries a failed query on timers of its own; one attempt per trigger keeps the count exact.
+    queryClient.setDefaultOptions({ queries: { retry: false } });
+    const hook = await renderHook(() => useProfileSync(true));
+    await tick();
+    expect(A.profile).toHaveBeenCalledTimes(1);
+    expect(restorePending()).toBe(true);
+
+    await act(async () => onChange("active"));
+    await tick();
+    expect(A.profile).toHaveBeenCalledTimes(2);
+
+    A.profile.mockResolvedValue({ profile: { ...DEFAULT_TRUCK, height_in: 158 }, source: "driver" });
+    await act(async () => useNetStore.setState({ net: true }));
+    await tick();
+    expect(A.profile).toHaveBeenCalledTimes(3);
+    expect(restorePending()).toBe(false);
+    expect(getTruckProfile().height_in).toBe(158);
+
+    await act(async () => onChange("active"));
+    await tick();
+    expect(A.profile).toHaveBeenCalledTimes(3); // landed: the usual start-up pull only, not one per foreground
+    hook.unmount();
+    queryClient.setDefaultOptions({ queries: {} });
+    AppState.addEventListener = original;
+  });
+});
+
+test("the height card stays away while a returning driver's truck is on its way, and while either flag is unread", () => {
+  expect(heightCardAllowed(false, false)).toBe(true);
+  expect(heightCardAllowed(false, true)).toBe(false); // the map opened "anyway": no default-height answer can be saved
+  expect(heightCardAllowed(false, undefined)).toBe(false);
+  expect(heightCardAllowed(null, false)).toBe(false);
+  expect(heightCardAllowed(true, false)).toBe(false);
 });

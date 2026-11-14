@@ -5,7 +5,7 @@ import { Text } from "@/src/i18n/Text";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { requestCode, setToken, signedInWithCode } from "@/src/auth";
+import { requestCode, signedInWithCode } from "@/src/auth";
 import { Icon } from "@/src/components/Icon";
 import { PressableScale } from "@/src/components/PressableScale";
 import { EldSection } from "@/src/components/EldSection";
@@ -14,11 +14,10 @@ import { OfflineMapsSection } from "@/src/components/OfflineMapsSection";
 import { styles } from "@/src/components/truckProfileStyles";
 import { WAKE_SUPPORTED } from "@/src/hooks/useWakeWord";
 import { saveProfile } from "@/src/data/profile";
-import { deleteMyData } from "@/src/state/firstLaunch";
+import { deleteMyData, signedOutReset } from "@/src/state/firstLaunch";
 import { DEFAULT_TRUCK, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
 import { requestTruckReroute, setHandsFree, setSpeedAlerts, useHandsFree, useSpeedAlerts } from "@/src/state/settingsStore";
 import { Chip, PrefsForm, ToggleRow, type Prefs } from "@/src/components/PrefsForm";
-import { setSim } from "@/src/sim";
 import { parseMpg, truckErrors, truckFromInputs } from "@/src/truck/validate";
 import { confirmHeight } from "@/src/truck/heightConfirmed";
 import { spacing, useTheme, setThemePref, useThemePref, type ThemePref } from "@/src/theme";
@@ -329,15 +328,15 @@ export default function TruckProfileScreen() {
           <Text style={[styles.signOutText, { color: colors.onSurface }]}>Reset to defaults</Text>
         </PressableScale>
 
-        {/* Only a driver who typed an access code has somewhere to sign out to; open sign-ups don't. */}
+        {/* A tester signed in with an access code. An account's Sign out and Delete account come with the account section (APP-3). */}
         {signedInWithCode() && (
           <PressableScale
             testID="sign-out"
             accessibilityLabel={t("Sign out")}
             onPress={async () => {
-              setSim(null);
-              requestCode(); // back to the access-code screen, not an automatic sign-in
-              await setToken(null);
+              // Nothing of this tester stays for whoever signs in next (the truck, the trip, the Motive key).
+              await signedOutReset();
+              requestCode(); // the sign-in screen opens on the code screen, in the builds that have one
             }}
             style={[styles.signOut, { borderColor: colors.border }]}
           >

@@ -1,32 +1,47 @@
-import { useState } from "react";
-import { ActivityIndicator, Image, Platform, StyleSheet, TextInput } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, BackHandler, Image, Platform, StyleSheet, TextInput } from "react-native";
 import { Text } from "../i18n/Text";
 import { KeyboardAwareScrollView } from "@/src/keyboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { redeemAccessCode } from "../api";
+import { signInWithCode } from "../signin";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import { PressableScale } from "./PressableScale";
 import { t } from "../i18n";
 
-/** The driver enters an access code (tester code, or the shared code when open sign-up is off).
- *  `onSkip` adds a "Continue without a code" link. */
+/** The driver enters an access code (a tester's, or the shared one). Reached from the sign-in screen in Expo Go and
+ *  dev builds only (src/components/SignInGate.tsx). `onSkip` adds the link back to it. */
 export function AccessGate({ onSkip }: { onSkip?: () => void }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const busyRef = useRef(false); // what the Back listener reads
+
+  // Android's Back: back to the sign-in screen, like the link below. The gates render outside the Stack, so without
+  // this the system takes the press and the app goes to the background. While a code is being checked the press is
+  // swallowed: the sign-in may land any moment. Without `onSkip` (nothing to go back to) the system has it.
+  useEffect(() => {
+    if (!onSkip) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (!busyRef.current) onSkip();
+      return true;
+    });
+    return () => sub.remove();
+  }, [onSkip]);
 
   const submit = async () => {
     if (!code.trim() || busy) return;
     setBusy(true);
+    busyRef.current = true;
     setError("");
     try {
-      await redeemAccessCode(code.trim());
+      await signInWithCode(code.trim());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong. Try again.");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -73,8 +88,8 @@ export function AccessGate({ onSkip }: { onSkip?: () => void }) {
         {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={[styles.buttonText, { color: colors.onBrandPrimary }]}>Continue</Text>}
       </PressableScale>
       {onSkip && (
-        <PressableScale testID="access-code-skip" accessibilityRole="button" onPress={onSkip}>
-          <Text style={[styles.skip, { color: colors.info }]}>Continue without a code</Text>
+        <PressableScale testID="access-code-skip" accessibilityRole="button" onPress={onSkip} style={styles.skipHit}>
+          <Text style={[styles.skip, { color: colors.info }]}>Back to sign-in</Text>
         </PressableScale>
       )}
     </KeyboardAwareScrollView>
@@ -102,5 +117,6 @@ const styles = StyleSheet.create({
   buttonWrap: { alignSelf: "stretch" },
   button: { height: 56, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", marginTop: spacing.sm },
   buttonText: { fontFamily: fonts.bold, fontSize: 17 },
-  skip: { fontFamily: fonts.semibold, fontSize: 15, paddingVertical: spacing.md },
+  skipHit: { minHeight: 56, minWidth: 56, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing.sm },
+  skip: { fontFamily: fonts.semibold, fontSize: 15 },
 });

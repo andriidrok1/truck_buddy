@@ -121,6 +121,88 @@ test("restore brings back what a killed app left in storage, ahead of new events
   expect(h.posts[0].map((e) => e.kind)).toEqual(["route_started", "route_ended"]);
 });
 
+describe("the same events never go out twice (re-review of #172)", () => {
+  /** The reproduction from the review: identity-stamped events, a debounced mirror that writes at once. */
+  function stamped() {
+    let disk: TripEvent[] = [];
+    let who: string | null = "acct-x";
+    const posted: TripEvent[] = [];
+    const log = createTripLog({
+      post: async (b) => {
+        posted.push(...b);
+      },
+      isRefused: () => false,
+      online: () => true,
+      now: () => 1,
+      identity: () => who,
+      load: async () => disk,
+      save: async (e) => {
+        disk = JSON.parse(JSON.stringify(e));
+      },
+      setTimer: (fn) => {
+        fn();
+        return 1;
+      },
+      clearTimer: () => {},
+    });
+    return { log, posted, disk: () => disk, as: (w: string | null) => (who = w) };
+  }
+
+  test("forced sign-out while driving, the same account back without a kill: each held event is posted once", async () => {
+    const h = stamped();
+    await h.log.restore(); // the first map mount
+    h.log.log("stop", {}, "trip-1");
+    h.log.log("position", {}, "trip-1");
+    await h.log.stash(); // the server signed the driver out, the trip is held
+    h.as(null);
+    expect(h.log.size()).toBe(0);
+    expect(h.disk()).toHaveLength(2);
+    h.as("acct-x"); // the same account signs back in
+    await h.log.restore(); // settleHeldTrip
+    await h.log.restore(); // and the map mounting again
+    expect(h.log.size()).toBe(2);
+    expect(await h.log.flush()).toBe("sent");
+    expect(h.posted.map((e) => e.kind)).toEqual(["stop", "position"]);
+    expect(h.posted.every((e) => !("_id" in e) && !("_who" in e))).toBe(true); // the stamps stay on the phone
+  });
+
+  test("without a stash too: a second restore of what is already in memory adds nothing", async () => {
+    const h = stamped();
+    h.log.log("stop", {}, "trip-1"); // written to disk by the mirror at once
+    await h.log.restore();
+    await h.log.restore();
+    expect(h.log.size()).toBe(1);
+    await h.log.flush();
+    expect(h.posted).toHaveLength(1);
+  });
+
+  test("while stashed nothing overwrites the disk copy and nothing is sent; a clear (someone else signed in) drops it", async () => {
+    const h = stamped();
+    h.log.log("stop", {}, "trip-1");
+    await h.log.stash();
+    h.as(null);
+    h.log.log("app_background", {}); // a screen going away
+    expect(h.disk().map((e) => e.kind)).toEqual(["stop"]);
+    h.as("acct-y");
+    expect(await h.log.flush()).not.toBe("sent");
+    expect(h.posted).toEqual([]);
+    await h.log.clear();
+    expect(h.disk()).toEqual([]);
+    await h.log.restore();
+    expect(h.log.size()).toBe(0);
+  });
+
+  test("events written before ids existed get one on restore, and a duplicate already on disk is sent once", async () => {
+    const h = harness();
+    const old = { t: "2023-11-14T22:00:00.000Z", kind: "route_started", data: {}, trip_id: "old" };
+    h.setSaved([old, { ...old, _id: "e1" } as TripEvent, { ...old, _id: "e1" } as TripEvent]);
+    await h.log.restore();
+    expect(h.log.size()).toBe(2);
+    await h.log.flush();
+    expect(h.posts[0]).toHaveLength(2);
+  });
+});
+
 test("a flush in flight is not doubled", async () => {
   let release: () => void = () => {};
   const h = harness({ post: () => new Promise<void>((r) => (release = r)) });

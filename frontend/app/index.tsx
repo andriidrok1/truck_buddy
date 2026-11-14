@@ -20,7 +20,7 @@ import { HeightConfirmCard } from "@/src/components/HeightConfirmCard";
 import { HowToSheet } from "@/src/components/HowToSheet";
 import { useHowToFlow } from "@/src/hooks/useHowToFlow";
 import { useEldToken } from "@/src/eld";
-import { confirmHeight, isHeightConfirmed, useHeightConfirmed } from "@/src/truck/heightConfirmed";
+import { confirmHeight, heightCardAllowed, isHeightConfirmed, useHeightConfirmed } from "@/src/truck/heightConfirmed";
 import { NavBanner } from "@/src/components/NavBanner";
 import { dial, ProvidersList } from "@/src/components/ProvidersList";
 import { RestoredBanner } from "@/src/components/RestoredBanner";
@@ -52,7 +52,7 @@ import { NUDGE_KEY_PREFIX, useNudges } from "@/src/hooks/useNudges";
 import { useSpeechQueue } from "@/src/hooks/useSpeechQueue";
 import { useToast } from "@/src/hooks/useToast";
 import { useTripRestore } from "@/src/hooks/useTripRestore";
-import { saveProfile } from "@/src/data/profile";
+import { saveProfile, useRestorePending } from "@/src/data/profile";
 import { getTruckProfile, isOnboarded, truckLabel, useTruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { askWithDeadline } from "@/src/voice/micAsk";
@@ -196,13 +196,17 @@ export default function MapScreen() {
     return () => clearTimeout(t);
   }, [caption, voice.speaking]);
 
-  // First launch: meet the copilot.
+  // First launch: meet the copilot. Not while a returning driver's truck is still on its way (they went to the map
+  // with no signal): they are not new, and onboarding would save its defaults over the truck when it lands. If it
+  // turns out the server has none, onboarding comes once the answer is in.
+  const restoring = useRestorePending();
   useEffect(() => {
+    if (restoring !== false) return;
     isOnboarded().then((ok) => {
       if (!ok) router.replace("/onboarding");
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [restoring]);
 
   // Break reminder while a route is active.
   useBreakReminder(active, truck, say);
@@ -251,7 +255,7 @@ export default function MapScreen() {
   // and Go waits for it, so it loses nothing by waiting, while two things on screen at once is what the
   // one-at-a-time rule is for. Until the how-to flag is read the card waits too, or it would flash for a frame.
   const showHeightCard =
-    heightConfirmed === false && focused && !micCard && !busy && !howTo.holdsCards;
+    heightCardAllowed(heightConfirmed, restoring) && focused && !micCard && !busy && !howTo.holdsCards;
   const cardUp = (showHeightCard || !!micCard) && cardH > 0;
   // The bubble sits above a card on the map, never under it: under the height card the whole answer was hidden
   // (UI review 2026-11-05, third pass, M2).

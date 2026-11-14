@@ -9,7 +9,9 @@
       "distribution": "internal",
       "channel": "development",
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "http://10.0.2.2:8001"
+        "EXPO_PUBLIC_BACKEND_URL": "http://10.0.2.2:8001",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "791329423713-ognp7o7fsuc5tsc10tin78vpellprmmt.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "791329423713-ok46lrccka4u7saq80o28gp3f4p27bl5.apps.googleusercontent.com"
       },
       "android": {
         "buildType": "apk"
@@ -19,7 +21,9 @@
       "distribution": "internal",
       "channel": "staging",
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://api.truckbuddy.io"
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.truckbuddy.io",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "791329423713-ognp7o7fsuc5tsc10tin78vpellprmmt.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "791329423713-ok46lrccka4u7saq80o28gp3f4p27bl5.apps.googleusercontent.com"
       },
       "android": {
         "buildType": "apk"
@@ -29,7 +33,9 @@
       "autoIncrement": true,
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://api.truckbuddy.io"
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.truckbuddy.io",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "791329423713-ognp7o7fsuc5tsc10tin78vpellprmmt.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "791329423713-ok46lrccka4u7saq80o28gp3f4p27bl5.apps.googleusercontent.com"
       }
     }
   },

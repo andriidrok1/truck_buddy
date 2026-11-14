@@ -23,10 +23,17 @@ export const APP_KEYS = [
   "trip_v2",
   "trip_arrived_v1",
   "trip_events_pending",
+  "account_v1",
+  "profile_restore_v1",
+  "apple_name_pending_v1",
+  "held_trip_v1",
 ] as const;
 
 /** Keychain keys (AsyncStorage on web). */
-export const SECURE_KEYS = ["auth_token", "auth_role", "auth_via", "auth_refresh", "eld_token_v1"] as const;
+export const SECURE_KEYS = ["auth_token", "auth_role", "auth_via", "auth_refresh", "auth_refresh_sent", "eld_token_v1"] as const;
+/** Written with "after first unlock": the token is renewed while the phone is locked (guidance with the screen
+ *  off), and the Keychain's default refuses a locked phone. */
+export const AUTH_KEYS: readonly string[] = ["auth_token", "auth_role", "auth_via", "auth_refresh", "auth_refresh_sent"];
 
 type Remove = (key: string) => Promise<unknown>;
 
@@ -40,6 +47,19 @@ async function tryRemove(remove: Remove, key: string): Promise<boolean> {
 }
 
 const ALL_KEYS: string[] = [...APP_KEYS, ...SECURE_KEYS];
+
+/** What stays on the phone when the driver signs out or the server turns the token down: choices about the phone,
+ *  not about the driver (src/state/firstLaunch.ts signedOutReset). Not the AI consent (ai_consent_v2): it is the
+ *  driver's agreement, and whoever signs in next sees the consent screen (review of #172). "Delete my data" removes
+ *  these too. */
+export const KEPT_ON_SIGN_OUT = ["lang_v1", "intro_seen_v1", "theme_pref_v1"] as const;
+/** The trip of a driver the server signed out mid-drive, kept for that same account to come back to
+ *  (src/state/heldTrip.ts). Not a driver's key in the sense below: a sign-out pass leaves it, and the code that
+ *  wrote it removes it. "Delete my data" removes it with everything else. */
+export const HELD_TRIP_KEY = "held_trip_v1";
+/** Everything that belongs to the signed-in driver: the token and how it was got (auth_via), the account, the
+ *  truck, the trip, the settings, the Motive key. The next driver on this phone must find none of it. */
+export const IDENTITY_KEYS: string[] = ALL_KEYS.filter((k) => k !== HELD_TRIP_KEY && !(KEPT_ON_SIGN_OUT as readonly string[]).includes(k));
 const isSecure = (k: string) => (SECURE_KEYS as readonly string[]).includes(k);
 
 /** The flag holds what is still to remove: "*" while a wipe runs (a crash midway leaves everything to do), then
@@ -89,9 +109,11 @@ const writtenSinceWipe = new Set<string>();
 /** Called by the storage helpers on every write. */
 export const noteWrite = (key: string) => writtenSinceWipe.add(key);
 
-export async function markWipePending(): Promise<void> {
+/** `keys`: what this wipe is about to remove (a sign-out names the driver's keys); none = everything. A crash
+ *  midway leaves exactly those to the next cold start. */
+export async function markWipePending(keys?: string[]): Promise<void> {
   writtenSinceWipe.clear();
-  await setFlag("*");
+  await setFlag(keys ?? "*");
 }
 
 /**

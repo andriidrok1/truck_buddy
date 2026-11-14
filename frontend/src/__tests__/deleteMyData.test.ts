@@ -12,6 +12,7 @@ import { DEFAULT_TRUCK, getTruckProfile, isOnboarded, setOnboarded } from "../ho
 import { loadLang, setLang, useLangStore } from "../i18n";
 import { tripLog } from "../net/tripEvents";
 import { deleteMyData, resetToFirstLaunch, rootScreen } from "../state/firstLaunch";
+import { getAccount, saveAccount } from "../state/account";
 import { loadHowTo, markHowToSeen } from "../state/howTo";
 import { loadIntro, markIntroSeen } from "../state/intro";
 import { saveActiveRoute } from "../state/routeStore";
@@ -38,6 +39,7 @@ async function fillTheAppUp() {
   await giveConsent();
   await setToken("old-device-token", "driver");
   await setEldToken("motive-key");
+  await saveAccount({ name: "Mike Johnson", email: "mike@example.com", provider: "google" });
   setThemePref("dark");
   await setOnboarded();
   await confirmHeight();
@@ -93,6 +95,7 @@ test("Delete my data: storage holds no app key, every store is back to a fresh i
   expect(getTruckProfile()).toEqual(DEFAULT_TRUCK);
   expect(useSettings.getState().speedAlerts).toBe(false);
   expect(tripLog.size()).toBe(0);
+  expect(getAccount()).toBeNull();
 
   await consent.rerender({});
   await auth.rerender({});
@@ -101,20 +104,7 @@ test("Delete my data: storage holds no app key, every store is back to a fresh i
   expect(rootScreen(useLangStore.getState().chosen, await loadIntro(), consent.result.current, auth.result.current)).toBe("language");
 });
 
-test("the gates come in first-launch order: language, the intro, consent, a new anonymous sign-in, then the app", () => {
-  expect(rootScreen(false, false, "no", "out")).toBe("language");
-  expect(rootScreen(true, false, "no", "out")).toBe("intro");
-  expect(rootScreen(true, true, "no", "out")).toBe("consent");
-  expect(rootScreen(true, true, "yes", "out")).toBe("device");
-  expect(rootScreen(true, true, "yes", "in")).toBe("app");
-  // The language screen comes first even when the intro was seen (a wipe that left the intro key behind).
-  expect(rootScreen(false, true, "no", "out")).toBe("language");
-});
-
-test("a driver who agreed to the consent screen before the intro existed never gets it", () => {
-  expect(rootScreen(true, false, "yes", "out")).toBe("device");
-  expect(rootScreen(true, false, "yes", "in")).toBe("app");
-});
+// The order of the gates has its own file: rootScreen.test.ts.
 
 test("no server, nothing deleted: the phone keeps its data and the driver gets the error", async () => {
   await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
@@ -231,6 +221,68 @@ describe("the delete and the old token (review of #129)", () => {
     await late;
     expect(calls[calls.length - 1].auth).toBeUndefined();
     expect(getToken()).toBe("new-device-token");
+  });
+});
+
+describe("Delete my data with an expired access token (re-review of #172)", () => {
+  type Call = { method: string; path: string; auth: string | undefined };
+  let calls: Call[];
+  const realFetch = global.fetch;
+  const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  const b64url = (v: string) => Buffer.from(v).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const EXPIRED = `${b64url('{"alg":"HS256"}')}.${b64url(JSON.stringify({ sub: "drv-1", exp: Math.floor(Date.now() / 1000) - 60 }))}.sig`;
+  function server(refresh: "ok" | "refused") {
+    calls = [];
+    global.fetch = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      const call = { method: init?.method ?? "GET", path: String(url).replace("https://ci.invalid/api", ""), auth: headers.Authorization };
+      calls.push(call);
+      if (call.path === "/auth/refresh") {
+        return refresh === "ok" ? reply(200, { access_token: "FRESH", refresh_token: "R2", role: "driver" }) : reply(401, { detail: "Invalid or expired refresh token" });
+      }
+      if (call.path === "/auth/renew") return reply(401, { detail: "Invalid or expired token" });
+      if (call.auth !== "Bearer FRESH") return reply(401, { detail: "Invalid or expired token" });
+      if (call.method === "DELETE") return reply(200, { deleted: 2 });
+      return reply(200, { turns: [] });
+    }) as typeof fetch;
+  }
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+  /** Fails the test instead of hanging jest when the delete never settles (the bug). */
+  const within = <T,>(p: Promise<T>, ms = 3000) =>
+    Promise.race([p, new Promise<never>((_, reject) => setTimeout(() => reject(new Error("deleteMyData never settled")), ms))]);
+
+  test("the 401 lets the hold go, the token is renewed once, the DELETE goes again with the new token and the phone is wiped", async () => {
+    await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
+    await setToken(EXPIRED, "driver", "code", "R1");
+    server("ok");
+    const router = { canDismiss: () => false, dismissAll: jest.fn() };
+    let ok = false;
+    await act(async () => {
+      ok = await within(deleteMyData(router));
+    });
+    expect(ok).toBe(true);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["DELETE /memory", "POST /auth/refresh", "DELETE /memory"]);
+    expect(calls[2].auth).toBe("Bearer FRESH");
+    expect(getToken()).toBeNull();
+    expect(await AsyncStorage.getItem("lang_v1")).toBeNull();
+  });
+
+  test("the renewal is refused: nothing is wiped, the delete settles with false, the next requests are not held", async () => {
+    await AsyncStorage.setItem("lang_v1", JSON.stringify("ru"));
+    await setToken(EXPIRED, "driver", "code", "R1");
+    server("refused");
+    const router = { canDismiss: () => true, dismissAll: jest.fn() };
+    let ok = true;
+    await act(async () => {
+      ok = await within(deleteMyData(router));
+    });
+    expect(ok).toBe(false);
+    expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1); // one retry only after a renewal that worked
+    expect(router.dismissAll).not.toHaveBeenCalled();
+    expect(await AsyncStorage.getItem("lang_v1")).toBe(JSON.stringify("ru"));
+    await within(api.memory().catch(() => undefined)); // the hold is down: this does not wait forever
   });
 });
 

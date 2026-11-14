@@ -48,4 +48,7 @@ export abstract class StorageBase {
     value: Value,
   ): Promise<boolean>;
   abstract secureRemove(key: string): Promise<boolean>;
+  /** Like secureGet, but says whether the read itself worked: a Keychain that cannot be read (before the first
+   *  unlock after a reboot) is not the same as a key that is not there. `value` null = absent. */
+  abstract secureRead<T extends StorageItemValue>(key: string): Promise<{ ok: true; value: T | null } | { ok: false }>;
 }

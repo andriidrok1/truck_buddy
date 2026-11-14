@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BackHandler, Platform, TextInput, View } from "react-native";
 import { Text } from "@/src/i18n/Text";
 import { KeyboardAwareScrollView, KeyboardStickyView } from "@/src/keyboard";
@@ -23,6 +23,7 @@ import { heardTruckLine, saidHeight, truckErrors, truckFromInputs } from "@/src/
 import { LANGS, setLang, t, UK_READY, useLang, type Lang } from "@/src/i18n";
 import { confirmHeight } from "@/src/truck/heightConfirmed";
 import { markHowToDue } from "@/src/state/howTo";
+import { useAccount, withAccountName } from "@/src/state/account";
 import { NOT_CAUGHT, spoken, STEPS, TAP_TO_TALK, thought, type Step } from "@/src/voice/onboardingLines";
 
 type Mode = "speaking" | "listening" | "thinking" | "waiting";
@@ -35,7 +36,10 @@ export default function Onboarding() {
   const insets = useSafeAreaInsets();
   const lang = useLang();
   const { colors } = useTheme();
-  const saved = useTruckProfile();
+  const stored = useTruckProfile();
+  // The name step starts with the first name Apple or Google gave at sign-in; the driver can say or type another.
+  const accountName = useAccount()?.name;
+  const saved = useMemo(() => withAccountName(stored, accountName), [stored, accountName]);
   const voice = useVoice();
 
   const [step, setStep] = useState<Step>("name");
