@@ -533,4 +533,19 @@ export const RU: Record<string, string> = {
   "Needs Motive": "Нужен Motive",
   "{phrase} (needs Motive)": "{phrase} (нужен Motive)",
   "Try it now": "Попробуй сейчас",
+
+  // ---- first launch: language screen and the three intro screens (src/components/LanguageGate.tsx, src/components/intro/) ----
+  "Talk, don’t tap": "Говори, не нажимай",
+  "A copilot for truck drivers. Ask out loud, keep your hands on the wheel.": "Штурман для дальнобойщиков. Спрашивай вслух, руки держи на руле.",
+  "You say": "Ты говоришь",
+  "“Where can I park tonight?”": "«Где встать на ночь?»",
+  "I answer": "Я отвечаю",
+  "parking looks good": "с парковкой порядок",
+  "Just ask": "Просто спроси",
+  "No typing, no menus. Hands stay on the wheel.": "Без набора и меню. Руки остаются на руле.",
+  "I check the lot first": "Сначала проверяю стоянку",
+  "Way in": "Въезд",
+  "Likely fits your truck": "Трак, похоже, встанет",
+  "Aerial picture of a truck stop with the truck parking and the way in marked": "Снимок трак-стопа сверху, отмечены парковка для траков и въезд",
+  "Page {n} of {total}": "Страница {n} из {total}",
 };

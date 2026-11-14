@@ -6,6 +6,8 @@ import { storage } from "./utils/storage";
 // v2 (2026-11-04): adds the Terms of Use ("road signs come first") and Google Gemini; drivers who agreed to v1
 // see the screen once more.
 const KEY = "ai_consent_v2";
+/** For src/state/intro.ts: an install that already agreed is past first launch. */
+export const CONSENT_KEY = KEY;
 let state: "loading" | "yes" | "no" = "loading";
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
