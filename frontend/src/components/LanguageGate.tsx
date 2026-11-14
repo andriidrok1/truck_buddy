@@ -43,7 +43,7 @@ export function LanguageGate() {
 }
 
 // Not run through t(): it has to read in every language at once.
-const TITLE = "Choose your language\nВыберите язык";
+const TITLE = "Choose your language\nВыбери язык";
 
 const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: spacing.xl, justifyContent: "space-between" },

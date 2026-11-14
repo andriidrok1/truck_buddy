@@ -65,12 +65,13 @@ export function bearingDeg(a: LatLng, b: LatLng): number {
 
 export const compassOf = (deg: number): Compass => COMPASS[Math.round((((deg % 360) + 360) % 360) / 45) % 8];
 
-/** "0.4 miles", "1 mile", "300 feet" (spoken). */
+/** "0.4 miles", "1 mile", "2 miles", "300 feet" (spoken). Whole miles without ".0": "2.0 miles" was read as
+ *  "2,0 мили" in Russian (QA 2026-11-11). */
 export function spokenMiles(m: number): string {
   const mi = m / 1609.34;
   if (mi < 0.1) return `${Math.max(50, Math.round((m * 3.28084) / 50) * 50)} feet`;
-  const s = mi < 10 ? mi.toFixed(1) : String(Math.round(mi));
-  return s === "1.0" || s === "1" ? "1 mile" : `${s} miles`;
+  const s = (mi < 10 ? mi.toFixed(1) : String(Math.round(mi))).replace(/\.0$/, "");
+  return s === "1" ? "1 mile" : `${s} miles`;
 }
 
 export type BackOnRoute = {

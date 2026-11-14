@@ -2,6 +2,7 @@
 // in Russian mode. Every line here is what a screen draws; English must come out unchanged.
 import { chipAhead } from "../geo/advisories";
 import { formatDistance } from "../geo/guidance";
+import { spokenMiles } from "../geo/offlineGuidance";
 import { arrivalClock } from "../utils/arrivalClock";
 import { t } from "../i18n";
 
@@ -16,6 +17,10 @@ test("nav banner distances: feet and miles with the Russian plural", () => {
   expect(ru("1 ft")).toBe("1 фут");
   expect(ru("2 ft")).toBe("2 фута");
   expect(ru(formatDistance(644))).toBe("0,4 мили");
+  // Whole miles carry no ",0" and take the plural of the number (QA 2026-11-11: "1,0 мили", "5,0 мили").
+  expect(ru(formatDistance(1609.34))).toBe("1 миля");
+  expect(ru(formatDistance(2 * 1609.34))).toBe("2 мили");
+  expect(ru(formatDistance(5 * 1609.34))).toBe("5 миль");
   expect(ru("21 mi")).toBe("21 миля");
   expect(ru("12 mi")).toBe("12 миль");
 });
@@ -70,5 +75,9 @@ test("the spoken off-route line is Russian end to end, direction included", () =
   expect(ru("Lost signal, can't reroute. The route is 0.4 miles to the north.")).toBe("Связь пропала, маршрут не перестроить. До маршрута 0,4 мили на север.");
   expect(ru("Lost signal, can't reroute. The route is 1 mile to the southwest.")).toBe("Связь пропала, маршрут не перестроить. До маршрута 1 миля на юго-запад.");
   expect(ru("Lost signal, can't reroute. The route is 300 feet to the east.")).toBe("Связь пропала, маршрут не перестроить. До маршрута 300 футов на восток.");
+  // spokenMiles: whole miles without ".0".
+  expect(ru(`Lost signal, can't reroute. The route is ${spokenMiles(2 * 1609.34)} to the west.`)).toBe("Связь пропала, маршрут не перестроить. До маршрута 2 мили на запад.");
+  expect(ru(`Lost signal, can't reroute. The route is ${spokenMiles(5 * 1609.34)} to the west.`)).toBe("Связь пропала, маршрут не перестроить. До маршрута 5 миль на запад.");
+  expect(ru(`Lost signal, can't reroute. The route is ${spokenMiles(1609.34)} to the west.`)).toBe("Связь пропала, маршрут не перестроить. До маршрута 1 миля на запад.");
   expect(en("Lost signal, can't reroute. The route is 0.4 miles to the north.")).toBe("Lost signal, can't reroute. The route is 0.4 miles to the north.");
 });
