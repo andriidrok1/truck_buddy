@@ -203,7 +203,10 @@ const config: ExpoConfig = {
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#F7F2EA"
+          "backgroundColor": "#F7F2EA",
+          // The app follows the system theme by default (2026-11-12): on a dark phone the launch screen is the
+          // dark surface too, not a cream flash before a dark first screen. Native: needs a new build.
+          "dark": { "image": "./assets/images/splash-icon.png", "backgroundColor": "#1C1C1E" }
         }
       ],
       "expo-font",

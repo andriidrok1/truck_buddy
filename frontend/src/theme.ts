@@ -153,11 +153,13 @@ export function setColorScheme(scheme: ColorScheme | null) {
   Appearance.setColorScheme?.(scheme ?? "unspecified");
 }
 
-// The driver's choice, from the profile screen: Light (the default, the owner's call), Dark, or Auto
-// (follow the system). Stored on the phone; loaded once at startup before the first screen renders.
+// The driver's choice, from the profile screen: Light, Dark, or Auto (follow the phone's system theme, live).
+// Auto is the default when nothing is stored (the owner's call, 2026-11-12; it was Light before). An explicit
+// choice always wins over the system. Stored on the phone; loaded once at startup before the first screen renders.
 export type ThemePref = ColorScheme | "system";
 const PREF_KEY = "theme_pref_v1";
-let pref: ThemePref = "light";
+export const DEFAULT_THEME_PREF: ThemePref = "system";
+let pref: ThemePref = DEFAULT_THEME_PREF;
 let prefLoaded = false;
 const listeners = new Set<() => void>();
 const subscribe = (l: () => void) => {
@@ -171,10 +173,10 @@ export const isThemePref = (v: unknown): v is ThemePref => v === "light" || v ==
 export async function loadThemePref(): Promise<ThemePref> {
   if (!prefLoaded) {
     try {
-      const v = await storage.getItem(PREF_KEY, "light" as string);
-      pref = isThemePref(v) ? v : "light";
+      const v = await storage.getItem(PREF_KEY, DEFAULT_THEME_PREF as string);
+      pref = isThemePref(v) ? v : DEFAULT_THEME_PREF;
     } catch {
-      pref = "light";
+      pref = DEFAULT_THEME_PREF;
     }
     prefLoaded = true;
     emit();
@@ -188,10 +190,10 @@ export function setThemePref(p: ThemePref) {
   storage.setItem(PREF_KEY, p).catch(() => {});
 }
 
-/** "Delete my data": back to the fresh-install default (Light), nothing stored. */
+/** "Delete my data": back to the fresh-install default (Auto), nothing stored. */
 export async function forgetThemePref() {
   await storage.removeItem(PREF_KEY);
-  pref = "light";
+  pref = DEFAULT_THEME_PREF;
   prefLoaded = true;
   emit();
 }
