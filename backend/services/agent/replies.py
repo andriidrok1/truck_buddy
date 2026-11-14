@@ -8,7 +8,7 @@ from models import Place, RouteInfo
 from services.geocode import _STATES, chain_query, is_street, picked_nearby, town_query
 from services.parking import is_town
 from services.speech_text import hours_minutes as _minutes_said
-from services.agent.phrases import PRICE_WORDS, _ZIP_COUNTRY
+from services.agent.phrases import PRICE_WORDS, _ZIP_COUNTRY, asks_for_shower
 
 NOT_UNDERSTOOD = "Sorry, I didn't catch that. Try again."
 ROUTE_DOWN = "I couldn't build a truck route there right now. Try again in a minute."
@@ -358,6 +358,19 @@ def price_caveat(text: str, place: Optional[Place]) -> str:
     if not place or place.category != "truck_stop" or place.diesel_price is not None:
         return ""
     return NO_PRICE if PRICE_WORDS.search(text or "") else ""
+
+
+# A driver who asked for a shower hears whether this place is known to have one. "Showers" comes from the place's
+# own data (OSM shower=yes, the chain's feed); without it nothing is claimed about this place, only the chains.
+SHOWERS_LISTED = " It has showers listed."
+SHOWERS_UNKNOWN = " I can't confirm showers there, but big chains like Pilot, Love's and TA usually have them."
+
+
+def shower_note(text: str, place: Optional[Place]) -> str:
+    """The shower line after a truck stop the driver asked for to wash; "" for any other ask or place."""
+    if not place or place.category != "truck_stop" or not asks_for_shower(text):
+        return ""
+    return SHOWERS_LISTED if "Showers" in place.tags else SHOWERS_UNKNOWN
 
 
 def _diesel_sentence(place: Place, regional: str = "") -> str:

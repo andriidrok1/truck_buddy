@@ -38,7 +38,8 @@ from services.agent.phrases import (  # noqa: F401
     STOP_ORDER, THAT_STOP, STOP_KIND, ANOTHER, ROAD_WORDS, LIST_REF, ORDINALS, NOT_A_PLACE, REMEMBER, ROAD_PREFS,
     BYE_PHRASE, numbered, list_reference, _NAME_TOKEN, _name_tokens, named_place, NAME_LIKE, name_like,
     GENERIC_NAME_WORDS, named_in_text, stop_named, stop_to_drop, reject_or_reference_guard, pick_place, ORDER_VERB,
-    WHERE_AM_I, ROUTE_CHEAPEST, ROUTE_FASTEST, PRICE_AT)
+    WHERE_AM_I, ROUTE_CHEAPEST, ROUTE_FASTEST, PRICE_AT, SHOWER_WORDS, SHOWER_ASK, SHOWER_TALK, asks_for_shower,
+    shower_request)
 from services.agent.driver_name import (  # noqa: F401
     NAME_EVERY, NAME_MIN_WORDS, _SENTENCE_START, _INTERJECTION, _address, _a_place, _cut, GREETING, SHORT_LEAD,
     _vocatives, without_name, name_policy)
@@ -52,7 +53,8 @@ from services.agent.replies import (  # noqa: F401
     VIA_NO_OTHER, VIA_REJECTED, VIA_DROPPED, VIA_LEFT, VIA_SKIPPED, VIA_NOT_A_STOP, VIA_DEST_NOT_A_STOP, VIA_WHICH,
     VIA_FAR, VIA_FAR_NO, DEST_FAR_MI, DEST_CHECK, DEST_NO, DEST_ONLY, STREET_WORDS, WHICH_PLACE, CONFIRM, CONFIRM_NO,
     _alt_reply, _notice, RESTRICTED_SPEECH, LEGAL_SPEECH, _route_warning, _with_warnings, _diesel_note, NO_PRICE,
-    NO_PRICES, NO_PRICES_OFFER, NO_PRICES_KEEP, ALREADY_CHEAPEST, price_caveat, _diesel_sentence, _rating_note)
+    NO_PRICES, NO_PRICES_OFFER, NO_PRICES_KEEP, ALREADY_CHEAPEST, price_caveat, _diesel_sentence, _rating_note,
+    SHOWERS_LISTED, SHOWERS_UNKNOWN, shower_note)
 from services.agent.common import (  # noqa: F401
     RouteFailed, _error, _route_failed, _nearest_index, _route_key, _profile_key, CATEGORY_WORD, CORE_CATEGORIES,
     EXTRA_CATEGORIES, PARKING_CATEGORIES, enabled_categories, ALTERNATIVES_FRESH, ALT_ORIGIN_KM, PASSED_KM,
@@ -71,6 +73,7 @@ MODEL = ("openai", "gpt-5.4-mini")
 MAX_OPTIONS = 4
 WEATHER_BUDGET_S = 2.0  # NWS lookups on a new route may add at most this much to the reply
 DETOUR_BUDGET_S = 3.5  # the alternatives' weather, measured from the start; past it the detour line is skipped
+SHOWER_EXTRA_MI = 15.0  # a stop with showers listed wins over the nearest only within this many extra miles
 PRECHECK = 1  # nearest candidates satellite-checked in the background (each = one vision call)
 FAVORITE_EXTRA_MI = 5.0
 TRUCK_TAGS = ("truck parking", "53 ft", "truck lot", "hgv")
@@ -355,7 +358,7 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
             self._regional_note(place), self._route_weather(route, _session_if(req.session_id)),
             self._route_chains(route))
         first = head(route) if head else (_route_head(place, route, n, req.truck_profile.driver_name, regional)
-                                          + price_caveat(text, place))
+                                          + price_caveat(text, place) + shower_note(text, place))
         sess_now = _session_if(req.session_id)
         learned = sess_now.pop("say_learned", None) if sess_now is not None else None
         reply = _with_warnings(first, route, chain_line, weather_line, learned)
@@ -688,7 +691,8 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         ahead = f", about {_miles(stop.distance_mi)} miles ahead" if stop.distance_mi else ""
         dwell = VIA_DWELL.format(minutes=VIA_STOP_S // 60, each="the stop" if len(stops) == 1 else "each stop")
         reply = _with_warnings(VIA_ADDED.format(name=stop.name.split(",")[0], ahead=ahead, time=route.summary.split(" · ")[0],
-                                                mi=_miles(route.distance_mi), dwell=dwell) + price_caveat(text, stop), route)
+                                                mi=_miles(route.distance_mi), dwell=dwell) + price_caveat(text, stop)
+                               + shower_note(text, stop), route)
         return AgentResponse(status="route_set", transcript=text, category=place.category, reply=reply, place=place,
                              route=route, parking=approach.for_route(place, route), options=stops, source=self.source)
 
@@ -886,6 +890,17 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         with stage("tools"):
             res = await get_places_provider().search(category, req.lat, req.lng)
         found = res.places[:MAX_OPTIONS + 2]
+        pool = found
+        if category == "truck_stop" and asks_for_shower(text) and not chain:
+            # The places search has no shower filter; our own places carry a "Showers" tag from their data. Those
+            # go first if they are not much farther than the nearest stop, the rest stay as options (no tag means
+            # we don't know, not that there are none). Then the usual path: parking warm-up, the rejected set.
+            open_ = [p for p in res.places if p.id not in exclude]
+            near_mi = min((p.distance_mi or 0.0 for p in open_), default=0.0)
+            showers = [p for p in open_ if "Showers" in p.tags and (p.distance_mi or 0.0) <= near_mi + SHOWER_EXTRA_MI]
+            if showers:
+                found = (showers + [p for p in found if p not in showers])[:MAX_OPTIONS + 2]
+                pool = showers
         if chain and found:
             # No such chain within reach: say so, then the usual nearest truck stop.
             chosen = choose_place(found, req.truck_profile, exclude, _facts(req))
@@ -909,7 +924,7 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
                 s_.pop("rejected", None)
             return AgentResponse(status="chat", transcript=text, category=category, reply=ALL_REJECTED,
                                  source=self.source)
-        chosen = choose_place(found, req.truck_profile, exclude, _facts(req))
+        chosen = choose_place(pool, req.truck_profile, exclude, _facts(req))
         return await self._route_to(req, chosen, found, text)
 
     async def _handle(self, req: AgentRequest) -> AgentResponse:
@@ -1000,6 +1015,18 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
             # (stand QA 2026-11-01), and a hotel lot is the wrong answer for a 53-footer.
             logger.info("agent find hotel for %s -> truck_stop", said(text))
             d = {**d, "category": "truck_stop"}
+        # "Душ" alone came back unclear (QA 2026-11-11), and the model may file "где помыться" as a rest area or a
+        # truck wash: a shower is a truck stop. A bed word keeps a hotel ("мотель с душем"); chat stays chat unless
+        # it is an ask for a place ("where can I shower", "нужен душ"), never thanks, plans or the weather
+        # ("thanks, I'm gonna take a shower when I get there", "any showers today?"), nor talk about a place on
+        # screen ("how are the showers there").
+        if asks_for_shower(text) and not SHOWER_TALK.search(text) \
+                and not (BED_WORDS.search(text) or BED_WORDS_RU.search(text)) and (
+                intent == "unclear"
+                or intent == "chat" and shower_request(text) and not req.active_place and not sess["places"]
+                or intent == "find" and d.get("category") in (None, "hotel", "rest_area", "truck_wash")):
+            logger.info("agent %s %s %s -> find truck_stop (shower)", intent, d.get("category"), said(text))
+            intent, d = "find", {**d, "intent": "find", "category": "truck_stop"}
         if req.active_place and intent not in ("go", "add_stop", "clear_stops") and ROAD_WORDS.search(text) \
                 and not FUEL_WORDS.search(text):
             prefer = "cheapest" if ROUTE_CHEAPEST.search(text) else "fastest" if ROUTE_FASTEST.search(text) else None

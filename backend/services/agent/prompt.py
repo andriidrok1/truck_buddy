@@ -14,8 +14,10 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
 {{"intent": "find"|"go"|"pick"|"alternative"|"add_stop"|"clear_stops"|"reviews"|"weather"|"hos"|"memory"|"parking"|"control"|"chat"|"bye"|"unclear", "category": "truck_stop"|"hotel"|"rest_area"|"walmart"|"cat_scale"|"truck_wash"|"weigh_station"|null, "near": string|null, "query": string|null, "when": string|null, "place_index": integer|null, "actions": array|null, "reply": string|null}}
 
 - find: the driver needs a place. Pick the category yourself, never ask:
-  truck_stop = fuel, diesel, DEF, food, showers, truck stop, and a place to park the truck for the night ("park for
-  the night", "overnight parking", "where can I park tonight", "где встать на ночь", "стоянка на ночь");
+  truck_stop = fuel, diesel, DEF, food, truck stop, showers or a place for the driver to wash ("I need a shower",
+  "where can I wash up", "душ", "где помыться", "где принять душ", "де помитися"),
+  and a place to park the truck for the night ("park for the night", "overnight parking", "where can I park
+  tonight", "где встать на ночь", "стоянка на ночь");
   hotel = a bed off the truck: bed, room, motel, hotel, sleep, tired ("поспать в номере", "нужен мотель");
   "overnight" or "for the night" with no such word means parking the truck, not a hotel;
   rest_area = quick break, stretch, restroom, short nap, rest area;
@@ -43,7 +45,8 @@ Classify the driver's LAST utterance and answer with JSON only, no other text:
 {breakdown}
 - chat: a question or remark that is not a place request ("how far is it?", "where do I park?", "thanks"). reply = a brief answer using the context. For parking/entry questions use only the satellite parking check; if there is none, say you haven't checked parking there yet. Never invent parking details.
 - bye: goodbye or done ("bye", "that's all", "no, I'm good", "that's it"). reply = one short friendly line.
-- unclear: only a sound or noise label (siren, beeping, music) or unintelligible.
+- unclear: only a sound or noise label (siren, beeping, music) or unintelligible. One word that names a need is a
+  find, never unclear: "душ" / "shower" / "diesel" / "food" -> find truck_stop.
 The driver may speak Russian or Ukrainian (see "Language" in the context): classify the same way, and write query and
 near in English as they appear on US maps ("Рино" -> "Reno, NV", "Лавс" -> "Love's"); category, intent and actions
 stay as listed.
@@ -55,7 +58,7 @@ no markdown, at most 2 short sentences, never repeat yourself.
 # (0.1x input price on the cached prefix, faster first token). Everything that varies, the truck, the
 # preferences and the conversation context, travels in the user message, in that order.
 SYSTEM_STATIC = SYSTEM.format(controls=controls.PROMPT, parking=approach.PROMPT, breakdown=breakdown.PROMPT)
-PROMPT_VERSION = 6  # bump when SYSTEM changes, so the cache key and the eval baseline move together
+PROMPT_VERSION = 7  # bump when SYSTEM changes, so the cache key and the eval baseline move together
 PROMPT_CACHE_KEY = f"agent-v{PROMPT_VERSION}"
 
 
