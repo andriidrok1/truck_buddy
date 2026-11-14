@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react-native";
+import { cloneElement } from "react";
 import { Keyboard, StyleSheet } from "react-native";
 
 import { CopilotSheet } from "../components/CopilotSheet";
@@ -17,10 +18,12 @@ jest.mock("react-native-reanimated", () => {
     FadeOut: anim,
     ZoomIn: anim,
     withTiming: (v: unknown) => v,
-    useSharedValue: (v: unknown) => {
-      const sv = { value: v, get: () => sv.value, set: (n: unknown) => void (sv.value = n) };
-      return sv;
-    },
+    // One value per component instance, like the real hook: the pinned height must survive a re-render.
+    useSharedValue: (v: unknown) =>
+      jest.requireActual<typeof import("react")>("react").useState(() => {
+        const sv = { value: v, get: () => sv.value, set: (n: unknown) => void (sv.value = n) };
+        return sv;
+      })[0],
     useAnimatedStyle: (f: () => object) => f(),
     withSpring: (v: unknown) => v,
     runOnJS: (f: (...a: unknown[]) => void) => f,
@@ -127,6 +130,22 @@ describe("CopilotSheet text mode", () => {
     await fireEvent(body, "contentSizeChange", 390, 200);
     expect(screen.getByTestId("sheet-body").props.scrollEnabled).toBe(false);
     await fireEvent(body, "contentSizeChange", 390, 640);
+    expect(screen.getByTestId("sheet-body").props.scrollEnabled).toBe(true);
+  });
+
+  test("a collapsed sheet starts over in auto when its content comes back: the list scrolls, the grabber says Hide", async () => {
+    const view = await render(sheet());
+    const layout = (h: number) => ({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height: h } } });
+    await fireEvent(screen.getByTestId("copilot-sheet"), "layout", layout(400));
+    await fireEvent(screen.getByTestId("sheet-body"), "layout", layout(200));
+    await fireEvent(screen.getByTestId("sheet-body"), "contentSizeChange", 390, 640);
+    await fireEvent.press(screen.getByTestId("sheet-grabber")); // collapse to peek
+    expect(screen.getByTestId("sheet-grabber").props.accessibilityLabel).toBe("Show details");
+    expect(screen.getByTestId("sheet-body").props.scrollEnabled).toBe(false);
+    // the driver asks something else and comes back to the same content
+    await view.rerender(cloneElement(sheet(), { phase: "thinking" }));
+    await view.rerender(sheet());
+    expect(screen.getByTestId("sheet-grabber").props.accessibilityLabel).toBe("Hide details");
     expect(screen.getByTestId("sheet-body").props.scrollEnabled).toBe(true);
   });
 });
@@ -253,6 +272,32 @@ describe("CopilotSheet route preview", () => {
     expect(screen.getByTestId("more-button").props.accessibilityLabel).toBe("Less");
     await fireEvent.press(screen.getByTestId("more-button"));
     expect(screen.queryByTestId("routes-chip")).toBeNull();
+  });
+
+  test("Go and More release a dragged sheet: it is measured again and the map gets the new inset", async () => {
+    const onLayout = jest.fn();
+    const onPeekHeight = jest.fn();
+    const layout = (h: number) => ({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height: h } } });
+    const view = await render(cloneElement(preview(false), { onLayout, onPeekHeight }));
+    await fireEvent(screen.getByTestId("copilot-sheet"), "layout", layout(300));
+    await fireEvent(screen.getByTestId("sheet-body"), "layout", layout(150));
+    expect(onLayout).toHaveBeenLastCalledWith(300);
+    await fireEvent.press(screen.getByTestId("sheet-grabber")); // pinned at peek
+    expect(onPeekHeight).toHaveBeenLastCalledWith(150);
+    await fireEvent(screen.getByTestId("copilot-sheet"), "layout", layout(150));
+    expect(onLayout).toHaveBeenLastCalledWith(300); // a pinned height is not the map's inset
+    // More swaps the content: the pin goes, the next layout counts
+    await fireEvent.press(screen.getByTestId("more-button"));
+    expect(onPeekHeight).toHaveBeenLastCalledWith(null);
+    expect(screen.getByTestId("sheet-grabber").props.accessibilityLabel).toBe("Hide details");
+    await fireEvent(screen.getByTestId("copilot-sheet"), "layout", layout(420));
+    expect(onLayout).toHaveBeenLastCalledWith(420);
+    // pinned again, then Go: the phase stays "navigating", the sheet must still let go
+    await fireEvent.press(screen.getByTestId("sheet-grabber"));
+    await view.rerender(cloneElement(preview(true), { onLayout, onPeekHeight }));
+    expect(onPeekHeight).toHaveBeenLastCalledWith(null);
+    await fireEvent(screen.getByTestId("copilot-sheet"), "layout", layout(180));
+    expect(onLayout).toHaveBeenLastCalledWith(180);
   });
 
   test("driving: End route is there, Cancel is gone", async () => {

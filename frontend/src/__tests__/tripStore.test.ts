@@ -1,7 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AppState, type AppStateStatus } from "react-native";
 
 import { ACTIVE_ROUTE_KEY, decodeSaved } from "../state/routeStore";
-import { restoreSavedTrip, selectPlaces, startTripPersistence, stopsAhead, useTripStore, viaOf } from "../state/tripStore";
+import { restoreSavedTrip, selectPlaces, startTripPersistence, stopsAhead, touchSavedTrip, useTripStore, viaOf } from "../state/tripStore";
 import type { ActiveRoute, Place, RouteInfo } from "../types";
 
 const T0 = 1_700_000_000_000;
@@ -46,6 +47,48 @@ describe("tripStore", () => {
     expect(s.applyRoute(gen, route("stale"))).toBe(false);
     expect(useTripStore.getState().active?.route.summary).toBe("US-50");
     expect(viaOf(useTripStore.getState().active?.stops)).toEqual([[38.55, -121.42]]);
+  });
+
+  test("a tapped place holds the route: a re-plan that began after the tap cannot take its generation", () => {
+    const s = useTripStore.getState();
+    s.startRoute(active);
+    const before = useTripStore.getState().routeGen;
+    const gen = s.claimRoute(); // the driver tapped another place; its /route is in flight
+    // an off-route reroute (or the entrance re-plan) starts now, reads the tap's generation and lands first
+    expect(s.applyRoute(useTripStore.getState().routeGen, route("re-plan"))).toBe(false);
+    // one that began before the tap is stale as before
+    expect(s.applyRoute(before, route("older"))).toBe(false);
+    expect(useTripStore.getState().routeGen).toBe(gen); // the tap's route still lands
+    s.startRoute({ ...active, place: place("p2") });
+    expect(useTripStore.getState().active?.place.id).toBe("p2");
+    // the new route is re-planned as usual
+    expect(s.applyRoute(useTripStore.getState().routeGen, route("US-50"))).toBe(true);
+  });
+
+  test("a tapped route that failed gives the route on screen back to its re-plans", () => {
+    const s = useTripStore.getState();
+    s.startRoute(active);
+    const gen = s.claimRoute();
+    s.releaseRoute(gen);
+    expect(s.applyRoute(gen, route("reroute"))).toBe(true);
+    // releasing an old claim does not free a newer one
+    const next = s.claimRoute();
+    s.releaseRoute(gen);
+    expect(s.applyRoute(next, route("stale"))).toBe(false);
+  });
+
+  test("a tapped route the driver called off is stale when it lands, and re-plans land again", () => {
+    const s = useTripStore.getState();
+    s.startRoute(active);
+    const gen = s.claimRoute();
+    s.abandonRoute(gen); // Close or Back while "Setting route…" was up
+    expect(useTripStore.getState().routeGen).not.toBe(gen); // the tap's answer no longer passes its own check
+    expect(useTripStore.getState().active?.place.id).toBe(active.place.id);
+    expect(s.applyRoute(useTripStore.getState().routeGen, route("reroute"))).toBe(true);
+    // calling off an old claim does not touch a newer one
+    const next = s.claimRoute();
+    s.abandonRoute(gen);
+    expect(useTripStore.getState().routeGen).toBe(next);
   });
 
   test("applyRoute takes the entry tip phrased for the new route, and keeps the old one when none came", () => {
@@ -131,6 +174,61 @@ describe("tripStore", () => {
     restart();
   });
 
+  test("a multi-day haul: the trip is still there in the morning, counted from when the app last ran with it", async () => {
+    const H = 3600 * 1000;
+    const go = Date.now(); // 2 pm
+    const stop = startTripPersistence();
+    useTripStore.getState().startRoute({ ...active, trip_id: "trip-haul" });
+    useTripStore.getState().setDriving(true);
+    await flush();
+    touchSavedTrip(go + 6 * H); // parked at 8 pm: the app was alive with the trip until then
+    await flush();
+    stop(); // killed overnight
+    useTripStore.getState().reset();
+    const r = await restoreSavedTrip(go + 16 * H); // 6 am: 16 h after Go, 10 h after the app last ran
+    expect(r?.restored.trip_id).toBe("trip-haul");
+    expect(r?.saved.driving).toBe(true);
+  });
+
+  test("the background re-stamps a restored trip's time but keeps that it was driving; no trip, no stamp", async () => {
+    const H = 3600 * 1000;
+    let onAppState: (s: AppStateStatus) => void = () => {};
+    const listen = jest.spyOn(AppState, "addEventListener").mockImplementation((_type, handler) => {
+      onAppState = handler as (s: AppStateStatus) => void;
+      return { remove: () => {} } as ReturnType<typeof AppState.addEventListener>;
+    });
+    const now = jest.spyOn(Date, "now");
+    try {
+      const t0 = Date.now();
+      const stop = startTripPersistence();
+      useTripStore.getState().startRoute({ ...active, trip_id: "trip-old" });
+      useTripStore.getState().setDriving(true);
+      await flush();
+      stop(); // the app is killed
+      useTripStore.getState().reset();
+      const restart = startTripPersistence();
+      // in the background before the restore has run: the copy on disk keeps the time it was saved with
+      now.mockReturnValue(t0 + H);
+      onAppState("background");
+      await flush();
+      expect(decodeSaved(await AsyncStorage.getItem(ACTIVE_ROUTE_KEY))?.savedAt).toBeLessThan(t0 + H);
+      // restored (the banner is up, not driving), then the app goes to the background again
+      await restoreSavedTrip(t0 + H);
+      now.mockReturnValue(t0 + 2 * H);
+      onAppState("inactive"); // iOS on the way out: only "background" counts
+      onAppState("background");
+      await flush();
+      const saved = decodeSaved(await AsyncStorage.getItem(ACTIVE_ROUTE_KEY));
+      expect(saved?.savedAt).toBe(t0 + 2 * H);
+      expect(saved?.driving).toBe(true);
+      expect(useTripStore.getState().driving).toBe(false);
+      restart();
+    } finally {
+      now.mockRestore();
+      listen.mockRestore();
+    }
+  });
+
   test("selectPlaces gives the same array for the same providers (a fresh one would loop the screen)", () => {
     useTripStore.getState().setProviders({ providers: [{ id: "a", name: "A", lat: 1, lng: 2 }] } as never);
     const a = selectPlaces(useTripStore.getState());
@@ -157,4 +255,15 @@ describe("stopsAhead", () => {
   test("a route without sections keeps every stop", () => {
     expect(stopsAhead({ geometry, section_starts: undefined }, stops, { lat: 38.58, lng: -121.42 })).toHaveLength(2);
   });
+});
+
+test("setDriving(true) while already driving keeps the start time", () => {
+  useTripStore.getState().reset();
+  const s = useTripStore.getState();
+  s.setDriving(true, 1000);
+  s.setDriving(true, 9000); // "start driving" said again three hours in
+  expect(useTripStore.getState().drivingSince).toBe(1000);
+  s.setDriving(false, 9500);
+  s.setDriving(true, 10000);
+  expect(useTripStore.getState().drivingSince).toBe(10000);
 });

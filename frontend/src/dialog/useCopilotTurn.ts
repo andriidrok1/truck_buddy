@@ -60,6 +60,8 @@ export type TurnDeps = {
   fillers: { schedule: () => FillerPlan; noteTurn: (totalMs: number) => void };
   /** True when the turn was answered offline by the caller (said and shown); the dialog pauses. */
   offline: () => boolean;
+  /** Is there a signal right now. Unlike `offline` it says and shows nothing: for checks that are not a turn. */
+  isOnline: () => boolean;
   context: () => TurnContext;
   /** The phase the sheet shows while the copilot listens or works. */
   onPhase: (phase: "listening" | "thinking") => void;
@@ -332,8 +334,10 @@ export function createCopilotTurn(initialDeps: TurnDeps): CopilotTurnController 
         deps.onIdle();
         return;
       }
-      // Barge-in: a tap while the copilot is still working drops that turn (same session).
-      if (state.mode === "thinking") dispatch({ type: "cancel" });
+      // Barge-in: a tap while the copilot is still working drops that turn (same session). While the words are
+      // being transcribed the machine is still "listening", but the STT request and its "Hang on." plan are
+      // already under way (`prepared`): left alone, "Still looking." played over the new recording.
+      if (state.mode === "thinking" || prepared) dispatch({ type: "cancel" });
       dispatch({ type: "tap" });
     },
     text: (t) => {
@@ -359,7 +363,8 @@ export function createCopilotTurn(initialDeps: TurnDeps): CopilotTurnController 
       dispatch({ type: "endRoute" });
     },
     nudgeOffer: () => {
-      if (deps.offline()) return;
+      // Not `offline()`: that one answers a turn ("No signal", spoken and shown), and nobody asked anything here.
+      if (!deps.isOnline()) return;
       dispatch({ type: "nudge" });
     },
     adoptSession: (dialogId) => {

@@ -42,6 +42,7 @@ import { useOfflineGuidance, type OfflineGuidance } from "@/src/hooks/useOffline
 import { useStartPins, useWarmCaches } from "@/src/hooks/useNearbyWarmup";
 import { useOfflineMap } from "@/src/hooks/useOfflineMap";
 import { isOnline, useOnline } from "@/src/hooks/useOnline";
+import { useParkingLanguage } from "@/src/hooks/useParkingLanguage";
 import { useRouteAdvisories } from "@/src/hooks/useRouteAdvisories";
 import { useFollowCamera } from "@/src/hooks/useFollowCamera";
 import { useHardwareBack } from "@/src/hooks/useHardwareBack";
@@ -139,6 +140,7 @@ export default function MapScreen() {
   /** Drawn heights of the answer bubble and of the card on the map (height, mic): 0 when gone. */
   const [bubbleH, setBubbleH] = useState(0);
   const [cardH, setCardH] = useState(0);
+  const [restoredH, setRestoredH] = useState(0);
   // Whether this screen is the one on top (not under the truck profile or history).
   const [focused, setFocused] = useState(true);
   /** The answer that did not fit whole in the bubble, and the room it had: it stays in the sheet until a new
@@ -165,9 +167,14 @@ export default function MapScreen() {
   // to add a stop at Pilot Fernley?") opens the mic for a few seconds once it has played:
   // listenForAnswer, defined further down (it needs the wake word and the mic), through this ref.
   const nudgeAnswer = useRef<() => void>(() => {});
+  // A tap on the mic (or a typed request) stops the line on air, and the queue goes on to the next one in the
+  // same tick: before the phase reads "listening" and before the recorder is up. A line with a ready clip (a
+  // parking verdict) then started over the opening mic. Until this time the queue counts the copilot as busy.
+  const turnStarting = useRef(0);
+  const TURN_STARTING_MS = 1500;
   const { say, clear: clearSpeech } = useSpeechQueue(
     voice,
-    () => phaseRef.current === "listening" || phaseRef.current === "thinking",
+    () => phaseRef.current === "listening" || phaseRef.current === "thinking" || Date.now() < turnStarting.current,
     (item) => {
       showLine(item.text);
       recorder.mark("said", item.text);
@@ -317,10 +324,17 @@ export default function MapScreen() {
       const audio = api.speak(text); // generate while the first answer is still playing
       await replyDone;
       if (!isCurrent() || trip().active?.place.id !== place.id) return;
-      showLine(text);
-      const r = await audio;
+      // Through the speech queue, never straight to the player: play() cuts whatever is on air, and a turn
+      // call cut mid-sentence still counted as said. The queue shows the caption when the line starts; if the
+      // clip failed it asks /speak itself or uses the phone's voice.
+      const audioUrl = await audio.then((r) => absoluteUrl(r.audio_url), () => undefined);
       if (isCurrent() && trip().active?.place.id === place.id) {
-        await voice.playAndWait(absoluteUrl(r.audio_url), Math.min(15000, 1500 + text.length * 65));
+        // It can wait behind a turn call and a whole driver's turn: a minute to be said in, and only while
+        // this is still the destination (the queue asks again when its turn comes).
+        say(text, {
+          priority: PRIORITY.MANEUVER, kind: "system", key: "parking-verdict", ttlMs: 60000, audioUrl,
+          valid: () => trip().active?.place.id === place.id,
+        });
       }
     } catch {
       // parking stays "unclear"; the route still works
@@ -340,6 +354,23 @@ export default function MapScreen() {
   };
 
   const backToIdle = () => setPhase(trip().idleSheet());
+  /** The generation of the tapped route being planned ("Setting route…" is its sheet), null when none is. */
+  const routing = useRef<number | null>(null);
+  /** A tapped route that is dropped must not leave "Setting route…" up: nothing else takes it down, and the
+   *  pins and Route buttons are dead while it shows. Only when "thinking" is still on screen: a mic turn that
+   *  began meanwhile owns "listening". */
+  const leaveRouting = (gen: number) => {
+    if (routing.current !== gen) return; // called off, or a later tap owns the sheet now
+    routing.current = null;
+    if (phaseRef.current === "thinking") backToIdle();
+  };
+  /** Close or Back while a tapped route is being planned: the request is called off, so its answer does not
+   *  replace the route a minute later, and a "thinking" that belongs to something else is never taken down. */
+  const cancelRouting = () => {
+    if (routing.current === null) return;
+    trip().abandonRoute(routing.current);
+    routing.current = null;
+  };
 
   const restored = useTripRestore(active, driving, restoredId, setDialogPhase, setFit);
 
@@ -402,6 +433,7 @@ export default function MapScreen() {
     api: { transcribe: api.transcribe, agentSpeak: api.agentSpeak },
     fillers,
     offline: () => offlineTurn({ isOnline, say, setCaption }),
+    isOnline,
     context: () =>
       turnContext(trip(), {
         coords: coordsRef.current, // the truck moved while the driver talked and the words were transcribed
@@ -434,17 +466,19 @@ export default function MapScreen() {
   // ---- Nudges: the backend's offers every few minutes while driving (src/hooks/useNudges.ts). ----
   useNudges(driving, !!active, say, turn, guidanceRef, coordsRef);
 
-  const onGo = () => {
+  /** Starts driving; false when it was refused (the toast says why). */
+  const onGo = (): boolean => {
     if (!isHeightConfirmed()) {
       // Bridges on the route were checked for the default 13'6"; a taller truck must not drive it blind.
       showToast("Tell me your truck height first: it decides which bridges are safe.", "info");
-      return;
+      return false;
     }
     turn.pause();
     voice.stopSpeaking();
     setCaption(null);
     setRoutesOpen(false);
     setDriving(true);
+    return true;
   };
 
   /** Typed request: same pipeline and session as voice, without recording or reopening the mic.
@@ -455,6 +489,7 @@ export default function MapScreen() {
     // "Where to?" box took it after every typed request and kept the keyboard over the answer.
     searchBlurGuard.current = true;
     setTimeout(() => (searchBlurGuard.current = false), 1500);
+    turnStarting.current = Date.now() + TURN_STARTING_MS;
     voice.stopSpeaking();
     setCaption(null);
     turn.text(text);
@@ -515,6 +550,7 @@ export default function MapScreen() {
     }
     // Barge-in: a tap while the copilot is still working drops that turn and listens again (same session,
     // so "no, the other one" lands where it should); useCopilotTurn does the dropping.
+    turnStarting.current = Date.now() + TURN_STARTING_MS;
     voice.stopSpeaking();
     // The permission round trip only until it is known granted: the tap must start recording at once.
     if (!voice.micKnownGranted()) {
@@ -559,6 +595,7 @@ export default function MapScreen() {
   };
 
   const onClose = () => {
+    cancelRouting();
     turn.pause();
     turn.cancel(); // discard any in-flight turn
     voice.cancelRecording().catch(() => {});
@@ -627,8 +664,10 @@ export default function MapScreen() {
   // Hardware Back closes the top layer (src/hooks/useHardwareBack.ts).
   useHardwareBack(
     {
+      focused,
       state: { micCard: !!micCard, routesOpen, reply: isReplyCaption(caption), phase },
       cancel: () => {
+        cancelRouting();
         turn.cancel();
         voice.cancelRecording().catch(() => {});
         turn.pause();
@@ -670,6 +709,8 @@ export default function MapScreen() {
 
   // Background location, keep-awake, the fleet heartbeat and arrival events while driving.
   useDrivingSession(driving, active, loc);
+  // The route card's parking text is asked again in the new language when the driver changes it.
+  useParkingLanguage();
 
   // Resume of a restored route: the first real fix after it decides whether the truck is still near the line.
   // A parked truck never trips the off-route tracker, so far from it the plan is redone right away.
@@ -748,10 +789,15 @@ export default function MapScreen() {
         return parkingFollowup(fPlace, spoken, {
           isCurrent: ctx.isCurrent,
           busy: () => phaseRef.current === "listening" || phaseRef.current === "thinking",
+          // Queued like everything else the copilot says on its own: played directly, the answer cut a turn
+          // call on air. The queue shows the caption when the line starts; an answer that came without a clip
+          // is only shown, as before.
           say: async (text, url) => {
-            showLine(text);
-            const a = toAudio(url);
-            if (a) await voice.playAndWait(a, 6000);
+            const audioUrl = toAudio(url);
+            // Only while the place it is about is still on screen (the destination, the list or the pins).
+            const stillThere = () => [trip().active?.place, ...trip().options, ...trip().places()].some((p) => p?.id === placeId);
+            if (audioUrl) say(text, { priority: PRIORITY.MANEUVER, kind: "system", key: "parking-answer", ttlMs: 30000, audioUrl, valid: stillThere });
+            else showLine(text);
           },
         });
       },
@@ -795,7 +841,9 @@ export default function MapScreen() {
     const t = trip();
     const prev = t.active;
     const gen = t.claimRoute(); // the last tap wins over a route still in flight
+    routing.current = gen;
     turn.cancel(); // a copilot turn in flight gives way to the tap
+    voice.cancelRecording().catch(() => {}); // and so does an open mic: it would hold every guidance line until it timed out
     voice.stopSpeaking();
     setCaption(null);
     setPhase("thinking");
@@ -804,12 +852,15 @@ export default function MapScreen() {
       // Breakdown providers: the driver needs the shop, not a satellite parking check (faster route).
       const isProvider = p.category === "service" || !!t.providers?.providers.some((x) => x.id === p.id);
       const res = await api.route(coordsRef.current, p, isProvider);
-      if (trip().routeGen !== gen) return; // a newer route landed while this one was planned
+      if (trip().routeGen !== gen) return leaveRouting(gen); // a newer route landed while this one was planned
+      routing.current = null;
       // Keep the previous destination among the alternatives.
       trip().setOptions((list) => [...(prev ? [prev.place] : []), ...list].filter((o) => o.id !== p.id));
       startRoute(res);
     } catch (e) {
-      if (trip().routeGen !== gen) return;
+      if (trip().routeGen !== gen) return leaveRouting(gen);
+      routing.current = null;
+      trip().releaseRoute(gen); // the route on screen stays: its re-plans may land again
       backToIdle();
       showToast(routeFailText(e));
     }
@@ -980,16 +1031,21 @@ export default function MapScreen() {
           note={offlineMap.state?.kind === "saved" ? "Map saved" : null}
           top={topH + spacing.sm}
           onResume={() => {
+            // Go refused (the truck height is not confirmed yet): the banner stays, so Resume is still there
+            // once the height is in. It used to go away with nothing started.
+            if (!onGo()) return;
             trip().dismissRestored();
-            onGo();
             replanOnFix.current = true;
             replanIfFar();
           }}
           onDismiss={clearRoute}
+          onHeight={setRestoredH}
         />
       )}
 
-      <Toast toast={toast} top={topH + spacing.sm} />
+      {/* Under the restored banner while it is up: "Tell me your truck height first" after a refused Resume sat
+          on the banner's own buttons (emulator, 2026-11-11). */}
+      <Toast toast={toast} top={topH + spacing.sm + (restored && active && restoredH > 0 ? restoredH + spacing.sm : 0)} />
 
       <HowToSheet mode={howTo.mode} name={truck.driver_name} motive={!!motiveKey} onAsk={howTo.ask} onTryNow={howTo.tryNow} onClose={howTo.close} />
 

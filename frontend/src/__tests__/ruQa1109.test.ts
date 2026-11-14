@@ -104,8 +104,9 @@ describe("spoken lines are whole Russian sentences (S1–S5, S10, S11, S15)", ()
   const adv = (over: Partial<Advisory>): Advisory => ({ id: "x", kind: "incident", text: "", severity: 2, aheadM: 800, index: 5, ...over });
 
   test("advisories", () => {
-    expect(advisoryText(adv({ severity: 3, text: "Road closed: US-50 at Echo Summit" }), "ru")).toBe("Внимание: дорога закрыта через полмили. US-50 at Echo Summit.");
-    expect(advisoryText(adv({ text: "Accident: crash on I-80" }), "ru")).toBe("Внимание: авария через полмили: crash on I-80.");
+    // An English description is no longer read out in Russian (QA 2026-11-11, src/__tests__/ruQa1111.test.ts).
+    expect(advisoryText(adv({ severity: 3, text: "Road closed: US-50 at Echo Summit" }), "ru")).toBe("Внимание: дорога закрыта через полмили.");
+    expect(advisoryText(adv({ text: "Accident: crash on I-80" }), "ru")).toBe("Внимание: авария через полмили.");
     expect(advisoryText(adv({ kind: "chain", text: "Chains R-2 on US-50, Twin Bridges", aheadM: 6400 }), "ru")).toBe(
       "Нужны цепи примерно через 4 мили: R-2 на US-50, Twin Bridges.");
     expect(advisoryText(adv({ text: "Accident: crash on I-80" }), "en")).toBe("Heads up: Accident in half a mile: crash on I-80.");

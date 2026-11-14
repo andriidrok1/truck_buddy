@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { ACTIVE_ROUTE_KEY, clearSavedRoute, decodeSaved, encodeSaved, getSavedAt, isFresh, loadActiveRoute, MAX_AGE_MS, saveActiveRoute, savedAgeLabel } from "../state/routeStore";
+import { ACTIVE_ROUTE_KEY, clearSavedRoute, decodeSaved, encodeSaved, getSavedAt, isFresh, loadActiveRoute, MAX_AGE_MS, saveActiveRoute, savedAgeLabel, touchSavedRoute } from "../state/routeStore";
 import type { ActiveRoute, RouteInfo } from "../types";
 
 const T0 = 1_700_000_000_000;
@@ -107,6 +107,29 @@ describe("save / load / clear (AsyncStorage mock)", () => {
     await AsyncStorage.setItem(ACTIVE_ROUTE_KEY, "{broken");
     expect(await loadActiveRoute(T0)).toBeNull();
     expect(await AsyncStorage.getItem(ACTIVE_ROUTE_KEY)).toBeNull();
+  });
+
+  test("a touch moves the saved time and nothing else: the trip is 12 h from when the app last ran with it", async () => {
+    await saveActiveRoute(active, T0, true); // Go at 2 pm
+    await touchSavedRoute(T0 + 6 * H); // parked at 8 pm, the app goes to the background
+    expect(getSavedAt()).toBe(T0 + 6 * H);
+    const saved = await loadActiveRoute(T0 + 16 * H); // 6 am
+    expect(saved?.savedAt).toBe(T0 + 6 * H);
+    expect(saved?.driving).toBe(true);
+    expect(saved?.active).toEqual(active);
+    expect(await loadActiveRoute(T0 + 18 * H)).toBeNull(); // the 12 h limit itself is the same
+  });
+
+  test("a touch with nothing saved writes nothing, and one queued behind a clear does not bring the route back", async () => {
+    await touchSavedRoute(T0);
+    expect(await AsyncStorage.getItem(ACTIVE_ROUTE_KEY)).toBeNull();
+    expect(getSavedAt()).toBeNull();
+    await saveActiveRoute(active, T0);
+    const cleared = clearSavedRoute();
+    const touched = touchSavedRoute(T0 + H);
+    await Promise.all([cleared, touched]);
+    expect(await AsyncStorage.getItem(ACTIVE_ROUTE_KEY)).toBeNull();
+    expect(getSavedAt()).toBeNull();
   });
 
   test("clear removes the key", async () => {

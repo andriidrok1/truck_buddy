@@ -75,9 +75,19 @@ function SpeedShield({ limitMph, speedMph }: { limitMph: number; speedMph: numbe
   );
 }
 
+/**
+ * An instruction longer than this may take a fourth line, at the same size as any other. Three lines hold about 45
+ * letters next to the arrow, the shield and the mute button on a 360 dp phone, and "Съезд 522 в сторону San
+ * Francisco на I-80…" lost its tail (QA 2026-11-11). The font is not shrunk: the next turn has to stay large, and
+ * in this React Native adjustsFontSizeToFit has no usable floor (the fit code ignores minimumFontScale).
+ */
+export const LONG_INSTRUCTION = 40;
+
 /** Driving mode top banner: next maneuver, distance to it, posted limit and the spoken-directions toggle. */
 export function NavBanner({ topInset, next, toNextM, voiceOn, onToggleVoice, onLayout, limitMph = null, speedMph = null, advisories = [], offlineLine = null }: Props) {
   const { colors } = useTheme();
+  const instruction = next?.instruction ?? "Follow the route";
+  const long = instruction.length > LONG_INSTRUCTION;
   return (
     <View
       style={[styles.wrap, { paddingTop: topInset + spacing.sm }]}
@@ -92,8 +102,8 @@ export function NavBanner({ topInset, next, toNextM, voiceOn, onToggleVoice, onL
           <Text testID="nav-distance" style={[styles.dist, { color: colors.onNavBanner }]}>
             {formatDistance(toNextM)}
           </Text>
-          <Text testID="nav-instruction" numberOfLines={3} style={[styles.instr, { color: colors.onNavBanner }]}>
-            {next?.instruction ?? "Follow the route"}
+          <Text testID="nav-instruction" numberOfLines={long ? 4 : 3} style={[styles.instr, { color: colors.onNavBanner }]}>
+            {instruction}
           </Text>
         </Animated.View>
         {limitMph != null && <SpeedShield limitMph={limitMph} speedMph={speedMph} />}

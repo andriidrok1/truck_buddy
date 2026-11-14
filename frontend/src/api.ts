@@ -289,7 +289,9 @@ export const api = {
       headers: eldHeader(), // Motive key: the copilot reads hours of service
       body: JSON.stringify({ text, lat: at.lat, lng: at.lng, truck_profile: await ensureTruckProfile() }),
     }),
-  speak: (text: string) => request<{ audio_url: string }>(`/speak`, { method: "POST", body: JSON.stringify({ text }) }),
+  /** `timeoutMs`: the speech queue gives a line a few seconds, not the default 30 (a turn call cannot wait). */
+  speak: (text: string, timeoutMs?: number) =>
+    request<{ audio_url: string }>(`/speak`, { method: "POST", body: JSON.stringify({ text }), timeoutMs }),
   /** Pre-fetch nearby places (+ parking checks) so the next voice turn hits warm caches. */
   warm: (at: LatLng) => request<{ ok: boolean }>(`/warm?lat=${at.lat}&lng=${at.lng}`, { method: "POST" }),
   /**

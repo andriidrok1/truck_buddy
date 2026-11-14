@@ -1,6 +1,7 @@
 // Pure turn-by-turn maths, extracted from hooks/useGuidance.ts so it can be unit-tested
 // (and so off-route detection can build on the same route match). No React in here.
 
+import { getLang, hasCyrillic, t, type Lang } from "../i18n";
 import type { LatLng, Maneuver, RouteInfo } from "../types";
 
 const R = 6371000;
@@ -166,10 +167,109 @@ export function spokenDistance(m: number) {
 }
 
 /**
+ * The router's action and direction as a short phrase ("turn left", "take the exit on the right"), for when its own
+ * sentence can't be used. English here; src/i18n/ru.ts has the Russian side of every phrase this can return.
+ */
+export function maneuverWords(action: string, direction?: string | null): string {
+  const side = direction === "left" || direction === "right" ? direction : null;
+  switch (action) {
+    case "turn":
+      return side ? `turn ${side}` : "follow the route";
+    case "keep":
+    case "continueHighway":
+      return side ? `keep ${side}` : direction === "middle" ? "keep to the middle" : "continue straight";
+    case "exit":
+      return side ? `take the exit on the ${side}` : "take the exit";
+    case "ramp":
+    case "enterHighway":
+      return side ? `take the ramp on the ${side}` : "take the ramp";
+    case "uTurn":
+      return "make a U-turn";
+    case "roundaboutEnter":
+    case "roundaboutPass":
+    case "roundaboutExit":
+      return "go through the roundabout";
+    case "ferry":
+      return "take the ferry";
+    case "continue":
+      return "continue straight";
+    default:
+      return side ? `turn ${side}` : "follow the route";
+  }
+}
+
+/**
+ * The facts of an English instruction that a driver steers by: the exit number ("exit 522", "exit 12B"), the
+ * roundabout exit ("the 2nd exit"), the road after "onto" / "on" and the direction after "toward" / "for". Names
+ * come back as written; null for what the instruction does not say.
+ */
+export function maneuverFacts(instruction: string): { exit: string | null; nth: string | null; road: string | null; toward: string | null } {
+  const text = instruction.trim().replace(/\.$/, "");
+  const pick = (rx: RegExp) => rx.exec(text)?.[1].trim() || null;
+  return {
+    exit: pick(/\bexit (\d+[A-Z]?)\b/i),
+    nth: pick(/\b(\d+)(?:st|nd|rd|th) exit\b/i),
+    road: pick(/\s(?:onto|on) (?!the (?:left|right)\b)(.+?)(?=\s+(?:toward|for)\s|$)/i),
+    toward: pick(/\s(?:toward|for) (.+?)(?=\s+(?:onto|on)\s|$)/i),
+  };
+}
+
+/**
+ * An English instruction said in Russian: the action and direction from the maneuver, the exit number, road and
+ * direction from its words. "Take exit 522 toward San Francisco onto I-80 W" -> "съезд 522 справа, на I-80 W, в
+ * сторону San Francisco"; "Turn left onto Main St" -> "поверни налево на Main St". Without the facts two exits in
+ * a row sounded the same. Nothing to pull out: the plain phrase of maneuverWords.
+ */
+export function maneuverPhraseRu(next: Pick<Maneuver, "action" | "instruction" | "direction">): string {
+  const ru = (en: string, vars?: Record<string, string>) => t(en, vars, "ru");
+  const words = maneuverWords(next.action, next.direction);
+  if (words === "follow the route") return ru(words); // an action this table does not know: no half-guessed sentence
+  const side = next.direction === "left" || next.direction === "right" ? next.direction : null;
+  const { exit, nth, road, toward } = maneuverFacts(next.instruction);
+  let said = ru(words);
+  let roadSaid = false;
+  if (exit) said = ru(side ? `exit {num} on the ${side}` : "exit {num}", { num: exit });
+  else if (nth && next.action.startsWith("roundabout")) said = ru("roundabout exit {nth}", { nth });
+  else if (words === "continue straight" && road) {
+    said = ru("continue on {road}", { road });
+    roadSaid = true;
+  }
+  // The server's own turns read "Поверни налево на Main St"; after an exit or "держись правее" a pause is clearer.
+  const sep = next.action === "turn" || next.action === "uTurn" ? " " : ", ";
+  if (road && !roadSaid) said += sep + ru("onto {road}", { road });
+  if (toward) said += sep + ru("toward {place}", { place: toward });
+  return said;
+}
+
+/**
+ * The Russian sentence for the two cases where gluing "In 500 feet, " to the instruction goes wrong, or null when
+ * the usual path is right. Decided by the maneuver's action, never by its words (QA 2026-11-11):
+ * - an arrival: the server sends "Ты на месте" or "Прибытие: Pilot", and a mile out that read "Через полмили ты
+ *   на месте." Before the end it is one whole sentence; at the end the server's own line.
+ * - an instruction the server's catalog left in English: "Через 500 футов turn left onto Main St." was read by
+ *   the Russian voice. It is said in Russian from its action, direction and facts (maneuverPhraseRu).
+ */
+function announcementRu(next: Pick<Maneuver, "action" | "instruction" | "direction">, stage: StageKey, toNextM: number): string | null {
+  const translated = hasCyrillic(next.instruction);
+  const lead = () => t(spokenDistance(toNextM), undefined, "ru");
+  if (next.action === "arrive") {
+    if (stage !== "now") return t("{lead}, you'll arrive.", { lead: lead() }, "ru");
+    return translated ? null : t("You have arrived.", undefined, "ru");
+  }
+  if (translated) return null;
+  const what = maneuverPhraseRu(next);
+  return stage === "now" ? `${what.charAt(0).toUpperCase()}${what.slice(1)}.` : `${lead()} ${what}.`;
+}
+
+/**
  * The sentence to say for a stage: "now" is the raw instruction; the far and near calls get a lead-in, and an
  * arrival becomes "In half a mile, you'll arrive at…" (the raw "Arrive at X" a mile out sounded like the end).
+ * The English frame around a Russian instruction is translated where it is spoken (useSpeechQueue runs it through
+ * t()); the Russian cases that frame can't carry are whole sentences from announcementRu.
  */
-export function announcement(next: Pick<Maneuver, "action" | "instruction">, stage: StageKey, toNextM: number) {
+export function announcement(next: Pick<Maneuver, "action" | "instruction" | "direction">, stage: StageKey, toNextM: number, lang: Lang = getLang()) {
+  const ru = lang === "ru" ? announcementRu(next, stage, toNextM) : null;
+  if (ru) return ru;
   if (stage === "now") return `${next.instruction}.`;
   const body =
     next.action === "arrive" && /^arrive\b/i.test(next.instruction)
@@ -197,10 +297,11 @@ export function remainingSeconds(
   return (driving * remainingM) / (totalM || 1) + (stops ? (stopsS / stops) * ahead : 0);
 }
 
-/** "0.4 mi" / "500 ft" for the banner (the same rounding the voice reads). */
+/** "0.4 mi" / "2 mi" / "500 ft" for the banner (the same rounding the voice reads). A whole mile has no ".0":
+ *  Russian showed "1,0 мили" and "5,0 мили" where it should say "1 миля" and "5 миль" (QA 2026-11-11). */
 export function formatDistance(m: number) {
   const { n, unit } = roundedDistance(m);
-  return unit === "ft" ? `${n} ft` : `${n.toFixed(n < 10 ? 1 : 0)} mi`;
+  return `${n} ${unit}`;
 }
 
 /** Beyond this from the line, a resumed route is replanned at once: the off-route tracker waits for the
