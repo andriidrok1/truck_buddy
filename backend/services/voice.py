@@ -152,6 +152,7 @@ async def transcribe_full(data: bytes, filename: str, hint: Optional[str] = None
     stt = llm.client().audio.transcriptions
     language, prompt = stt_language_and_prompt(hint)
     lang_arg = {"language": language} if language else {}
+    paid = False  # a call came back (and is billed): a later failure must not buy a third, Whisper, transcription
     try:
         buf = io.BytesIO(data)
         buf.name = filename
@@ -159,6 +160,7 @@ async def transcribe_full(data: bytes, filename: str, hint: Optional[str] = None
             stt.create(file=buf, model=STT_MODEL, response_format="json", **lang_arg,
                        prompt=prompt, temperature=0.0, include=["logprobs"]),
             STT_TIMEOUT_S)
+        paid = True
         spend.record_stt(STT_MODEL, res, len(data))
         text = (getattr(res, "text", "") or "").strip()
         if PROMPT_ECHO.search(text):
@@ -178,6 +180,12 @@ async def transcribe_full(data: bytes, filename: str, hint: Optional[str] = None
     except asyncio.TimeoutError:
         raise SttTimeout(f"{STT_MODEL} took longer than {STT_TIMEOUT_S:.0f}s")  # no fallback: it would double the wait
     except Exception as e:  # noqa: BLE001 - fall back to Whisper with its confidence guard
+        if paid:  # failed after a billed answer (the prompt-echo retry): that answer was the prompt, nothing heard
+            logger.warning("stt %s retry failed, no whisper fallback after a paid call: %s", STT_MODEL, e)
+            return Transcript("", None)
+        if not spend.turns_open("tester" if spend.is_exempt() else "driver"):
+            logger.warning("stt %s failed, no whisper fallback (spend stage %s): %s", STT_MODEL, spend.stage(), e)
+            return Transcript("", None)
         logger.warning("stt %s failed, falling back to whisper-1: %s", STT_MODEL, e)
     buf = io.BytesIO(data)
     buf.name = filename
@@ -690,6 +698,34 @@ def get_audio(audio_id: str) -> Optional[bytes]:
 
 
 _PENDING: dict[str, "asyncio.Task[Optional[str]]"] = {}
+
+SAME_TEXT_MAX = 500
+_SAME_TEXT: "OrderedDict[str, str]" = OrderedDict()  # cache_tag|text -> audio id
+_SAME_PENDING: dict[str, "asyncio.Task[Optional[str]]"] = {}
+
+
+async def synthesize_same(text: str) -> Optional[str]:
+    """A clip for a line that is asked for again word for word (a parking answer polled twice, the "still checking"
+    line): made once per text and voice while the clip is still on hand (memory or TTS_DIR, CLIP_TTL_S). Once the
+    day's money is spent (spend stage no_ai) no new clip is made: None, and the app shows the line."""
+    key = f"{cache_tag()}|{text}"
+    audio_id = _SAME_TEXT.get(key)
+    if audio_id and get_audio(audio_id) is not None:
+        _SAME_TEXT.move_to_end(key)
+        return audio_id
+    if not spend.turns_open("tester" if spend.is_exempt() else "driver"):
+        return None
+    task = _SAME_PENDING.get(key)
+    if task is None:
+        task = asyncio.create_task(synthesize(text))
+        _SAME_PENDING[key] = task
+        task.add_done_callback(lambda _t: _SAME_PENDING.pop(key, None))
+    audio_id = await asyncio.shield(task)
+    if audio_id and not is_fallback(audio_id):  # a fallback voice is not kept as the line's clip
+        _SAME_TEXT[key] = audio_id
+        while len(_SAME_TEXT) > SAME_TEXT_MAX:
+            _SAME_TEXT.popitem(last=False)
+    return audio_id
 
 
 def synthesize_later(text: str, previous_text: Optional[str] = None) -> str:

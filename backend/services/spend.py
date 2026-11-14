@@ -20,8 +20,9 @@ DAILY_USD_CAP (default 5, dollars, the whole service) sets the stages, by today'
                            truck is worse than the cent it costs.
     >= 110%  no_satellite  no new satellite parking checks (cached ones still answer) and no Gemini Maps grounding
                            (the star rating is said instead)
-    >= 120%  no_ai         copilot turns get AI_PAUSED (one stored clip, no model call); map, routes and place
-                           search keep working
+    >= 120%  no_ai         copilot turns get AI_PAUSED (one stored clip, no model call); /voice/transcribe and
+                           /onboarding/parse make no speech-to-text or model call, /parking/answer no new clip;
+                           map, routes and place search keep working
 
 The cap is where degrading starts, so the worst day costs about 1.2x the cap plus what was in flight. Each
 threshold sends one alert per day (log line always, Telegram when TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are

@@ -23,6 +23,7 @@ async def parking_answer(req: ParkingAnswerRequest):
     # The driver's language (X-Lang): the spoken reply and the card, like /parking. Both stayed English here.
     reply = await i18n.localize(reply)
     check = await i18n.localize_parking(check)
-    audio_id = await voice.synthesize(reply)
+    # The app asks again for the same place (a retry, the late answer): one clip per text, none past the day's cap.
+    audio_id = await voice.synthesize_same(reply)
     return ParkingAnswer(status=status, reply=reply, parking=check,
                          audio_url=f"/api/voice/audio/{audio_id}" if audio_id else None)

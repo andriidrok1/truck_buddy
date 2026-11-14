@@ -3,6 +3,7 @@ import json
 import re
 import logging
 import os
+from collections import OrderedDict
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -300,30 +301,41 @@ async def satellite(lat: float = Query(..., ge=-90, le=90), lng: float = Query(.
 async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = None) -> AgentResponse:
     if driver and req.session_id:
         req.session_id = f"{driver}:{req.session_id}"[:64]  # sessions can't be shared across drivers
+    refused = await _turn_refused(driver)
+    if refused:
+        # A stored line, said, not an error screen; no model call.
+        reply, source = refused
+        return await _speak(AgentResponse(status="chat", transcript=req.text, reply=reply, source=source), speak)
+    res = await get_agent_provider().handle(req, driver)
+    logger.info("agent text=%s status=%s place=%s", said(req.text), res.status, res.place.name if res.place else None)
+    return await _speak(res, speak)
+
+
+async def _turn_refused(driver, take: bool = True) -> Optional[tuple[str, str]]:
+    """(line, source) when this driver gets no copilot turn now, else None (and the turn is taken). Every endpoint
+    that pays a model for the driver goes through here: the day's money is spent (services/spend.py, stage no_ai) or
+    the driver's turns for today are (services/quota.py). take=False only looks: the speech-to-text step of a voice
+    turn, whose /agent call takes the turn right after."""
     role = getattr(driver, "role", "driver")
     if not spend.turns_open(role):
-        # The day's money is spent (services/spend.py, stage no_ai): no model call, a stored line.
         logger.info("turn refused for %s: spend stage %s", driver, spend.stage())
-        return await _speak(AgentResponse(status="chat", transcript=req.text, reply=spend.AI_PAUSED, source="spend"), speak)
+        return spend.AI_PAUSED, "spend"
     new_device = False
     if driver and role != "tester":
         created = await tenancy.device_created(driver)
         new_device = created is not None and (db.utcnow() - created).total_seconds() < quota.NEW_DEVICE_S
-    if not quota.take_turn(driver, role, new_device=new_device):
-        # Free release: the day's copilot turns are spent (services/quota.py). Said, not an error screen.
+    left = (quota.take_turn if take else quota.has_turn)(driver, role, new_device=new_device)
+    if not left:
         logger.info("turn budget spent for %s%s", driver, " (new device)" if new_device else "")
-        return await _speak(AgentResponse(status="chat", transcript=req.text, reply=quota.OUT_OF_TURNS,
-                                          source="quota"), speak)
-    res = await get_agent_provider().handle(req, driver)
-    logger.info("agent text=%s status=%s place=%s", said(req.text), res.status, res.place.name if res.place else None)
-    return await _speak(res, speak)
+        return quota.OUT_OF_TURNS, "quota"
+    return None
 
 
 async def _same(text):
     return text
 
 
-async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
+async def _speak(res: AgentResponse, speak: bool, fixed: bool = False) -> AgentResponse:
     # The driver's language (services/i18n.py): the reply and the UI message as they will be shown and said.
     if i18n.lang() != "en":
         # A Google Maps grounded answer (what drivers say, services/maps_grounding.py) is said exactly as Google
@@ -338,7 +350,7 @@ async def _speak(res: AgentResponse, speak: bool) -> AgentResponse:
         res.route = i18n.localize_route(res.route)
         res.parking = await i18n.localize_parking(res.parking)
         res.call_card = i18n.localize_call_card(res.call_card)
-    if speak and res.reply and res.source in FIXED_SOURCES:
+    if speak and res.reply and (fixed or res.source in FIXED_SOURCES):
         res.reply_parts = [res.reply]
         audio_id = await _fixed_clip(res.reply)
         if audio_id:
@@ -452,14 +464,47 @@ async def motive_auth(request: Optional[Request], driver) -> tuple[Optional[str]
     return secret, user
 
 
+RESEARCH_SPOKEN_MAX = 200
+_RESEARCH_SPOKEN: "OrderedDict[str, AgentResponse]" = OrderedDict()  # rid|lang -> the result as spoken
+_RESEARCH_PENDING: dict[str, "asyncio.Task[Optional[AgentResponse]]"] = {}
+
+
 @api.get("/breakdown/{rid}", response_model=AgentResponse)
 async def breakdown_result(rid: str, speak: bool = Query(False)):
-    """Result of a breakdown research started by /agent (status=researching); waits until it's ready."""
+    """Result of a breakdown research started by /agent (status=researching); waits until it's ready.
+
+    Spoken once per research and language: asking again (a retry, a second tap) returns the same clips instead of
+    paying TTS (and the translation) again. The "took too long" line is a fixed clip, and it is not kept as the
+    result: the research may still finish."""
     timing.begin()
+    if not speak:
+        res = await breakdown.result(rid)
+        if res is None:
+            raise HTTPException(status_code=404, detail="Unknown research id")
+        return _finish(await _speak(res, False))
+    key = f"{rid}|{i18n.lang()}"
+    done = _RESEARCH_SPOKEN.get(key)
+    if done is None:
+        task = _RESEARCH_PENDING.get(key)
+        if task is None:
+            task = asyncio.create_task(_spoken_research(rid))
+            _RESEARCH_PENDING[key] = task
+            task.add_done_callback(lambda _t: _RESEARCH_PENDING.pop(key, None))
+        done = await asyncio.shield(task)
+        if done is None:
+            raise HTTPException(status_code=404, detail="Unknown research id")
+        if done.reply != breakdown.TOO_LONG:
+            _RESEARCH_SPOKEN[key] = done
+            while len(_RESEARCH_SPOKEN) > RESEARCH_SPOKEN_MAX:
+                _RESEARCH_SPOKEN.popitem(last=False)
+    return _finish(done.model_copy(deep=True))
+
+
+async def _spoken_research(rid: str) -> Optional[AgentResponse]:
     res = await breakdown.result(rid)
     if res is None:
-        raise HTTPException(status_code=404, detail="Unknown research id")
-    return _finish(await _speak(res, speak))
+        return None
+    return await _speak(res, True, fixed=res.reply == breakdown.TOO_LONG)
 
 
 def _bg(coro) -> None:
@@ -555,14 +600,23 @@ async def voice_turn(
     return _finish(await _run_agent(req, speak=True, driver=driver), None, driver, trip_id, session_id, (lat, lng))
 
 
+PAUSED_TRANSCRIPT = "…"  # what /voice/transcribe hands back when no turn is open (see voice_transcribe)
+
+
 @api.post("/voice/transcribe")
 async def voice_transcribe(audio: UploadFile = File(...), hint: Optional[str] = Form(None, max_length=600),
-                           maybe: Optional[str] = Form(None, max_length=8), lang: Optional[str] = Form(None, max_length=10)):
+                           maybe: Optional[str] = Form(None, max_length=8), lang: Optional[str] = Form(None, max_length=10),
+                           driver: str = Depends(auth.require_driver)):
     """Step 1 of a voice turn: speech -> text (the app shows it right away, then calls /agent?speak=true).
 
     `maybe=1`: the app's mic heard sound but no clear speech (src/voice/endpointer.ts). A short, unsure or
     made-up-from-noise transcript then comes back empty, so the agent never answers a "Thank you." nobody said.
-    `lang` (or the X-Lang header): the recogniser's language and prompt (services/voice.stt_language_and_prompt)."""
+    `lang` (or the X-Lang header): the recogniser's language and prompt (services/voice.stt_language_and_prompt).
+
+    No turn open for this driver (the day's money or the driver's turns are spent, see _turn_refused): no speech
+    recognition is paid for. A clear recording gets PAUSED_TRANSCRIPT, so the app goes on to /agent as usual and
+    that says the stored refusal line; a doubtful one gets "" (silence, as before). The turn itself is taken by
+    /agent, not here."""
     timing.begin()
     i18n.use_lang(lang)  # the recogniser's language and prompt (services/voice.stt_language_and_prompt)
     with timing.stage("upload"):
@@ -571,6 +625,9 @@ async def voice_transcribe(audio: UploadFile = File(...), hint: Optional[str] = 
         raise HTTPException(status_code=400, detail="Empty audio")
     if len(data) > 25 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Audio too long")
+    if await _turn_refused(driver, take=False):
+        text = "" if maybe in ("1", "true") else PAUSED_TRANSCRIPT
+        return {"transcript": text, "stt_confidence": None, "timings": timing.current()}
     name = audio.filename or "speech.m4a"
     if "." not in name:
         name += ".webm" if "webm" in (audio.content_type or "") else ".m4a"
@@ -640,7 +697,10 @@ async def speak(req: SpeakRequest):
 
 
 @api.post("/onboarding/parse")
-async def onboarding_parse(audio: UploadFile = File(...), step: str = Form(...)):
+async def onboarding_parse(audio: UploadFile = File(...), step: str = Form(...),
+                           driver: str = Depends(auth.require_driver)):
+    """One spoken onboarding answer: speech-to-text plus a model call, so it is a copilot turn (_turn_refused). With
+    no turn open it answers like an answer it did not catch; the app then offers typing it."""
     if step not in ("name", "work", "truck", "prefs"):
         raise HTTPException(status_code=422, detail="Invalid step")
     data = await audio.read()
@@ -648,6 +708,8 @@ async def onboarding_parse(audio: UploadFile = File(...), step: str = Form(...))
         raise HTTPException(status_code=400, detail="Empty audio")
     if len(data) > 25 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Audio too long")
+    if await _turn_refused(driver):
+        return {"transcript": "", "updates": {}}
     name = audio.filename or "speech.m4a"
     try:
         text = await voice.transcribe(data, name)
