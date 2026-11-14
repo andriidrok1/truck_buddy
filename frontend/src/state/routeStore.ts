@@ -1,6 +1,8 @@
 // The loaded route on disk, so a restart (or a crash in a dead zone) does not lose it. The trip store
 // (src/state/tripStore.ts) writes it on every change of the route or the driving flag and clears it on
-// "End route"; the map screen restores a document younger than MAX_AGE_MS on mount. The whole ActiveRoute goes in: geometry, maneuvers, speed
+// "End route"; the map screen restores a document younger than MAX_AGE_MS on mount. The age counts from the last
+// time the app was alive with the trip: the store re-stamps the copy (touchSavedRoute) when the app goes to the
+// background and every few minutes while it runs. The whole ActiveRoute goes in: geometry, maneuvers, speed
 // limits, incidents, weather, chain controls, alternatives, via stops and the parking result are
 // everything the guidance and advisories read, so a restored route drives without the network.
 
@@ -67,6 +69,23 @@ export async function saveActiveRoute(active: ActiveRoute, now = Date.now(), dri
   savedAt = now;
   notify();
   await queued(() => storage.setItem(ACTIVE_ROUTE_KEY, encodeSaved(active, now, driving) as unknown as Record<string, unknown>));
+}
+
+/**
+ * Moves the saved copy's time to `now`; the route and the driving flag stay as they are on disk. Without it the
+ * time was only written when the route or the driving flag changed: Go at 2 pm, parked at 8 pm, the app killed
+ * overnight, and at 6 am the trip was "16 h old" and dropped with its stops. Goes through the same queue as
+ * the other writes, so it cannot bring back a route that "End route" has just cleared.
+ */
+export async function touchSavedRoute(now = Date.now()) {
+  await queued(async () => {
+    const saved = decodeSaved(await storage.getItem<Record<string, unknown> | string | null>(ACTIVE_ROUTE_KEY, null));
+    if (!saved) return;
+    if (!(await storage.setItem(ACTIVE_ROUTE_KEY, { ...saved, savedAt: now } as unknown as Record<string, unknown>))) return;
+    if (savedAt === null) return; // "End route" came in while this waited: its clear is next in the queue
+    savedAt = now;
+    notify();
+  });
 }
 
 /** The saved route if it is fresh; a stale or unreadable one is cleared and null comes back. */

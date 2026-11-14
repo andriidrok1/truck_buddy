@@ -19,7 +19,7 @@ import { saveProfile } from "@/src/data/profile";
 import { setOnboarded, useTruckProfile, type TruckProfile } from "@/src/hooks/useTruckProfile";
 import { useVoice, type MicPermission } from "@/src/hooks/useVoice";
 import { spacing, useTheme } from "@/src/theme";
-import { truckErrors, truckFromInputs } from "@/src/truck/validate";
+import { heardTruckLine, saidHeight, truckErrors, truckFromInputs } from "@/src/truck/validate";
 import { LANGS, setLang, t, UK_READY, useLang, type Lang } from "@/src/i18n";
 import { confirmHeight } from "@/src/truck/heightConfirmed";
 import { markHowToDue } from "@/src/state/howTo";
@@ -28,7 +28,6 @@ import { NOT_CAUGHT, spoken, STEPS, TAP_TO_TALK, thought, type Step } from "@/sr
 
 type Mode = "speaking" | "listening" | "thinking" | "waiting";
 
-const toInt = (s: string) => parseInt(s.replace(/[^0-9]/g, ""), 10);
 // Rough speaking time, used as a fallback when audio can't autoplay.
 const speechMs = (text: string) => Math.min(20000, 1500 + text.length * 65);
 
@@ -60,7 +59,8 @@ export default function Onboarding() {
   const [weight, setWeight] = useState(String(saved.weight_lb));
   const [heard, setHeard] = useState<string | null>(null);
   const [mic, setMic] = useState<Exclude<MicPermission, "granted"> | null>(null);
-  const [truckHeard, setTruckHeard] = useState(false);
+  // Which truck facts the driver said by voice (keys of the parsed answer); the rest are still the defaults.
+  const [truckHeard, setTruckHeard] = useState<string[]>([]);
 
   const run = useRef(0); // bumps to cancel the running conversation turn
   const draftRef = useRef(draft); // for the async turn; written at commit, synchronously
@@ -213,7 +213,7 @@ export default function Onboarding() {
         const saidNone = s === "prefs" && /\b(no|none|nothing|nope|that's it|all good)\b/i.test(out.transcript);
         if (got || saidNone) {
           applyUpdates(out.updates);
-          if (s === "truck") setTruckHeard(true);
+          if (s === "truck") setTruckHeard((h) => Array.from(new Set([...h, ...Object.keys(out.updates)])));
           setHeard(`“${out.transcript}”`);
           setMode("waiting");
           await new Promise((r) => setTimeout(r, 1100));
@@ -222,6 +222,9 @@ export default function Onboarding() {
             setTyping(true); // let the driver fix odd numbers by hand
             return;
           }
+          // A height said out loud is an answer, same as Next; "80,000 pounds, no hazmat" alone is not (the map asks).
+          // The words themselves must carry it: the parser can return a height nobody said (src/truck/validate.ts).
+          if (s === "truck" && typeof out.updates.height_in === "number" && saidHeight(out.transcript)) confirmHeight();
           advance(s);
           return;
         }
@@ -332,6 +335,7 @@ export default function Onboarding() {
     }
   };
 
+  const heardLine = heardTruckLine(truckHeard, { feet, inches, trailer, weight }, draft.hazmat === true);
   const nextDisabled = (step === "name" && !name) || (step === "truck" && !truckOk);
   const status =
     mode === "listening" ? "Listening… just talk" : mode === "thinking" ? "Thinking…" : heard ?? "";
@@ -391,10 +395,8 @@ export default function Onboarding() {
         </View>
 
         {step === "truck" && !typing && (
-          <Text testID="onboarding-truck-summary" style={[styles.summaryLine, { color: truckHeard ? colors.onSurface : colors.muted }]}>
-            {truckHeard
-              ? `${feet} ft ${inches} in · ${trailer} ft trailer · ${Number(toInt(weight) || 0).toLocaleString("en-US")} lb${draft.hazmat ? " · HAZMAT" : ""}`
-              : "Say it like: “13 foot 6, 53 foot trailer, 80,000 pounds, no hazmat”"}
+          <Text testID="onboarding-truck-summary" style={[styles.summaryLine, { color: heardLine ? colors.onSurface : colors.muted }]}>
+            {heardLine || "Say it like: “13 foot 6, 53 foot trailer, 80,000 pounds, no hazmat”"}
           </Text>
         )}
 

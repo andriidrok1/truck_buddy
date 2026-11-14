@@ -107,7 +107,7 @@ describe("upcomingAdvisories", () => {
   };
 
   test("ahead of the match, within 16 km, nearest first, with severities", () => {
-    const out = upcomingAdvisories(route, 2, cum);
+    const out = upcomingAdvisories(route, 2, cum, cum[2]);
     expect(out.map((a) => [a.kind, a.id, a.severity, Math.round(a.aheadM / 1000)])).toEqual([
       ["incident", "3-construction", 2, 1],
       ["weather", "nws-2", 2, 3],
@@ -123,22 +123,39 @@ describe("upcomingAdvisories", () => {
   });
 
   test("the window moves with the truck", () => {
-    expect(upcomingAdvisories(route, 7, cum).map((a) => a.id)).toEqual(["8-road_closure", "nws-1", "ch-1", "ch-3", "nws-3"]);
-    expect(upcomingAdvisories(route, 19, cum)).toEqual([]);
-    expect(upcomingAdvisories(route, 2, cum, 3500).map((a) => a.id)).toEqual(["3-construction", "nws-2"]);
+    expect(upcomingAdvisories(route, 7, cum, cum[7]).map((a) => a.id)).toEqual(["8-road_closure", "nws-1", "ch-1", "ch-3", "nws-3"]);
+    expect(upcomingAdvisories(route, 19, cum, cum[19])).toEqual([]);
+    expect(upcomingAdvisories(route, 2, cum, cum[2], 3500).map((a) => a.id)).toEqual(["3-construction", "nws-2"]);
+  });
+
+  test("distances are from the truck, not from the start of its segment", () => {
+    // One 8 km segment of straight interstate (the backend simplifies the line), a closure at its end.
+    const long = cumulativeMeters([[0, 0], [0, 8000 * DEG_PER_M], [0, 9000 * DEG_PER_M]]);
+    const closure = { incidents: [{ type: "road_closure", closed: true, description: "I-80 closed", index: 1, criticality: "critical" }] };
+    const at = (alongM: number) => Math.round(upcomingAdvisories(closure, 0, long, alongM)[0].aheadM);
+    expect(at(0)).toBe(8000);
+    expect(at(5000)).toBe(3000); // it said 8 km here before
+    expect(at(7900)).toBe(100);
+    expect(chipAhead(at(5000))).toBe("in 2 mi");
+    // On the next segment the closure's vertex is behind the truck.
+    expect(upcomingAdvisories(closure, 1, long, 8001)).toEqual([]);
+    // The 16 km window is measured from the truck too.
+    const far = cumulativeMeters([[0, 0], [0, 20000 * DEG_PER_M]]);
+    expect(upcomingAdvisories(closure, 0, far, 3000)).toEqual([]);
+    expect(upcomingAdvisories(closure, 0, far, 4100)).toHaveLength(1);
   });
 
   test("chip texts", () => {
-    const out = upcomingAdvisories(route, 2, cum);
+    const out = upcomingAdvisories(route, 2, cum, cum[2]);
     expect(out[0].text).toBe("Construction: Lane closed near Placerville");
     expect(out[3].text).toBe("Road closed: US-50 closed at Echo Summit");
     expect(out[5].text).toBe("Chains R-2 on US-50, Twin Bridges");
   });
 
   test("nothing without a match or data", () => {
-    expect(upcomingAdvisories(route, -1, cum)).toEqual([]);
-    expect(upcomingAdvisories({}, 2, cum)).toEqual([]);
-    expect(upcomingAdvisories(route, 2, [])).toEqual([]);
+    expect(upcomingAdvisories(route, -1, cum, 0)).toEqual([]);
+    expect(upcomingAdvisories({}, 2, cum, cum[2])).toEqual([]);
+    expect(upcomingAdvisories(route, 2, [], 0)).toEqual([]);
   });
 });
 

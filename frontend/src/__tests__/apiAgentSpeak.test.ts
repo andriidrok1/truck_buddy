@@ -182,3 +182,30 @@ describe("api.transcribe", () => {
     expect(out.stt_ms).toBe(1234);
   });
 });
+
+describe("api.speak", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    jest.useRealTimers();
+  });
+
+  /** A link that never answers: the fetch ends only when its signal aborts. */
+  const stalled = () =>
+    jest.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise((_, reject) => init.signal!.addEventListener("abort", () => reject(new Error("Aborted")))),
+    );
+
+  test("the caller's deadline ends a stalled request; without one it is the default 30 s", async () => {
+    jest.useFakeTimers();
+    globalThis.fetch = stalled() as unknown as typeof fetch;
+    const settled: string[] = [];
+    api.speak("Turn right.", 2500).catch(() => settled.push("short"));
+    api.speak("Turn right.").catch(() => settled.push("default"));
+    await jest.advanceTimersByTimeAsync(2500);
+    expect(settled).toEqual(["short"]);
+    await jest.advanceTimersByTimeAsync(27500);
+    expect(settled).toEqual(["short", "default"]);
+  });
+});
