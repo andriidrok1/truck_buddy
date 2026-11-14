@@ -65,8 +65,11 @@ STT_BYTES_PER_S = 8000  # 64 kbps: seconds from the upload size when the respons
 TTS_PER_M_CHARS = {"gpt-4o-mini-tts": 17.0, "tts-1": 15.0, "tts-1-hd": 30.0, "elevenlabs": 40.0}
 # HERE: routing past the free tier (EUR 2.20/1K; geocoding is cheaper). Gemini: 3.x Maps grounding per prompt,
 # the free monthly allowance ignored.
-PER_CALL = {"here": 0.0025, "gemini": 0.014}
-METERED_HOSTS = (("hereapi.com", "here"), ("generativelanguage.googleapis.com", "gemini"))
+# Google Places (New): Text Search Pro / Place Details Pro list price, the free monthly calls ignored. Off in prod
+# (PLACES_PROVIDER=own); counted so that turning it on cannot spend unseen. No call cap of its own.
+PER_CALL = {"here": 0.0025, "gemini": 0.014, "google_places": 0.032}
+METERED_HOSTS = (("hereapi.com", "here"), ("generativelanguage.googleapis.com", "gemini"),
+                 ("places.googleapis.com", "google_places"))
 # Gemini TTS per 1M tokens: (text in, audio out). Official for gemini Flash TTS; the Lite TTS model has no published
 # price (2026-11-10), so it is priced the same as an upper bound. Audio is 25 tokens per second of speech.
 GEMINI_TTS_PER_M = (0.50, 10.00)
@@ -114,7 +117,7 @@ def cap_usd() -> float:
 
 
 def call_cap(provider: str) -> int:
-    return int(_float_env(f"{provider.upper()}_CALLS_PER_DAY", CALLS_DEFAULT[provider]))
+    return int(_float_env(f"{provider.upper()}_CALLS_PER_DAY", CALLS_DEFAULT.get(provider, 0)))
 
 
 def exempt_role(role: Optional[str]) -> None:
