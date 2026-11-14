@@ -5,17 +5,19 @@
 // `useTripStore.getState()` at the moment it needs the value, and components subscribe to slices.
 //
 // Persistence: every change of `active`/`driving` is written through src/state/routeStore.ts (validated
-// decode, freshness, serialised writes); `restoreSavedTrip()` brings a fresh document back as a preview with
+// decode, freshness, serialised writes), and the copy's time is moved forward while the app is alive with the
+// trip (`touchSavedTrip`), so a trip is dropped 12 h after the app last ran with it; `restoreSavedTrip()` brings a fresh document back as a preview with
 // the restored banner (the screen decides what "Resume" does). zustand's `persist` middleware is not used:
 // its envelope would replace the document format the tester and the migration know, and the restore is
 // not a plain hydration (a banner, a fit, a trip event).
 
+import { AppState } from "react-native";
 import { create } from "zustand";
 
 import type { ActiveRoute, LatLng, ParkingCheck, ParkingState, Place, ProvidersResult, RouteInfo } from "../types";
 import { cumulativeMeters, projectOnRoute } from "../geo/guidance";
 import { swapAlternative } from "../geo/routeChoice";
-import { clearSavedRoute, loadActiveRoute, saveActiveRoute, type SavedRoute } from "./routeStore";
+import { clearSavedRoute, loadActiveRoute, saveActiveRoute, touchSavedRoute, type SavedRoute } from "./routeStore";
 
 /** What the copilot sheet shows when no dialog turn is running. */
 export type Sheet = "ready" | "options" | "providers" | "navigating";
@@ -150,7 +152,10 @@ export const useTripStore = create<TripState & TripActions>()((set, get) => ({
     const cur = get();
     if (cur.active && cur.active.place.id === placeId) set({ active: { ...cur.active, parking } });
   },
-  setDriving: (driving, now = Date.now()) => set({ driving, drivingSince: driving ? now : null }),
+  // Already driving: the start time stays ("start driving" said again mid-trip moved it, and the break
+  // reminder that counts from it came hours late).
+  setDriving: (driving, now = Date.now()) =>
+    set((s) => ({ driving, drivingSince: driving ? (s.driving && s.drivingSince !== null ? s.drivingSince : now) : null })),
   endRoute: () => {
     const cur = get();
     set({ active: null, driving: false, drivingSince: null, routeStart: null, restoredId: null, restoredDriving: false, options: [],
@@ -208,8 +213,18 @@ let skipSave: ActiveRoute | null = null;
 // synchronously, before skipSave can be assigned.
 let restoring = false;
 
+/** How often the saved copy's time is moved forward while the app runs with a trip. */
+export const TOUCH_EVERY_MS = 10 * 60 * 1000;
+
+/** The app is alive with this trip right now: the saved copy's 12 h count from here. Nothing while no trip is
+ *  loaded (a copy still waiting to be restored keeps the time it was saved with, so a stale one is dropped). */
+export function touchSavedTrip(now = Date.now()) {
+  if (useTripStore.getState().active) touchSavedRoute(now);
+}
+
 /** Writes every change of the route (and the driving flag) to disk; the object just restored is not written
- *  again, so its saved time stays the original. Idempotent. */
+ *  again, so the copy keeps that it was driving until Resume or Drop (only its time moves, see touchSavedTrip).
+ *  The time is moved when the app goes to the background and every TOUCH_EVERY_MS. Idempotent. */
 export function startTripPersistence(): () => void {
   if (persisting) return () => {};
   persisting = true;
@@ -222,9 +237,15 @@ export function startTripPersistence(): () => void {
     if (s.active === skipSave && s.driving === prev.driving) return;
     saveActiveRoute(s.active, Date.now(), s.driving);
   });
+  const app = AppState.addEventListener("change", (state) => {
+    if (state === "background") touchSavedTrip();
+  });
+  const tick = setInterval(touchSavedTrip, TOUCH_EVERY_MS);
   return () => {
     persisting = false;
     unsub();
+    app.remove();
+    clearInterval(tick);
   };
 }
 

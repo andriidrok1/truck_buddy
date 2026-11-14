@@ -31,7 +31,7 @@ test("advisory chips, the off-route line and the truck summary", () => {
   expect(ru(chipAhead(4828))).toBe("через 3 мили");
   expect(ru(chipAhead(1609))).toBe("через 1 милю");
   expect(ru("Return to the route: 0.4 mi NE")).toBe("Вернись на маршрут: 0,4 мили к северо-востоку");
-  expect(ru("14 ft 0 in · 53 ft trailer · 80,000 lb · HAZMAT")).toBe("14 футов 0 дюймов · трейлер 53 фута · 80 000 фунтов · HAZMAT");
+  expect(ru("14 ft 0 in · 53 ft trailer · 80,000 lb · HAZMAT")).toBe("14 футов 0 дюймов · трейлер 53 фута · 80 000 фунтов · опасный груз");
   expect(ru("Height must be 10 ft to 15 ft.")).toBe("Высота должна быть от 10 футов до 15 футов.");
   expect(ru("12 min by reviews")).toBe("12 мин по отзывам");
 });

@@ -445,6 +445,7 @@ export const RU: Record<string, string> = {
   "{n}k lb": "{n} тыс. фунтов",
   "{n} ft trailer": "трейлер {n|plural:фут,фута,футов}",
   "{n} lb": "{n|plural:фунт,фунта,фунтов}",
+  "HAZMAT": "опасный груз",
   "{n} tolls": "{n} за платные дороги",
   "{n} min per website": "{n} мин по данным сайта",
   "{n} min by reviews": "{n} мин по отзывам",

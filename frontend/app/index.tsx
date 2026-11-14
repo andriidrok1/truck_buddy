@@ -139,6 +139,7 @@ export default function MapScreen() {
   /** Drawn heights of the answer bubble and of the card on the map (height, mic): 0 when gone. */
   const [bubbleH, setBubbleH] = useState(0);
   const [cardH, setCardH] = useState(0);
+  const [restoredH, setRestoredH] = useState(0);
   // Whether this screen is the one on top (not under the truck profile or history).
   const [focused, setFocused] = useState(true);
   /** The answer that did not fit whole in the bubble, and the room it had: it stays in the sheet until a new
@@ -464,17 +465,19 @@ export default function MapScreen() {
   // ---- Nudges: the backend's offers every few minutes while driving (src/hooks/useNudges.ts). ----
   useNudges(driving, !!active, say, turn, guidanceRef, coordsRef);
 
-  const onGo = () => {
+  /** Starts driving; false when it was refused (the toast says why). */
+  const onGo = (): boolean => {
     if (!isHeightConfirmed()) {
       // Bridges on the route were checked for the default 13'6"; a taller truck must not drive it blind.
       showToast("Tell me your truck height first: it decides which bridges are safe.", "info");
-      return;
+      return false;
     }
     turn.pause();
     voice.stopSpeaking();
     setCaption(null);
     setRoutesOpen(false);
     setDriving(true);
+    return true;
   };
 
   /** Typed request: same pipeline and session as voice, without recording or reopening the mic.
@@ -660,6 +663,7 @@ export default function MapScreen() {
   // Hardware Back closes the top layer (src/hooks/useHardwareBack.ts).
   useHardwareBack(
     {
+      focused,
       state: { micCard: !!micCard, routesOpen, reply: isReplyCaption(caption), phase },
       cancel: () => {
         cancelRouting();
@@ -1024,16 +1028,21 @@ export default function MapScreen() {
           note={offlineMap.state?.kind === "saved" ? "Map saved" : null}
           top={topH + spacing.sm}
           onResume={() => {
+            // Go refused (the truck height is not confirmed yet): the banner stays, so Resume is still there
+            // once the height is in. It used to go away with nothing started.
+            if (!onGo()) return;
             trip().dismissRestored();
-            onGo();
             replanOnFix.current = true;
             replanIfFar();
           }}
           onDismiss={clearRoute}
+          onHeight={setRestoredH}
         />
       )}
 
-      <Toast toast={toast} top={topH + spacing.sm} />
+      {/* Under the restored banner while it is up: "Tell me your truck height first" after a refused Resume sat
+          on the banner's own buttons (emulator, 2026-11-11). */}
+      <Toast toast={toast} top={topH + spacing.sm + (restored && active && restoredH > 0 ? restoredH + spacing.sm : 0)} />
 
       <HowToSheet mode={howTo.mode} name={truck.driver_name} motive={!!motiveKey} onAsk={howTo.ask} onTryNow={howTo.tryNow} onClose={howTo.close} />
 

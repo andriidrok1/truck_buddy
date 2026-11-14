@@ -26,6 +26,7 @@ const SORTS: { key: Sort; label: string }[] = [
   { key: "fastest", label: "Fastest ETA" },
 ];
 
+const miles = (p: Provider) => p.distance_mi ?? Infinity; // unknown distance goes last, like an unknown price or wait
 const minPrice = (p: Provider) => Math.min(...p.facts.prices.map((x) => x.amount_usd_low), Infinity);
 const eta = (p: Provider) => p.facts.wait_time?.typical_min_high ?? Infinity;
 const money = (x: PriceFact) =>
@@ -194,15 +195,18 @@ function ProviderCard({ p, index, onRoute }: { p: Provider; index: number; onRou
         )}
 
         <View style={styles.btnRow}>
-          <PressableScale
-            testID={`provider-call-button-${p.id}`}
-            onPress={() => dial(p.phone)}
-            containerStyle={styles.btnItem}
-            style={[styles.btn, { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary }]}
-          >
-            <Icon name="phone" size={18} color={colors.onBrandPrimary} />
-            <Text style={[styles.btnText, { color: colors.onBrandPrimary }]}>Call</Text>
-          </PressableScale>
+          {/* No number, no button: a Call that does nothing is the last thing a broken-down driver needs. */}
+          {!!p.phone && (
+            <PressableScale
+              testID={`provider-call-button-${p.id}`}
+              onPress={() => dial(p.phone)}
+              containerStyle={styles.btnItem}
+              style={[styles.btn, { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary }]}
+            >
+              <Icon name="phone" size={18} color={colors.onBrandPrimary} />
+              <Text style={[styles.btnText, { color: colors.onBrandPrimary }]}>Call</Text>
+            </PressableScale>
+          )}
           <PressableScale
             testID={`provider-route-button-${p.id}`}
             onPress={() => onRoute(p)}
@@ -226,7 +230,7 @@ export function ProvidersList({ data, onRoute }: { data: ProvidersResult; onRout
 
   const list = useMemo(() => {
     const kept = data.providers.filter((p) => filters.every((k) => FILTERS.find((f) => f.key === k)!.test(p)));
-    if (sort === "nearest") return [...kept].sort((a, b) => (a.distance_mi ?? 0) - (b.distance_mi ?? 0));
+    if (sort === "nearest") return [...kept].sort((a, b) => miles(a) - miles(b));
     if (sort === "cheapest") return [...kept].sort((a, b) => minPrice(a) - minPrice(b));
     if (sort === "fastest") return [...kept].sort((a, b) => eta(a) - eta(b));
     return kept; // backend order = best match
