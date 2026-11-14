@@ -48,13 +48,45 @@ describe("NavBanner", () => {
     }
   });
 
-  test("a long instruction may take a fourth line instead of losing its tail; the font stays as large", async () => {
+  test("a long exit is cut to its number and first direction; the whole sentence stays in the label", async () => {
     const long = "Съезд 522 в сторону San Francisco на I-80 W / US-50 W";
     expect(long.length).toBeGreaterThan(LONG_INSTRUCTION);
     await render(banner(turn(long)));
-    expect(instr().props.children).toBe(long);
-    expect(instr().props.numberOfLines).toBe(4);
+    expect(instr().props.children).toBe("Съезд 522 в сторону San Francisco");
+    expect(instr().props.accessibilityLabel).toBe(long);
+    expect(instr().props.numberOfLines).toBe(3);
     expect(fontSize()).toBe(16);
+  });
+
+  test("QA 2026-11-11: exit 518 with three signs and a bracketed road, in Russian", async () => {
+    useLangStore.setState({ lang: "ru" });
+    await render(banner(turn("Съезд 518 в сторону US-50 W/San Francisco/I-80 на I-80-BR W (Capital City Fwy)"), 500));
+    expect(instr().props.children).toBe("Съезд 518 в сторону US-50 W");
+    expect(instr().props.maxFontSizeMultiplier).toBe(1.3);
+  });
+
+  test("a very long English exit: the number and the airport stay, the rest goes; four lines at 14, scale capped", async () => {
+    await render(banner(turn("Take exit 52B toward Sacramento International Airport/Woodland onto I-5 N")));
+    expect(instr().props.children).toBe("Exit 52B toward Sacramento International Airport");
+    expect(instr().props.numberOfLines).toBe(4);
+    expect(fontSize()).toBe(14);
+    expect(instr().props.maxFontSizeMultiplier).toBe(1.3);
+    expect(instr().props.accessibilityLabel).toBe("Take exit 52B toward Sacramento International Airport/Woodland onto I-5 N");
+  });
+
+  test("snapshot of the long-exit instruction as rendered", async () => {
+    await render(banner(turn("Take exit 52B toward Sacramento International Airport/Woodland onto I-5 N"), 805));
+    const { children, numberOfLines, maxFontSizeMultiplier, accessibilityLabel } = instr().props;
+    expect({ distance: screen.getByTestId("nav-distance").props.children, children, numberOfLines, maxFontSizeMultiplier, accessibilityLabel, fontSize: fontSize() }).toMatchInlineSnapshot(`
+{
+  "accessibilityLabel": "Take exit 52B toward Sacramento International Airport/Woodland onto I-5 N",
+  "children": "Exit 52B toward Sacramento International Airport",
+  "distance": "0.5 mi",
+  "fontSize": 14,
+  "maxFontSizeMultiplier": 1.3,
+  "numberOfLines": 4,
+}
+`);
   });
 
   test("no maneuver yet, in Russian; whole miles on the banner read as a number of miles", async () => {
