@@ -334,6 +334,7 @@ export const api = {
     sttMs: number | null = null, // how long speech-to-text took on this turn (server stage, else measured); null for typed text
     sttConfidence: number | null = null, // 0..1 from /voice/transcribe; null for typed text or when the recogniser gives none
     speedMps: number | null = null, // GPS speed in m/s as the location hook reports it; left out of the body when unknown
+    input: "voice" | "text" | null = null, // "text" for a typed request: a miss is then not answered "didn't catch that"
   ) =>
     request<AgentResponse>(`/agent?speak=true`, {
       method: "POST",
@@ -363,6 +364,7 @@ export const api = {
         stt_ms: sttMs,
         stt_confidence: sttConfidence,
         speed_mps: speedForAgent(speedMps),
+        ...(input ? { input } : {}),
       }),
     }).then((r) => checkContract(AgentResponseSchema, r, "/agent")),
   /**

@@ -401,6 +401,9 @@ class AgentRequest(BaseModel):
     # The same stops as places, in route order (2026-11-02: the trip lives on the phone). When the app sends it, it is
     # the truth for the route's stops, also in a dialog that starts after a restart; an older app sends none.
     route_stops: List[Place] = Field(default_factory=list, max_length=MAX_ROUTE_STOPS)
+    # How the request was made: "text" for a typed request (the sheet's text field, the search box, a How-to chip),
+    # "voice" (or none: an older app) for speech. A typed request that is not understood is not told "didn't catch that".
+    input: Optional[Literal["voice", "text"]] = None
 
     @field_validator("route_via", mode="before")
     @classmethod

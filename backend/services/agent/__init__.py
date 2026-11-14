@@ -43,7 +43,7 @@ from services.agent.driver_name import (  # noqa: F401
     NAME_EVERY, NAME_MIN_WORDS, _SENTENCE_START, _INTERJECTION, _address, _a_place, _cut, GREETING, SHORT_LEAD,
     _vocatives, without_name, name_policy)
 from services.agent.replies import (  # noqa: F401
-    NOT_UNDERSTOOD, ROUTE_DOWN, NO_TRUCK_ROUTE, PLACES_DOWN, LLM_DOWN, SOMETHING_BROKE, NO_PLACES, CATEGORY_OFF, NO_CHAIN_NEARBY,
+    NOT_UNDERSTOOD, NOT_UNDERSTOOD_TYPED, ROUTE_DOWN, NO_TRUCK_ROUTE, PLACES_DOWN, LLM_DOWN, SOMETHING_BROKE, NO_PLACES, CATEGORY_OFF, NO_CHAIN_NEARBY,
     WHERE_ON, WHERE_IN, WHERE_UNKNOWN, CHEAPER_OFFER, ALREADY_BEST, NO_ROUTE_COST, cheaper_offer, NO_PRICE_AT,
     NO_WALMART, ALL_REJECTED, heard_not_found, _COUNTRY, _town, _in_town, _street, _speak_street, _label_parts,
     spoken_where, _tokens, _names_match, dest_check, arrival_street, _miles, TEMPLATES, NOTICES, CLOSURE, ALT_REPLY,
@@ -226,6 +226,8 @@ class LlmAgentProvider(ContextMixin, StopsMixin, LearningMixin):
         if driver and req.session_id and not sess.past_loaded:
             await self._adopt_past(driver, req.session_id, sess)
         res = await self._handle(req)
+        if res.status == "not_understood" and req.input == "text" and res.reply == NOT_UNDERSTOOD:
+            res.reply = res.message = NOT_UNDERSTOOD_TYPED  # typed: nothing was misheard
         self._name_once_in_a_while(req, res)
         _fit_for_speed(req, res)
         if res.status == "chat" and GOODBYE.search(req.text or ""):

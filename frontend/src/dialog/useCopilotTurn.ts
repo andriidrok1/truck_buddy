@@ -54,7 +54,7 @@ export type TurnDeps = {
     agentSpeak: (
       text: string, at: LatLng, active: ActiveRoute | null, signal: AbortSignal | undefined, sessionId: string | undefined,
       ui: UiState, heading: number | null, limitMph: number | null, sttMs: number | null, sttConfidence: number | null,
-      speedMps: number | null,
+      speedMps: number | null, input: "voice" | "text",
     ) => Promise<AgentResponse>;
   };
   fillers: { schedule: () => FillerPlan; noteTurn: (totalMs: number) => void };
@@ -107,15 +107,18 @@ export type CopilotTurn = {
   turnId: () => number;
 };
 
-/** What a failed turn says: by HTTP status, else by the error's shape. */
-export function errorMessage(e: unknown): string {
+/** A typed request that failed: the words arrived as written, so the line is not about hearing them. */
+export const TYPED_FAILED = "Something went wrong. Try again.";
+
+/** What a failed turn says: by HTTP status, else by the error's shape. `typed`: never "didn't catch that". */
+export function errorMessage(e: unknown, typed = false): string {
   const status = e instanceof ApiError ? e.status : null;
   if (status === 422) return "Check your truck profile and try again.";
   if (status === 502) return MESSAGES.placesUnavailable;
   if (status === 504) return STT_SLOW;
   if (status === 429) return RATE_LIMITED;
   if (status === null && /abort|network|timed? ?out|failed to fetch/i.test(String(e))) return NO_CONNECTION;
-  return MESSAGES.notUnderstood;
+  return typed ? TYPED_FAILED : MESSAGES.notUnderstood;
 }
 
 type Prepared = { ctrl: AbortController; plan: FillerPlan | null; sttMs: number | null; sttConfidence: number | null; timer: ReturnType<typeof setTimeout> };
@@ -247,7 +250,7 @@ export function createCopilotTurn(initialDeps: TurnDeps): CopilotTurnController 
     if (!stageTimer) startStages();
     try {
       const ctx = deps.context();
-      const res = await deps.api.agentSpeak(c.text, ctx.coords, ctx.active, p.ctrl.signal, c.dialogId, ctx.ui, ctx.heading, ctx.limitMph, p.sttMs, p.sttConfidence, ctx.speed);
+      const res = await deps.api.agentSpeak(c.text, ctx.coords, ctx.active, p.ctrl.signal, c.dialogId, ctx.ui, ctx.heading, ctx.limitMph, p.sttMs, p.sttConfidence, ctx.speed, c.typed ? "text" : "voice");
       if (!isCurrent(c.turnId)) return;
       deps.fillers.noteTurn(res.timings?.total ?? 0);
       // Fast answer: the filler never starts. Otherwise the answer waits for it to finish.
@@ -263,7 +266,7 @@ export function createCopilotTurn(initialDeps: TurnDeps): CopilotTurnController 
       if (!isCurrent(c.turnId)) return; // cancelled by the driver (barge-in, close): nothing to report
       clearStages();
       deps.onThinking(undefined);
-      deps.onError(errorMessage(e));
+      deps.onError(errorMessage(e, c.typed));
       deps.onIdle();
       dispatch({ type: "error" });
     } finally {

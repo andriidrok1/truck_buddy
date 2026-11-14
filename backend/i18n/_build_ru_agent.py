@@ -169,6 +169,7 @@ t("Prices move every day.", "Цены меняются каждый день.")
 # --- errors ---
 t("Sorry, I didn't catch that. Try again.", "Извини, не расслышал. Попробуй ещё раз.")
 t("Sorry, I didn't catch that.", "Извини, не расслышал.")
+t("I didn't get what you mean. Ask me, for example, to find a truck stop or to take you to a town.", "Не понял, о чём ты. Попроси, например, найти трак-стоп или проложить маршрут до города.")
 t("Try again.", "Попробуй ещё раз.")
 t("Try again in a minute.", "Попробуй через минуту.")
 t("I couldn't build a truck route there right now. Try again in a minute.", "Сейчас не получилось построить туда маршрут для трака. Попробуй через минуту.")

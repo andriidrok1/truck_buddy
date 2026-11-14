@@ -26,6 +26,16 @@ describe("api.agentSpeak", () => {
     expect(body.session_id).toBe("s1");
   });
 
+  test("says when the request was typed; an unknown input is left out of the body", async () => {
+    const fetchMock = jest.fn(async () => jsonResponse({ status: "chat", reply: "ok" }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await api.agentSpeak("blorp", { lat: 0, lng: 0 }, null, undefined, "s1", undefined, null, null, null, null, null, "text");
+    await api.agentSpeak("blorp", { lat: 0, lng: 0 });
+    const bodies = (fetchMock.mock.calls as unknown as [string, RequestInit][]).map(([, init]) => JSON.parse(init.body as string));
+    expect(bodies[0].input).toBe("text");
+    expect("input" in bodies[1]).toBe(false);
+  });
+
   test("sends the active route's handle and the stops still ahead", async () => {
     const fetchMock = jest.fn(async () => jsonResponse({ status: "chat", reply: "ok" }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
