@@ -502,11 +502,12 @@ export default function MapScreen() {
     setThinkingText("Checking who's around…");
     const intro = sayReply(res, ctx.isCurrent);
     let done = false;
-    const interimAudio = api.speak(t(RESEARCH_INTERIM)).catch(() => null);
     let interimPlayed: Promise<unknown> = Promise.resolve();
     const interim = setTimeout(() => {
       if (done || !ctx.isCurrent()) return;
       setThinkingText("Reading reviews…");
+      // Paid TTS: asked for only when the line is due (most researches answer before 7 s).
+      const interimAudio = api.speak(t(RESEARCH_INTERIM)).catch(() => null);
       interimPlayed = intro.then(async () => {
         const a = await interimAudio;
         if (a && !done && ctx.isCurrent()) await voice.playAndWait(absoluteUrl(a.audio_url), 4000);
