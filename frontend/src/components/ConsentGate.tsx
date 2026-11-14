@@ -10,6 +10,7 @@ import { PRIVACY_URL, TERMS_URL } from "../constants";
 import { giveConsent } from "../consent";
 import { fonts, radius, spacing, useTheme } from "../theme";
 import { startLocation } from "../geo/location";
+import { signOut as signOutOfAccount } from "../state/accountActions";
 import { signedOutReset } from "../state/firstLaunch";
 import { Icon } from "./Icon";
 import { PressableScale } from "./PressableScale";
@@ -38,11 +39,12 @@ const ITEMS: { icon: string; title: string; body: string }[] = [
   },
 ];
 
-/** The normal sign-out, as on the truck screen: an access-code sign-in goes back to the code screen. */
+/** The normal sign-out, as on the truck screen (src/components/AccountActions.tsx): an account closes this phone's
+ *  session on the server first (accountActions signOut); an access-code sign-in goes back to the code screen. */
 export async function signOutFromConsent(): Promise<void> {
-  const code = signedInWithCode(); // before the reset: it forgets how the phone signed in
+  if (!signedInWithCode()) return signOutOfAccount();
   await signedOutReset();
-  if (code) requestCode();
+  requestCode();
 }
 
 /** Shown once the driver has signed in, before the app (again after a sign-out, "Delete my data" or a new consent

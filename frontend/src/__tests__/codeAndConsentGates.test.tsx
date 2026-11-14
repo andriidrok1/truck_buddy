@@ -149,7 +149,12 @@ describe("Sign out on the consent screen", () => {
     expect(t("Sign out")).toBe("Выйти");
   });
 
-  test("an account: the phone signs out, the root shows the sign-in screen, the next driver gets the consent screen", async () => {
+  test("an account: the session closes on the server (as the truck screen's Sign out), the root shows the sign-in screen", async () => {
+    const seen: { path: string; auth?: string }[] = [];
+    global.fetch = jest.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      seen.push({ path: String(url).replace("https://ci.invalid/api", ""), auth: (init?.headers as Record<string, string> | undefined)?.Authorization });
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
     await markIntroSeen();
     await setToken("ACC-WRONG", "driver", "account", "REF-WRONG");
     const consent = await renderHook(() => useConsent());
@@ -160,6 +165,7 @@ describe("Sign out on the consent screen", () => {
     });
     await auth.rerender({});
     expect(getToken()).toBeNull();
+    expect(seen).toContainEqual({ path: "/auth/logout", auth: "Bearer ACC-WRONG" });
     expect(codeRequested()).toBe(false);
     expect(rootScreen(true, await loadIntro(), consent.result.current, auth.result.current)).toBe("signin");
   });
@@ -170,6 +176,7 @@ describe("Sign out on the consent screen", () => {
       await signOutFromConsent();
     });
     expect(getToken()).toBeNull();
+    expect(jest.mocked(global.fetch).mock.calls.map(([u]) => String(u))).not.toContainEqual(expect.stringContaining("/auth/logout")); // a code has no account session to close
     expect(codeRequested()).toBe(true);
   });
 
