@@ -24,7 +24,7 @@ from services.parking import check_parking, fetch_satellite  # noqa: E402
 from services.places import get_places_provider  # noqa: E402
 from services.errors import NoTruckRoute  # noqa: E402
 from services.routing import PARSE_DEGRADED, RoutingUnavailable, get_routing_provider  # noqa: E402
-from services import account_api, approach, approach_api, auth, chains, db, fleet_api, fuel_index, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, route_cost, session_store, spend, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
+from services import account_api, apple, approach, approach_api, auth, chains, db, fleet_api, fuel_index, i18n, kv, leader, memory, onboarding, parking_store, parking_warm, quota, reqid, route_cost, session_store, spend, tenancy, timing, tpims, trip_events, trips_api, voice, weather  # noqa: E402,E501
 from services.http import client as http_client  # noqa: E402
 from services.logs import said, transcripts_on  # noqa: E402
 from services.settings import settings  # noqa: E402
@@ -195,12 +195,10 @@ async def nudges_endpoint(req: NudgeRequest, request: Request, driver: str = Dep
     req.lang = i18n.use_lang(req.lang)
     req.motive_key, req.motive_user = await motive_auth(request, driver)
     req.truck_profile = await tenancy.effective_profile(driver, req.truck_profile)
-    if req.session_id:
-        req.session_id = f"{driver}:{req.session_id}"[:64]
-    else:
-        req.session_id = f"{driver}:solo"[:64]
+    req.session_id = session_store.dialog_key(driver, req.session_id)
     store = session_store.get_store()
     state = await store.load(req.session_id)
+    state["driver"] = driver  # as a turn does: a dialog a poll started is found by its driver too
     token = session_store.enter(req.session_id, state)
     try:
         out = await nudges.compute(req, state, req.motive_key)
@@ -297,7 +295,7 @@ async def satellite(lat: float = Query(..., ge=-90, le=90), lng: float = Query(.
 
 async def _run_agent(req: AgentRequest, speak: bool, driver: Optional[str] = None) -> AgentResponse:
     if driver and req.session_id:
-        req.session_id = f"{driver}:{req.session_id}"[:64]  # sessions can't be shared across drivers
+        req.session_id = session_store.dialog_key(driver, req.session_id)  # sessions can't be shared across drivers
     role = getattr(driver, "role", "driver")
     if not spend.turns_open(role):
         # The day's money is spent (services/spend.py, stage no_ai): no model call, a stored line.
@@ -451,10 +449,12 @@ async def motive_auth(request: Optional[Request], driver) -> tuple[Optional[str]
 
 
 @api.get("/breakdown/{rid}", response_model=AgentResponse)
-async def breakdown_result(rid: str, speak: bool = Query(False)):
-    """Result of a breakdown research started by /agent (status=researching); waits until it's ready."""
+async def breakdown_result(rid: str, speak: bool = Query(False), driver: auth.Principal = Depends(auth.require_driver)):
+    """Result of a breakdown research started by /agent (status=researching); waits until it's ready. Only for the
+    driver who started it: to anyone else the id is unknown (a tester reads across drivers, as on the tester
+    screen)."""
     timing.begin()
-    res = await breakdown.result(rid)
+    res = await breakdown.result(rid, None if driver.role == "tester" else driver.sub)
     if res is None:
         raise HTTPException(status_code=404, detail="Unknown research id")
     return _finish(await _speak(res, speak))
@@ -729,7 +729,7 @@ async def _memory_up():
 
 def _draining() -> list:
     return [t for t in (*_BG, *memory._tasks, *trip_events._tasks, *approach._tasks, *breakdown._tasks,
-                        *parking_store.pending(), *voice._PENDING.values(), *spend.pending_tasks()) if not t.done()]
+                        *parking_store.pending(), *voice._PENDING.values(), *spend.pending_tasks(), *apple._tasks) if not t.done()]
 
 
 async def drain(timeout: float = DRAIN_S) -> int:
@@ -755,6 +755,12 @@ async def _memory_down():
     await spend.close()  # the last counters, before the store closes
     await leader.close()
     await memory.close()
+
+
+@app.exception_handler(auth.SignedOut)
+async def signed_out(_request, exc: auth.SignedOut):
+    """401 with {"detail", "code"}: the app tells a deleted account from a closed session (services/auth.py)."""
+    return JSONResponse(status_code=401, content={"detail": exc.detail, "code": exc.code}, headers=exc.headers)
 
 
 @app.exception_handler(PlacesUnavailable)

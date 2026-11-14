@@ -16,6 +16,7 @@ turn saves it at the end.
 """
 import asyncio
 import contextvars
+import hashlib
 import json
 import logging
 import os
@@ -34,6 +35,15 @@ TTL_H = 24
 SWEEP_EVERY_S = 600
 
 _current: "contextvars.ContextVar[Optional[tuple[str, DialogState]]]" = contextvars.ContextVar("dialog_state", default=None)
+
+
+LIKE_ESCAPE = "\\"  # goes with like_prefix: ... LIKE ? ESCAPE '\'
+
+
+def like_prefix(prefix: str) -> str:
+    """A LIKE pattern for "starts with `prefix`". LIKE reads `_` and `%` as wildcards, and every driver id has one
+    ("drv_..."): unescaped, one driver's delete could take the dialogs of an id that differs only at that position."""
+    return prefix.replace(LIKE_ESCAPE, LIKE_ESCAPE * 2).replace("%", LIKE_ESCAPE + "%").replace("_", LIKE_ESCAPE + "_") + "%"
 
 
 class SessionStore(Protocol):
@@ -142,16 +152,47 @@ class DbSessionStore:
             logger.info("dialog session sweep skipped: %s", e)
 
     async def drop_prefix(self, prefix: str) -> int:
+        like = like_prefix(prefix)
         if db.store() == "sqlite":
             return await db._sq_run(lambda con: con.execute(
-                "DELETE FROM dialog_sessions WHERE session_id LIKE ? || '%'", (prefix,)).rowcount)
+                f"DELETE FROM dialog_sessions WHERE session_id LIKE ? ESCAPE '{LIKE_ESCAPE}'", (like,)).rowcount)
         pool = await db._db()
-        status = await pool.execute("DELETE FROM dialog_sessions WHERE session_id LIKE $1 || '%'", prefix)
+        status = await pool.execute(f"DELETE FROM dialog_sessions WHERE session_id LIKE $1 ESCAPE '{LIKE_ESCAPE}'", like)
         return int(status.split()[-1])
 
 
 _memory = MemorySessionStore()
 _db_store = DbSessionStore()
+
+
+KEY_MAX = 64  # a dialog key is at most this long
+
+
+def dialog_key(driver: str, app_id: Optional[str]) -> str:
+    """The key a dialog is stored under: the driver's sub in front, so no driver can name another's dialog, then the
+    app's own id for the dialog ("solo" when it sent none).
+
+    A phone signed in to an account (`driver.sid`, services/auth.py) gets its session between the two:
+    "{sub}:{sid8}:{id}". Two phones of one account share the sub, and both would otherwise talk into one "…:solo"
+    dialog. A device token has no session and keeps the key it always had.
+
+    The sub and the session leave 18 characters and the app's ids are longer ("dlg-<ms>-<6 chars>"), so an id that
+    does not fit is replaced by a hash of the whole of it: cutting it would keep the timestamp's head and put every
+    dialog of the phone under one key."""
+    app_id = app_id or "solo"
+    sid = getattr(driver, "sid", None)
+    if not sid:
+        return f"{driver}:{app_id}"[:KEY_MAX]
+    head = f"{driver}:{sid.rsplit('_', 1)[-1][:8]}:"
+    key = head + app_id
+    if len(key) <= KEY_MAX:
+        return key
+    room = KEY_MAX - len(head)
+    if room >= 16:
+        return head + hashlib.sha256(app_id.encode()).hexdigest()[:room]
+    # A sub far longer than the ones this server makes: the bound still holds, and the key is still one per
+    # (sub, session, id).
+    return key[:KEY_MAX - 32] + hashlib.sha256(key.encode()).hexdigest()[:32]
 
 
 def kind() -> str:
@@ -195,11 +236,15 @@ def current_or_memory(sid: Optional[str]) -> DialogState:
     return _memory.get_sync(sid)
 
 
-async def drop_prefix(prefix: str) -> int:
+async def drop_prefix(prefix: str, strict: bool = False) -> int:
+    """Forgets the dialogs whose id starts with `prefix`, in this process and in the store. A store that fails is
+    logged and skipped, or raised with `strict` (deleting an account must not answer "done" over a dialog left)."""
     n = await _memory.drop_prefix(prefix)
     if kind() == "db":
         try:
             n += await asyncio.wait_for(_db_store.drop_prefix(prefix), 5)
         except Exception as e:  # noqa: BLE001
             logger.warning("dialog sessions drop failed: %s", e)
+            if strict:
+                raise
     return n

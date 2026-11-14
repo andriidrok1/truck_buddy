@@ -51,6 +51,18 @@ async def job_get(rid: str) -> Optional[dict]:
     return json.loads(text) if text else None
 
 
+async def job_driver(rid: str) -> Optional[str]:
+    """The sub of the driver who started the job; None when it has none or the job is unknown."""
+    k = db.store()
+    if k == "off":
+        return None
+    if k == "sqlite":
+        row = await db._sq_run(lambda con: con.execute("SELECT driver FROM jobs WHERE rid = ?", (rid,)).fetchone())
+        return row[0] if row else None
+    pool = await db._db()
+    return await pool.fetchval("SELECT driver FROM jobs WHERE rid = $1", rid)
+
+
 async def job_prune(hours: int = 24) -> int:
     k = db.store()
     if k == "off":

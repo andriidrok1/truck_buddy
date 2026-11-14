@@ -39,7 +39,8 @@ Read at startup or on use (see README.md "Backend environment" for meanings):
 `MEMORY_SQLITE_PATH`, `PARKING_CACHE_DIR`, `PARKING_WARM`, `TPIMS_ENABLED`, `TPIMS_FEEDS`, `WEATHER_ALERTS`,
 `NWS_USER_AGENT`, `CHAIN_CONTROLS`, `CHAIN_DISTRICTS`, `HOS_MOTIVE`, `PLACE_REVIEWS`, `CATEGORIES_EXTRA`,
 `ROUTE_ALTERNATIVES`, `ROUTE_INCIDENTS`, `ROUTE_SPEED_LIMITS`, `REROUTE_ENABLED`, `RATE_LIMIT_PER_MIN`, `DEVICES_PER_IP_PER_10MIN`, `TOKEN_GRACE_DAYS`, `TOKEN_GRACE_NOT_BEFORE`,
-`APPLE_AUDIENCES`, `GOOGLE_CLIENT_IDS`, `SIGNINS_PER_IP_PER_10MIN`, `ACCOUNT_SESSION_IDLE_DAYS`,
+`APPLE_AUDIENCES`, `GOOGLE_CLIENT_IDS`, `SIGNINS_PER_IP_PER_10MIN`, `ACCOUNT_SESSION_IDLE_DAYS`, `ACCOUNT_SESSION_MAX_DAYS`,
+`APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`,
 `CORS_ORIGINS`, `DEV_DOCS`, `TRIP_EVENTS_DAYS`, `WORKERS` (or uvicorn's `WEB_CONCURRENCY`), `TTS_DIR`,
 `SESSION_STORE`, `TTS_STREAM`, `CREDENTIALS_KEY`, `LOG_TRANSCRIPTS`, `HEALTH_HERE`.
 
@@ -51,7 +52,23 @@ level. A copilot turn is one `turn {json}` line with `req`, `driver`, `sid`, `or
 unless `LOG_TRANSCRIPTS=1` (set it on the test stand, not in production). `/api/health?deep=1` (tester token only) adds a
 database `SELECT 1` and one HERE geocode call (cached 30 s per worker, one refresh at a time; `HEALTH_HERE=0` skips
 HERE) and answers 503 when one fails. httpx and httpcore log at WARNING, so request URLs (HERE's `apiKey`, a
-driver's geocode text and position) never reach the log.
+driver's geocode text and position) never reach the log. The Apple calls log an exception class or Apple's
+status and error code, never a code, a token or the key.
+
+## Account deletion and Apple
+
+Apple requires an app with account deletion to revoke the Sign in with Apple token. That needs `APPLE_TEAM_ID`,
+`APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (the team's Sign in with Apple .p8, line breaks as `\n`) and `CREDENTIALS_KEY`
+on the service. With them the backend calls `appleid.apple.com/auth/token` after an Apple sign-in and
+`/auth/revoke` on `DELETE /api/account`. Without any of them sign-in and deletion still work, the log gets one
+warning per Apple sign-in (`apple refresh token not kept ...`), and the deletion answers `apple_revoked: null`.
+Set them before a build with account deletion goes to App Review. An account created while they were missing
+gets its token on the next sign-in; an account that already holds one is not exchanged again. `apple_revoked: true`
+means Apple accepted the revoke call. Rotating `CREDENTIALS_KEY` makes the stored tokens unreadable: deletion then
+answers `apple_revoked: false` until the driver signs in again.
+
+README.md "Account deletion" lists what a deletion removes and keeps. The log stream is not touched by it: lines
+with a deleted driver's id stay until the host's log retention drops them.
 
 ## More than one worker
 

@@ -1,5 +1,5 @@
-"""Device tokens, sign-in with Apple and Google, the driver's stored truck profile and "delete my data": /api/auth/*,
-/api/me/profile and /api/memory.
+"""Device tokens, sign-in with Apple and Google, the driver's stored truck profile, "delete my data" and deleting the
+account: /api/auth/*, /api/me/profile, /api/memory and /api/account.
 
 Mounted by server.py ahead of its own routers, so the routes keep their order. `public` needs no token; `api` needs a
 valid one and counts against the driver's request budget (services/auth.py), like server.api.
@@ -9,10 +9,11 @@ import logging
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from models import TruckProfile
-from services import accounts, auth, db, identity, memory, session_store, tenancy, trip_events
+from services import accounts, agent, apple, auth, breakdown, db, identity, memory, session_store, tenancy, trip_events
 
 logger = logging.getLogger("truckbuddy")
 
@@ -36,7 +37,7 @@ class FleetCodeRequest(BaseModel):
 class AppleSignInRequest(BaseModel):
     identity_token: str = Field(min_length=20, max_length=4096)
     nonce: str = Field(min_length=8, max_length=128)  # the raw nonce; Apple's token carries its SHA-256
-    authorization_code: Optional[str] = Field(None, max_length=2048)  # for revoking on account deletion; not used yet
+    authorization_code: Optional[str] = Field(None, max_length=2048)  # traded for Apple's refresh token (services/apple.py)
     name: Optional[str] = Field(None, max_length=120)  # Apple gives the name to the app only, on the first authorization
     platform: Optional[Literal["ios", "android"]] = None
 
@@ -53,9 +54,38 @@ class SignInResponse(BaseModel):
     refresh_token: str
     expires_in: int
     new_account: bool  # the account's first time through: nothing was ever set up for it
-    has_profile: bool  # the driver finished setup before (own profile, a fleet truck, or a name): the app skips onboarding
+    has_profile: bool  # the driver finished setup before (own stored profile, or a fleet truck): the app skips onboarding
     name: Optional[str] = None
     email: Optional[str] = None
+
+
+class LogoutAllResponse(BaseModel):
+    ok: bool
+    closed: int  # sessions closed, this phone's included
+
+
+class HistoryClearResponse(BaseModel):
+    deleted: int  # remembered turns
+    facts: bool  # whether there were learned facts
+
+
+class AccountDeleteResponse(BaseModel):
+    ok: bool
+    deleted: int  # remembered turns
+    trip_events: int
+    profile: bool  # an own stored truck profile was there
+    sessions: int  # phones that were signed in
+    apple_revoked: Optional[bool]  # true: Apple accepted the revoke; false: it failed; null: nothing to revoke with
+
+
+class Refusal(BaseModel):
+    """A refusal the app tells apart by `code` (and localises); `detail` is the English text older builds show."""
+    detail: str
+    code: Literal["last_owner", "not_an_account"]
+
+
+def _refused(code: str, detail: str) -> JSONResponse:
+    return JSONResponse(status_code=409, content=Refusal(detail=detail, code=code).model_dump())
 
 
 async def _issued(token: str, role: str) -> dict:
@@ -89,10 +119,12 @@ def _not_configured(provider: identity.Provider) -> HTTPException:
     return HTTPException(status_code=503, detail="Sign-in is not configured")
 
 
-async def _sign_in(provider: identity.Provider, request: Request, verify, name: Optional[str], platform: Optional[str]) -> dict:
+async def _sign_in(provider: identity.Provider, request: Request, verify, name: Optional[str], platform: Optional[str],
+                   apple_code: Optional[str] = None) -> dict:
     """Checks the provider's token (`verify` returns the identity), finds or creates the account and opens a session
     for this phone. The account's sub is the key its data lives under, so the token handed back sees everything the
-    driver stored from any other phone."""
+    driver stored from any other phone. `apple_code` is Apple's authorization code, traded for a refresh token in
+    the background once the sign-in has succeeded."""
     if not provider.audiences():
         raise _not_configured(provider)
     if db.store() == "off":
@@ -109,14 +141,23 @@ async def _sign_in(provider: identity.Provider, request: Request, verify, name: 
     except identity.NotConfigured:  # the variable was emptied between the check above and the verification
         raise _not_configured(provider)
     try:
-        account = await accounts.find_or_create(who.provider, who.sub, auth.new_sub(), who.email, who.name or name)
-        out, new = await auth.open_session(account.sub, platform)
+        # Twice at most: an account deleted between being found and being signed in to (another phone's "Delete
+        # account" in that moment) is gone for good, and this sign-in starts a new one under a new sub.
+        for _ in range(2):
+            account = await accounts.find_or_create(who.provider, who.sub, auth.new_sub(), who.email, who.name or name)
+            opened = await auth.open_session(account.sub, platform)
+            if opened is not None:
+                break
+        else:
+            raise _unavailable()
+        out, new = opened
         has_profile = await tenancy.has_profile(account.sub)
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         logger.warning("%s sign-in failed in the store: %s", provider.name, e)
         raise _unavailable()
+    apple.remember_later(account.sub, apple_code, who.audience)
     return {**out, "new_account": new, "has_profile": has_profile, "name": account.name, "email": account.email}
 
 
@@ -124,7 +165,8 @@ async def _sign_in(provider: identity.Provider, request: Request, verify, name: 
 async def auth_apple(req: AppleSignInRequest, request: Request):
     """Sign in with Apple: the identity token from the phone, plus the raw nonce the app made for it."""
     name = (req.name or "").strip() or None
-    return await _sign_in(identity.APPLE, request, lambda: identity.verify_apple(req.identity_token, req.nonce), name, req.platform)
+    return await _sign_in(identity.APPLE, request, lambda: identity.verify_apple(req.identity_token, req.nonce), name, req.platform,
+                          req.authorization_code)
 
 
 @public.post("/auth/google", response_model=SignInResponse)
@@ -156,10 +198,11 @@ async def auth_refresh(req: RefreshRequest):
 
 @api.post("/auth/renew")
 async def auth_renew(principal: auth.Principal = Depends(auth.require_driver)):
-    """A fresh access token and refresh token for the device behind the Bearer token (valid, or expired inside the
-    grace window). For app builds that never stored a refresh token: they trade the token they have for both."""
+    """A fresh access token for the one behind the Bearer token (valid, or a device token expired inside the grace
+    window). A device token also gets a new refresh token: app builds that never stored one trade the token they have
+    for both. An account session keeps its refresh token and the answer carries none (auth.renew says why)."""
     try:
-        return await auth.issue(principal.sub, principal.role, principal.sid)
+        return await auth.renew(principal.sub, principal.role, principal.sid)
     except HTTPException:  # the session was closed while this request was on its way
         raise
     except Exception as e:  # noqa: BLE001
@@ -167,7 +210,7 @@ async def auth_renew(principal: auth.Principal = Depends(auth.require_driver)):
         raise _unavailable()
 
 
-@api.post("/auth/logout-all")
+@api.post("/auth/logout-all", response_model=LogoutAllResponse)
 async def auth_logout_all(principal: auth.Principal = Depends(auth.require_driver)):
     """Signs every phone of this account out, this one included (a phone was lost or stolen). The other phones are
     refused within a minute. A device token has no account: nothing to close."""
@@ -180,16 +223,38 @@ async def auth_logout_all(principal: auth.Principal = Depends(auth.require_drive
         raise _unavailable()
 
 
-@api.post("/auth/fleet-code")
+@api.post("/auth/fleet-code",
+          responses={409: {"model": Refusal, "description": "the only owner of a fleet with people in it would leave it"}})
 async def auth_fleet_code(req: FleetCodeRequest, principal: auth.Principal = Depends(auth.require_driver)):
-    """Binds this device to the fleet (and truck) the code was made for; answers with a token carrying the org."""
+    """Binds this device to the fleet (and truck) the code was made for; answers with a token carrying the org.
+
+    A device token gets a new pair, as before. An account session keeps its refresh token, as on /auth/renew: the
+    answer has a new access token and no refresh_token, and the phone keeps the one it holds (an answer lost on the
+    way would otherwise leave the phone with a refresh token the server counts as spent, and its next refresh would
+    close the session as stolen).
+
+    409 `last_owner` when the phone is the only owner of a fleet that would be left without one: a code of another
+    fleet with drivers, other phones or a stored key in this one, or a driver's or dispatcher's code of its own fleet.
+    Nothing changes and the code stays good."""
+    unavailable = HTTPException(status_code=503, detail="Fleet codes are unavailable right now")
     try:
-        dev = await tenancy.bind_fleet_code(principal.sub, req.code)
+        dev = await tenancy.bind_fleet_code(principal.sub, req.code, create=not principal.sid)
+    except tenancy.Unregistered:  # the account was deleted while this request was on its way
+        raise auth._unregistered()
     except tenancy.BadFleetCode:
         raise HTTPException(status_code=401, detail="That fleet code isn't right or has expired")
-    except RuntimeError:
-        raise HTTPException(status_code=503, detail="Fleet codes are unavailable right now")
-    out = await auth.issue(principal.sub, dev.role, principal.sid)
+    except tenancy.LastOwner:
+        return _refused("last_owner", LAST_OWNER_BIND)
+    except Exception as e:  # noqa: BLE001 - the store, or anything else: never a 500 with a trace
+        logger.warning("fleet bind failed for %s: %s", principal.sub, type(e).__name__)
+        raise unavailable
+    try:
+        out = await (auth.renew(principal.sub, dev.role, principal.sid) if principal.sid else auth.issue(principal.sub, dev.role))
+    except HTTPException:  # the session or the account went while this request was on its way
+        raise
+    except Exception as e:  # noqa: BLE001 - the bind holds; the phone keeps its token and asks again
+        logger.warning("token after fleet bind failed for %s: %s", principal.sub, type(e).__name__)
+        raise unavailable
     out.update({"org_id": dev.org_id, "vehicle_id": dev.vehicle_id})
     return out
 
@@ -215,7 +280,9 @@ async def me_profile(response: Response, principal: auth.Principal = Depends(aut
 @api.put("/me/profile", response_model=TruckProfile)
 async def me_profile_put(profile: TruckProfile, principal: auth.Principal = Depends(auth.require_driver)):
     try:
-        await tenancy.profile_put(principal.sub, profile)
+        await tenancy.profile_put(principal.sub, profile, create=not principal.sid)
+    except tenancy.Unregistered:  # the account was deleted while this request was on its way
+        raise auth._unregistered()
     except Exception as e:  # noqa: BLE001
         logger.warning("profile write failed: %s", e)
         raise HTTPException(status_code=503, detail="Profile is unavailable right now")
@@ -239,25 +306,120 @@ async def memory_list(driver: str = Depends(auth.require_driver), limit: int = Q
         raise HTTPException(status_code=503, detail="Memory is unavailable right now")
 
 
+async def _wipe(driver: str) -> dict:
+    """What "Delete my data" removes: the trip events, the remembered turns, facts and visits (after the saves still
+    in flight land) and the driver's own stored truck profile and name."""
+    await tenancy.revoke_grace(driver)  # old tokens die at their exp; a stolen one cannot ride the grace
+    events = await trip_events.clear(driver)
+    turns = await memory.clear(driver)
+    return {"deleted": turns, "trip_events": events, "profile": await tenancy.profile_clear(driver)}
+
+
 @api.delete("/memory")
 async def memory_clear(driver: str = Depends(auth.require_driver)):
     """"Delete my data": the dialogs, the remembered turns and facts, the trip events (after the saves still in
     flight land) and the driver's own stored truck profile (a fleet truck's profile belongs to the fleet).
     `deleted` counts turns, as before."""
     await agent_sessions_drop(driver)
-
-    async def wipe() -> dict:
-        await tenancy.revoke_grace(driver)  # old tokens die at their exp; a stolen one cannot ride the grace
-        events = await trip_events.clear(driver)
-        turns = await memory.clear(driver)
-        return {"deleted": turns, "trip_events": events, "profile": await tenancy.profile_clear(driver)}
     try:
-        return await asyncio.wait_for(wipe(), MEMORY_WAIT_S)
+        return await asyncio.wait_for(_wipe(driver), MEMORY_WAIT_S)
     except Exception as e:  # noqa: BLE001
         logger.warning("memory clear failed: %s", e)
         raise HTTPException(status_code=503, detail="Memory is unavailable right now")
 
 
+@api.delete("/memory/history", response_model=HistoryClearResponse)
+async def memory_history_clear(driver: str = Depends(auth.require_driver)):
+    """"Clear memory" on the history screen: what was said, what the copilot learned from it, and the dialogs, so the
+    copilot does not carry the thread on. The truck profile, the trip events and the visit counts stay.
+    `deleted` counts turns, `facts` is whether there were learned facts."""
+    await agent_sessions_drop(driver)
+    try:
+        turns, facts = await asyncio.wait_for(memory.clear_history(driver), MEMORY_WAIT_S)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("history clear failed: %s", e)
+        raise HTTPException(status_code=503, detail="Memory is unavailable right now")
+    return {"deleted": turns, "facts": facts > 0}
+
+
+NOT_AN_ACCOUNT = "This sign-in has no account. Use DELETE /api/memory to delete its data."
+LAST_OWNER = ("This account is the only owner of a fleet that still has drivers or a stored key. "
+              "Write to support@truckbuddy.io to close the fleet or hand it over.")
+LAST_OWNER_BIND = ("This phone is the only owner of a fleet that still needs one, so it can't join another fleet or "
+                   "take another role in this one. Write to support@truckbuddy.io to hand the fleet over.")
+
+
+@api.delete("/account", response_model=AccountDeleteResponse,
+            responses={409: {"model": Refusal, "description": "the only owner of a fleet with people in it, or no account"}})
+async def account_delete(principal: auth.Principal = Depends(auth.require_driver)):
+    """Deletes the signed-in driver's account and everything stored for it; nothing of the driver is left, and every
+    phone of the account is signed out. An Apple account's refresh token is revoked at Apple first (`apple_revoked`:
+    true when Apple accepted the call, false when Apple could not be reached or refused, null when there was no
+    token or no key to revoke with); the deletion goes on either way. A token an exchange stored after that revoke is
+    read by the deletion under the account's lock and revoked once the deletion has committed (`apple_revoked` is
+    false when either revoke failed).
+
+    Every row goes in one transaction (services/accounts.py erase), the account row last, so a deletion that failed
+    (503) left everything as it was and is repeated with the same token; the stored Apple token is still there for
+    the retry. Before it only what cannot be in a transaction and must come first: waiting for the saves and the Apple
+    exchange in flight, and the revoke. Stopping this worker's research and memory reads for the driver comes after
+    the commit, so a refusal leaves them running.
+
+    409 for the only owner of a fleet that still has drivers, other phones or a stored key (nobody could manage it
+    afterwards). A fleet with nobody else in it goes with its owner."""
+    if not principal.sid:
+        # A device or access-code token has no account behind it; its data goes with DELETE /api/memory.
+        return _refused("not_an_account", NOT_AN_ACCOUNT)
+    if db.store() == "off":
+        raise _unavailable()
+    driver = principal.sub
+    revoked, revoked_sealed = None, None
+    try:
+        await apple.settled(driver)  # an exchange still running for this account: its token is revoked too
+        await accounts.check_may_delete(driver)  # right before the one step that cannot be taken back
+        # Saves still on their way would land after the transaction: they go in first and are deleted with the rest.
+        await asyncio.wait_for(asyncio.gather(memory.settled(driver), trip_events.settled(driver)), MEMORY_WAIT_S)
+        account = await accounts.by_sub(driver)
+        if account and account[0] == "apple":
+            revoked_sealed = account[1]
+            revoked = await apple.revoke(revoked_sealed, driver)
+        erasing = accounts.erase_account(driver)
+        # SQLite (tests, a keyless dev box) runs the transaction in a thread no timeout can stop: it would commit
+        # after a 503 and skip the cache cleanup in erase_account. There it is waited out; Postgres rolls back.
+        erased, sealed = await (erasing if db.store() == "sqlite" else asyncio.wait_for(erasing, MEMORY_WAIT_S))
+    except accounts.LastOwner:
+        # Somebody joined the fleet after the check. Nothing was deleted; only the Apple token may be revoked, and
+        # then it is forgotten, so the next sign-in with Apple exchanges a live one instead of keeping a dead one.
+        if revoked:
+            await _forget_apple_token(driver)
+        return _refused("last_owner", LAST_OWNER)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("account deletion failed for %s: %s", driver, e)
+        raise HTTPException(status_code=503, detail="The account could not be deleted right now. Try again.")
+    # Only now that the deletion holds: a refused or failed one must not have stopped the driver's breakdown search.
+    # A research of this worker that finishes in the moment between the commit and this line can still write its
+    # jobs row; that is the same late write the other workers can make (Known limits in PR #171).
+    breakdown.forget(driver)
+    agent.forget_past(f"{driver}:")
+    if sealed and sealed != revoked_sealed:
+        # An exchange that outlived apple.settled stored its token between the revoke above and the deletion: the
+        # deletion read it under the account's lock, and nothing else will ever revoke it.
+        late = await apple.revoke(sealed, driver)
+        if late is not None:
+            revoked = late if revoked is None else (revoked and late)
+    await session_store.drop_prefix(f"{driver}:")  # this process's copies; the stored dialogs went in the transaction
+    return {"ok": True, **erased, "apple_revoked": revoked}
+
+
+async def _forget_apple_token(driver: str) -> None:
+    try:
+        await accounts.apple_refresh_set(driver, None)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("revoked apple token not forgotten for %s: %s", driver, type(e).__name__)
+
+
 async def agent_sessions_drop(driver: str) -> None:
-    """Forget the dialogs of this driver too (its id prefixes the session ids), wherever they are stored."""
-    await session_store.drop_prefix(driver)
+    """Forget the dialogs of this driver too (its id prefixes the session ids), wherever they are stored, and the
+    memory reads still running for them."""
+    agent.forget_past(f"{driver}:")
+    await session_store.drop_prefix(f"{driver}:")

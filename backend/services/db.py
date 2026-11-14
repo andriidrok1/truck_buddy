@@ -177,6 +177,9 @@ def _sq_conn_unlocked() -> sqlite3.Connection:
         path.parent.mkdir(parents=True, exist_ok=True)
         con = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
         con.execute("PRAGMA journal_mode=WAL")
+        # SQLite ignores REFERENCES unless told otherwise, per connection: without this a dev box or a test could hold
+        # a device whose fleet was deleted, which Postgres refuses.
+        con.execute("PRAGMA foreign_keys = ON")
         _migrate_sqlite(con)
         _sqlite = con
     return _sqlite
@@ -206,6 +209,49 @@ async def _db() -> asyncpg.Pool:
                 logger.info("db migrated: %s", applied)
             _pool = pool
     return _pool
+
+
+# ---- transactions that branch on what they read ----------------------------------------------------------------
+
+def _numbered(sql: str) -> str:
+    """`?` placeholders as Postgres's $1, $2, ..."""
+    parts = sql.split("?")
+    return "".join(f"{part}${i}" for i, part in enumerate(parts[:-1], 1)) + parts[-1]
+
+
+async def run_script(script):
+    """Runs a script of statements in one transaction, on SQLite or Postgres, so a transaction that branches on what
+    it reads (sign-in, account deletion, a fleet bind) is written once. `script` is a generator: it yields (sql with
+    `?` placeholders, args), is handed the rows back (tuples; none for a write without RETURNING) and returns the
+    result. An exception it raises rolls everything back.
+
+    `FOR UPDATE` in a statement is the row lock two scripts meet on in Postgres. SQLite has one writer at a time
+    (BEGIN IMMEDIATE), which is the same guarantee, and does not know the clause."""
+    if store() == "sqlite":
+        def _run(con):
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                rows = None
+                while True:
+                    try:
+                        sql, args = script.send(rows)
+                    except StopIteration as done:
+                        con.execute("COMMIT")
+                        return done.value
+                    rows = con.execute(sql.replace(" FOR UPDATE", ""), args).fetchall()
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+        return await _sq_run(_run)
+    pool = await _db()
+    async with pool.acquire() as con, con.transaction():
+        rows = None
+        while True:
+            try:
+                sql, args = script.send(rows)
+            except StopIteration as done:
+                return done.value
+            rows = [tuple(r) for r in await con.fetch(_numbered(sql), *args)]
 
 
 async def close() -> None:

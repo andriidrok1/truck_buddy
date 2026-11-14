@@ -113,10 +113,13 @@ def new_sub() -> str:
     return f"drv_{uuid.uuid4().hex}"
 
 
-def _token(role: str, sub: Optional[str] = None, claims: Optional[dict] = None, days: int = JWT_DAYS) -> str:
+def _token(role: str, sub: Optional[str] = None, claims: Optional[dict] = None, days: int = JWT_DAYS,
+           until: Optional[datetime] = None) -> str:
     now_dt = datetime.now(timezone.utc)
-    payload = {"sub": sub or new_sub(), "role": role, "iat": now_dt, "exp": now_dt + timedelta(days=days),
-               **(claims or {})}
+    exp = now_dt + timedelta(days=days)
+    if until is not None:
+        exp = min(exp, until)
+    payload = {"sub": sub or new_sub(), "role": role, "iat": now_dt, "exp": exp, **(claims or {})}
     return jwt.encode(payload, _secret(), algorithm="HS256")
 
 
@@ -129,17 +132,51 @@ def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+UNREGISTERED = "This device is no longer registered"
+
+
+class SignedOut(HTTPException):
+    """401 for a token whose account or session is gone. The body carries `code` next to `detail` (server.py's
+    handler): "account_gone" when the sub has no account or device any more (deleted), "session_closed" when the
+    account is there but this phone's session is not (signed out here or from another phone, closed as stolen,
+    idle, past its end). `detail` is the text older builds match on, the same for both."""
+
+    def __init__(self, code: str):
+        super().__init__(status_code=401, detail=UNREGISTERED)
+        self.code = code
+
+
 def _unregistered() -> HTTPException:
-    # The app drops its token on this 401 and signs in again.
-    return HTTPException(status_code=401, detail="This device is no longer registered")
+    """The sub's account or device is gone. The app drops its token on this 401 and signs in again."""
+    return SignedOut(accounts.ACCOUNT_GONE)
+
+
+def _session_closed() -> HTTPException:
+    """The account is there, this phone's session is not."""
+    return SignedOut(accounts.CLOSED)
+
+
+async def _session_gone(sub: str) -> HTTPException:
+    """The 401 for a session the store does not have: which one depends on whether the account is still there."""
+    return SignedOut(await accounts.gone_why(sub))
 
 
 def _bad_refresh() -> HTTPException:
     return HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
 
-def _access(sub: str, role: str, dev: Optional[tenancy.Device], sid: Optional[str] = None) -> dict:
-    """The access token with the device's tenancy claims and, for an account, its session id."""
+def _expires_in(until: Optional[datetime]) -> int:
+    """Seconds an access token issued now lives: JWT_DAYS, or less near the end of its session (`until`)."""
+    full = JWT_DAYS * 86400
+    if until is None:
+        return full
+    return max(0, min(full, int((until - datetime.now(timezone.utc)).total_seconds())))
+
+
+def _access(sub: str, role: str, dev: Optional[tenancy.Device], sid: Optional[str] = None,
+            until: Optional[datetime] = None) -> dict:
+    """The access token with the device's tenancy claims and, for an account, its session id. `until` caps its exp:
+    an account session's end (accounts.session_end)."""
     claims = {}
     if dev is not None:
         claims = {"org_id": dev.org_id, "driver_id": dev.driver_id}
@@ -148,10 +185,11 @@ def _access(sub: str, role: str, dev: Optional[tenancy.Device], sid: Optional[st
         role = dev.role or role
     if sid:
         claims["sid"] = sid
-    return {"access_token": _token(role, sub, claims), "token_type": "bearer", "role": role}
+    return {"access_token": _token(role, sub, claims, until=until), "token_type": "bearer", "role": role}
 
 
-async def issue(sub: str, role: str, sid: Optional[str] = None, spent: Optional[str] = None) -> dict:
+async def issue(sub: str, role: str, sid: Optional[str] = None, spent: Optional[str] = None,
+                until: Optional[datetime] = None) -> dict:
     """Access token with the device's tenancy claims plus a fresh refresh token (stored hashed; the previous one
     stops working). Without a store the access token alone comes back, as before.
 
@@ -159,31 +197,70 @@ async def issue(sub: str, role: str, sid: Optional[str] = None, spent: Optional[
     phone of the account rotates its own; 401 when the session was closed in the meantime. `spent` is the hash of
     the refresh token being traded in: the new pair is handed out only if that token was still the current one
     (see accounts.session_rotate). Every token for an account must be issued with its sid: one without it would
-    outlive a sign-out."""
-    dev = await tenancy.ensure_solo_org(sub, role)
-    out = _access(sub, role, dev, sid)
+    outlive a sign-out. `until` is the session's end: the access token expires no later."""
+    # An account's rows are made at sign-in only (tenancy.ensure_solo_org says why): without them the account was
+    # deleted while this refresh or renew was on its way.
+    dev = await (tenancy.device_of(sub) if sid else tenancy.ensure_solo_org(sub, role))
+    if sid and dev is None and db.store() != "off":
+        raise _unregistered()
+    out = _access(sub, role, dev, sid, until)
     if dev is None:
         return out
     refresh = _secrets.token_urlsafe(32)
     if not sid:
         await tenancy.set_refresh(sub, _hash(refresh))
     elif not await accounts.session_rotate(sid, _hash(refresh), spent):
-        raise _bad_refresh() if spent else _unregistered()
-    return {**out, "refresh_token": refresh, "expires_in": JWT_DAYS * 86400}
+        raise _bad_refresh() if spent else await _session_gone(sub)
+    return {**out, "refresh_token": refresh, "expires_in": _expires_in(until)}
 
 
-async def open_session(sub: str, platform: Optional[str] = None) -> tuple[dict, bool]:
+async def renew(sub: str, role: str, sid: Optional[str] = None) -> dict:
+    """POST /api/auth/renew: a fresh access token for the one presented.
+
+    A device token gets a whole new pair, as always (build 2 never stored a refresh token and trades its access token
+    for both). An account's session keeps its refresh token: the answer has a new access token and no refresh token,
+    and the phone keeps the one it holds. Rotating it here made a lost answer expensive: the phone kept a refresh token
+    the server already counted as spent, and once the access token ran out, its next /auth/refresh was taken for a
+    stolen copy and closed the session (see REUSE_RACE_S). The session is read from the store, not this worker's copy,
+    so no token is minted for a phone that was signed out or deleted a moment ago.
+
+    Renewing needs no refresh token, so a copied access token could be renewed by whoever holds it. Two things bound
+    that: every renew checks the session in the store (signing out, or "Sign out of all phones", ends the copies
+    too), and no token outlives the session's end (accounts.session_end, ACCOUNT_SESSION_MAX_DAYS from the sign-in):
+    past it the session is closed and the phone signs in again."""
+    if not sid:
+        return await issue(sub, role)
+    if db.store() == "off":
+        return {**_access(sub, role, None, sid), "expires_in": JWT_DAYS * 86400}
+    dev = await tenancy.device_of(sub)
+    if dev is None:
+        raise _unregistered()
+    started = await accounts.session_started(sid, sub)
+    if started is None:  # the device may be this worker's copy of a row a deletion took a moment ago
+        raise await _session_gone(sub)
+    if accounts.ended(started):
+        await accounts.session_close(sid)
+        raise _session_closed()
+    until = accounts.session_end(started)
+    return {**_access(sub, role, dev, sid, until), "expires_in": _expires_in(until)}
+
+
+async def open_session(sub: str, platform: Optional[str] = None) -> Optional[tuple[dict, bool]]:
     """Signs an account in on one phone: a token pair on a new session. Also says whether this is the account's
     first time through (no device row existed for the sub), which is when the app runs onboarding. The tenancy rows
-    come first and the session last, so a failure on the way leaves no session behind and the retry is still a
-    first time."""
-    first = await tenancy.device_of(sub) is None
-    dev = await tenancy.ensure_solo_org(sub, "driver")
-    if dev is None:
-        raise RuntimeError("store is off")
+    and the session are made in one transaction, so a failure leaves neither behind and the retry is still a first
+    time. None when the account was deleted since it was looked up: the caller starts over with a new one."""
     refresh = _secrets.token_urlsafe(32)
-    sid = await accounts.session_open(sub, _hash(refresh), platform)
-    return {**_access(sub, "driver", dev, sid), "refresh_token": refresh, "expires_in": JWT_DAYS * 86400}, first
+    opened = await accounts.session_open(sub, _hash(refresh), platform)
+    if opened is None:
+        return None
+    sid, first, started = opened
+    until = accounts.session_end(started)  # ACCOUNT_SESSION_MAX_DAYS under JWT_DAYS: the first token ends with it
+    tenancy.forget(sub)  # a copy from before the rows were made, or before a deletion
+    dev = await tenancy.device_of(sub)
+    if dev is None:
+        raise RuntimeError("no device row after sign-in")
+    return {**_access(sub, dev.role, dev, sid, until), "refresh_token": refresh, "expires_in": _expires_in(until)}, first
 
 
 async def refresh(refresh_token: str) -> dict:
@@ -205,11 +282,12 @@ async def refresh(refresh_token: str) -> dict:
             logging.getLogger("truckbuddy.auth").warning("spent refresh token reused for %s: session %s closed", session.sub, session.sid)
             await accounts.session_close(session.sid)
         raise _bad_refresh()
-    if accounts.idle(session.seen_at):
+    if accounts.idle(session.seen_at) or accounts.ended(session.created_at):
         await accounts.session_close(session.sid)
         raise _bad_refresh()
     dev = await tenancy.device_of(session.sub)
-    return await issue(session.sub, dev.role if dev else "driver", session.sid, spent=hashed)
+    return await issue(session.sub, dev.role if dev else "driver", session.sid, spent=hashed,
+                       until=accounts.session_end(session.created_at))
 
 
 def open_access() -> bool:
@@ -370,17 +448,18 @@ async def _grace(claims: dict) -> None:
 
 async def _session(claims: dict) -> Optional[str]:
     """The account session a token belongs to (its `sid`), None for a device token. 401 once the session is gone:
-    the driver signed out on this phone, or deleted the account from another one."""
+    "session_closed" when the driver signed out on this phone or from another one, "account_gone" when the account
+    was deleted (SignedOut)."""
     sid = claims.get("sid")
     if not sid or db.store() == "off":
         return sid or None
     try:
-        alive = await accounts.session_alive(sid, claims["sub"])
+        state = await accounts.session_state(sid, claims["sub"])
     except Exception as e:  # noqa: BLE001 - a store hiccup must not lock every driver out
         logging.getLogger("truckbuddy.auth").warning("session lookup failed for %s: %s", claims["sub"], e)
         return sid
-    if not alive:
-        raise _unregistered()
+    if state != accounts.ALIVE:
+        raise SignedOut(state)
     try:
         await accounts.session_touch(sid)
     except Exception as e:  # noqa: BLE001 - seen_at is bookkeeping
@@ -413,12 +492,15 @@ async def _device_principal(claims: dict) -> Principal:
             # (review 2026-11-02, bug 6).
             raise _unregistered()
         return Principal(sub, role, claims.get("driver_id"), claims["org_id"], claims.get("vehicle_id"))
+    account = bool(claims.get("sid"))  # its rows are made at sign-in only (tenancy.ensure_solo_org says why)
     try:
-        dev = await tenancy.ensure_solo_org(sub, role)
+        dev = await (tenancy.device_of(sub) if account else tenancy.ensure_solo_org(sub, role))
     except Exception as e:  # noqa: BLE001 - a store hiccup must not lock every driver out
         logging.getLogger("truckbuddy.auth").warning("tenancy lookup failed for %s: %s", sub, e)
-        dev = None
+        return Principal(sub, role)
     if dev is None:
+        if account and db.store() != "off":
+            raise _unregistered()
         return Principal(sub, role)
     return Principal(sub, dev.role or role, dev.driver_id, dev.org_id, dev.vehicle_id)
 

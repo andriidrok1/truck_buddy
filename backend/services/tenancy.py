@@ -71,6 +71,12 @@ async def device_of(sub: str) -> Optional[Device]:
     return d
 
 
+# Deletes a solo org that nothing points at any more (`{p}` = its id): its driver left for a fleet or deleted the
+# account. Never a fleet (solo = 0).
+DROP_EMPTY_SOLO_ORG = "DELETE FROM orgs WHERE id = {p} AND solo = 1 AND " + " AND ".join(
+    f"NOT EXISTS (SELECT 1 FROM {t} WHERE org_id = orgs.id)"
+    for t in ("devices", "drivers", "vehicles", "fleet_codes", "org_credentials", "users"))
+
 _created: dict[str, Optional[datetime]] = {}  # sub -> its driver row's created_at (never changes), per process
 
 
@@ -104,8 +110,29 @@ async def device_created(sub: Optional[str]) -> Optional[datetime]:
     return at
 
 
+class Unregistered(LookupError):
+    """The sub has no device row and the caller may not make one (an account's rows are made at sign-in only)."""
+
+
+def solo_org_statements(sub: str, role: str, at) -> list[tuple[str, tuple]]:
+    """The inserts that give a new sub its organisation of one, driver row and device row (`?` placeholders; `at`
+    is the timestamp in the store's own form). For a caller that runs them inside its own transaction: signing an
+    account in (services/accounts.py)."""
+    org_id, driver_id = new_id("org"), new_id("drv")
+    return [("INSERT INTO orgs (id, name, solo, created_at) VALUES (?, 'Solo', 1, ?)", (org_id, at)),
+            ("INSERT INTO drivers (id, org_id, created_at) VALUES (?, ?, ?)", (driver_id, org_id, at)),
+            ("INSERT INTO devices (sub, driver_id, org_id, role, bound_at, seen_at) VALUES (?, ?, ?, ?, ?, ?)",
+             (sub, driver_id, org_id, role, at, at))]
+
+
 async def ensure_solo_org(sub: str, role: str = "driver") -> Optional[Device]:
-    """The device's org/driver rows, created as an organisation of one when this sub is new."""
+    """The device's org/driver rows, created as an organisation of one when this sub is new.
+
+    Only for a device or access-code token's sub, which exists by being used. Never for an account's: once the
+    account is deleted its sub looks like a new one, and making rows for it here would bring a deleted driver back
+    (a request or a refresh that was on its way during the deletion). An account's rows are made at sign-in, in
+    the transaction that checks the account is still there (accounts.session_open); everything else reads them
+    with device_of."""
     d = await device_of(sub)
     if d is not None:
         return d
@@ -113,13 +140,20 @@ async def ensure_solo_org(sub: str, role: str = "driver") -> Optional[Device]:
     if k == "off":
         return None
     org_id, driver_id, now = new_id("org"), new_id("drv"), _now()
+    # Two first requests for one sub (a phone waking two screens, two sign-ins at once) both get here; one device
+    # row wins. The loser takes its org and driver rows back: nothing points at them, and no sub is on them to find
+    # them by when the driver deletes the account.
+    lost_driver, lost_org = "DELETE FROM drivers WHERE id = {p}", "DELETE FROM orgs WHERE id = {p}"
     if k == "sqlite":
         def _mk(con):
             con.execute("INSERT INTO orgs (id, name, solo, created_at) VALUES (?, ?, 1, ?)", (org_id, "Solo", _iso(now)))
             con.execute("INSERT INTO drivers (id, org_id, display_name, profile, created_at) VALUES (?, ?, NULL, NULL, ?)",
                         (driver_id, org_id, _iso(now)))
-            con.execute("INSERT OR IGNORE INTO devices (sub, driver_id, org_id, vehicle_id, role, bound_at, seen_at) "
-                        "VALUES (?, ?, ?, NULL, ?, ?, ?)", (sub, driver_id, org_id, role, _iso(now), _iso(now)))
+            n = con.execute("INSERT OR IGNORE INTO devices (sub, driver_id, org_id, vehicle_id, role, bound_at, seen_at) "
+                            "VALUES (?, ?, ?, NULL, ?, ?, ?)", (sub, driver_id, org_id, role, _iso(now), _iso(now))).rowcount
+            if not n:
+                con.execute(lost_driver.format(p="?"), (driver_id,))
+                con.execute(lost_org.format(p="?"), (org_id,))
         await db._sq_run(_mk)
     else:
         pool = await db._db()
@@ -127,8 +161,12 @@ async def ensure_solo_org(sub: str, role: str = "driver") -> Optional[Device]:
             async with con.transaction():
                 await con.execute("INSERT INTO orgs (id, name, solo, created_at) VALUES ($1, 'Solo', 1, $2)", org_id, now)
                 await con.execute("INSERT INTO drivers (id, org_id, created_at) VALUES ($1, $2, $3)", driver_id, org_id, now)
-                await con.execute("INSERT INTO devices (sub, driver_id, org_id, role, bound_at, seen_at) VALUES ($1, $2, $3, $4, $5, $5) "
-                                  "ON CONFLICT (sub) DO NOTHING", sub, driver_id, org_id, role, now)
+                status = await con.execute(
+                    "INSERT INTO devices (sub, driver_id, org_id, role, bound_at, seen_at) VALUES ($1, $2, $3, $4, $5, $5) "
+                    "ON CONFLICT (sub) DO NOTHING", sub, driver_id, org_id, role, now)
+                if status.split()[-1] == "0":
+                    await con.execute(lost_driver.format(p="$1"), driver_id)
+                    await con.execute(lost_org.format(p="$1"), org_id)
     _devices.pop(sub, None)
     return await device_of(sub)
 
@@ -185,43 +223,106 @@ class BadFleetCode(ValueError):
     pass
 
 
-async def bind_fleet_code(sub: str, code: str) -> Device:
+# Row locks that transactions touching an account or a fleet take first, in this order, so two of them never wait for
+# each other in a circle (Postgres; SQLite has one writer at a time and drops FOR UPDATE, services/db.py run_script).
+ACCOUNT_LOCK = "SELECT 1 FROM accounts WHERE sub = ? FOR UPDATE"  # sign-in, account deletion, an account's bind
+ORG_LOCK = "SELECT id FROM orgs WHERE id = ? FOR UPDATE"  # a fleet's last owner leaving, anybody joining it
+
+
+class LastOwner(Exception):
+    """The only owner of a fleet that still has people or a stored key in it would leave it: by deleting the
+    account (services/accounts.py) or by binding a code that moves the phone out of the fleet or makes it a driver
+    or dispatcher there. The fleet would be left with nobody who can manage it, and there is no way to add an owner
+    afterwards."""
+
+
+# For the org of a device: (solo, owners besides this sub, what else lives in it: other devices, other driver rows,
+# stored credentials). Args: sub, sub, driver id, org id.
+ORG_FACTS = ("SELECT o.solo, (SELECT count(*) FROM devices WHERE org_id = o.id AND role = 'owner' AND sub <> ?), "
+             "(SELECT count(*) FROM devices WHERE org_id = o.id AND sub <> ?) + "
+             "(SELECT count(*) FROM drivers WHERE org_id = o.id AND id <> ?) + "
+             "(SELECT count(*) FROM org_credentials WHERE org_id = o.id) FROM orgs o WHERE o.id = ?")
+
+
+def closes_fleet(role: Optional[str], facts: list[tuple], staying: bool = False) -> bool:
+    """Whether the fleet goes with this sub: its only owner is leaving and nobody else is in it. LastOwner when
+    somebody is, or a key is stored. Dispatchers and drivers leave freely. `staying`: the sub stays in the fleet
+    with another role (a code of its own fleet), so the fleet is never empty after it and the last owner is refused
+    whatever else is in it."""
+    if role != "owner" or not facts:
+        return False
+    solo, other_owners, others = facts[0]
+    if solo or other_owners:
+        return False
+    if others or staying:
+        raise LastOwner()
+    return True
+
+
+def _bind_script(sub: str, code: str, account: bool, now: datetime, at):
+    """Binds in one transaction. Everything is read again inside it, under the locks a deletion takes too: the
+    account (for an account's sub), the code (still unused, not expired), the fleet and the truck (not closed by
+    their owner meanwhile) and the device. A step that finds its row gone rolls the whole bind back, so a code is
+    never spent by a phone that is not bound by it."""
+    if account and not (yield (ACCOUNT_LOCK, (sub,))):
+        raise Unregistered(sub)  # deleted while this request was on its way
+    rows = yield ("SELECT org_id, vehicle_id, role, expires_at, used_by FROM fleet_codes WHERE code = ?", (code,))
+    if not rows or rows[0][4] or _at(rows[0][3]) < now:
+        raise BadFleetCode("code unknown, used or expired")
+    org_id, vehicle_id, role = rows[0][:3]
+    # An owner leaves its fleet here too (another fleet's code, or a driver's code of its own): that fleet's row is
+    # taken, as a deletion takes it, before the count below. Both fleets in id order, so two owners trading codes
+    # across each other's fleets never wait for each other in a circle.
+    seen = yield ("SELECT org_id, role FROM devices WHERE sub = ?", (sub,))
+    locked = {org_id}
+    if seen and seen[0][1] == "owner":
+        locked.add(seen[0][0])
+    for oid in sorted(locked):
+        if not (yield (ORG_LOCK, (oid,))) and oid == org_id:
+            raise BadFleetCode("the fleet is gone")
+    if vehicle_id and not (yield ("SELECT 1 FROM vehicles WHERE id = ? AND org_id = ?", (vehicle_id, org_id))):
+        raise BadFleetCode("the truck is gone")
+    dev = yield ("SELECT driver_id, org_id, role FROM devices WHERE sub = ? FOR UPDATE", (sub,))
+    if not dev:
+        raise Unregistered(sub)
+    driver_id, old_org, old_role = dev[0]
+    if old_role == "owner" and (old_org != org_id or role != "owner"):
+        if old_org not in locked:  # the row changed between the two reads (a bind of the same device token)
+            yield (ORG_LOCK, (old_org,))
+        facts = yield (ORG_FACTS, (sub, sub, driver_id, old_org))
+        closes_fleet(old_role, facts, staying=old_org == org_id)  # LastOwner rolls the bind back; the code stays good
+    yield ("UPDATE drivers SET org_id = ? WHERE id = ?", (org_id, driver_id))
+    moved = yield ("UPDATE devices SET org_id = ?, vehicle_id = ?, role = ?, bound_at = ? WHERE sub = ? RETURNING sub",
+                   (org_id, vehicle_id, role, at, sub))
+    if len(moved) != 1:
+        raise Unregistered(sub)
+    if not (yield ("UPDATE fleet_codes SET used_by = ?, used_at = ? WHERE code = ? AND used_by IS NULL RETURNING code",
+                   (sub, at, code))):
+        raise BadFleetCode("code used meanwhile")  # two phones with one code: the first one has it
+    yield (DROP_EMPTY_SOLO_ORG.format(p="?"), (old_org,))  # the org of one the driver came from
+
+
+async def bind_fleet_code(sub: str, code: str, create: bool = True) -> Device:
     """Binds the device (and its driver row) to the code's org and vehicle; the code is spent. The driver row is
-    moved into the fleet, so the driver's memory and trips come along."""
+    moved into the fleet, so the driver's memory and trips come along. `create=False` for an account's sub: its
+    rows are not made here (see ensure_solo_org), and the bind holds the account row against a deletion.
+    BadFleetCode for a code that is unknown, spent or expired, or whose fleet or truck is gone; Unregistered when
+    the sub has no device row (an account deleted meanwhile); LastOwner when the phone is the only owner of a fleet
+    the bind would leave without one (closes_fleet), and then nothing changed."""
     code = code.strip().upper()
     k = db.store()
     if k == "off":
         raise RuntimeError("store is off")
+    if create:
+        await ensure_solo_org(sub)  # a device token's first contact; the bind itself checks the row again
     now = _now()
-    if k == "sqlite":
-        row = await db._sq_run(lambda con: con.execute(
-            "SELECT org_id, vehicle_id, role, expires_at, used_by FROM fleet_codes WHERE code = ?", (code,)).fetchone())
-    else:
-        pool = await db._db()
-        r = await pool.fetchrow("SELECT org_id, vehicle_id, role, expires_at, used_by FROM fleet_codes WHERE code = $1", code)
-        row = tuple(r) if r else None
-    if not row or row[4] or _at(row[3]) < now:
-        raise BadFleetCode("code unknown, used or expired")
-    org_id, vehicle_id, role = row[0], row[1], row[2]
-    dev = await ensure_solo_org(sub, role)
-    if k == "sqlite":
-        def _bind(con):
-            con.execute("UPDATE drivers SET org_id = ? WHERE id = ?", (org_id, dev.driver_id))
-            con.execute("UPDATE devices SET org_id = ?, vehicle_id = ?, role = ?, bound_at = ? WHERE sub = ?",
-                        (org_id, vehicle_id, role, _iso(now), sub))
-            con.execute("UPDATE fleet_codes SET used_by = ?, used_at = ? WHERE code = ?", (sub, _iso(now), code))
-        await db._sq_run(_bind)
-    else:
-        pool = await db._db()
-        async with pool.acquire() as con:
-            async with con.transaction():
-                await con.execute("UPDATE drivers SET org_id = $1 WHERE id = $2", org_id, dev.driver_id)
-                await con.execute("UPDATE devices SET org_id = $1, vehicle_id = $2, role = $3, bound_at = $4 WHERE sub = $5",
-                                  org_id, vehicle_id, role, now, sub)
-                await con.execute("UPDATE fleet_codes SET used_by = $1, used_at = $2 WHERE code = $3", sub, now, code)
+    await db.run_script(_bind_script(sub, code, not create, now, _iso(now) if k == "sqlite" else now))
     _devices.pop(sub, None)
     _profiles.pop(sub, None)
-    return await device_of(sub)
+    dev = await device_of(sub)
+    if dev is None:  # deleted right after the bind committed
+        raise Unregistered(sub)
+    return dev
 
 
 async def org_members(org_id: str) -> list[str]:
@@ -479,15 +580,17 @@ async def profile_get(sub: str) -> Optional[TruckProfile]:
 async def has_profile(sub: str) -> bool:
     """Whether this driver has finished setup, which is what the app skips onboarding on: a truck profile of their
     own is stored, or the device is bound to a fleet truck (its sizes are the fleet's; profile_put stores only the
-    driver's name there), or a name is stored. Read from the store and not from this worker's copies: a sign-in
-    right after the profile was saved through another worker must not send the driver to onboarding again."""
+    driver's name there). A stored name alone is not setup: GET /api/me/profile answers 404 for it, and the app
+    greeted such a driver with "Welcome back" over a default truck. Read from the store and not from this worker's
+    copies: a sign-in right after the profile was saved through another worker must not send the driver to
+    onboarding again."""
     _devices.pop(sub, None)
     dev = await device_of(sub)
     if dev is None:
         return False
     if dev.vehicle_id:
         return True
-    sql = "SELECT (profile IS NOT NULL) OR (COALESCE(display_name, '') <> '') FROM drivers WHERE id = {p}"
+    sql = "SELECT profile IS NOT NULL FROM drivers WHERE id = {p}"
     if db.store() == "sqlite":
         row = await db._sq_run(lambda con: con.execute(sql.format(p="?"), (dev.driver_id,)).fetchone())
         return bool(row and row[0])
@@ -495,14 +598,17 @@ async def has_profile(sub: str) -> bool:
     return bool(await pool.fetchval(sql.format(p="$1"), dev.driver_id))
 
 
-async def profile_put(sub: str, profile: TruckProfile) -> None:
+async def profile_put(sub: str, profile: TruckProfile, create: bool = True) -> None:
     """The app's profile. A fleet driver's sizes are not written anywhere: they change the trip, which the phone
     carries (decision 2026-11-02, bug 2: one driver's trailer and name were written onto the truck for all of
-    its drivers). Their name goes to their own drivers row."""
-    dev = await ensure_solo_org(sub)
-    if dev is None:
-        raise RuntimeError("store is off")
+    its drivers). Their name goes to their own drivers row. `create=False` for an account's sub: its rows are not
+    made here (see ensure_solo_org), Unregistered when they are gone."""
     k = db.store()
+    if k == "off":
+        raise RuntimeError("store is off")
+    dev = await (ensure_solo_org(sub) if create else device_of(sub))
+    if dev is None:
+        raise Unregistered(sub)
     if _drives_a_fleet_truck(dev):
         name = profile.driver_name
         if k == "sqlite":
@@ -667,6 +773,14 @@ async def credential_get(org_id: Optional[str], provider: str) -> Optional[str]:
             logger.warning("org credential %s/%s unreadable: %s", org_id, provider, e)
     _credentials[(org_id, provider)] = (secret, time.monotonic())
     return secret
+
+
+def forget(sub: str, driver_id: Optional[str] = None) -> None:
+    """This worker's copies of a sub that was deleted (the other workers' run out within a minute)."""
+    for cache in (_devices, _profiles, _grace, _created, _touched):
+        cache.pop(sub, None)
+    if driver_id:
+        _motive_users.pop(driver_id, None)
 
 
 def reset_caches() -> None:

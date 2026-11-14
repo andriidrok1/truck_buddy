@@ -84,6 +84,7 @@ summary: two sentences for the screen (digits are fine here: 2.6 mi, 24/7, 4.7 s
 Never invent prices, times, hours or services. Never lecture about safety. Write numbers in words for spoken (four point seven stars, six miles)."""
 
 _JOBS: dict[str, "asyncio.Task[AgentResponse]"] = {}
+_OWNERS: dict[str, Optional[str]] = {}  # rid -> the driver who asked, for the jobs in _JOBS
 _tasks: set = set()
 
 
@@ -385,7 +386,11 @@ async def _run(d: dict, req: AgentRequest, sess: dict, source: str) -> AgentResp
 
 def _persist(rid: str, driver: Optional[str], session_id: Optional[str], sess, task: "asyncio.Task[AgentResponse]") -> None:
     """The finished research into the jobs table (any worker can answer GET /breakdown/{rid}) and the dialog
-    state it changed (providers, places) back into the session store: the turn that started it saved before."""
+    state it changed (providers, places) back into the session store: the turn that started it saved before.
+    Nothing is written for a research that was cancelled (forget: its driver's account is being deleted)."""
+    if task.cancelled():
+        return
+
     async def _go():
         try:
             res = task.result()
@@ -413,26 +418,47 @@ def start_research(d: dict, req: AgentRequest, sess: dict, text: str, source: st
     _JOBS[rid] = task
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
-    driver = sess.get("driver") if hasattr(sess, "get") else None
+    driver = _OWNERS[rid] = sess.get("driver") if hasattr(sess, "get") else None
     opened = asyncio.create_task(kv.job_put(rid, driver, "breakdown", {"status": "researching"}))
     _tasks.add(opened)
     opened.add_done_callback(_tasks.discard)
     task.add_done_callback(lambda t, rid=rid, driver=driver, sid=req.session_id, sess=sess: _persist(rid, driver, sid, sess, t))
     while len(_JOBS) > 50:
+        _OWNERS.pop(next(iter(_JOBS)), None)
         _JOBS.pop(next(iter(_JOBS)))
     sess.pop("breakdown_pending", None)
     return AgentResponse(status="researching", transcript=text, reply=START, research_id=rid,
                          breakdown_kind=d["kind"], breakdown_mode=resolve_mode(d), source=source)
 
 
+def forget(driver: str) -> None:
+    """Stops and drops this worker's research jobs of a driver whose account is being deleted: a research that
+    finished later would write its result (shops near the driver) into the jobs table after the deletion."""
+    for rid in [rid for rid, owner in _OWNERS.items() if owner == driver]:
+        _OWNERS.pop(rid, None)
+        task = _JOBS.pop(rid, None)
+        if task is not None:
+            task.cancel()
+
+
 TOO_LONG = "Sorry, the search took too long. Want me to try again?"
 RESULT_POLL_S = 0.5
 
 
-async def result(rid: str) -> Optional[AgentResponse]:
+async def result(rid: str, caller: Optional[str] = None) -> Optional[AgentResponse]:
     """The research result: awaited when it runs in this worker, otherwise read from the jobs table (another
-    worker ran it, or this one restarted) and polled while it is still researching. None = unknown id."""
+    worker ran it, or this one restarted) and polled while it is still researching. None = unknown id, or, with
+    `caller`, a job another driver started: the shops, the summary and the position are that driver's. A job with
+    no driver on it (started without a token) is anyone's."""
     task = _JOBS.get(rid)
+    if caller is not None:
+        try:
+            owner = _OWNERS.get(rid) if task is not None else await kv.job_driver(rid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("breakdown job %s unreadable: %s", rid, e)
+            return None
+        if owner is not None and owner != caller:
+            return None
     if task is not None:
         try:
             return await asyncio.wait_for(asyncio.shield(task), timeout=RESULT_WAIT_S)

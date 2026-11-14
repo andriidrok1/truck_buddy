@@ -81,6 +81,12 @@ def add_later(driver: str, turns: list[tuple[str, "str | Callable[[], Awaitable[
     t.add_done_callback(_done)
 
 
+async def settled(driver: str) -> None:
+    """Waits for this driver's saves in flight."""
+    if _pending.get(driver):
+        await asyncio.gather(*list(_pending[driver]), return_exceptions=True)
+
+
 async def recent(driver: str, limit: int) -> list[dict]:
     """Last `limit` turns, oldest first. Waits for this driver's saves in flight, so a read right after a turn sees it."""
     if _pending.get(driver):
@@ -246,6 +252,25 @@ async def visits(driver: str) -> list[dict]:
     pool = await _db()
     rows = await pool.fetch(f"SELECT {cols} FROM driver_visits WHERE driver = $1 ORDER BY count DESC, last_at DESC", driver)
     return [{**dict(r), "count": int(r["count"])} for r in rows]
+
+
+async def clear_history(driver: str) -> tuple[int, int]:
+    """"Clear memory" on the history screen: what was said and what the copilot learned from it (the facts). The
+    visits are counted from arrivals, not from talk, and stay, like the trip events. Returns (turns, facts rows)."""
+    if _pending.get(driver):
+        await asyncio.gather(*list(_pending[driver]), return_exceptions=True)
+    kind = store()
+    if kind == "off":
+        _off()
+    if kind == "sqlite":
+        def _forget(con):
+            n = con.execute("DELETE FROM conversation WHERE driver = ?", (driver,)).rowcount
+            return n, con.execute("DELETE FROM driver_facts WHERE driver = ?", (driver,)).rowcount
+        return await _sq_run(_forget)
+    pool = await _db()
+    turns = await pool.execute("DELETE FROM conversation WHERE driver = $1", driver)
+    facts = await pool.execute("DELETE FROM driver_facts WHERE driver = $1", driver)
+    return int(turns.split()[-1]), int(facts.split()[-1])
 
 
 async def clear(driver: str) -> int:
