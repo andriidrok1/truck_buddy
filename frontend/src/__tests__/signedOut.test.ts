@@ -6,7 +6,7 @@ import { act, renderHook } from "@testing-library/react-native";
 import { api, signInGoogle } from "../api";
 import { getRefreshToken, getToken, loadToken, setToken, signedInVia, useAuthState } from "../auth";
 import { giveConsent, useConsent } from "../consent";
-import { fetchProfile, saveProfile, UNSYNCED_KEY } from "../data/profile";
+import { beginRestore, fetchProfile, restorePending, saveProfile, UNSYNCED_KEY } from "../data/profile";
 import { eldHeader, loadEldToken, setEldToken } from "../eld";
 import { saveArrived } from "../geo/arrival";
 import { DEFAULT_TRUCK, getTruckProfile, isOnboarded, setOnboarded } from "../hooks/useTruckProfile";
@@ -15,6 +15,7 @@ import { resetRenewalForTests } from "../net/tokenRenewal";
 import { tripLog } from "../net/tripEvents";
 import { queryClient } from "../query-client";
 import { getAccount, saveAccount, setWelcomeBack, signInNotice, welcomeBackDue } from "../state/account";
+import { signInWithCode } from "../signin";
 import { finishSignedIn, prepareSignedIn } from "../state/afterSignIn";
 import { countsAsSignedIn, effectiveAuth, resetToFirstLaunch, retireDeviceIdentity, rootScreen, signedOutReset } from "../state/firstLaunch";
 import { loadHowTo, markHowToSeen } from "../state/howTo";
@@ -90,7 +91,7 @@ describe("signedOutReset", () => {
     await new Promise((r) => setTimeout(r, 2100)); // the trip log's debounced mirror on disk
   }
 
-  test("the driver's data goes, in memory and on disk; the language, consent, the intro flag and the theme stay; the root shows sign-in", async () => {
+  test("the driver's data and AI consent go, in memory and on disk; the language, the intro flag and the theme stay; the root shows sign-in", async () => {
     await phoneInUse();
     expect(await AsyncStorage.getItem(UNSYNCED_KEY)).not.toBeNull(); // a truck change the server never took
     expect(await AsyncStorage.getItem("trip_events_pending")).not.toBeNull();
@@ -115,10 +116,11 @@ describe("signedOutReset", () => {
     expect(await loadIntro()).toBe(true);
     const theme = await renderHook(() => useThemePref());
     expect(theme.result.current).toBe("dark");
-    await consent.rerender({});
-    expect(consent.result.current).toBe("yes");
 
     // Gone.
+    await consent.rerender({});
+    expect(consent.result.current).toBe("no"); // review of #172: whoever signs in next agrees for themselves
+    expect(await AsyncStorage.getItem("ai_consent_v2")).toBeNull();
     expect(getToken()).toBeNull();
     expect(getRefreshToken()).toBeNull();
     expect(signedInVia()).toBe("device"); // nothing remembered about how the last driver signed in
@@ -146,8 +148,8 @@ describe("signedOutReset", () => {
     const all = [...APP_KEYS, ...SECURE_KEYS];
     // The trip set aside for a driver the server signed out is neither: the sign-out pass leaves it, its own code removes it.
     expect([...IDENTITY_KEYS, ...KEPT_ON_SIGN_OUT, HELD_TRIP_KEY].sort()).toEqual([...all].sort());
-    expect([...KEPT_ON_SIGN_OUT].sort()).toEqual(["ai_consent_v2", "intro_seen_v1", "lang_v1", "theme_pref_v1"]);
-    for (const k of ["auth_token", "auth_refresh", "auth_refresh_sent", "auth_role", "auth_via", "account_v1", "profile_restore_v1", "apple_name_pending_v1", "eld_token_v1", "truck_profile_v1", "profile_unsynced_v1", "trip_events_pending", "trip_v2", "settings_v2", "onboarded_v1", "height_confirmed_v1", "how_to_seen_v1"]) {
+    expect([...KEPT_ON_SIGN_OUT].sort()).toEqual(["intro_seen_v1", "lang_v1", "theme_pref_v1"]);
+    for (const k of ["ai_consent_v2", "auth_token", "auth_refresh", "auth_refresh_sent", "auth_role", "auth_via", "account_v1", "profile_restore_v1", "apple_name_pending_v1", "eld_token_v1", "truck_profile_v1", "profile_unsynced_v1", "trip_events_pending", "trip_v2", "settings_v2", "onboarded_v1", "height_confirmed_v1", "how_to_seen_v1"]) {
       expect(IDENTITY_KEYS).toContain(k);
     }
   });
@@ -164,7 +166,7 @@ describe("signedOutReset", () => {
     expect(getToken()).toBeNull();
   });
 
-  test("a key that would not go is finished on the next cold start, and that pass leaves the language and consent alone", async () => {
+  test("a key that would not go is finished on the next cold start, and that pass leaves the language and the intro flag alone", async () => {
     await phoneInUse();
     const spy = jest.spyOn(AsyncStorage, "removeItem").mockImplementation(async (k: string) => {
       if (k === "truck_profile_v1") throw new Error("disk full");
@@ -183,7 +185,7 @@ describe("signedOutReset", () => {
     __resetWipeGate(); // a cold start
     expect(await storage.getItem("truck_profile_v1", null)).toBeNull();
     expect(await storage.getItem("lang_v1", null)).toBe("ru");
-    expect(await storage.getItem("ai_consent_v2", null)).toBe(true);
+    expect(await storage.getItem("ai_consent_v2", null)).toBeNull(); // went with the sign-out itself
     expect(await storage.getItem("intro_seen_v1", null)).toBe("seen");
     expect(await AsyncStorage.getItem(WIPE_PENDING_KEY)).toBeNull();
   });
@@ -197,6 +199,7 @@ describe("signedOutReset", () => {
     expect(await storage.secureGet("auth_token", null)).toBeNull();
     expect(await storage.getItem("lang_v1", null)).toBe("ru");
     expect(await storage.getItem("theme_pref_v1", null)).toBe("dark");
+    expect(await storage.getItem("ai_consent_v2", null)).toBeNull(); // the driver's, not the phone's
   });
 });
 
@@ -214,7 +217,7 @@ describe("a phone that still holds the anonymous device token of build 1.0", () 
     expect(rootScreen(true, true, "yes", effectiveAuth("in", "code"))).toBe("app");
   });
 
-  test("the device token and what the phone kept under it are cleared; the language and consent stay", async () => {
+  test("the device token and what the phone kept under it are cleared, the consent with them; the language stays", async () => {
     setLang("ru");
     await giveConsent();
     await setToken("old-device-token", "driver", "device", "old-refresh");
@@ -230,7 +233,7 @@ describe("a phone that still holds the anonymous device token of build 1.0", () 
     expect(await isOnboarded()).toBe(false);
     expect(signInNotice()).toBeNull(); // nothing to explain: the sign-in screen is simply the next screen
     expect(useLangStore.getState()).toMatchObject({ lang: "ru", chosen: true });
-    expect(await storage.getItem("ai_consent_v2", null)).toBe(true);
+    expect(await storage.getItem("ai_consent_v2", null)).toBeNull();
   });
 
   describe("when the Keychain cannot say how the phone signed in", () => {
@@ -321,7 +324,7 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
   const b64url = (v: string) => Buffer.from(v).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   /** An access token as the server makes it: the account's id in `sub`, good for 30 days. */
   const jwt = (sub: string) => `${b64url('{"alg":"HS256"}')}.${b64url(JSON.stringify({ sub, sid: "s1", exp: Math.floor(Date.now() / 1000) + 30 * 86400 }))}.sig`;
-  const ACC = { A: jwt("acct-alice"), B: jwt("acct-bob") };
+  const ACC = { A: jwt("acct-alice"), B: jwt("acct-bob"), T: jwt("tester-1") };
   type Call = { method: string; path: string; auth: string | undefined; motive: string | undefined; body: string };
   let calls: Call[];
   let alive: Set<string>; // the access tokens the server still accepts
@@ -342,6 +345,10 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
         const who = JSON.parse(call.body).id_token === "google-token-of-alice" ? "A" : "B";
         alive.add(`Bearer ${ACC[who]}`);
         return account(who);
+      }
+      if (call.path === "/auth/access-code") {
+        alive.add(`Bearer ${ACC.T}`);
+        return reply(200, { access_token: ACC.T, refresh_token: "REF-T", token_type: "bearer", role: "tester" });
       }
       if (call.path === "/auth/refresh" || call.path === "/auth/renew") return reply(401, { detail: "This device is no longer registered" });
       if (!call.auth || !alive.has(call.auth)) return reply(401, { detail: "This device is no longer registered" });
@@ -446,10 +453,12 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
       expect(`${k}=${v}`).not.toMatch(/Alice|REF-A/i);
       expect(v).not.toContain(ACC.A);
     }
-    // The phone's own choices survived the hand-over.
+    // The phone's own choices survived the hand-over; A's AI consent did not: B gets the consent screen.
     expect(useLangStore.getState()).toMatchObject({ lang: "ru", chosen: true });
     await consent.rerender({});
-    expect(consent.result.current).toBe("yes");
+    expect(consent.result.current).toBe("no");
+    await auth.rerender({});
+    expect(rootScreen(useLangStore.getState().chosen, await loadIntro(), consent.result.current, auth.result.current)).toBe("consent");
   });
 
   test("A's profile answer arriving after the hand-over does not become B's truck", async () => {
@@ -548,6 +557,32 @@ describe("driver A leaves, driver B signs in on the same phone, same run", () =>
       expect(tripLog.size()).toBe(0);
       expect(await tripLog.flush()).toBe("empty");
       expect(calls.slice(from).filter((c) => c.path === "/trips/events")).toEqual([]);
+      for (const k of await AsyncStorage.getAllKeys()) expect(`${k}=${await AsyncStorage.getItem(k)}`).not.toMatch(/Alice/);
+    });
+
+    test("a tester signs in with an access code: settled like any other account, nothing of the driver before survives (review of #172)", async () => {
+      await aliceOnTheRoad();
+      await sessionClosed();
+      // What an earlier, interrupted account sign-in may have left: a restore and "Welcome back" for that driver.
+      setWelcomeBack(true);
+      await beginRestore();
+      const from = calls.length;
+      await act(async () => {
+        await signInWithCode("TESTER-CODE");
+      });
+      expect(getToken()).toBe(ACC.T);
+      expect(signedInVia()).toBe("code");
+      expect(signInNotice()).toBeNull();
+      expect(welcomeBackDue()).toBe(false);
+      expect(restorePending()).toBe(false);
+      expect(await loadActiveRoute()).toBeNull();
+      expect(await AsyncStorage.getItem(HELD_TRIP_KEY)).toBeNull();
+      expect(await AsyncStorage.getItem("trip_v2")).toBeNull();
+      expect(await AsyncStorage.getItem("trip_events_pending")).toBeNull();
+      expect(tripLog.size()).toBe(0);
+      expect(await tripLog.flush()).toBe("empty");
+      expect(calls.slice(from).filter((c) => c.path === "/trips/events")).toEqual([]);
+      expect(getAccount()).toBeNull(); // the truck screen shows the code sign-in as such
       for (const k of await AsyncStorage.getAllKeys()) expect(`${k}=${await AsyncStorage.getItem(k)}`).not.toMatch(/Alice/);
     });
 

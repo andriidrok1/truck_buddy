@@ -49,8 +49,10 @@ async function tryRemove(remove: Remove, key: string): Promise<boolean> {
 const ALL_KEYS: string[] = [...APP_KEYS, ...SECURE_KEYS];
 
 /** What stays on the phone when the driver signs out or the server turns the token down: choices about the phone,
- *  not about the driver (src/state/firstLaunch.ts signedOutReset). "Delete my data" removes these too. */
-export const KEPT_ON_SIGN_OUT = ["lang_v1", "ai_consent_v2", "intro_seen_v1", "theme_pref_v1"] as const;
+ *  not about the driver (src/state/firstLaunch.ts signedOutReset). Not the AI consent (ai_consent_v2): it is the
+ *  driver's agreement, and whoever signs in next sees the consent screen (review of #172). "Delete my data" removes
+ *  these too. */
+export const KEPT_ON_SIGN_OUT = ["lang_v1", "intro_seen_v1", "theme_pref_v1"] as const;
 /** The trip of a driver the server signed out mid-drive, kept for that same account to come back to
  *  (src/state/heldTrip.ts). Not a driver's key in the sense below: a sign-out pass leaves it, and the code that
  *  wrote it removes it. "Delete my data" removes it with everything else. */
