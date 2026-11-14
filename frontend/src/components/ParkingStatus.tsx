@@ -170,7 +170,7 @@ export function ParkingStatus({ parking, idSuffix = "", place, route, compact }:
               <PressableScale
                 testID={`parking-open-google${idSuffix}`}
                 accessibilityLabel={t("Open in Google Maps")}
-                onPress={() => openStreetView(place?.lat ?? center.lat, place?.lng ?? center.lng)}
+                onPress={() => openStreetView(place?.lat ?? center.lat, place?.lng ?? center.lng).catch(() => {})}
                 style={[styles.gmBtn, { backgroundColor: colors.surface }]}
               >
                 <Icon name="google-maps" size={20} color={colors.info} />

@@ -246,3 +246,30 @@ test("a nudge that played with no signal opens no mic and says nothing by itself
   expect(offline).not.toHaveBeenCalled();
   expect(f.listen).toHaveBeenCalledTimes(1); // with a signal the hands-free window still opens
 });
+
+test("a breakdown research that runs past the turn's 60 s is not cut off; closing the screen still aborts it", async () => {
+  const f = fakeDeps();
+  let researchSignal: AbortSignal | null = null;
+  f.agentResult = async () => {
+    await new Promise((r) => setTimeout(r, 3000));
+    return { status: "researching", research_id: "r1", reply: "Give me a minute." } as unknown as AgentResponse;
+  };
+  // Like runResearch: api.breakdownResult(id, ctx.signal) with its own 120 s budget; this one takes 70 s.
+  f.deps.onResponse = (_res, ctx) =>
+    new Promise((resolve, reject) => {
+      researchSignal = ctx.signal;
+      ctx.signal.addEventListener("abort", () => reject(new Error("Aborted")));
+      setTimeout(() => resolve({ spoken: Promise.resolve() }), 70000);
+    });
+  const { result } = harness(f.deps);
+  act(() => result.current.tap());
+  await flush();
+  await jest.advanceTimersByTimeAsync(3100);
+  await flush();
+  await jest.advanceTimersByTimeAsync(60000);
+  await flush();
+  expect((researchSignal as AbortSignal | null)?.aborted).toBe(false);
+  expect(f.calls.filter((c) => c.startsWith("error:"))).toEqual([]);
+  act(() => result.current.dispose());
+  expect((researchSignal as AbortSignal | null)?.aborted).toBe(true);
+});
