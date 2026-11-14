@@ -292,8 +292,6 @@ export const api = {
   /** `timeoutMs`: the speech queue gives a line a few seconds, not the default 30 (a turn call cannot wait). */
   speak: (text: string, timeoutMs?: number) =>
     request<{ audio_url: string }>(`/speak`, { method: "POST", body: JSON.stringify({ text }), timeoutMs }),
-  /** Pre-fetch nearby places (+ parking checks) so the next voice turn hits warm caches. */
-  warm: (at: LatLng) => request<{ ok: boolean }>(`/warm?lat=${at.lat}&lng=${at.lng}`, { method: "POST" }),
   /**
    * Voice turn step 1: speech -> text, shown to the driver right away. `stt_ms` is the server's
    * STT stage when it reports one, else the wall time of this call; agentSpeak forwards it along

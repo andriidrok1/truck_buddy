@@ -467,36 +467,13 @@ def _bg(coro) -> None:
 
 
 _BG: set = set()
-WARM_TOP = 1  # satellite check only for the first place of each category
-WARM_EVERY_S = 600  # per driver: a warm-up is 3 Places searches + up to 3 vision calls
-_WARM_LAST: dict[str, float] = {}
-
-
-async def _warm(lat: float, lng: float) -> None:
-    async def one(cat: str):
-        try:
-            res = await get_places_provider().search(cat, lat, lng)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("warm %s failed: %s", cat, e)
-            return
-        for p in res.places[:WARM_TOP]:
-            _bg(check_parking(p))
-    await asyncio.gather(*(one(c) for c in ("truck_stop", "hotel", "rest_area")))
 
 
 @api.post("/warm")
 async def warm(lat: float = Query(..., ge=-90, le=90), lng: float = Query(..., ge=-180, le=180),
                driver: str = Depends(auth.require_driver)):
-    """Pre-fetch Places for all categories (+ satellite check for the top place) around the driver.
-    At most once per driver per WARM_EVERY_S; the answer is always ok (the app ignores it)."""
-    now = asyncio.get_running_loop().time()
-    if len(_WARM_LAST) > 10_000:
-        for d in [d for d, t in _WARM_LAST.items() if now - t > WARM_EVERY_S]:
-            del _WARM_LAST[d]
-    if now - _WARM_LAST.get(driver, -WARM_EVERY_S) < WARM_EVERY_S:
-        return {"ok": True}
-    _WARM_LAST[driver] = now
-    _bg(_warm(lat, lng))
+    """No-op, kept for 1.0 builds that still call it when the map opens. Nothing paid runs before the driver
+    asks: no Places search, no HERE, no LLM, no satellite check. The answer is always ok."""
     return {"ok": True}
 
 

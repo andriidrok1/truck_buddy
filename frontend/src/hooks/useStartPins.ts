@@ -1,4 +1,4 @@
-// Two effects of the map screen that look around the driver before any route (moved verbatim from app/index.tsx).
+// The map screen's look around the driver before any route (moved verbatim from app/index.tsx).
 import { useEffect, useRef, type RefObject } from "react";
 
 import { api } from "../api";
@@ -9,22 +9,8 @@ const trip = useTripStore.getState;
 
 type Fix = { coords: LatLng; isDemo: boolean; resolved: boolean };
 
-/** Within ~5 km of where the last look-around was made (a flat-earth check, lng shrunk by cos 37°). */
+/** Within ~5 km of where the last empty look-around was made (a flat-earth check, lng shrunk by cos 37°). */
 const nearSpot = (spot: LatLng | null, at: LatLng) => !!spot && Math.hypot(spot.lat - at.lat, (spot.lng - at.lng) * 0.8) < 0.045;
-
-/**
- * Warm Places + parking caches around the driver: app on screen, no active route,
- * real GPS fix (or demo after location resolved), then again after moving ~5 km.
- */
-export function useWarmCaches(loc: Fix, appActive: boolean, active: ActiveRoute | null) {
-  const warmedAt = useRef<LatLng | null>(null);
-  useEffect(() => {
-    if (!appActive || active || (loc.isDemo && !loc.resolved)) return;
-    if (nearSpot(warmedAt.current, loc.coords)) return;
-    warmedAt.current = loc.coords;
-    api.warm(loc.coords).catch(() => {});
-  }, [loc.coords, loc.isDemo, loc.resolved, appActive, active]);
-}
 
 /**
  * The first map is not empty: while nothing is on it (no route, no search, no pins yet) the truck stops
