@@ -67,9 +67,12 @@ def _day(day: Optional[str], tz: ZoneInfo) -> tuple[datetime, datetime, str]:
         d = date.fromisoformat(day) if day else datetime.now(tz).date()
     except ValueError:
         raise HTTPException(status_code=422, detail="day is YYYY-MM-DD")
-    start = datetime.combine(d, dtime.min, tzinfo=tz)
-    end = datetime.combine(d + timedelta(days=1), dtime.min, tzinfo=tz)
-    return start.astimezone(timezone.utc), end.astimezone(timezone.utc), d.isoformat()
+    try:  # 9999-12-31 has no next day, 0001-01-01 no UTC start east of Greenwich: 422, not a 500
+        start = datetime.combine(d, dtime.min, tzinfo=tz)
+        end = datetime.combine(d + timedelta(days=1), dtime.min, tzinfo=tz)
+        return start.astimezone(timezone.utc), end.astimezone(timezone.utc), d.isoformat()
+    except (OverflowError, ValueError):
+        raise HTTPException(status_code=422, detail="day is out of range")
 
 
 async def _guarded(coro):

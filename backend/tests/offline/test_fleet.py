@@ -544,3 +544,11 @@ def test_the_fleets_day_is_its_own_calendar_day(client):
     assert len(events) == 1
     # another fleet keeps its own zone
     assert client.get("/api/fleet/summary", headers=f["b_disp"]).json()["timezone"] == "America/Los_Angeles"
+
+
+def test_fleet_day_at_the_calendar_edge_is_422(client):
+    """9999-12-31 has no next day: an OverflowError and a 500 before (audit 2026-11-13)."""
+    f = _two_fleets(client)
+    for path in ("/api/fleet/summary", f"/api/fleet/vehicles/{f['t1']}/events"):
+        assert client.get(f"{path}?day=9999-12-31", headers=f["a_disp"]).status_code == 422, path
+    assert client.get("/api/fleet/summary?day=0001-01-01", headers=f["a_disp"]).status_code == 200
