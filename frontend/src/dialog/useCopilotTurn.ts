@@ -249,6 +249,10 @@ export function createCopilotTurn(initialDeps: TurnDeps): CopilotTurnController 
       const ctx = deps.context();
       const res = await deps.api.agentSpeak(c.text, ctx.coords, ctx.active, p.ctrl.signal, c.dialogId, ctx.ui, ctx.heading, ctx.limitMph, p.sttMs, p.sttConfidence, ctx.speed);
       if (!isCurrent(c.turnId)) return;
+      // The agent answered: the turn's 60 s budget (STT + agent) is spent. What follows keeps the signal for a
+      // barge-in or a cancel, but not the timer: a breakdown research has its own 120 s budget
+      // (api.breakdownResult), and the 60 s cut it off mid-way with "I can't reach the server".
+      clearTimeout(p.timer);
       deps.fillers.noteTurn(res.timings?.total ?? 0);
       // Fast answer: the filler never starts. Otherwise the answer waits for it to finish.
       p.plan?.cancel();
