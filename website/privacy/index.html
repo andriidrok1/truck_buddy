@@ -25,11 +25,11 @@
     <span class="eyebrow"><span class="ms" aria-hidden="true">shield</span>Privacy policy</span>
     <h1>Your data, in plain words.</h1>
     <p class="lede">What TruckBuddy collects while you drive, why it needs it, and how to delete it.</p>
-    <span class="spec">Last updated: November 7, 2026</span>
+    <span class="spec">Last updated: November 13, 2026</span>
     <div class="promises">
       <div class="promise"><span class="ic"><span class="ms" aria-hidden="true">mic</span></span>The mic listens only after you tap</div>
       <div class="promise"><span class="ic ok"><span class="ms" aria-hidden="true">block</span></span>No ads, nothing sold</div>
-      <div class="promise"><span class="ic ink"><span class="ms" aria-hidden="true">delete</span></span>Delete everything from Truck profile</div>
+      <div class="promise"><span class="ic ink"><span class="ms" aria-hidden="true">delete</span></span>Delete your account in the app</div>
     </div>
   </div>
 </section>
@@ -37,15 +37,19 @@
 <main class="wrap">
   <section class="sheet" aria-labelledby="collect">
     <h2 id="collect">What the app collects</h2>
-    <p class="sub">You don&rsquo;t sign up with an email or a password. The first time you open the app, it gets a random ID, and what we store is tied to that ID, not to your phone number.</p>
+    <p class="sub">You sign in with Apple or Google; there is no password and no phone number. The app needs an account because your truck profile, your conversation history and your trips are kept in it, so they come back on a new phone and stay the same on every phone you sign in on.</p>
     <ul class="rows">
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">account_circle</span></span><div><h3>Your account</h3><p>From Apple or Google we get an ID for you that does not change, your email address and, if you share it, your name. Google sends only a verified email. With Apple you can choose Hide My Email: then we get a relay address that forwards to your inbox, and we never see your real one. Apple shares your name only the first time you sign in. We show the name and email in the app so you can see which account you&rsquo;re signed in with; we don&rsquo;t send you marketing email.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">devices</span></span><div><h3>Signed-in phones</h3><p>For each phone signed in to your account: whether it is an iPhone or an Android phone, when it signed in and when it was last used. That is what lets you sign out of all phones at once.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">key</span></span><div><h3>Apple sign-in token</h3><p>If you sign in with Apple, Apple gives us a token for TruckBuddy. We keep it encrypted and use it for one thing: to ask Apple to remove TruckBuddy from your Apple ID when you delete your account.</p></div></li>
       <li class="row"><span class="ic"><span class="ms" aria-hidden="true">location_on</span></span><div><h3>Location</h3><p>Your position while you use the app, to find stops, parking and routes near you and to guide you on a route.</p></div></li>
       <li class="row"><span class="ic"><span class="ms" aria-hidden="true">mic</span></span><div><h3>Voice</h3><p>What you say after you tap the copilot. It is turned into text so the copilot understands the request and can answer out loud.</p></div></li>
-      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">local_shipping</span></span><div><h3>Truck profile</h3><p>Height, length, weight, hazmat, route preferences and, if you give it, your first name. Stored on your phone and on our server with your random ID, so routes fit your truck on every request.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">local_shipping</span></span><div><h3>Truck profile</h3><p>Height, length, weight, hazmat, route preferences and, if you give it, your first name. Stored on your phone and in your account on our server, so routes fit your truck on every request and on every phone you sign in on.</p></div></li>
       <li class="row"><span class="ic"><span class="ms" aria-hidden="true">forum</span></span><div><h3>Conversation history</h3><p>Your recent requests and the copilot&rsquo;s replies, so it remembers what you were talking about. You can clear it any time in Conversation memory.</p></div></li>
       <li class="row"><span class="ic"><span class="ms" aria-hidden="true">route</span></span><div><h3>Trip events</h3><p>While a route is active: when it starts, changes or ends, and requests the copilot could not handle, with the truck&rsquo;s position at that moment. We use them to find and fix problems. If your phone is set up by your fleet in TruckBuddy, the fleet sees your name, truck profile and trip events, never your conversations.</p></div></li>
       <li class="row"><span class="ic"><span class="ms" aria-hidden="true">bug_report</span></span><div><h3>Crash reports and app speed</h3><p>The error, the app version and the phone model when something breaks, and how long some screens and requests take. They carry the current trip&rsquo;s ID so we can match them to a problem on a drive. No voice and nothing you said.</p></div></li>
       <li class="row"><span class="ic"><span class="ms" aria-hidden="true">schedule</span></span><div><h3>Hours of service</h3><p>If you connect your own ELD, its access key stays in your phone&rsquo;s secure storage and is used only to read your current clocks for a request. If your fleet connects its ELD account in TruckBuddy, our server keeps the fleet&rsquo;s key encrypted and reads your clocks with it. We don&rsquo;t keep the clocks.</p></div></li>
+      <li class="row"><span class="ic"><span class="ms" aria-hidden="true">pin</span></span><div><h3>Access codes</h3><p>Testers and app reviewers can sign in with an access code we give them instead of Apple or Google. Then we get no email or name from Apple or Google, and what we store is tied to a random ID for that phone.</p></div></li>
     </ul>
     <p>We don&rsquo;t collect contacts, photos or advertising identifiers, and we don&rsquo;t track you across other apps or websites.</p>
   </section>
@@ -68,6 +72,8 @@
       <div><b>Voice recordings</b><span class="spec">Not kept after the reply</span></div>
       <div><b>Conversation history</b><span class="spec">Until you clear it</span></div>
       <div><b>Trip events</b><span class="spec">90 days</span></div>
+      <div><b>Your account and what is in it</b><span class="spec">Until you delete the account</span></div>
+      <div><b>A signed-in phone</b><span class="spec">Until you sign out, 180 days unused, or 365 days after sign-in</span></div>
     </div>
   </section>
 
@@ -76,9 +82,23 @@
     <ul class="plain">
       <li>Turn off location or microphone access in your phone&rsquo;s settings.</li>
       <li>Clear your conversation history in <strong>Conversation memory &rarr; Clear memory</strong>.</li>
-      <li>Delete everything we store for your phone in <strong>Truck profile &rarr; Delete my data</strong>, or email us.</li>
+      <li>Sign out on this phone, or on every phone at once, in <strong>Your truck &rarr; Sign out</strong> or <strong>Sign out of all phones</strong>. Your data stays in your account.</li>
+      <li>Delete your account in <strong>Your truck &rarr; Delete account and data</strong>, as described below, or email us.</li>
       <li>Disconnect your own ELD in Truck profile at any time.</li>
     </ul>
+  </section>
+
+  <section class="sheet" aria-labelledby="delete">
+    <h2 id="delete">Deleting your account</h2>
+    <p class="sub">Open Your truck (the truck button next to the search bar), scroll to the bottom, tap <strong>Delete account and data</strong> and confirm twice. The deletion happens right away, with no waiting period, and can&rsquo;t be undone. Signed in with an access code, the same place has <strong>Delete my data</strong>, which erases what we store for that phone.</p>
+    <ul class="plain">
+      <li>Deleted right away: your account with its ID, email and name; your truck profile; your conversation history and what the copilot learned about you; the places you visited; your trip events; and every signed-in phone. Other phones on the account are signed out within about a minute, and the app on this phone starts over like a fresh install.</li>
+      <li>If you signed in with Apple, we also ask Apple to revoke TruckBuddy&rsquo;s access to your Apple ID.</li>
+      <li>If a fleet set up your phone, your name, your driver record and your trip events are deleted; the fleet&rsquo;s own trucks and their profiles stay with the fleet. If you are the only owner of a fleet that still has other drivers or a connected ELD account, the app can&rsquo;t delete your account; email us to close the fleet or hand it over.</li>
+      <li>A deletion does not reach a few places. Our server logs hold your account&rsquo;s ID and how long requests took, never what you said; those lines stay until our hosting provider&rsquo;s log retention drops them. Crash reports carry a trip&rsquo;s ID rather than your account and stay with our crash reporting service. Data that belongs to no driver, such as a parking check of a place, stays. What was already sent to the services listed above to answer a request is handled under their own policies.</li>
+      <li>If you sign in again later with the same Apple or Google account, you start with a new, empty account.</li>
+    </ul>
+    <p>You can also remove TruckBuddy in your Apple ID settings (Sign in with Apple) or in your Google Account (third-party connections). That ends the link at Apple or Google, but it doesn&rsquo;t delete your TruckBuddy account or its data, and phones already signed in stay signed in. To delete the data, use Delete account and data or email us.</p>
   </section>
 
   <section class="sheet" aria-labelledby="more">
