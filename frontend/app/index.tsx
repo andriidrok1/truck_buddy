@@ -492,6 +492,7 @@ export default function MapScreen() {
     turnStarting.current = Date.now() + TURN_STARTING_MS;
     voice.stopSpeaking();
     setCaption(null);
+    cancelRouting(); // the newest action wins (onAvatarPress)
     turn.text(text);
     return true;
   };
@@ -560,6 +561,9 @@ export default function MapScreen() {
         return;
       }
     }
+    // The newest action wins, as a pin tap drops a mic turn (onPlacePress): a tapped route still being planned
+    // is called off. Left alone, its answer ran startRoute, which took the listening sheet down mid-recording.
+    cancelRouting();
     if (!turn.dialogId()) setCaption(null);
     turn.tap();
   };
@@ -575,7 +579,10 @@ export default function MapScreen() {
     const { perm, late } = await askWithDeadline<MicPermission>(() => voice.requestMic(), 5000, () => setMicCard("blocked"), "blocked");
     if (perm === "granted") {
       setMicCard(null);
-      if (!late) turn.tap();
+      if (!late) {
+        cancelRouting(); // the newest action wins (onAvatarPress)
+        turn.tap();
+      }
     } else {
       // Asked once with context; after that only Settings can fix it.
       setMicCard("blocked");
