@@ -81,7 +81,7 @@ const stillMike = async () => {
 };
 
 describe("Sign out", () => {
-  test("online: this phone's session is closed, then the phone forgets the driver and keeps the language and consent", async () => {
+  test("online: this phone's session is closed, then the phone forgets the driver and the AI consent, and keeps the language", async () => {
     await signedIn();
     await signOut();
     expect(calls).toEqual([{ path: "/auth/logout", method: "POST", auth: "Bearer ACC" }]);
@@ -89,7 +89,7 @@ describe("Sign out", () => {
     expect(getTruckProfile()).toEqual(DEFAULT_TRUCK);
     expect(getAccount()).toBeNull();
     expect(useLangStore.getState().chosen).toBe(true);
-    expect(await storage.getItem(CONSENT_KEY, false as boolean)).toBe(true);
+    expect(await storage.getItem(CONSENT_KEY, false as boolean)).toBe(false); // review of #172: the next driver agrees for themselves
   });
 
   test("offline: the phone signs out all the same", async () => {

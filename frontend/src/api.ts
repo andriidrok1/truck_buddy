@@ -395,7 +395,9 @@ export async function registerDevice() {
   await setToken(data.access_token, "driver", "device", data.refresh_token ?? null);
 }
 
-export async function redeemAccessCode(code: string) {
+/** An access code for a token (`via` "code"). `prepare` runs between the server's answer and the token going in, as
+ *  for Apple and Google (signIn above): src/signin/index.ts signInWithCode passes the same post-sign-in settling. */
+export async function redeemAccessCode(code: string, prepare?: (r: { access_token: string }) => unknown) {
   let res: Response;
   const d = deadline(15000);
   try {
@@ -414,6 +416,7 @@ export async function redeemAccessCode(code: string) {
   if (res.status === 401) throw new Error("That code isn't right. Check it and try again.");
   if (!res.ok) throw new Error("Something went wrong. Try again.");
   const data = await json<{ access_token: string; refresh_token?: string; role?: "driver" | "tester" }>(res, "/auth");
+  await prepare?.(data);
   await setToken(data.access_token, data.role === "tester" ? "tester" : "driver", "code", data.refresh_token ?? null);
   requestCode(false);
 }

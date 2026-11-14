@@ -53,8 +53,9 @@ const ALL_KEYS: string[] = [...APP_KEYS, ...SECURE_KEYS];
  *  not about the driver (src/state/firstLaunch.ts signedOutReset). "How to use" was seen (how_to_seen_v1) is the
  *  intro's kind of flag: it says nothing about who drove, and the "?" still opens the screen for whoever signs in
  *  next (emulator QA of #173: it came up again after every sign-out and access-code sign-in, each a new sub).
- *  "Delete my data" removes these too. */
-export const KEPT_ON_SIGN_OUT = ["lang_v1", "ai_consent_v2", "intro_seen_v1", "theme_pref_v1", "how_to_seen_v1"] as const;
+ *  Not the AI consent (ai_consent_v2): it is the driver's agreement, and whoever signs in next sees the consent
+ *  screen (review of #172). "Delete my data" removes these too. */
+export const KEPT_ON_SIGN_OUT = ["lang_v1", "intro_seen_v1", "theme_pref_v1", "how_to_seen_v1"] as const;
 /** The trip of a driver the server signed out mid-drive, kept for that same account to come back to
  *  (src/state/heldTrip.ts). Not a driver's key in the sense below: a sign-out pass leaves it, and the code that
  *  wrote it removes it. "Delete my data" removes it with everything else. */

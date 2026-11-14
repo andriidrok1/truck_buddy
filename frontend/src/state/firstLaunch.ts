@@ -80,7 +80,8 @@ const TRIP_LOG_KEY = "trip_events_pending";
 /**
  * The phone stops being this driver's without becoming a fresh install: "Sign out", and a token the server turned
  * down (the account was deleted from another phone, the session was closed). Everything resetToFirstLaunch clears
- * goes, except the language, the consent, the intro and how-to flags and the theme, which are about the phone. The
+ * goes, the AI consent included (the next driver agrees for themselves), except the language, the intro and how-to
+ * flags and the theme, which are about the phone. The
  * root layout then shows the sign-in screen, and whoever signs in next starts from nothing of the previous driver:
  * no truck pushed to their account, no trip events sent under their name, no route, no Motive key.
  *
@@ -121,6 +122,8 @@ export function signedOutReset(opts: { notice?: boolean; keepTripFor?: string | 
         await clearDriverData(held);
         setSignInNotice(opts.notice ? "signed_out" : null);
         await step(forgetIdentity); // the app's screens unmount here: nothing of theirs logs or saves after this
+        // After the token: with the driver still signed in, "no" would put the consent screen up for them.
+        await step(forgetConsent);
         if (!held) await step(() => tripLog.clear()); // an event logged while the screens were going away
         return await removeIdentityKeys(kept);
       } finally {
