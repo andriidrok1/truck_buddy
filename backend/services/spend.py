@@ -20,8 +20,9 @@ DAILY_USD_CAP (default 5, dollars, the whole service) sets the stages, by today'
                            truck is worse than the cent it costs.
     >= 110%  no_satellite  no new satellite parking checks (cached ones still answer) and no Gemini Maps grounding
                            (the star rating is said instead)
-    >= 120%  no_ai         copilot turns get AI_PAUSED (one stored clip, no model call); map, routes and place
-                           search keep working
+    >= 120%  no_ai         copilot turns get AI_PAUSED (one stored clip, no model call); /voice/transcribe and
+                           /onboarding/parse make no speech-to-text or model call, /parking/answer no new clip;
+                           map, routes and place search keep working
 
 The cap is where degrading starts, so the worst day costs about 1.2x the cap plus what was in flight. Each
 threshold sends one alert per day (log line always, Telegram when TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are
@@ -64,8 +65,11 @@ STT_BYTES_PER_S = 8000  # 64 kbps: seconds from the upload size when the respons
 TTS_PER_M_CHARS = {"gpt-4o-mini-tts": 17.0, "tts-1": 15.0, "tts-1-hd": 30.0, "elevenlabs": 40.0}
 # HERE: routing past the free tier (EUR 2.20/1K; geocoding is cheaper). Gemini: 3.x Maps grounding per prompt,
 # the free monthly allowance ignored.
-PER_CALL = {"here": 0.0025, "gemini": 0.014}
-METERED_HOSTS = (("hereapi.com", "here"), ("generativelanguage.googleapis.com", "gemini"))
+# Google Places (New): Text Search Pro / Place Details Pro list price, the free monthly calls ignored. Off in prod
+# (PLACES_PROVIDER=own); counted so that turning it on cannot spend unseen. No call cap of its own.
+PER_CALL = {"here": 0.0025, "gemini": 0.014, "google_places": 0.032}
+METERED_HOSTS = (("hereapi.com", "here"), ("generativelanguage.googleapis.com", "gemini"),
+                 ("places.googleapis.com", "google_places"))
 # Gemini TTS per 1M tokens: (text in, audio out). Official for gemini Flash TTS; the Lite TTS model has no published
 # price (2026-11-10), so it is priced the same as an upper bound. Audio is 25 tokens per second of speech.
 GEMINI_TTS_PER_M = (0.50, 10.00)
@@ -113,7 +117,7 @@ def cap_usd() -> float:
 
 
 def call_cap(provider: str) -> int:
-    return int(_float_env(f"{provider.upper()}_CALLS_PER_DAY", CALLS_DEFAULT[provider]))
+    return int(_float_env(f"{provider.upper()}_CALLS_PER_DAY", CALLS_DEFAULT.get(provider, 0)))
 
 
 def exempt_role(role: Optional[str]) -> None:

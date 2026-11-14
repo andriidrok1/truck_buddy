@@ -8,6 +8,20 @@ PlaceCategory = Literal["truck_stop", "hotel", "rest_area", "walmart", "cat_scal
                         "destination", "service"]  # service = breakdown provider
 
 
+MAX_TURN_TEXT = 2000  # what the driver typed or said in one turn (a long typed message is ~500)
+
+
+def _clip(v, n: int):
+    """A string cut to n characters (anything else as is). Place, Review and the truck profile come back from the
+    app inside requests and their text reaches the model's prompt; cut, never refused, because the server builds the
+    same models from provider data and a long Google summary must not break a search."""
+    return v[:n] if isinstance(v, str) else v
+
+
+def _clip_list(v, items: int, chars: int):
+    return [_clip(x, chars) for x in v[:items]] if isinstance(v, list) else v
+
+
 class Review(BaseModel):
     """One Google review. Google's terms: show the author and link to the review when displayed."""
     author: str
@@ -15,6 +29,16 @@ class Review(BaseModel):
     text: str  # capped for speech and the card
     uri: Optional[str] = None  # the review on Google Maps (googleMapsUri), else the author's profile
     time: Optional[str] = None  # RFC 3339 publishTime
+
+    @field_validator("author", "uri", "time", mode="before")
+    @classmethod
+    def _short(cls, v):
+        return _clip(v, 300)
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def _text(cls, v):
+        return _clip(v, 2000)
 
 
 class Place(BaseModel):
@@ -41,6 +65,26 @@ class Place(BaseModel):
     parking_trend: Optional[str] = None  # FILLING | CLEARING | STEADY
     parking_updated: Optional[str] = None  # RFC 3339, time of the live report
     parking_source: Optional[Literal["tpims", "ntad"]] = None
+
+    @field_validator("id", "name", "address", "diesel_updated", "parking_trend", "parking_updated", mode="before")
+    @classmethod
+    def _short(cls, v):
+        return _clip(v, 300)
+
+    @field_validator("summary", mode="before")
+    @classmethod
+    def _summary(cls, v):
+        return _clip(v, 1000)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _tags(cls, v):
+        return _clip_list(v, 30, 60)
+
+    @field_validator("reviews", mode="before")
+    @classmethod
+    def _reviews(cls, v):
+        return v[:10] if isinstance(v, list) else v
 
 
 class PlacesResponse(BaseModel):
@@ -218,6 +262,11 @@ class TruckProfile(BaseModel):
     avoid_tolls: bool = False
     avoid_ferries_tunnels: bool = False
     favorite_chains: List[str] = Field(default_factory=list, max_length=8)
+
+    @field_validator("favorite_chains", mode="before")
+    @classmethod
+    def _chains(cls, v):
+        return _clip_list(v, len(v), 40) if isinstance(v, list) else v  # each name goes into the prompt (prefs_label)
     break_hours: Optional[int] = Field(None, ge=1, le=14)
     chains_on_board: Optional[bool] = None  # None = never asked; drives the chain-control question
     mpg: Optional[float] = Field(None, ge=3, le=15)  # the truck's fuel economy; None = route_cost.DEFAULT_MPG
@@ -298,6 +347,11 @@ class ChainAhead(BaseModel):
     status: str  # R-1 | R-2 | R-3
     miles_ahead: float = Field(ge=0, le=500)
 
+    @field_validator("route", "location", "status", mode="before")
+    @classmethod
+    def _short(cls, v):
+        return _clip(v, 300)  # sent back by the app; said in a nudge
+
 
 class Nudge(BaseModel):
     kind: Literal["break", "parking", "chains"]
@@ -373,7 +427,7 @@ class AppAction(BaseModel):
 
 
 class AgentRequest(BaseModel):
-    text: str
+    text: str = Field(max_length=MAX_TURN_TEXT)
     lat: float = Field(ge=-90, le=90)
     lng: float = Field(ge=-180, le=180)
     truck_profile: TruckProfile = Field(default_factory=TruckProfile)

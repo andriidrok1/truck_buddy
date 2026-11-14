@@ -1,7 +1,8 @@
 """Daily budgets for what costs money, so free drivers in the first release cannot run up the bill.
 
-- TURNS_PER_DAY (default 150): copilot turns per driver per day (/agent and the voice turn), each an LLM call or
-  several plus speech. The general request limits in services/auth.py count every request (map, nudges, health)
+- TURNS_PER_DAY (default 150): copilot turns per driver per day (/agent and the voice turn, and each spoken
+  onboarding answer), each an LLM call or several plus speech. /voice/transcribe only looks (has_turn): its /agent
+  call takes the turn. The general request limits in services/auth.py count every request (map, nudges, health)
   and only guard against a leaked token; this one is about the AI bill.
 - NEW_DEVICE_TURNS (default 30): the turn budget instead of TURNS_PER_DAY while the device is less than a day old
   (its driver row's created_at, services/tenancy.device_created), so a farm of fresh installs gets little each.
@@ -75,6 +76,16 @@ def take_turn(driver: Optional[str], role: str = "driver", now: Optional[datetim
     if not driver or role == "tester":
         return True
     return _take("turn", driver, turn_budget(new_device), now)
+
+
+def has_turn(driver: Optional[str], role: str = "driver", now: Optional[datetime] = None,
+             new_device: bool = False) -> bool:
+    """Whether the driver has a turn left, without taking it (the speech-to-text step of a voice turn: /agent takes
+    the turn right after, so the turn is counted once)."""
+    if not driver or role == "tester":
+        return True
+    total = turn_budget(new_device)
+    return total <= 0 or _counts.get(("turn", driver, day(now)), 0) < settings().per_worker(total)
 
 
 def take_satellite(now: Optional[datetime] = None) -> bool:

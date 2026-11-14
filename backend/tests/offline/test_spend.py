@@ -400,3 +400,16 @@ def test_tester_request_is_exempt_end_to_end(monkeypatch, api_client, agent_sand
     monkeypatch.setattr(server, "get_agent_provider", lambda: Costly())
     r = api_client.post("/api/agent", json={"text": "hi", **SAC}, headers={"Authorization": f"Bearer {tok}"})
     assert r.json()["reply"] == "Sure thing." and spend.today_usd() == pytest.approx(1.5)
+
+
+def test_google_places_calls_are_metered(monkeypatch, fake_http):
+    from services import http
+    monkeypatch.setenv("DAILY_USD_CAP", "100")
+    fake_http.add("places.googleapis.com", "/", json={"places": []})
+    http._client = httpx.AsyncClient(transport=httpx.MockTransport(fake_http), event_hooks=http.HOOKS)
+
+    async def go():
+        await http.client().post("https://places.googleapis.com/v1/places:searchText", json={})
+
+    run(go())
+    assert spend.calls_today("google_places") == 1 and spend.today_usd() == pytest.approx(spend.PER_CALL["google_places"])

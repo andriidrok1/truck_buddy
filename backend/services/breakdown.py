@@ -23,6 +23,7 @@ from services import kv, llm, session_store
 from services import providers_search as ps
 from services.geo import without_country
 from services.http import client
+from services.redact import describe
 from services.routing import get_routing_provider
 from services.timing import stage
 
@@ -137,7 +138,7 @@ async def where(lat: float, lng: float) -> str:
         parts = [a.get("road"), town, a.get("state")]
         return ", ".join(p for p in parts if p)
     except Exception as e:  # noqa: BLE001
-        logger.info("reverse geocode failed: %s", e)
+        logger.info("reverse geocode failed: %s", describe(e))  # never the URL: it has the key
         return ""
 
 
