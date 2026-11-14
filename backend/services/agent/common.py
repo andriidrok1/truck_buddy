@@ -13,7 +13,7 @@ from services.dialog_state import DialogState
 from services.errors import NoTruckRoute
 from services.flags import on
 from services.speech_text import fit_reply
-from services.agent.replies import NOT_UNDERSTOOD, ROUTE_DOWN, NO_TRUCK_ROUTE
+from services.agent.replies import NOT_UNDERSTOOD, ROUTE_DOWN, NO_TRUCK_ROUTE, typed_miss
 
 logger = logging.getLogger("truckbuddy.agent")
 
@@ -104,6 +104,8 @@ def _fit_for_speed(req: AgentRequest, res: AgentResponse) -> None:
     """At highway speed a free-text reply is cut to one sentence; parked, up to three (REPLY_FIT=0 turns it off)."""
     if not on("REPLY_FIT") or req.speed_mps is None or res.status not in FIT_STATUSES:
         return
+    if typed_miss(req.input, res.reply):
+        return  # typed: the second sentence ("Try another name or a nearby town.") is the useful part
     res.reply = fit_reply(res.reply, FAST_SENTENCES if at_speed(req) else SLOW_SENTENCES)
 
 

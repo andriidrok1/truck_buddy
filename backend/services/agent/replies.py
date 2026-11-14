@@ -11,6 +11,8 @@ from services.speech_text import hours_minutes as _minutes_said
 from services.agent.phrases import PRICE_WORDS, _ZIP_COUNTRY
 
 NOT_UNDERSTOOD = "Sorry, I didn't catch that. Try again."
+# The same miss for a typed request: the words arrived as written, so it is about the meaning, not the hearing.
+NOT_UNDERSTOOD_TYPED = "I didn't get what you mean. Ask me, for example, to find a truck stop or to take you to a town."
 ROUTE_DOWN = "I couldn't build a truck route there right now. Try again in a minute."
 NO_TRUCK_ROUTE = ("I can't find a truck route there from here. Try another destination, or an address on a main "
                   "road nearby.")
@@ -43,9 +45,22 @@ NO_WALMART = "I couldn't find a Walmart nearby. The closest {what} is {name}, {m
 ALL_REJECTED = "That's every one I found nearby. Want me to go back to one of them?"
 
 
-def heard_not_found(query: str) -> str:
-    """Reads back what was heard and offers typing."""
+NOT_FOUND_TYPED = "Couldn't find {query}. Try another name or a nearby town."
+
+
+def heard_not_found(query: str, typed: bool = False) -> str:
+    """Reads back what was heard and offers typing; a typed request was not "heard", it gets a hint instead."""
+    if typed:
+        return NOT_FOUND_TYPED.format(query=query)
     return f"I heard {query}, but can't find it. Say it again or type it."
+
+
+def typed_miss(req_input: Optional[str], reply: str) -> bool:
+    """A typed request's "didn't understand" / "couldn't find" line: its second sentence is the hint, keep it whole."""
+    if req_input != "text":
+        return False
+    head, sep, tail = NOT_FOUND_TYPED.partition("{query}")
+    return reply == NOT_UNDERSTOOD_TYPED or (reply.startswith(head) and reply.endswith(tail))
 
 
 _COUNTRY = re.compile(r"^(?:USA|US|United States(?: of America)?)$", re.I)

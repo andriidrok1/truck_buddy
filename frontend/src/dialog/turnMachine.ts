@@ -74,7 +74,8 @@ export type TurnEvent =
 export type Command =
   | { type: "newDialog"; dialogId: string }
   | { type: "startListening"; turnId: number; chime: boolean; maxMs?: number }
-  | { type: "callAgent"; turnId: number; text: string; dialogId: string }
+  /** `typed`: the text came from the keyboard (or a How-to chip), not from speech-to-text. */
+  | { type: "callAgent"; turnId: number; text: string; dialogId: string; typed?: boolean }
   | { type: "sayNotUnderstood" }
   | { type: "cancelTurn"; turnId: number }
   | { type: "stopSpeaking" }
@@ -134,7 +135,7 @@ export function reduce(s: TurnState, e: TurnEvent, now: number, newId: () => str
       const commands: Command[] = [];
       const next = ensureSession(s, now, newId, commands);
       const turnId = next.turnId + 1;
-      commands.push({ type: "callAgent", turnId, text: e.text, dialogId: next.dialogId! });
+      commands.push({ type: "callAgent", turnId, text: e.text, dialogId: next.dialogId!, typed: true });
       return { state: { ...next, mode: "thinking", turnId }, commands };
     }
     case "sttDone": {

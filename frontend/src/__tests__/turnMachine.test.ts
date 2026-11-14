@@ -38,7 +38,7 @@ test("a route stops the loop but keeps the session; the next answer does not reo
   expect(r.commands.filter((c) => c.type === "startListening")).toHaveLength(1);
   // the same session serves a typed follow-up
   r = run(r.state, [{ type: "text", text: "the second one" }]);
-  expect(r.commands).toEqual([{ type: "callAgent", turnId: 2, text: "the second one", dialogId: "dlg-1" }]);
+  expect(r.commands).toEqual([{ type: "callAgent", turnId: 2, text: "the second one", dialogId: "dlg-1", typed: true }]);
 });
 
 test("a confirm question forces one more listen even when the loop is paused", () => {

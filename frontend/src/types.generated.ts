@@ -108,6 +108,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Renew
+         * @description A fresh access token and refresh token for the device behind the Bearer token (valid, or expired inside the
+         *     grace window). For app builds that never stored a refresh token: they trade the token they have for both.
+         */
+        post: operations["auth_renew_api_auth_renew_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/breakdown/{rid}": {
         parameters: {
             query?: never;
@@ -700,6 +721,8 @@ export interface components {
             active_place?: components["schemas"]["Place"] | null;
             /** Active Speed Limit Mph */
             active_speed_limit_mph?: number | null;
+            /** Input */
+            input?: ("voice" | "text") | null;
             /** Lang */
             lang?: string | null;
             /** Lat */
@@ -1780,6 +1803,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_renew_api_auth_renew_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

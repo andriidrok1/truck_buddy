@@ -1,4 +1,5 @@
-import { createCopilotTurn, type TurnDeps } from "../dialog/useCopilotTurn";
+import { MESSAGES } from "../constants";
+import { createCopilotTurn, errorMessage, TYPED_FAILED, type TurnDeps } from "../dialog/useCopilotTurn";
 import type { AgentResponse } from "../types";
 
 jest.useFakeTimers();
@@ -245,4 +246,34 @@ test("a nudge that played with no signal opens no mic and says nothing by itself
   act(() => result.current.nudgeOffer());
   expect(offline).not.toHaveBeenCalled();
   expect(f.listen).toHaveBeenCalledTimes(1); // with a signal the hands-free window still opens
+});
+
+test("a typed request goes as input 'text', a spoken one as 'voice' (the server words a miss by it)", async () => {
+  const f = fakeDeps();
+  const { result } = harness(f.deps);
+  act(() => result.current.text("blorp"));
+  await flush();
+  expect(f.agent.mock.calls[0][11]).toBe("text");
+  expect(f.agent.mock.calls[0][8]).toBeNull(); // no STT time for typed text
+  await flush();
+  act(() => result.current.tap());
+  await flush();
+  expect(f.agent.mock.calls[1][0]).toBe("take me to Reno");
+  expect(f.agent.mock.calls[1][11]).toBe("voice");
+});
+
+test("a typed request that fails is never told 'didn't catch that'", async () => {
+  const f = fakeDeps();
+  f.agentResult = () => Promise.reject(new Error("HTTP 500"));
+  const { result } = harness(f.deps);
+  act(() => result.current.text("find a truck stop"));
+  await flush();
+  expect(f.calls).toContain(`error:${TYPED_FAILED}`);
+  expect(f.calls.some((c) => /catch/.test(c))).toBe(false);
+});
+
+test("errorMessage: the hearing line stays for speech only", () => {
+  expect(errorMessage(new Error("boom"))).toBe(MESSAGES.notUnderstood);
+  expect(errorMessage(new Error("boom"), true)).toBe(TYPED_FAILED);
+  expect(errorMessage(new Error("network down"), true)).toMatch(/can't reach the server/);
 });
